@@ -1,0 +1,26 @@
+name: 完成媒体上传
+tags: [media, post]
+flow_only: true
+request:
+  service_name: tool.people_insight.MediaService
+  method_name: CompleteMediaUpload
+  params:
+    media_asset_id: "{{media_asset_id}}"
+assert:
+  http_status: 200
+  gateway:
+    code: 0
+    message: ok
+  response:
+    id: req_0
+    success: true
+    code: 0
+    message: ok
+  data_fields:
+    - content_type
+    - expires_time
+    - media_asset_id
+    - size_bytes
+    - status
+    - upload_expires_time
+    - uploaded_time

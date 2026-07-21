@@ -1,0 +1,23 @@
+feat: BugAgent v1.4.0 Sprint 4 complete + production fixes
+
+Sprint 4 features:
+- P4-1: Workflow state machine (12-status matrix, StatusChange audit, 4 endpoints)
+- P4-2: Notification system (in-app/email/webhook, HTML templates)
+- P4-3: Report dashboard (trends/distribution/team-metrics/CSV+JSON export)
+
+Production fixes:
+- RBAC handler unified response format with code field
+- AutoMigrate complete tables for Role/Permission/UserRole/AuditLog
+- SeedRBACData: 5 roles + 19 permissions pre-seeded for admin
+- Agent handler route param fix (:id vs :defectId)
+- Collaboration handler route param unified to :id
+
+Infrastructure:
+- Redis extension layer (SessionStore/DistributedLock/RateLimiter/CacheHelper)
+- Rate limit middleware (100req/s global, 50req/s API)
+- Health check endpoints (/healthz, /readyz)
+- AI vendors: Anthropic Claude + Alibaba DashScope
+- Docker multi-stage build + docker-compose + CI/CD workflow
+- Swagger API documentation annotations
+
+Tests: 201 passing, go vet zero warnings, PostgreSQL full-stack

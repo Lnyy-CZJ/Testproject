@@ -1,0 +1,13 @@
+services:
+  trackevents:
+    build:
+      context: .
+    container_name: trackevents-web
+    ports:
+      - "8000:8000"
+    environment:
+      TRACKEVENTS_HOST: 0.0.0.0
+      TRACKEVENTS_PORT: 8000
+    volumes:
+      - ./default.log:/app/default.log:ro
+    restart: unless-stopped

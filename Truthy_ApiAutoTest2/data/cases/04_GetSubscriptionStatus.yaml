@@ -1,0 +1,27 @@
+name: 查询订阅状态
+tags: [subscription, post]
+request:
+  service_name: tool.subscription.SubscriptionService
+  method_name: GetSubscriptionStatus
+  params:
+    product_code: people_insight
+    scenario: search
+assert:
+  http_status: 200
+  gateway:
+    code: 0
+    message: ok
+  response:
+    id: req_0
+    success: true
+    code: 0
+    message: ok
+  data_fields:
+    - entitlement
+    - expires_time
+    - has_active_subscription
+    - plan_code
+    - product_code
+    - subscription_status
+    - tier_code
+    - vip_level

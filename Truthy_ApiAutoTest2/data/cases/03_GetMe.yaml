@@ -1,0 +1,27 @@
+name: 获取当前用户
+tags:
+  - smoke
+  - identity
+request:
+  service_name: tool.identity.IdentityService
+  method_name: GetMe
+  params: {}
+assert:
+  http_status: 200
+  gateway:
+    code: 0
+    message: ok
+  response:
+    id: req_0
+    success: true
+    code: 0
+    message: ok
+  data_fields:
+    - acquisition_summary
+    - consent_policy_version
+    - create_time
+    - device_id
+    - profile_summary
+    - subscription_summary
+    - user_id
+    - user_type

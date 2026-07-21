@@ -1,0 +1,104 @@
+# goods_test_data.yaml
+case_common:
+  # 可添加商品接口公共参数（如URL、headers，根据实际需求补充）
+  goods_URL: "http://shop-xo.hctestedu.com/index.php?s=/api/goods/detail"
+  headers:
+    "application": "web"
+    "application_client_type": "PC"
+
+goods_cases:
+  - case_id: goods_001
+    description: 商品1查询成功（库存0）
+    requestdata:
+      goods_id: "1"  # 第一个字段：请求数据
+    assertion:
+      stock_code: 0  # 第二个字段：断言状态码
+      prompt_msg: "success"  # 第三个字段：断言提示信息
+
+  - case_id: goods_002
+    description: 商品2查询成功（库存1）
+    requestdata:
+      goods_id: "2"
+    assertion:
+      stock_code: 1
+      prompt_msg: "success"
+
+  - case_id: goods_003
+    description: 商品3查询成功（库存0）
+    requestdata:
+      goods_id: "3"
+    assertion:
+      stock_code: 0
+      prompt_msg: "success"
+
+  - case_id: goods_004
+    description: 商品11查询成功（库存0）
+    requestdata:
+      goods_id: "11"
+    assertion:
+      stock_code: 0
+      prompt_msg: "success"
+
+  - case_id: goods_005
+    description: 商品12查询成功（库存0）
+    requestdata:
+      goods_id: "12"
+    assertion:
+      stock_code: 0
+      prompt_msg: "success"
+
+  - case_id: goods_006
+    description: 不存在的商品13查询失败
+    requestdata:
+      goods_id: "13"
+    assertion:
+      stock_code: -1
+      prompt_msg: "商品不存在或已删除"
+
+  - case_id: goods_007
+    description: 不存在的商品145查询失败
+    requestdata:
+      goods_id: "145"
+    assertion:
+      stock_code: -1
+      prompt_msg: "商品不存在或已删除"
+
+  - case_id: goods_008
+    description: 不存在的商品9999999查询失败
+    requestdata:
+      goods_id: "9999999"
+    assertion:
+      stock_code: -1
+      prompt_msg: "商品不存在或已删除"
+
+  - case_id: goods_009
+    description: 输入英文字符查询商品失败
+    requestdata:
+      goods_id: "rfewf"
+    assertion:
+      stock_code: -1
+      prompt_msg: "商品不存在或已删除"
+
+  - case_id: goods_010
+    description: 输入空字符查询商品失败
+    requestdata:
+      goods_id: ""
+    assertion:
+      stock_code: -1
+      prompt_msg: "参数有误"
+
+  - case_id: goods_011
+    description: 输入特殊字符查询商品失败
+    requestdata:
+      goods_id: "#%$%"
+    assertion:
+      stock_code: -1
+      prompt_msg: "商品不存在或已删除"
+
+  - case_id: goods_012
+    description: 输入中文字符查询商品失败
+    requestdata:
+      goods_id: "我"
+    assertion:
+      stock_code: -1
+      prompt_msg: "商品不存在或已删除"

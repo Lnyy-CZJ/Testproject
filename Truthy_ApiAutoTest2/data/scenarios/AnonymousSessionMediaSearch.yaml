@@ -1,0 +1,18 @@
+name: 姓名搜索成功场景
+step_data:
+  create_task:
+    params:
+      match_strategy: UNION
+      clues:
+        - type: FULL_NAME
+          full_name_query:
+            full_name: JOJO CCQQ MOCK
+      additional_details: []
+    assert:
+      data_equals:
+        status: QUEUED
+
+  poll_task:
+    assert:
+      data_equals:
+        status: SUCCEEDED

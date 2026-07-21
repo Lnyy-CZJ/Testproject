@@ -1,0 +1,14 @@
+- id: HOME-001
+  title: 获取英文首页内容
+  markers:
+    - contract
+  steps:
+    - GetHomeContent
+  params:
+    locale: en-US
+  expected:
+    required_fields:
+      - search_examples
+      - user_stories
+      - cache_ttl_seconds
+      - content_version

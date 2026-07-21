@@ -1,0 +1,30 @@
+name: 获取单个候选详情
+tags: [search, post]
+flow_only: true
+request:
+  service_name: tool.people_insight.SearchService
+  method_name: GetTaskCandidateDetail
+  params:
+    task_id: "{{task_id}}"
+    candidate_id: "{{candidate_id}}"
+assert:
+  http_status: 200
+  gateway:
+    code: 0
+    message: ok
+  response:
+    id: req_0
+    success: true
+    code: 0
+    message: ok
+  data_fields:
+    - candidate
+    - candidate_id
+    - disclaimers
+    - entitlement_decision
+    - evidence
+    - person_id
+    - social_accounts
+    - task_id
+    - ui_sections
+    - update_time

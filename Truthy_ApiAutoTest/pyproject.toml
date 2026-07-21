@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=75.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "truthy-api-auto-test"
+version = "0.1.0"
+description = "Truthy Gateway 接口自动化测试框架"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "pydantic==2.13.4",
+  "PyYAML==6.0.3",
+  "requests==2.34.2",
+]
+
+[project.optional-dependencies]
+test = [
+  "allure-pytest==2.16.0",
+  "pytest==9.0.3",
+  "pytest-xdist==3.8.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["framework*", "services*"]

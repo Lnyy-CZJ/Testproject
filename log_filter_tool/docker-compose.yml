@@ -1,0 +1,14 @@
+services:
+  log-filter-tool:
+    build: .
+    container_name: log-filter-tool
+    ports:
+      - "5001:5001"
+    environment:
+      # 容器写入目录与用户看到的宿主机路径分离，防止前端控制任意路径。
+      LOG_EXPORT_DIR: /exports
+      LOG_EXPORT_DISPLAY_DIR: /Users/admin/Documents/log
+    volumes:
+      # 将已确认的默认日志目录映射到容器，导出文件会直接落到 macOS。
+      - /Users/admin/Documents/log:/exports
+    restart: unless-stopped

@@ -1,0 +1,27 @@
+name: 获取当前订阅权益
+tags: [subscription, post]
+request:
+  service_name: tool.subscription.SubscriptionService
+  method_name: GetEntitlement
+  params:
+    product_code: people_insight
+assert:
+  http_status: 200
+  gateway:
+    code: 0
+    message: ok
+  response:
+    id: req_0
+    success: true
+    code: 0
+    message: ok
+  data_fields:
+    - can_start_search
+    - concurrency_remaining
+    - decision
+    - expires_time
+    - plan_code
+    - product_code
+    - quota_remaining
+    - subscription_status
+    - vip_level

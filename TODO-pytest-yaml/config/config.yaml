@@ -1,0 +1,63 @@
+# 本地环境配置 uat pro
+GLOBAL: pro
+
+# 日志配置
+LOG_CONFIG:
+  # 日志保存天数
+  SAVE_DAY: 5
+  # 日志输出的级别-文件
+  LOG_LEVEL: "DEBUG"
+  # 日志输出的级别-控制台
+  LOG_LEVEL_CONSILE: "DEBUG"
+  # 日志输出格式
+  FORMATTER: '%(asctime)s-%(filename)s-%(levelname)s-%(message)s'
+
+# Selenium 配置
+SELENIUM_CONFIG:
+  # 元素等待超时时间 /s
+  WAIT_ELEMENT: 30
+  # 页面轮询元素间隔 /s
+  POLL_ELEMENT: 1
+  # 全局等待时间 /s
+  ALL_TIMEOUT: 45
+
+# playwright 配置
+PLAYWRIGHT_CONFIG:
+  TIMEOUT: 30
+  # 页面轮询元素间隔 ms
+  POLL_TIME: 200
+
+
+# jenkins 配置
+JENKINS_CONFIG:
+  # jenkins账号
+  JENKINS_ACCOUNT: "demo"
+  # jenkins密码
+  JENKINS_PWD: "demo"
+  # jenkins任务名称
+  JOB_URL: "demo"
+  # 公司jenkins地址
+  JENKINS_URL: "demo"
+
+# mysql数据库配置
+MYSQl_CONFIG:
+  MYSQl_NAME_DEMO:
+    HOST: 127.0.0.1
+    PORT: 3306
+    USER: root
+    PASSWORD: root
+
+# redis数据库配置
+REDIS_CONFIG:
+  HOST: 127.0.0.1
+  PORT: 6379
+  DB: 1
+
+
+
+# url是钉钉机器人的url地址（必填），如果机器人不选择加签模式的话secret可以不填
+ROBOT_CONfIG:
+    DEMO_ROBOT_NAME: ## 机器人名字可以自定义
+      test_team: "demo测试小组"
+      url: https://oapi.dingtalk.com/robot/send?access_token=ee0ca983357faf115f1f9c3c0d448aa9828f033f320e80f0981da37148fc0555
+      secret: SEC3775d60624eac136cbb508bc977ffe0bc0b1716ab08c5d43834e4bae30173feb

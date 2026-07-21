@@ -1,0 +1,2 @@
+{"input_id":"case-001","match_strategy":"UNION","clues":[{"type":"FULL_NAME","full_name_query":{"full_name":"JOJO CCQQ MOCK"}},{"type":"LOCATION","location_query":{"location":"us"}}],"additional_details":[{"type":"PROFESSION","value":"photographer"}]}
+{"input_id":"case-002","match_strategy":"UNION","clues":[{"type":"FULL_NAME","full_name_query":{"full_name":"Jane Doe"}}],"additional_details":[]}

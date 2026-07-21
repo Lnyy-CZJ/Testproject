@@ -1,0 +1,21 @@
+- generic [ref=e6]:
+  - generic [ref=e7]:
+    - heading "🔐 缺陷管理平台" [level=2] [ref=e8]
+    - text: 智能缺陷分析与修复协作平台
+  - generic [ref=e9]:
+    - generic [ref=e15]:
+      - img "user" [ref=e17]:
+        - img [ref=e18]
+      - textbox "用户名" [ref=e20]
+    - generic [ref=e26]:
+      - img "lock" [ref=e28]:
+        - img [ref=e29]
+      - textbox "密码" [ref=e31]
+      - img "eye-invisible" [ref=e33] [cursor=pointer]:
+        - img [ref=e34]
+    - button "登 录" [ref=e42] [cursor=pointer]:
+      - generic [ref=e43]: 登 录
+    - generic [ref=e45]:
+      - text: 还没有账号？
+      - link "立即注册" [ref=e46] [cursor=pointer]:
+        - /url: /register

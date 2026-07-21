@@ -1,0 +1,34 @@
+sensitive_keys:
+  - auth_token
+  - refresh_token
+  - upload_url
+  - user_id
+  - name
+  - full_name
+  - display_name
+  - social_link
+  - social_links
+  - social_url
+  - avatar_url
+  - image_path
+  - image_url
+  - photo_path
+  - photo_url
+  - purchase_token
+  - google_purchase_token
+  - apple_purchase_token
+  - app_store_receipt
+  - purchase_receipt
+  - receipt_data
+  - signed_transaction_info
+  - feedback_message
+  - contact
+  - screenshot_media_asset_id
+  - media_asset_ids
+signature_query_keys:
+  - signature
+  - x-amz-signature
+  - x-amz-credential
+  - x-amz-security-token
+  - x-cos-security-token
+  - security-token

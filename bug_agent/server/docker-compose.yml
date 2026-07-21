@@ -1,0 +1,65 @@
+version: "3.8"
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: bug-agent
+    ports:
+      - "8765:8765"
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - bug-agent-net
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: bug-agent-db
+    environment:
+      POSTGRES_USER: bugagent
+      POSTGRES_PASSWORD: bugagent_secret
+      POSTGRES_DB: bugagent
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bugagent"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - bug-agent-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: bug-agent-redis
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - bug-agent-net
+
+volumes:
+  pgdata:
+  redisdata:
+
+networks:
+  bug-agent-net:
+    driver: bridge

@@ -1,0 +1,1479 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; style-src 'unsafe-inline' blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; img-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; font-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; media-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; worker-src blob:; connect-src blob: data:; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<title>接口自动化测试框架流程图</title>
+<style>:root{color-scheme:light dark;background:light-dark(rgb(255 255 255), rgb(24 24 24))}html,body{margin:0}body{box-sizing:border-box;padding:1rem;background:inherit}iframe{display:block;width:100%;max-width:736px;height:calc(100vh - 2rem);margin:0 auto;border:0}</style>
+</head>
+<body>
+<iframe sandbox="allow-scripts" referrerpolicy="no-referrer" title="接口自动化测试框架流程图" srcdoc="&lt;!doctype html&gt;
+&lt;html lang=&quot;en&quot;&gt;
+&lt;head&gt;
+&lt;meta charset=&quot;utf-8&quot;&gt;
+&lt;meta name=&quot;viewport&quot; content=&quot;width=device-width, initial-scale=1&quot;&gt;
+&lt;meta name=&quot;referrer&quot; content=&quot;no-referrer&quot;&gt;
+&lt;meta http-equiv=&quot;Content-Security-Policy&quot; content=&quot;default-src &#x27;none&#x27;; script-src &#x27;unsafe-inline&#x27; &#x27;unsafe-eval&#x27; &#x27;wasm-unsafe-eval&#x27; blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; style-src &#x27;unsafe-inline&#x27; blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; img-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; font-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; media-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; worker-src blob:; connect-src blob: data:; frame-src &#x27;none&#x27;; object-src &#x27;none&#x27;; base-uri &#x27;none&#x27;; form-action &#x27;none&#x27;&quot;&gt;
+&lt;title&gt;接口自动化测试框架流程图&lt;/title&gt;
+&lt;style&gt;:root {
+  color-scheme: light dark;
+  background-color: var(--background) !important;
+
+  /* Agent-facing contract; keep in sync with SKILL.md. */
+  --background: light-dark(rgb(255 255 255), rgb(24 24 24));
+  --foreground: light-dark(rgb(26 28 31), rgb(255 255 255));
+  --card: color-mix(in oklab, var(--foreground) 5%, transparent);
+  --card-foreground: var(--foreground);
+  --popover: light-dark(rgb(255 255 255), rgb(45 45 45));
+  --popover-foreground: var(--foreground);
+  --primary: light-dark(rgb(51 156 255), rgb(131 195 255));
+  --primary-foreground: light-dark(rgb(255 255 255), rgb(13 13 13));
+  --secondary: light-dark(rgb(255 255 255 / 96%), rgb(54 54 54 / 96%));
+  --secondary-foreground: var(--foreground);
+  --muted: color-mix(in srgb, var(--foreground) 10%, transparent);
+  --muted-foreground: light-dark(
+    rgb(26 28 31 / 49.4%),
+    rgb(255 255 255 / 49.8%)
+  );
+  --accent: light-dark(rgb(229 242 255), rgb(13 39 63));
+  --accent-foreground: var(--primary);
+  --destructive: light-dark(rgb(226 85 7), rgb(255 133 73));
+  --border: light-dark(rgb(26 28 31 / 8%), rgb(255 255 255 / 8.2%));
+  --input: light-dark(
+    rgb(26 28 31 / 11.8%),
+    color-mix(in oklab, rgb(0 0 0) 10%, transparent)
+  );
+  --ring: light-dark(rgb(51 156 255), rgb(131 195 255 / 76%));
+  --font-size-base: 14px;
+  --viz-series-1: var(--primary);
+  --viz-series-2: light-dark(rgb(243 136 59), rgb(245 154 86));
+  --viz-series-3: light-dark(rgb(93 201 119), rgb(116 213 139));
+  --viz-series-4: light-dark(rgb(235 119 177), rgb(240 143 192));
+  --viz-series-5: light-dark(rgb(155 121 236), rgb(170 145 239));
+  --viz-series-6: light-dark(rgb(58 185 177), rgb(90 203 194));
+
+  /* Internal implementation variables; not part of the agent contract. */
+  --font-sans: -apple-system, system-ui, &quot;Segoe UI&quot;, sans-serif;
+  --font-mono:
+    ui-monospace, SFMono-Regular, &quot;SF Mono&quot;, Menlo, Consolas, &quot;Liberation Mono&quot;,
+    monospace;
+  --font-size-normal: max(11px, var(--font-size-base));
+  --font-size-tooltip: calc(var(--font-size-base) - 1px);
+  --font-size-small: max(11px, calc(var(--font-size-base) - 2px));
+  --font-size-h1: calc(var(--font-size-normal) * 1.7142857143);
+  --font-size-h2: calc(var(--font-size-normal) * 1.4285714286);
+  --font-size-h3: calc(var(--font-size-normal) * 1.2857142857);
+  --font-weight-normal: 430;
+  --font-weight-medium: 500;
+  --line-height-normal: calc(var(--font-size-normal) * 1.5);
+  --line-height-tooltip: calc(var(--font-size-tooltip) * 1.4285714286);
+  --line-height-small: calc(var(--font-size-small) + 4px);
+  --radius: 12.5px;
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-2xl: calc(var(--radius) * 1.6);
+  --radius-full: 9999px;
+  --shadow-sm: 0 1px 2px -1px rgb(0 0 0 / 8%);
+  --checkmark-image: url(&quot;data:image/svg+xml,%3Csvg xmlns=&#x27;http://www.w3.org/2000/svg&#x27; viewBox=&#x27;0 0 17 17&#x27;%3E%3Cpath d=&#x27;M12.8961 3.64101C13.1297 3.41418 13.4984 3.37523 13.7779 3.56581C14.0571 3.75635 14.1554 4.11331 14.0299 4.41347L13.9615 4.53847L7.71151 13.7045C7.59411 13.8767 7.4063 13.9877 7.19881 14.0072C6.99136 14.0267 6.78564 13.9533 6.63826 13.806L2.88826 10.056L2.79842 9.9457C2.6192 9.67407 2.64927 9.30496 2.88826 9.06581C3.12738 8.82669 3.49647 8.79676 3.76815 8.97597L3.8785 9.06581L7.03084 12.2182L12.8053 3.74941L12.8961 3.64101Z&#x27;/%3E%3C/svg%3E&quot;);
+
+  /* Legacy aliases; not part of the current agent contract. */
+  --viz-bg: transparent;
+  --viz-panel: var(--card);
+  --viz-border: var(--border);
+  --viz-text: var(--foreground);
+  --viz-muted: var(--muted-foreground);
+  --viz-accent: var(--primary);
+  --viz-accent-text: var(--primary-foreground);
+  --viz-accent-bg: var(--accent);
+  --viz-font-size: var(--font-size-base);
+  --viz-warning: var(--destructive);
+  --color-background-primary: var(--background);
+  --color-text-primary: var(--foreground);
+  --color-border-secondary: var(--border);
+}
+
+:root[data-theme=&quot;light&quot;] {
+  color-scheme: light;
+}
+
+:root[data-theme=&quot;dark&quot;] {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html &gt; body {
+  margin: 0;
+  padding: 5px;
+  color: var(--foreground);
+  background: transparent !important;
+  font-family: var(--font-sans);
+  font-size: var(--font-size-normal);
+  font-weight: var(--font-weight-normal);
+  line-height: var(--line-height-normal);
+}
+
+a {
+  color: color-mix(in srgb, var(--viz-accent) 80%, var(--viz-text) 20%);
+  cursor: pointer;
+  font-weight: var(--viz-font-weight-medium);
+  text-decoration: none;
+  text-underline-offset: 2px;
+}
+
+a:is(:hover, :focus-visible) {
+  text-decoration-line: underline;
+  text-decoration-style: dashed;
+  text-decoration-thickness: 0.5px;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p {
+  margin-block: 0;
+}
+
+h1 {
+  font-size: var(--font-size-h1);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.25;
+}
+
+h2 {
+  font-size: var(--font-size-h2);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.25;
+}
+
+h3,
+h4,
+h5,
+h6 {
+  font-size: var(--font-size-h3);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.3;
+}
+
+b,
+strong,
+th {
+  font-weight: var(--font-weight-medium);
+}
+
+code:not(pre code) {
+  display: inline;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  corner-shape: superellipse(1.5);
+  background: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  overflow-wrap: anywhere;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  word-break: break-word;
+}
+
+#widget {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  padding: 0;
+  background: transparent !important;
+}
+
+.card {
+  min-width: 0;
+  padding: 12px;
+  overflow: hidden;
+  overflow-wrap: break-word;
+  border-radius: var(--radius-2xl);
+  corner-shape: superellipse(1.5);
+  color: var(--card-foreground);
+  background: var(--card);
+}
+
+#widget &gt; :not(.card) {
+  width: 100% !important;
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.tooltip {
+  position: fixed;
+  z-index: 50;
+  top: 0;
+  left: 0;
+  width: max-content;
+  max-width: min(
+    20rem,
+    var(--tooltip-available-width, calc(100vw - 10px)),
+    calc(100vw - 10px)
+  );
+  max-height: min(
+    var(--tooltip-available-height, calc(100vh - 10px)),
+    calc(100vh - 10px)
+  );
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  corner-shape: superellipse(1.5);
+  color: var(--popover-foreground);
+  background: var(--popover);
+  box-shadow: none;
+  font-size: var(--font-size-tooltip);
+  line-height: var(--line-height-tooltip);
+  overflow-wrap: break-word;
+  white-space: normal;
+  pointer-events: none;
+  user-select: none;
+}
+
+.viz-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(max(180px, 24%), 1fr));
+  gap: 10px;
+}
+
+.viz-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.viz-stat-value {
+  font-size: var(--font-size-h2);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.25;
+}
+
+.viz-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.viz-badge {
+  padding: 3px 8px;
+  border-radius: var(--radius-full);
+  color: var(--accent-foreground);
+  background: var(--accent);
+  font-weight: var(--font-weight-medium);
+}
+
+small,
+.text-small,
+.viz-badge {
+  font-size: var(--font-size-small);
+  line-height: var(--line-height-small);
+}
+
+.text-muted {
+  color: var(--muted-foreground);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.viz-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.viz-controls &gt; .form-label {
+  display: grid;
+  min-width: min(100%, 260px);
+  flex: 1 1 280px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 2px 12px;
+  margin-bottom: 0;
+}
+
+.viz-controls &gt; .form-label &gt; :is(.form-control, .form-range, .form-select) {
+  grid-column: 1 / -1;
+}
+
+.btn,
+.form-check-input,
+.form-control,
+.form-range,
+.form-select {
+  font: inherit;
+}
+
+.btn {
+  appearance: button;
+  display: inline-flex;
+  inline-size: fit-content;
+  max-inline-size: 100%;
+  min-height: 28px;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin: 0;
+  padding: 0 8px;
+  -webkit-app-region: no-drag;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-lg);
+  corner-shape: superellipse(1.5);
+  color: var(--secondary-foreground);
+  background: var(--secondary);
+  cursor: var(--cursor-interaction, pointer);
+  text-align: center;
+  text-decoration: none;
+  white-space: nowrap;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+.btn:is(.btn-block, .viz-tile) {
+  inline-size: 100%;
+}
+
+.btn.viz-tile {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+a.btn {
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.btn:not(:disabled):hover {
+  background: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.btn-primary {
+  border-color: transparent;
+  color: var(--primary-foreground);
+  background: var(--foreground);
+  background-clip: padding-box;
+}
+
+.btn-primary .text-muted {
+  color: color-mix(in srgb, var(--primary-foreground) 50%, transparent);
+}
+
+.btn-primary:not(:disabled):hover {
+  background: color-mix(in srgb, var(--foreground) 80%, transparent);
+  background-clip: padding-box;
+}
+
+.btn-ghost {
+  border-color: transparent;
+  color: var(--muted-foreground);
+  background: transparent;
+}
+
+.btn-ghost:not(:disabled):hover {
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+[data-lucide] {
+  stroke-width: 1.6;
+}
+
+.form-label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--foreground);
+}
+
+.form-control {
+  display: block;
+  width: 100%;
+  min-height: 28px;
+  padding: 0 8px;
+  outline: none;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-lg);
+  corner-shape: superellipse(1.5);
+  color: var(--foreground);
+  background: var(--secondary);
+}
+
+.form-control::placeholder {
+  color: var(--muted-foreground);
+}
+
+.form-control[type=&quot;file&quot;] {
+  padding: 0;
+  overflow: hidden;
+  cursor: var(--cursor-interaction, pointer);
+}
+
+.form-control[type=&quot;file&quot;]::file-selector-button {
+  min-height: 26px;
+  margin-right: 8px;
+  padding: 0 8px;
+  border: 0;
+  border-right: 1px solid var(--input);
+  color: var(--secondary-foreground);
+  background: var(--secondary);
+  cursor: inherit;
+  font: inherit;
+}
+
+.form-control[type=&quot;file&quot;]:not(:disabled):hover::file-selector-button {
+  background: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.form-control-color[type=&quot;color&quot;] {
+  width: 40px;
+  height: 28px;
+  padding: 3px;
+  cursor: var(--cursor-interaction, pointer);
+}
+
+.form-control-color[type=&quot;color&quot;]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.form-control-color[type=&quot;color&quot;]::-webkit-color-swatch {
+  border: 0;
+  border-radius: calc(var(--radius-lg) - 4px);
+  corner-shape: superellipse(1.5);
+}
+
+textarea.form-control {
+  height: auto;
+  min-height: 72px;
+  padding: 8px 10px;
+  resize: vertical;
+}
+
+.form-control:focus-visible {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.form-control:disabled,
+.form-select:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.form-select {
+  appearance: none;
+  display: block;
+  width: 100%;
+  min-height: 28px;
+  margin: 0;
+  padding: 0 32px 0 8px;
+  outline: none;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-lg);
+  corner-shape: superellipse(1.5);
+  color: var(--foreground);
+  background-color: var(--secondary);
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--muted-foreground) 50%),
+    linear-gradient(135deg, var(--muted-foreground) 50%, transparent 50%);
+  background-position:
+    calc(100% - 14px) 50%,
+    calc(100% - 10px) 50%;
+  background-repeat: no-repeat;
+  background-size: 4px 4px;
+  cursor: var(--cursor-interaction, default);
+}
+
+.form-select:not(:disabled):hover {
+  background-color: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.form-select:focus-visible {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.form-check {
+  display: flex;
+  min-height: 20px;
+  align-items: center;
+  gap: 6px;
+}
+
+.form-check-input {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  margin: 0;
+  border: 1px solid var(--input);
+  color: var(--primary-foreground);
+  background-color: transparent;
+  cursor: var(--cursor-interaction, default);
+  transition:
+    background-color 150ms,
+    border-color 150ms,
+    box-shadow 150ms;
+}
+
+.form-check:not(.form-switch) .form-check-input[type=&quot;checkbox&quot;] {
+  border-color: var(--input);
+  border-radius: var(--radius-sm);
+  corner-shape: superellipse(1.5);
+  background-color: var(--secondary);
+  box-shadow: var(--shadow-sm);
+}
+
+.form-check:not(.form-switch)
+  .form-check-input:not(:disabled):not(:checked):hover {
+  background-color: var(--card);
+}
+
+.form-check:not(.form-switch) .form-check-input[type=&quot;checkbox&quot;]:checked {
+  border-color: var(--primary);
+  background-color: var(--primary);
+}
+
+.form-check:not(.form-switch)
+  .form-check-input[type=&quot;checkbox&quot;]:checked::before {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--primary-foreground);
+  content: &quot;&quot;;
+  mask: var(--checkmark-image) center / 12px 12px no-repeat;
+}
+
+.form-check-input[type=&quot;radio&quot;] {
+  width: 14px;
+  height: 14px;
+  border-radius: var(--radius-full);
+}
+
+.form-check-input[type=&quot;radio&quot;]:checked {
+  border: 2px solid var(--primary);
+  background:
+    radial-gradient(circle, var(--primary-foreground) 0 2.5px, transparent 3px),
+    var(--primary);
+}
+
+.form-check:not(.form-switch) .form-check-input:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.form-check:not(.form-switch) .form-check-input:disabled {
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.form-check:not(.form-switch) .form-check-input:disabled + .form-check-label {
+  cursor: not-allowed;
+}
+
+.form-switch .form-check-input:disabled,
+.form-switch .form-check-input:disabled + .form-check-label {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.form-check-label {
+  color: var(--foreground);
+  cursor: var(--cursor-interaction, default);
+}
+
+.form-switch .form-check-input {
+  position: relative;
+  width: 32px;
+  height: 20px;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--muted);
+  box-shadow: none;
+  transition: background-color 200ms cubic-bezier(0, 0, 0.2, 1);
+}
+
+.form-switch .form-check-input::before {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 16px;
+  height: 16px;
+  box-sizing: border-box;
+  border: 1px solid light-dark(var(--primary-foreground), var(--foreground));
+  border-radius: var(--radius-full);
+  background: light-dark(var(--primary-foreground), var(--foreground));
+  box-shadow: var(--shadow-sm);
+  content: &quot;&quot;;
+  transform: translate(2px, -50%);
+  transition: transform 200ms cubic-bezier(0, 0, 0.2, 1);
+}
+
+.form-switch .form-check-input:checked {
+  background: var(--primary);
+}
+
+.form-switch .form-check-input:checked::before {
+  transform: translate(14px, -50%);
+}
+
+.form-switch .form-check-input:focus-visible {
+  box-shadow: 0 0 0 2px var(--ring);
+}
+
+.form-range {
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: 28px;
+  flex: 1;
+  margin: 0;
+  padding: 0;
+  outline: none;
+  border: 0;
+  accent-color: var(--primary);
+  background: linear-gradient(
+      color-mix(in srgb, var(--foreground) 7%, transparent),
+      color-mix(in srgb, var(--foreground) 7%, transparent)
+    )
+    center / 100% 2px no-repeat;
+}
+
+.form-range::-webkit-slider-runnable-track {
+  height: 28px;
+  background: transparent;
+}
+
+.form-range::-webkit-slider-thumb {
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  margin-top: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: light-dark(var(--primary-foreground), var(--foreground));
+}
+
+.form-range:focus-visible::-webkit-slider-thumb {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.form-range::-moz-range-track {
+  height: 28px;
+  background: transparent;
+}
+
+.form-range::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: light-dark(var(--primary-foreground), var(--foreground));
+}
+
+.form-range:focus-visible::-moz-range-thumb {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.form-range:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.btn:not(.btn-primary, .viz-tile):is(
+    [aria-pressed=&quot;true&quot;],
+    [aria-selected=&quot;true&quot;],
+    .is-selected
+  ) {
+  border-color: var(--primary);
+  color: var(--primary-foreground);
+  background: var(--primary);
+}
+
+.btn.viz-tile:is([aria-pressed=&quot;true&quot;], [aria-selected=&quot;true&quot;], .is-selected) {
+  border-color: var(--primary);
+  box-shadow: inset 0 0 0 1px var(--primary);
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+#widget &gt; svg {
+  width: 100%;
+}
+
+.text-warning,
+.text-destructive {
+  color: var(--destructive);
+}
+
+html&gt;body{padding:0}&lt;/style&gt;
+&lt;/head&gt;
+&lt;body&gt;
+&lt;div id=&quot;api-framework-visual&quot;&gt;
+  &lt;style&gt;
+    #api-framework-visual {
+      color: var(--foreground);
+      background: transparent;
+    }
+
+    #api-framework-visual .lead {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+
+    #api-framework-visual .lead .card {
+      min-width: 0;
+    }
+
+    #api-framework-visual .lead strong,
+    #api-framework-visual .lead span {
+      display: block;
+    }
+
+    #api-framework-visual .lead span {
+      margin-top: 6px;
+      color: var(--muted-foreground);
+    }
+
+    #api-framework-visual .toc {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin: 0 0 28px;
+    }
+
+    #api-framework-visual .toc .btn {
+      justify-content: flex-start;
+      text-align: left;
+      white-space: normal;
+    }
+
+    #api-framework-visual .flow-section {
+      padding: 24px 0;
+      border-top: 1px solid var(--border);
+    }
+
+    #api-framework-visual .flow-section h2 {
+      margin-bottom: 8px;
+    }
+
+    #api-framework-visual .section-intro {
+      margin: 0 0 18px;
+      color: var(--muted-foreground);
+    }
+
+    #api-framework-visual .mermaid {
+      width: 100%;
+      margin: 14px 0;
+      text-align: center;
+    }
+
+    #api-framework-visual .mermaid svg {
+      display: block;
+      max-width: 100% !important;
+      height: auto !important;
+      margin: 0 auto;
+    }
+
+    #api-framework-visual .notes {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 16px;
+    }
+
+    #api-framework-visual .notes .card {
+      min-width: 0;
+    }
+
+    #api-framework-visual .notes h3 {
+      margin-bottom: 8px;
+    }
+
+    #api-framework-visual ul,
+    #api-framework-visual ol {
+      margin: 0;
+      padding-left: 20px;
+    }
+
+    #api-framework-visual li + li {
+      margin-top: 6px;
+    }
+
+    #api-framework-visual .gap-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    #api-framework-visual .gap-row {
+      display: grid;
+      grid-template-columns: minmax(110px, 0.8fr) minmax(0, 1fr) minmax(0, 1.15fr);
+      gap: 10px;
+      align-items: start;
+      padding: 12px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    #api-framework-visual .gap-row:last-child {
+      border-bottom: 0;
+    }
+
+    #api-framework-visual .gap-row span {
+      color: var(--muted-foreground);
+    }
+
+    #api-framework-visual .tree-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    #api-framework-visual pre {
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    #api-framework-visual .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    #api-framework-visual .legend .viz-badge:nth-child(1) {
+      background: color-mix(in srgb, var(--viz-series-1) 16%, transparent);
+    }
+
+    #api-framework-visual .legend .viz-badge:nth-child(2) {
+      background: color-mix(in srgb, var(--viz-series-2) 16%, transparent);
+    }
+
+    #api-framework-visual .legend .viz-badge:nth-child(3) {
+      background: color-mix(in srgb, var(--viz-series-3) 16%, transparent);
+    }
+
+    @media (max-width: 560px) {
+      #api-framework-visual .lead,
+      #api-framework-visual .toc,
+      #api-framework-visual .notes,
+      #api-framework-visual .tree-grid {
+        grid-template-columns: 1fr;
+      }
+
+      #api-framework-visual .gap-row {
+        grid-template-columns: 1fr;
+      }
+    }
+  &lt;/style&gt;
+
+  &lt;div class=&quot;lead&quot; aria-label=&quot;框架判断摘要&quot;&gt;
+    &lt;div class=&quot;card&quot;&gt;
+      &lt;strong&gt;当前定位&lt;/strong&gt;
+      &lt;span&gt;已可执行的业务型框架&lt;/span&gt;
+    &lt;/div&gt;
+    &lt;div class=&quot;card&quot;&gt;
+      &lt;strong&gt;主要缺口&lt;/strong&gt;
+      &lt;span&gt;接口、数据和步骤尚未配置化&lt;/span&gt;
+    &lt;/div&gt;
+    &lt;div class=&quot;card&quot;&gt;
+      &lt;strong&gt;目标形态&lt;/strong&gt;
+      &lt;span&gt;配置驱动 + 复杂流程插件&lt;/span&gt;
+    &lt;/div&gt;
+  &lt;/div&gt;
+
+  &lt;nav class=&quot;toc&quot; aria-label=&quot;流程图目录&quot;&gt;
+    &lt;button class=&quot;btn&quot; type=&quot;button&quot; data-target=&quot;current-flow&quot;&gt;01 当前框架如何协作&lt;/button&gt;
+    &lt;button class=&quot;btn&quot; type=&quot;button&quot; data-target=&quot;gap-analysis&quot;&gt;02 当前问题与改造方向&lt;/button&gt;
+    &lt;button class=&quot;btn&quot; type=&quot;button&quot; data-target=&quot;target-architecture&quot;&gt;03 目标通用架构&lt;/button&gt;
+    &lt;button class=&quot;btn&quot; type=&quot;button&quot; data-target=&quot;directory-plan&quot;&gt;04 推荐目录与职责&lt;/button&gt;
+    &lt;button class=&quot;btn&quot; type=&quot;button&quot; data-target=&quot;new-api-flow&quot;&gt;05 新增接口与用例&lt;/button&gt;
+    &lt;button class=&quot;btn&quot; type=&quot;button&quot; data-target=&quot;runtime-flow&quot;&gt;06 单条用例执行流程&lt;/button&gt;
+    &lt;button class=&quot;btn&quot; type=&quot;button&quot; data-target=&quot;ci-flow&quot;&gt;07 Jenkins 日常检查&lt;/button&gt;
+  &lt;/nav&gt;
+
+  &lt;section class=&quot;flow-section&quot; id=&quot;current-flow&quot;&gt;
+    &lt;h2&gt;流程 01：当前框架如何协作&lt;/h2&gt;
+    &lt;p class=&quot;section-intro&quot;&gt;当前代码能运行，但主要通过 Python Service 和 Python 测试代码串联，新增接口通常需要继续写代码。&lt;/p&gt;
+    &lt;div class=&quot;mermaid&quot;&gt;
+flowchart TB
+    A[&quot;runtest.py&lt;br/&gt;环境 / suite / marker / 报告参数&quot;] --&gt; B[&quot;Pytest&lt;br/&gt;tests/contract 与 tests/unit&quot;]
+    B --&gt; C[&quot;tests/conftest.py&lt;br/&gt;Settings / GatewayClient / Session fixture&quot;]
+    C --&gt; D[&quot;services/*.py&lt;br/&gt;Identity / Subscription / Search / Media 等&quot;]
+    D --&gt; E[&quot;GatewayClient.invoke&lt;br/&gt;信封 / Session / 超时 / 重试 / 脱敏&quot;]
+    E --&gt; F[&quot;POST /gateway/invoke&quot;]
+    D --&gt; G[&quot;COS PUT Client&lt;br/&gt;预签名上传&quot;]
+    B --&gt; H[&quot;assertions&lt;br/&gt;顶层接收 + 子响应业务断言&quot;]
+    B --&gt; I[&quot;waiters / flows&lt;br/&gt;异步轮询与多接口流程&quot;]
+    B --&gt; J[&quot;Allure / JUnit&quot;]
+    J --&gt; K[&quot;Jenkins + 飞书摘要&quot;]
+    L[&quot;config/env.*.yaml&quot;] --&gt; C
+    M[&quot;framework/data&lt;br/&gt;Loader / Factory / CaseContext&quot;] -. &quot;已有能力，实际用例接入较少&quot; .-&gt; B
+    N[&quot;测试数据多为 Python 内联&quot;] --&gt; B
+    &lt;/div&gt;
+    &lt;div class=&quot;notes&quot;&gt;
+      &lt;div class=&quot;card&quot;&gt;
+        &lt;h3&gt;已经具备&lt;/h3&gt;
+        &lt;ul&gt;
+          &lt;li&gt;统一 Gateway HTTP 入口与安全策略&lt;/li&gt;
+          &lt;li&gt;双层断言、异步等待、脱敏和报告&lt;/li&gt;
+          &lt;li&gt;Identity、Subscription、Search 等业务封装&lt;/li&gt;
+          &lt;li&gt;Pytest、Jenkins、飞书的统一执行链&lt;/li&gt;
+        &lt;/ul&gt;
+      &lt;/div&gt;
+      &lt;div class=&quot;card&quot;&gt;
+        &lt;h3&gt;现在不够通用的地方&lt;/h3&gt;
+        &lt;ul&gt;
+          &lt;li&gt;接口定义散落在各个 Service 方法中&lt;/li&gt;
+          &lt;li&gt;大部分请求数据和期望值写在测试代码里&lt;/li&gt;
+          &lt;li&gt;没有真正落地 &lt;code&gt;data/cases&lt;/code&gt; 用例数据目录&lt;/li&gt;
+          &lt;li&gt;新增普通接口仍要写 Service 方法和测试函数&lt;/li&gt;
+        &lt;/ul&gt;
+      &lt;/div&gt;
+    &lt;/div&gt;
+  &lt;/section&gt;
+
+  &lt;section class=&quot;flow-section&quot; id=&quot;gap-analysis&quot;&gt;
+    &lt;h2&gt;流程 02：当前问题与改造方向&lt;/h2&gt;
+    &lt;p class=&quot;section-intro&quot;&gt;你的判断成立：当前版本更像“针对现有业务用例实现的自动化工程”，还不是“只配接口和数据就能扩展”的通用框架。&lt;/p&gt;
+    &lt;div class=&quot;gap-list&quot; role=&quot;list&quot; aria-label=&quot;现状与目标对照&quot;&gt;
+      &lt;div class=&quot;gap-row&quot; role=&quot;listitem&quot;&gt;
+        &lt;strong&gt;接口管理&lt;/strong&gt;
+        &lt;span&gt;现在：Service 类中硬编码 service_name、method_name 和参数&lt;/span&gt;
+        &lt;div&gt;目标：&lt;code&gt;apis/*.yaml&lt;/code&gt; 统一注册，按接口名称查找和执行&lt;/div&gt;
+      &lt;/div&gt;
+      &lt;div class=&quot;gap-row&quot; role=&quot;listitem&quot;&gt;
+        &lt;strong&gt;接口数据&lt;/strong&gt;
+        &lt;span&gt;现在：参数主要写在测试函数、fixture 或 mock 响应中&lt;/span&gt;
+        &lt;div&gt;目标：&lt;code&gt;data/payloads&lt;/code&gt; 管理请求模板，支持变量引用&lt;/div&gt;
+      &lt;/div&gt;
+      &lt;div class=&quot;gap-row&quot; role=&quot;listitem&quot;&gt;
+        &lt;strong&gt;用例数据&lt;/strong&gt;
+        &lt;span&gt;现在：Loader 已存在，但多数 contract 用例仍是 Python 内联&lt;/span&gt;
+        &lt;div&gt;目标：&lt;code&gt;data/cases&lt;/code&gt; 作为数据唯一入口，Python 只保留行为&lt;/div&gt;
+      &lt;/div&gt;
+      &lt;div class=&quot;gap-row&quot; role=&quot;listitem&quot;&gt;
+        &lt;strong&gt;工具代码&lt;/strong&gt;
+        &lt;span&gt;现在：按 assertions/client/reporting/security 等目录分散&lt;/span&gt;
+        &lt;div&gt;目标：统一聚合到 &lt;code&gt;core&lt;/code&gt;，内部仍按职责分包，避免扁平 utils&lt;/div&gt;
+      &lt;/div&gt;
+      &lt;div class=&quot;gap-row&quot; role=&quot;listitem&quot;&gt;
+        &lt;strong&gt;用例管理&lt;/strong&gt;
+        &lt;span&gt;现在：新增接口通常要新增 Service 方法和 test_*.py&lt;/span&gt;
+        &lt;div&gt;目标：普通接口只新增 API YAML + Case YAML；复杂流程才写 Python 插件&lt;/div&gt;
+      &lt;/div&gt;
+    &lt;/div&gt;
+  &lt;/section&gt;
+
+  &lt;section class=&quot;flow-section&quot; id=&quot;target-architecture&quot;&gt;
+    &lt;h2&gt;流程 03：目标通用架构&lt;/h2&gt;
+    &lt;p class=&quot;section-intro&quot;&gt;采用“双轨制”：80% 普通接口由配置驱动，上传、轮询、条件分支等复杂场景由流程插件扩展。&lt;/p&gt;
+    &lt;div class=&quot;mermaid&quot;&gt;
+flowchart TB
+    U[&quot;测试工程师&quot;] --&gt; API[&quot;接口注册层&lt;br/&gt;apis/*.yaml&quot;]
+    U --&gt; DATA[&quot;统一数据层&lt;br/&gt;data/payloads + data/cases + data/flows&quot;]
+    API --&gt; REG[&quot;ApiRegistry&lt;br/&gt;读取、校验、缓存接口定义&quot;]
+    DATA --&gt; CASE[&quot;CaseLoader&lt;br/&gt;参数化、变量替换、Schema 校验&quot;]
+    REG --&gt; EXE[&quot;ApiExecutor&lt;br/&gt;execute(api_name, data, context)&quot;]
+    CASE --&gt; EXE
+    EXE --&gt; TRANSPORT{&quot;Transport&quot;}
+    TRANSPORT --&gt; GW[&quot;GatewayTransport&quot;]
+    TRANSPORT --&gt; REST[&quot;RestTransport&quot;]
+    TRANSPORT --&gt; COS[&quot;CosPutTransport&quot;]
+    GW --&gt; TOOL[&quot;core 工具层&lt;br/&gt;Session / Log / Redactor / Assertion / Report&quot;]
+    REST --&gt; TOOL
+    COS --&gt; TOOL
+    CASE --&gt; FLOW{&quot;流程复杂度&quot;}
+    FLOW --&gt;|&quot;标准提取与断言&quot;| YAML[&quot;YAML Flow Runner&quot;]
+    FLOW --&gt;|&quot;上传 / 轮询 / 条件分支&quot;| PY[&quot;Python Flow Plugin&quot;]
+    YAML --&gt; EXE
+    PY --&gt; EXE
+    TOOL --&gt; OUT[&quot;Allure + JUnit + Jenkins + 飞书&quot;]
+    &lt;/div&gt;
+    &lt;div class=&quot;legend&quot; aria-label=&quot;架构原则&quot;&gt;
+      &lt;span class=&quot;viz-badge&quot;&gt;配置驱动：普通接口&lt;/span&gt;
+      &lt;span class=&quot;viz-badge&quot;&gt;插件扩展：复杂流程&lt;/span&gt;
+      &lt;span class=&quot;viz-badge&quot;&gt;安全门禁：执行层统一控制&lt;/span&gt;
+    &lt;/div&gt;
+  &lt;/section&gt;
+
+  &lt;section class=&quot;flow-section&quot; id=&quot;directory-plan&quot;&gt;
+    &lt;h2&gt;流程 04：推荐目录与职责&lt;/h2&gt;
+    &lt;p class=&quot;section-intro&quot;&gt;接口、数据、工具和用例各有唯一入口；Jenkinsfile 仍保留在根目录，这是 Jenkins 的标准约定。&lt;/p&gt;
+    &lt;div class=&quot;tree-grid&quot;&gt;
+      &lt;div class=&quot;card&quot;&gt;
+        &lt;h3&gt;目标目录&lt;/h3&gt;
+        &lt;pre&gt;&lt;code&gt;Truthy_ApiAutoTest/
+├── apis/                    # 接口管理
+│   ├── identity.yaml
+│   ├── subscription.yaml
+│   ├── search.yaml
+│   └── media.yaml
+├── data/                    # 所有可变测试数据
+│   ├── environments/
+│   ├── payloads/            # 请求体模板
+│   ├── cases/               # 单接口用例数据
+│   ├── flows/               # 多接口步骤数据
+│   ├── schemas/             # 数据结构校验
+│   └── public_samples/      # 脱敏公开样例
+├── core/                    # 框架工具代码
+│   ├── http/                # Gateway/REST/COS
+│   ├── config/              # 配置加载
+│   ├── logging/             # 日志与脱敏
+│   ├── assertions/          # 通用断言
+│   ├── reporting/           # Allure/JUnit
+│   ├── notification/        # 飞书
+│   └── execution/           # Registry/Executor/Context
+├── flows/                   # 复杂 Python 流程插件
+├── tests/
+│   ├── test_api_cases.py    # 通用单接口驱动
+│   ├── test_flow_cases.py   # 通用流程驱动
+│   ├── contract/
+│   └── unit/
+├── runtest.py               # 唯一执行入口
+└── Jenkinsfile              # CI 标准入口&lt;/code&gt;&lt;/pre&gt;
+      &lt;/div&gt;
+      &lt;div class=&quot;card&quot;&gt;
+        &lt;h3&gt;每层只负责一件事&lt;/h3&gt;
+        &lt;ul&gt;
+          &lt;li&gt;&lt;code&gt;apis&lt;/code&gt;：这个接口怎么请求、需要什么鉴权&lt;/li&gt;
+          &lt;li&gt;&lt;code&gt;data&lt;/code&gt;：本次用什么输入、期望什么结果&lt;/li&gt;
+          &lt;li&gt;&lt;code&gt;core&lt;/code&gt;：怎么安全发送、记录、断言和报告&lt;/li&gt;
+          &lt;li&gt;&lt;code&gt;flows&lt;/code&gt;：多个接口如何传值、轮询和分支&lt;/li&gt;
+          &lt;li&gt;&lt;code&gt;tests&lt;/code&gt;：选择哪些数据集并交给执行器&lt;/li&gt;
+          &lt;li&gt;&lt;code&gt;runtest.py&lt;/code&gt;：决定环境、范围和安全级别&lt;/li&gt;
+          &lt;li&gt;&lt;code&gt;Jenkinsfile&lt;/code&gt;：决定什么时候运行以及是否阻断&lt;/li&gt;
+        &lt;/ul&gt;
+      &lt;/div&gt;
+    &lt;/div&gt;
+  &lt;/section&gt;
+
+  &lt;section class=&quot;flow-section&quot; id=&quot;new-api-flow&quot;&gt;
+    &lt;h2&gt;流程 05：以后新增接口和用例怎么做&lt;/h2&gt;
+    &lt;p class=&quot;section-intro&quot;&gt;普通接口不再要求新增 Service 类；只有框架不能表达的特殊协议或流程才补 Python。&lt;/p&gt;
+    &lt;div class=&quot;mermaid&quot;&gt;
+flowchart TB
+    A[&quot;新增 apis/业务域.yaml&lt;br/&gt;声明名称、transport、path/service、method、auth&quot;] --&gt; B[&quot;新增 data/payloads/请求模板.yaml&quot;]
+    B --&gt; C[&quot;新增 data/cases/业务域/TC-xxx.yaml&lt;br/&gt;输入、期望、marker&quot;]
+    C --&gt; D{&quot;是否为普通单接口?&quot;}
+    D --&gt;|是| E[&quot;test_api_cases.py 自动收集&quot;]
+    D --&gt;|否| F{&quot;能否用 YAML 步骤表达?&quot;}
+    F --&gt;|是| G[&quot;data/flows/*.yaml&lt;br/&gt;call / extract / assert / wait&quot;]
+    F --&gt;|否| H[&quot;flows/*.py&lt;br/&gt;编写上传、轮询或条件插件&quot;]
+    G --&gt; I[&quot;test_flow_cases.py 自动收集&quot;]
+    H --&gt; I
+    E --&gt; J[&quot;runtest.py --suite contract/smoke/regression&quot;]
+    I --&gt; J
+    J --&gt; K[&quot;Allure / JUnit / Jenkins / 飞书&quot;]
+    &lt;/div&gt;
+    &lt;div class=&quot;notes&quot;&gt;
+      &lt;div class=&quot;card&quot;&gt;
+        &lt;h3&gt;普通新增&lt;/h3&gt;
+        &lt;ol&gt;
+          &lt;li&gt;注册接口 YAML&lt;/li&gt;
+          &lt;li&gt;准备请求模板&lt;/li&gt;
+          &lt;li&gt;增加 Case YAML&lt;/li&gt;
+          &lt;li&gt;运行统一测试入口&lt;/li&gt;
+        &lt;/ol&gt;
+      &lt;/div&gt;
+      &lt;div class=&quot;card&quot;&gt;
+        &lt;h3&gt;需要写 Python 的情况&lt;/h3&gt;
+        &lt;ul&gt;
+          &lt;li&gt;COS 二进制上传&lt;/li&gt;
+          &lt;li&gt;异步任务轮询与非法状态倒退&lt;/li&gt;
+          &lt;li&gt;复杂条件分支和跨域一致性校验&lt;/li&gt;
+          &lt;li&gt;外部夹具、数据库只读核验等适配器&lt;/li&gt;
+        &lt;/ul&gt;
+      &lt;/div&gt;
+    &lt;/div&gt;
+  &lt;/section&gt;
+
+  &lt;section class=&quot;flow-section&quot; id=&quot;runtime-flow&quot;&gt;
+    &lt;h2&gt;流程 06：单条配置化用例执行流程&lt;/h2&gt;
+    &lt;p class=&quot;section-intro&quot;&gt;用例只引用接口名称，不直接拼 URL、信封、请求头或报告附件。&lt;/p&gt;
+    &lt;div class=&quot;mermaid&quot;&gt;
+sequenceDiagram
+    participant T as 通用 Pytest Driver
+    participant C as CaseLoader
+    participant R as ApiRegistry
+    participant E as ApiExecutor
+    participant H as HTTP Transport
+    participant A as Assertion/Report
+    T-&gt;&gt;C: 读取 TC-xxx.yaml
+    C--&gt;&gt;T: 输入、期望、marker、变量引用
+    T-&gt;&gt;R: get(identity.create_anonymous_session)
+    R--&gt;&gt;T: 接口定义与安全级别
+    T-&gt;&gt;E: execute(api, case_data, CaseContext)
+    E-&gt;&gt;E: 模板渲染 + 鉴权 + 幂等 ID
+    E-&gt;&gt;H: Gateway / REST / COS 请求
+    H--&gt;&gt;E: 标准化 Response
+    E-&gt;&gt;A: 双层断言 + Schema + 脱敏附件
+    A--&gt;&gt;T: 用例结果与提取变量
+    T-&gt;&gt;C: 将动态值写入内存 Context
+    Note over T,C: token、task_id 等不回写 YAML，也不跨用例共享
+    &lt;/div&gt;
+  &lt;/section&gt;
+
+  &lt;section class=&quot;flow-section&quot; id=&quot;ci-flow&quot;&gt;
+    &lt;h2&gt;流程 07：Jenkins 日常接口检查&lt;/h2&gt;
+    &lt;p class=&quot;section-intro&quot;&gt;CI 仍只调用 runtest.py；不同任务选择不同数据集和安全级别，不复制测试命令。&lt;/p&gt;
+    &lt;div class=&quot;mermaid&quot;&gt;
+flowchart TB
+    A{&quot;Jenkins 触发类型&quot;} --&gt;|&quot;合并请求&quot;| B[&quot;contract + p0&lt;br/&gt;离线、非写、失败阻断&quot;]
+    A --&gt;|&quot;工作日定时&quot;| C[&quot;smoke + p0 + live_safe&lt;br/&gt;只读接口健康检查&quot;]
+    A --&gt;|&quot;发布回归&quot;| D[&quot;regression&lt;br/&gt;P0 阻断，P1 人工确认&quot;]
+    A --&gt;|&quot;手工专项&quot;| E[&quot;payment_sandbox / compatibility&lt;br/&gt;仍不执行真实支付&quot;]
+    B --&gt; F[&quot;runtest.py&quot;]
+    C --&gt; F
+    D --&gt; F
+    E --&gt; F
+    F --&gt; G[&quot;加载环境 + API 定义 + Case/Flow 数据&quot;]
+    G --&gt; H[&quot;执行并生成 JUnit / Allure&quot;]
+    H --&gt; I{&quot;结果&quot;}
+    I --&gt;|通过| J[&quot;归档报告与趋势&quot;]
+    I --&gt;|失败| K[&quot;飞书脱敏摘要&lt;br/&gt;case ID + trace ID&quot;]
+    &lt;/div&gt;
+  &lt;/section&gt;
+
+  &lt;script src=&quot;https://cdn.jsdelivr.net/npm/mermaid@10.9.3/dist/mermaid.min.js&quot;&gt;&lt;/script&gt;
+  &lt;script&gt;
+    (() =&gt; {
+      const root = document.getElementById(&#x27;api-framework-visual&#x27;);
+      root.querySelectorAll(&#x27;[data-target]&#x27;).forEach((button) =&gt; {
+        button.addEventListener(&#x27;click&#x27;, () =&gt; {
+          const target = document.getElementById(button.dataset.target);
+          if (target) target.scrollIntoView({ behavior: &#x27;smooth&#x27;, block: &#x27;start&#x27; });
+        });
+      });
+
+      const resolvedColor = (name, fallback) =&gt; {
+        const probe = document.createElement(&#x27;span&#x27;);
+        probe.style.color = `var(${name})`;
+        probe.style.position = &#x27;absolute&#x27;;
+        probe.style.visibility = &#x27;hidden&#x27;;
+        root.appendChild(probe);
+        const color = getComputedStyle(probe).color;
+        probe.remove();
+        if (!color) return fallback;
+        const canvas = document.createElement(&#x27;canvas&#x27;);
+        canvas.width = 1;
+        canvas.height = 1;
+        const context = canvas.getContext(&#x27;2d&#x27;);
+        if (!context) return fallback;
+        context.clearRect(0, 0, 1, 1);
+        context.fillStyle = color;
+        context.fillRect(0, 0, 1, 1);
+        const [red, green, blue, alpha] = context.getImageData(0, 0, 1, 1).data;
+        if (alpha &lt; 255) return `rgba(${red}, ${green}, ${blue}, ${(alpha / 255).toFixed(3)})`;
+        return `rgb(${red}, ${green}, ${blue})`;
+      };
+      mermaid.initialize({
+        startOnLoad: true,
+        securityLevel: &#x27;strict&#x27;,
+        theme: &#x27;base&#x27;,
+        flowchart: { useMaxWidth: true, htmlLabels: true, curve: &#x27;basis&#x27; },
+        sequence: { useMaxWidth: true, wrap: true },
+        themeVariables: {
+          background: resolvedColor(&#x27;--background&#x27;, &#x27;#ffffff&#x27;),
+          primaryColor: resolvedColor(&#x27;--card&#x27;, &#x27;#f6f6f6&#x27;),
+          primaryTextColor: resolvedColor(&#x27;--card-foreground&#x27;, &#x27;#202020&#x27;),
+          primaryBorderColor: resolvedColor(&#x27;--border&#x27;, &#x27;#a0a0a0&#x27;),
+          lineColor: resolvedColor(&#x27;--muted-foreground&#x27;, &#x27;#666666&#x27;),
+          secondaryColor: resolvedColor(&#x27;--muted&#x27;, &#x27;#eeeeee&#x27;),
+          tertiaryColor: resolvedColor(&#x27;--background&#x27;, &#x27;#ffffff&#x27;),
+          clusterBkg: resolvedColor(&#x27;--card&#x27;, &#x27;#f6f6f6&#x27;),
+          clusterBorder: resolvedColor(&#x27;--border&#x27;, &#x27;#a0a0a0&#x27;),
+          noteBkgColor: resolvedColor(&#x27;--muted&#x27;, &#x27;#eeeeee&#x27;),
+          noteTextColor: resolvedColor(&#x27;--foreground&#x27;, &#x27;#202020&#x27;),
+          fontFamily: &#x27;system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif&#x27;
+        }
+      });
+    })();
+  &lt;/script&gt;
+&lt;/div&gt;
+
+&lt;script src=&quot;https://unpkg.com/@floating-ui/core@1.7.3/dist/floating-ui.core.umd.min.js&quot;&gt;&lt;/script&gt;
+&lt;script src=&quot;https://unpkg.com/@floating-ui/dom@1.7.4/dist/floating-ui.dom.umd.min.js&quot;&gt;&lt;/script&gt;
+&lt;script&gt;
+(() =&gt; {
+  if (window.FloatingUIDOM == null) {
+    return;
+  }
+  const { autoUpdate, computePosition, flip, offset, shift, size } =
+    window.FloatingUIDOM;
+  const tooltipPlacements = new Set([&quot;top&quot;, &quot;right&quot;, &quot;bottom&quot;, &quot;left&quot;]);
+  const tooltipId = `codex-visualization-tooltip-${
+    window.crypto?.randomUUID?.() ?? Date.now().toString(36)
+  }`;
+  const tooltipGap = 5;
+  const hoverDelay = 700;
+  const skipDelay = 300;
+  let activeTrigger = null;
+  let pendingTrigger = null;
+  let tooltip = null;
+  let openTimeout = null;
+  let autoUpdateCleanup = null;
+  let positionRequest = 0;
+  let skipDelayUntil = 0;
+
+  const getTrigger = (target) =&gt;
+    target?.nodeType === Node.ELEMENT_NODE
+      ? target.closest(&quot;[data-tooltip]&quot;)
+      : null;
+  const containsTarget = (trigger, target) =&gt;
+    target?.nodeType != null &amp;&amp; trigger.contains(target);
+  const getContent = (trigger) =&gt;
+    trigger.getAttribute(&quot;data-tooltip&quot;)?.trim() ?? &quot;&quot;;
+  const getPlacement = (trigger) =&gt; {
+    const placement = trigger.getAttribute(&quot;data-tooltip-placement&quot;);
+    return tooltipPlacements.has(placement) ? placement : &quot;top&quot;;
+  };
+  const getTooltip = () =&gt; {
+    if (tooltip == null) {
+      tooltip = document.createElement(&quot;div&quot;);
+      tooltip.id = tooltipId;
+      tooltip.className = &quot;tooltip&quot;;
+      tooltip.setAttribute(&quot;role&quot;, &quot;tooltip&quot;);
+    }
+    return tooltip;
+  };
+  const setDescribedBy = (trigger, described) =&gt; {
+    const ids = new Set(
+      (trigger.getAttribute(&quot;aria-describedby&quot;) ?? &quot;&quot;)
+        .split(/\s+/)
+        .filter(Boolean),
+    );
+    if (described) {
+      ids.add(tooltipId);
+    } else {
+      ids.delete(tooltipId);
+    }
+    if (ids.size === 0) {
+      trigger.removeAttribute(&quot;aria-describedby&quot;);
+    } else {
+      trigger.setAttribute(&quot;aria-describedby&quot;, [...ids].join(&quot; &quot;));
+    }
+  };
+  const clearOpenTimeout = () =&gt; {
+    if (openTimeout != null) {
+      window.clearTimeout(openTimeout);
+      openTimeout = null;
+    }
+    pendingTrigger = null;
+  };
+  const closeTooltip = (activateSkipDelay = true) =&gt; {
+    clearOpenTimeout();
+    positionRequest += 1;
+    autoUpdateCleanup?.();
+    autoUpdateCleanup = null;
+    if (activeTrigger == null) {
+      return;
+    }
+    setDescribedBy(activeTrigger, false);
+    activeTrigger = null;
+    tooltip?.remove();
+    if (activateSkipDelay) {
+      skipDelayUntil = Date.now() + skipDelay;
+    }
+  };
+  const updatePosition = (trigger, floating) =&gt; {
+    const request = ++positionRequest;
+    void computePosition(trigger, floating, {
+      middleware: [
+        offset(tooltipGap),
+        flip({ padding: tooltipGap }),
+        shift({ padding: tooltipGap }),
+        size({
+          padding: tooltipGap,
+          apply({ availableHeight, availableWidth, elements }) {
+            elements.floating.style.setProperty(
+              &quot;--tooltip-available-width&quot;,
+              `${Math.max(0, availableWidth)}px`,
+            );
+            elements.floating.style.setProperty(
+              &quot;--tooltip-available-height&quot;,
+              `${Math.max(0, availableHeight)}px`,
+            );
+          },
+        }),
+      ],
+      placement: getPlacement(trigger),
+      strategy: &quot;fixed&quot;,
+    })
+      .then(({ x, y }) =&gt; {
+        if (activeTrigger !== trigger || request !== positionRequest) {
+          return;
+        }
+        const scale = window.devicePixelRatio || 1;
+        floating.style.transform = `translate(${Math.round(x * scale) / scale}px, ${Math.round(y * scale) / scale}px)`;
+        floating.style.visibility = &quot;visible&quot;;
+      })
+      .catch(() =&gt; {
+        if (activeTrigger === trigger &amp;&amp; request === positionRequest) {
+          closeTooltip(false);
+        }
+      });
+  };
+  const openTooltip = (trigger) =&gt; {
+    const content = getContent(trigger);
+    if (!trigger.isConnected || content.length === 0) {
+      return;
+    }
+    clearOpenTimeout();
+    if (activeTrigger === trigger) {
+      return;
+    }
+    closeTooltip();
+    const floating = getTooltip();
+    floating.textContent = content;
+    floating.style.visibility = &quot;hidden&quot;;
+    floating.style.transform = &quot;translate(0, 0)&quot;;
+    document.body.appendChild(floating);
+    activeTrigger = trigger;
+    setDescribedBy(trigger, true);
+    autoUpdateCleanup = autoUpdate(trigger, floating, () =&gt; {
+      updatePosition(trigger, floating);
+    });
+  };
+  const requestOpen = (trigger, immediate = false) =&gt; {
+    if (
+      getContent(trigger).length === 0 ||
+      activeTrigger === trigger ||
+      pendingTrigger === trigger
+    ) {
+      return;
+    }
+    clearOpenTimeout();
+    pendingTrigger = trigger;
+    const delay =
+      immediate || activeTrigger != null || Date.now() &lt; skipDelayUntil
+        ? 0
+        : hoverDelay;
+    if (delay === 0) {
+      openTooltip(trigger);
+      return;
+    }
+    openTimeout = window.setTimeout(() =&gt; {
+      openTimeout = null;
+      pendingTrigger = null;
+      openTooltip(trigger);
+    }, delay);
+  };
+  const handlePointerOpen = (event) =&gt; {
+    if (event.pointerType === &quot;touch&quot;) {
+      return;
+    }
+    const trigger = getTrigger(event.target);
+    if (trigger == null || containsTarget(trigger, event.relatedTarget)) {
+      return;
+    }
+    requestOpen(trigger);
+  };
+  const handleLeave = (event) =&gt; {
+    const trigger = getTrigger(event.target);
+    if (trigger == null || containsTarget(trigger, event.relatedTarget)) {
+      return;
+    }
+    if (activeTrigger === trigger || pendingTrigger === trigger) {
+      closeTooltip();
+    }
+  };
+  const handleFocusIn = (event) =&gt; {
+    const trigger = getTrigger(event.target);
+    if (trigger?.matches(&quot;:focus-visible&quot;)) {
+      requestOpen(trigger, true);
+    }
+  };
+  const handleKeyDown = (event) =&gt; {
+    if (event.key === &quot;Escape&quot;) {
+      closeTooltip();
+    }
+  };
+  const handleContextMenu = (event) =&gt; {
+    const trigger = getTrigger(event.target);
+    if (activeTrigger === trigger || pendingTrigger === trigger) {
+      closeTooltip();
+    }
+  };
+  const destroy = () =&gt; {
+    closeTooltip(false);
+    document.removeEventListener(&quot;pointerover&quot;, handlePointerOpen);
+    document.removeEventListener(&quot;pointerout&quot;, handleLeave);
+    document.removeEventListener(&quot;focusin&quot;, handleFocusIn);
+    document.removeEventListener(&quot;focusout&quot;, handleLeave);
+    document.removeEventListener(&quot;keydown&quot;, handleKeyDown);
+    document.removeEventListener(&quot;contextmenu&quot;, handleContextMenu);
+    tooltip = null;
+  };
+
+  document.addEventListener(&quot;pointerover&quot;, handlePointerOpen);
+  document.addEventListener(&quot;pointerout&quot;, handleLeave);
+  document.addEventListener(&quot;focusin&quot;, handleFocusIn);
+  document.addEventListener(&quot;focusout&quot;, handleLeave);
+  document.addEventListener(&quot;keydown&quot;, handleKeyDown);
+  document.addEventListener(&quot;contextmenu&quot;, handleContextMenu);
+  window.addEventListener(&quot;pagehide&quot;, destroy, { once: true });
+})();
+&lt;/script&gt;
+&lt;script id=&quot;codex-visualization-lucide&quot; async src=&quot;https://unpkg.com/lucide@1.17.0/dist/umd/lucide.js&quot;&gt;&lt;/script&gt;
+&lt;script&gt;
+(() =&gt; {
+  const initialize = () =&gt; {
+    globalThis.lucide?.createIcons({ attrs: { width: 16, height: 16 } });
+  };
+  if (globalThis.lucide != null) {
+    initialize();
+    return;
+  }
+  document
+    .getElementById(&quot;codex-visualization-lucide&quot;)
+    ?.addEventListener(&quot;load&quot;, initialize, { once: true });
+})();
+&lt;/script&gt;
+
+&lt;/body&gt;
+&lt;/html&gt;
+"></iframe>
+</body>
+</html>

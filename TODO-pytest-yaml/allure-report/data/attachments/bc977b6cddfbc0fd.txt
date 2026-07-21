@@ -1,0 +1,18 @@
+[35mDEBUG   [0m Log:log.py:164 -------------------------------------------------------------------------------------------
+[35mDEBUG   [0m Log:log.py:164 请求信息:
+[35mDEBUG   [0m Log:log.py:164 ---request_url:---http://shop-xo.hctestedu.com/index.php?s=/api/goods/detail
+[35mDEBUG   [0m Log:log.py:164 ---request_headers:---{'User-Agent': 'python-requests/2.27.1', 'Accept-Encoding': 'gzip, deflate, br', 'Accept': '*/*', 'Connection': 'keep-alive', 'application': 'web', 'application_client_type': 'PC', 'Content-Length': '23', 'Content-Type': 'application/json'}
+[35mDEBUG   [0m Log:log.py:164 ---request_body:---b'{"goods_id": "9999999"}'
+[35mDEBUG   [0m Log:log.py:164 ---request_cookies:---<RequestsCookieJar[<Cookie PHPSESSID=fc4lqipguj36uoidhmljf212cl for shop-xo.hctestedu.com/>]>
+[35mDEBUG   [0m Log:log.py:164 ---request_method:---POST
+[35mDEBUG   [0m Log:log.py:164 ---request_data:---{'goods_id': '9999999'}
+[35mDEBUG   [0m Log:log.py:164 响应信息:
+[35mDEBUG   [0m Log:log.py:164 ---response_code:---200
+[35mDEBUG   [0m Log:log.py:164 ---response_headers:---{'Server': 'nginx', 'Date': 'Mon, 23 Mar 2026 06:46:11 GMT', 'Content-Type': 'application/json; charset=utf-8', 'Transfer-Encoding': 'chunked', 'Connection': 'keep-alive', 'Vary': 'Accept-Encoding', 'Set-Cookie': 'PHPSESSID=fc4lqipguj36uoidhmljf212cl; path=/; HttpOnly', 'Expires': 'Thu, 19 Nov 1981 08:52:00 GMT', 'Cache-Control': 'no-store, no-cache, must-revalidate', 'Pragma': 'no-cache', 'Content-Encoding': 'gzip'}
+[35mDEBUG   [0m Log:log.py:164 ---response_body:---{"msg":"商品不存在或已删除","code":-1,"data":""}
+[35mDEBUG   [0m Log:log.py:164 -------------------------------------------------------------------------------------------
+[32mINFO    [0m Log:log.py:159 [AssertManager INIT] soft=True
+[32mINFO    [0m Log:log.py:159 [SoftAssert 通过] -1 == -1
+[32mINFO    [0m Log:log.py:159 [SoftAssert 通过] 商品不存在或已删除 == 商品不存在或已删除
+[32mINFO    [0m Log:log.py:159 [AssertManager] assert_all triggered
+[32mINFO    [0m Log:log.py:159 [SoftAssert] ------全部断言通过------

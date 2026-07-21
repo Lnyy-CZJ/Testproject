@@ -1,0 +1,7 @@
+# 不向 Docker 构建上下文传递本机依赖与构建产物。
+node_modules
+dist
+.vite
+.env
+.env.*
+npm-debug.log*

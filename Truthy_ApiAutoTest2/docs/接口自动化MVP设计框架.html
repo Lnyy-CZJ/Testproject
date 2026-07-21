@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Gateway 接口自动化 MVP｜设计框架</title>
+  <style>
+    :root { --ink:#172033; --muted:#667085; --line:#dce3ef; --bg:#f6f8fc; --brand:#315efb; --soft:#eef3ff; --green:#087b52; }
+    * { box-sizing:border-box; }
+    body { margin:0; color:var(--ink); background:var(--bg); font:15px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; }
+    main { max-width:1120px; margin:0 auto; padding:42px 24px 64px; }
+    header { padding:0 0 22px; border-bottom:1px solid var(--line); }
+    h1 { margin:0 0 8px; font-size:30px; letter-spacing:-.5px; }
+    h2 { font-size:20px; margin:34px 0 14px; }
+    h3 { font-size:16px; margin:0 0 7px; }
+    p { margin:6px 0; } .muted { color:var(--muted); } .tag { display:inline-block; padding:2px 9px; border-radius:99px; color:#2148c8; background:var(--soft); font-size:12px; font-weight:650; }
+    .card, .code { background:#fff; border:1px solid var(--line); border-radius:12px; }
+    .card { padding:18px; } .grid { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+    .grid .card { min-height:130px; } ul { margin:7px 0 0; padding-left:20px; } li { margin:3px 0; }
+    .flow { display:flex; flex-direction:column; align-items:center; gap:0; padding:10px 0; }
+    .node { width:min(700px,100%); background:#fff; border:1px solid var(--line); border-radius:10px; padding:13px 17px; text-align:center; }
+    .node strong { display:block; } .node small { color:var(--muted); } .arrow { height:30px; width:2px; position:relative; background:#9cadc8; }
+    .arrow::after { content:""; position:absolute; bottom:-1px; left:-4px; width:8px; height:8px; border-right:2px solid #9cadc8; border-bottom:2px solid #9cadc8; transform:rotate(45deg); }
+    .tree { padding:18px 20px; white-space:pre; overflow:auto; font:13px/1.65 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+    .code { padding:15px 17px; overflow:auto; white-space:pre-wrap; font:13px/1.6 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+    table { width:100%; border-collapse:collapse; background:#fff; border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+    th,td { padding:11px 13px; vertical-align:top; text-align:left; border-bottom:1px solid var(--line); } tr:last-child td { border-bottom:0; } th { background:#fafbfe; font-size:13px; }
+    code { padding:1px 5px; border-radius:4px; background:#f0f3f8; font-size:.9em; } .ok { color:var(--green); font-weight:650; }
+    @media(max-width:760px) { main { padding:28px 16px 48px; } .grid { grid-template-columns:1fr; } h1 { font-size:25px; } }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <span class="tag">设计稿 · 待 Review</span>
+    <h1>Gateway 接口自动化 MVP｜设计框架</h1>
+    <p class="muted">技术栈：Python + pytest + requests + PyYAML。目标是以最少代码跑通单一 Gateway 接口，并为后续流程编排、报告和 CI 预留位置。</p>
+  </header>
+
+  <h2>1. 设计原则与 MVP 边界</h2>
+  <div class="grid">
+    <section class="card"><h3>配置驱动</h3><p>接口参数和断言在 YAML；代码只负责加载、请求和校验。</p></section>
+    <section class="card"><h3>分层独立</h3><p>数据按全局、接口、场景、断言拆分；测试用例只做组合。</p></section>
+    <section class="card"><h3>最小可运行</h3><p>本期只支持单接口、单子请求 <code>requests[0]</code>，不引入 Flow、插件或 Allure。</p></section>
+  </div>
+
+  <h2>2. 推荐目录</h2>
+  <div class="card tree">.
+├── config/
+│   ├── settings.yaml                 # 非敏感默认配置：超时、comm 默认字段
+│   └── env/
+│       ├── test.yaml                 # test 环境：gateway_base_url 等
+│       └── dev.yaml                  # 后续环境可按此扩展
+├── data/
+│   ├── global/                       # 全局数据（当前仅预留）
+│   ├── api/                          # 接口级数据：URL、方法、请求头
+│   │   └── gateway_invoke.yaml
+│   ├── cases/                        # 单接口用例数据
+│   │   └── get_me.yaml
+│   ├── flows/                        # 多接口流程数据（本期预留）
+│   ├── scenarios/                    # 场景业务数据（本期预留）
+│   └── assertions/                   # 可复用断言数据（本期预留）
+├── api/
+│   └── gateway_api.py                # Gateway 请求体构造与调用入口
+├── utils/
+│   ├── custom/                       # 自定义工具
+│   │   ├── config_loader.py           # 合并默认配置与指定环境配置
+│   │   ├── http_client.py             # requests Session、超时、脱敏日志
+│   │   ├── assertions.py              # HTTP / Gateway / 子响应断言
+│   │   └── logger.py                  # 日志初始化
+│   └── third_party/                   # 第三方集成（本期预留，不放实现）
+├── test_cases/
+│   ├── conftest.py                   # pytest fixture：加载 --env 配置
+│   └── test_single_api.py             # 加载 data/cases 下的单接口 YAML 并执行
+├── reports/                           # pytest 输出与未来 Allure 报告目录
+├── runtest.py                         # 唯一执行入口
+├── requirements.txt
+├── .env.example                       # AUTH_TOKEN / USER_ID / DEVICE_ID 示例
+└── README.md</div>
+
+  <h2>3. 执行主流程</h2>
+  <div class="card flow">
+    <div class="node"><strong>runtest.py</strong><small>解析 <code>--env</code>、<code>--module</code>、<code>--tag</code>，拼装 pytest 参数</small></div><div class="arrow"></div>
+    <div class="node"><strong>pytest / conftest.py</strong><small>加载 config/settings.yaml + config/env/{env}.yaml，并读取环境变量凭证</small></div><div class="arrow"></div>
+    <div class="node"><strong>test_cases/test_single_api.py</strong><small>加载目标 case YAML，取得 request 与 assert 配置</small></div><div class="arrow"></div>
+    <div class="node"><strong>api/gateway_api.py</strong><small>合成 comm + 单元素 requests，调用 POST /gateway/invoke</small></div><div class="arrow"></div>
+    <div class="node"><strong>utils/custom/assertions.py</strong><small>按 YAML 校验 HTTP、顶层 Gateway、responses[req_0] 与业务字段</small></div><div class="arrow"></div>
+    <div class="node"><strong>终端 + reports/</strong><small>输出 pytest 结果；失败时记录脱敏请求和完整响应</small></div>
+  </div>
+
+  <h2>4. 数据职责与引用关系</h2>
+  <table><thead><tr><th>层级</th><th>保存内容</th><th>是否本期实现</th></tr></thead><tbody>
+    <tr><td><code>config</code></td><td>执行行为、默认 <code>comm</code>、按环境变化的 Gateway 地址</td><td class="ok">是</td></tr>
+    <tr><td><code>data/api</code></td><td>固定 HTTP 方法、路径、请求头；不放真实地址和 token</td><td class="ok">是</td></tr>
+    <tr><td><code>data/cases</code></td><td>接口路由、<code>params</code>、用例名称、断言组合</td><td class="ok">是</td></tr>
+    <tr><td><code>data/global / scenarios / assertions</code></td><td>未来共享变量、业务流入参、可复用断言片段</td><td>仅建目录</td></tr>
+    <tr><td><code>data/flows</code></td><td>多接口依赖、变量提取、等待与编排</td><td>仅建目录</td></tr>
+  </tbody></table>
+
+  <h2>5. 最小数据样例</h2>
+  <p><code>config/env/test.yaml</code></p>
+  <pre class="code">gateway_base_url: http://gateway.spark-jam.top
+timeout: 15
+comm:
+  platform: ios
+  app_version: 1.0.3
+  locale: zh-Hans-CN
+  country: CN
+  timezone: UTC+08:00</pre>
+  <p><code>data/api/gateway_invoke.yaml</code></p>
+  <pre class="code">method: POST
+path: /gateway/invoke
+headers:
+  Content-Type: application/json</pre>
+  <p><code>data/cases/get_me.yaml</code></p>
+  <pre class="code">name: 获取当前用户
+tags: [smoke, identity]
+request:
+  service_name: tool.identity.IdentityService
+  method_name: GetMe
+  params: {}
+assert:
+  http_status: 200
+  gateway: { code: 0, message: ok }
+  response: { id: req_0, success: true, code: 0, message: ok }
+  data_fields: [user_id]</pre>
+
+  <h2>6. 代码职责</h2>
+  <table><thead><tr><th>文件</th><th>仅负责</th></tr></thead><tbody>
+    <tr><td><code>runtest.py</code></td><td>把用户参数转换为 pytest 参数；不写业务请求逻辑。</td></tr>
+    <tr><td><code>config_loader.py</code></td><td>读取 YAML、按 <code>--env</code> 合并配置、读取敏感环境变量并校验必填项。</td></tr>
+    <tr><td><code>gateway_api.py</code></td><td>生成 <code>client_request_id</code>，构造 <code>comm + requests</code>，调用 HTTP 客户端。</td></tr>
+    <tr><td><code>http_client.py</code></td><td>统一 Session、超时和失败日志；日志掩码 <code>auth_token</code>。</td></tr>
+    <tr><td><code>assertions.py</code></td><td>定位 <code>id=req_0</code> 子响应并做通用断言；不耦合具体业务字段。</td></tr>
+    <tr><td><code>test_single_api.py</code></td><td>参数化发现 YAML、组装各层数据并调用 API/断言。</td></tr>
+  </tbody></table>
+
+  <h2>7. 统一执行入口</h2>
+  <pre class="code"># 执行 test 环境全部用例
+python runtest.py --env test
+
+# 按模块（目录/文件关键字）筛选
+python runtest.py --env test --module single_api
+
+# 按 YAML tags 映射为 pytest marker 后筛选
+python runtest.py --env test --tag smoke
+
+# 透传额外 pytest 参数
+python runtest.py --env test --tag smoke -- -x -vv</pre>
+  <p>初期只需要实现 <code>--env</code>；<code>--module</code> 与 <code>--tag</code> 可先完成参数约定和基础筛选，不必引入复杂标签系统。环境变量由 shell 或本地未提交的 <code>.env</code> 注入：</p>
+  <pre class="code">export AUTH_TOKEN='***'
+export USER_ID='user_xxx'
+export DEVICE_ID='device_xxx'
+python runtest.py --env test</pre>
+
+  <h2>8. MVP 验收与后续扩展</h2>
+  <div class="grid">
+    <section class="card"><h3>本期验收</h3><ul><li>一条 <code>GetMe</code> YAML 可运行。</li><li>更换 YAML 路由/参数无需改框架。</li><li>失败信息能定位 HTTP、顶层或子响应断言。</li><li>真实 token 不进入仓库或普通日志。</li></ul></section>
+    <section class="card"><h3>下期优先</h3><ul><li>多单接口 YAML 与环境矩阵。</li><li>公共断言和全局测试数据复用。</li><li>变量提取与顺序 Flow。</li></ul></section>
+    <section class="card"><h3>保留扩展点</h3><ul><li><code>reports/</code> 接入 Allure。</li><li><code>utils/third_party/</code> 接入 Jenkins、飞书。</li><li><code>data/flows</code> 承载复杂场景。</li></ul></section>
+  </div>
+</main>
+</body>
+</html>

@@ -1,0 +1,18 @@
+[35mDEBUG   [0m Log:log.py:164 -------------------------------------------------------------------------------------------
+[35mDEBUG   [0m Log:log.py:164 请求信息:
+[35mDEBUG   [0m Log:log.py:164 ---request_url:---http://shop-xo.hctestedu.com/index.php?s=/api/user/login
+[35mDEBUG   [0m Log:log.py:164 ---request_headers:---{'User-Agent': 'python-requests/2.27.1', 'Accept-Encoding': 'gzip, deflate, br', 'Accept': '*/*', 'Connection': 'keep-alive', 'application': 'web', 'application_client_type': 'PC', 'Content-Length': '65', 'Content-Type': 'application/json'}
+[35mDEBUG   [0m Log:log.py:164 ---request_body:---b'{"type": "username", "accounts": "czj111\\u6211", "pwd": "czj111"}'
+[35mDEBUG   [0m Log:log.py:164 ---request_cookies:---<RequestsCookieJar[<Cookie PHPSESSID=4lnm3iu3e33neaoa9i78aohv83 for shop-xo.hctestedu.com/>]>
+[35mDEBUG   [0m Log:log.py:164 ---request_method:---POST
+[35mDEBUG   [0m Log:log.py:164 ---request_data:---{'type': 'username', 'accounts': 'czj111我', 'pwd': 'czj111'}
+[35mDEBUG   [0m Log:log.py:164 响应信息:
+[35mDEBUG   [0m Log:log.py:164 ---response_code:---200
+[35mDEBUG   [0m Log:log.py:164 ---response_headers:---{'Connection': 'close', 'Transfer-Encoding': 'chunked', 'Cache-Control': 'no-store, no-cache, must-revalidate', 'Content-Encoding': 'gzip', 'Content-Type': 'application/json; charset=utf-8', 'Date': 'Tue, 28 Apr 2026 03:35:36 GMT', 'Expires': 'Thu, 19 Nov 1981 08:52:00 GMT', 'Pragma': 'no-cache', 'Server': 'nginx', 'Set-Cookie': 'PHPSESSID=4lnm3iu3e33neaoa9i78aohv83; path=/; HttpOnly', 'Vary': 'Accept-Encoding'}
+[35mDEBUG   [0m Log:log.py:164 ---response_body:---{"msg":"登录帐号不存在","code":-3,"data":""}
+[35mDEBUG   [0m Log:log.py:164 -------------------------------------------------------------------------------------------
+[32mINFO    [0m Log:log.py:159 [AssertManager INIT] soft=True
+[32mINFO    [0m Log:log.py:159 [SoftAssert 通过] -3 == -3
+[32mINFO    [0m Log:log.py:159 [SoftAssert 通过] 登录帐号不存在 == 登录帐号不存在
+[32mINFO    [0m Log:log.py:159 [AssertManager] assert_all triggered
+[32mINFO    [0m Log:log.py:159 [SoftAssert] ------全部断言通过------

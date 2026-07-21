@@ -1,0 +1,23 @@
+name: 搜索流程
+tags: [flow, media, search]
+steps:
+  - id: create_task
+    call: CreateIntentTask.yaml
+    extract:
+      task_id: $.task_id
+
+  - id: poll_task
+    call: GetTask.yaml
+    until:
+      path: $.data.status
+      equals: SUCCEEDED
+      interval_seconds: 2
+      timeout_seconds: 120
+
+  - id: list_candidates
+    call: ListTaskCandidates.yaml
+    extract:
+      candidate_id: $.items[0].candidate_id
+
+  - id: candidate_detail
+    call: GetTaskCandidateDetail.yaml

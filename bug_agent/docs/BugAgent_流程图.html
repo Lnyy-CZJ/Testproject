@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>缺陷管理平台 - 业务流程图</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 40px 20px;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        h1 {
+            text-align: center;
+            color: white;
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+        .subtitle {
+            text-align: center;
+            color: rgba(255,255,255,0.9);
+            font-size: 1.1rem;
+            margin-bottom: 40px;
+        }
+        .flow-section {
+            background: white;
+            border-radius: 16px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.15);
+        }
+        .flow-section h2 {
+            color: #333;
+            font-size: 1.5rem;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #667eea;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .flow-section h2::before {
+            content: '';
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            background: #667eea;
+            border-radius: 50%;
+        }
+        .mermaid {
+            display: flex;
+            justify-content: center;
+            overflow-x: auto;
+        }
+        .description {
+            background: #f8f9fa;
+            border-left: 4px solid #667eea;
+            padding: 15px 20px;
+            margin-top: 20px;
+            border-radius: 0 8px 8px 0;
+        }
+        .description h3 {
+            color: #333;
+            font-size: 1rem;
+            margin-bottom: 10px;
+        }
+        .description ul {
+            list-style: none;
+            padding: 0;
+        }
+        .description li {
+            color: #666;
+            padding: 5px 0;
+            padding-left: 20px;
+            position: relative;
+        }
+        .description li::before {
+            content: '→';
+            position: absolute;
+            left: 0;
+            color: #667eea;
+        }
+        .toc {
+            background: white;
+            border-radius: 16px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.15);
+        }
+        .toc h2 {
+            color: #333;
+            font-size: 1.5rem;
+            margin-bottom: 20px;
+        }
+        .toc-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+        }
+        .toc-item {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px 20px;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .toc-item:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+        .toc-item .number {
+            font-size: 0.9rem;
+            opacity: 0.8;
+        }
+        .toc-item .title {
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>缺陷管理平台</h1>
+        <p class="subtitle">业务流程图文档 v1.0</p>
+
+        <!-- 目录 -->
+        <div class="toc">
+            <h2>📊 流程图目录</h2>
+            <div class="toc-grid">
+                <div class="toc-item" onclick="document.getElementById('flow1').scrollIntoView({behavior: 'smooth'})">
+                    <div class="number">流程 01</div>
+                    <div class="title">缺陷状态流转图</div>
+                </div>
+                <div class="toc-item" onclick="document.getElementById('flow2').scrollIntoView({behavior: 'smooth'})">
+                    <div class="number">流程 02</div>
+                    <div class="title">缺陷创建与分配流程</div>
+                </div>
+                <div class="toc-item" onclick="document.getElementById('flow3').scrollIntoView({behavior: 'smooth'})">
+                    <div class="number">流程 03</div>
+                    <div class="title">AGENT自动分析流程</div>
+                </div>
+                <div class="toc-item" onclick="document.getElementById('flow4').scrollIntoView({behavior: 'smooth'})">
+                    <div class="number">流程 04</div>
+                    <div class="title">协作讨论流程</div>
+                </div>
+                <div class="toc-item" onclick="document.getElementById('flow5').scrollIntoView({behavior: 'smooth'})">
+                    <div class="number">流程 05</div>
+                    <div class="title">自动修复执行流程</div>
+                </div>
+                <div class="toc-item" onclick="document.getElementById('flow6').scrollIntoView({behavior: 'smooth'})">
+                    <div class="number">流程 06</div>
+                    <div class="title">验证与合并流程</div>
+                </div>
+                <div class="toc-item" onclick="document.getElementById('flow7').scrollIntoView({behavior: 'smooth'})">
+                    <div class="number">流程 07</div>
+                    <div class="title">实体关系图</div>
+                </div>
+                <div class="toc-item" onclick="document.getElementById('flow8').scrollIntoView({behavior: 'smooth'})">
+                    <div class="number">流程 08</div>
+                    <div class="title">完整业务主流程</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 流程1：缺陷状态流转图 -->
+        <div class="flow-section" id="flow1">
+            <h2>流程 01：缺陷状态流转图</h2>
+            <div class="mermaid">
+stateDiagram-v2
+    [*] --> 新建: 测试创建缺陷
+    新建 --> 待分配: 提交缺陷
+    待分配 --> 待分析: 分配给用户
+    待分析 --> 分析中: 系统自动触发
+    待分析 --> 驳回: 用户拒绝处理
+    分析中 --> 待修复: 分析完成
+    待修复 --> 修复中: 发起自动修复
+    待修复 --> 暂停: 用户暂停
+    修复中 --> 待验证: 修复完成
+    待验证 --> 待修复: 验证失败\n继续修复
+    待验证 --> 已修复: 验证通过
+    已修复 --> 已完成: 代码合并
+    暂停 --> 待修复: 恢复处理
+    驳回 --> [*]
+    已完成 --> [*]
+
+    note right of 新建: 状态: 新建
+    note right of 待分配: 状态: 待分配
+    note right of 待分析: 状态: 待分析
+    note right of 分析中: 状态: 分析中
+    note right of 待修复: 状态: 待修复
+    note right of 修复中: 状态: 修复中
+    note right of 待验证: 状态: 待验证
+    note right of 已修复: 状态: 已修复
+    note right of 已完成: 状态: 已完成
+            </div>
+            <div class="description">
+                <h3>📋 状态说明</h3>
+                <ul>
+                    <li><strong>新建</strong>：缺陷刚创建，尚未提交</li>
+                    <li><strong>待分配</strong>：缺陷已提交，等待分配处理人</li>
+                    <li><strong>待分析</strong>：已分配，等待AGENT分析</li>
+                    <li><strong>分析中</strong>：AGENT正在执行分析</li>
+                    <li><strong>待修复</strong>：分析完成，等待修复决策</li>
+                    <li><strong>修复中</strong>：正在执行自动修复</li>
+                    <li><strong>待验证</strong>：修复完成，等待测试验证</li>
+                    <li><strong>已修复</strong>：验证通过，等待代码合并</li>
+                    <li><strong>已完成</strong>：代码已合并，流程结束</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- 流程2：缺陷创建与分配流程 -->
+        <div class="flow-section" id="flow2">
+            <h2>流程 02：缺陷创建与分配流程</h2>
+            <div class="mermaid">
+flowchart TD
+    A[测试人员登录系统] --> B[选择目标迭代]
+    B --> C[点击新建缺陷]
+    C --> D[填写缺陷信息]
+    D --> E{信息完整?}
+    E -->|否| D
+    E -->|是| F[提交缺陷]
+    F --> G[系统生成缺陷编号]
+    G --> H[状态: 待分配]
+    H --> I[系统智能推荐分配对象]
+    I --> J[测试选择被分配用户]
+    J --> K[确认分配]
+    K --> L[状态: 待分析]
+    L --> M[发送通知给被分配用户]
+    M --> N[激活用户AGENT身份]
+    N --> O[自动触发AGENT分析]
+
+    style A fill:#e1f5fe
+    style O fill:#c8e6c9
+    style H fill:#fff9c4
+    style L fill:#fff9c4
+            </div>
+            <div class="description">
+                <h3>📋 流程要点</h3>
+                <ul>
+                    <li>缺陷创建时自动关联当前迭代绑定的代码仓库</li>
+                    <li>系统基于历史数据和技能匹配智能推荐分配对象</li>
+                    <li>分配后自动激活被分配用户的AGENT身份</li>
+                    <li>缺陷编号格式：BUG-{项目缩写}-{年月}-{序号}</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- 流程3：AGENT自动分析流程 -->
+        <div class="flow-section" id="flow3">
+            <h2>流程 03：AGENT自动分析流程</h2>
+            <div class="mermaid">
+flowchart TD
+    A[缺陷被分配] --> B[获取用户AGENT身份]
+    B --> C{判断AGENT类型}
+    C -->|UI问题| D[激活UI_AGENT]
+    C -->|功能缺陷| E{判断系统模块}
+    C -->|性能问题| F[前端/后端协作]
+    E -->|前端模块| G[激活前端AGENT]
+    E -->|后端模块| H[激活后端AGENT]
+    
+    D --> I[读取缺陷上下文]
+    G --> I
+    H --> I
+    F --> I
+    
+    I --> J[获取关联代码仓库]
+    J --> K[搜索相关代码文件]
+    K --> L[执行静态代码扫描]
+    L --> M[分析日志文件]
+    M --> N[代码逻辑推演]
+    N --> O[生成分析报告]
+    O --> P[以用户身份发布评论]
+    P --> Q[状态: 待修复]
+
+    style A fill:#e1f5fe
+    style Q fill:#c8e6c9
+    style O fill:#fff9c4
+            </div>
+            <div class="description">
+                <h3>📋 分析内容</h3>
+                <ul>
+                    <li><strong>根本原因</strong>：定位问题根源</li>
+                    <li><strong>影响范围</strong>：评估问题影响面</li>
+                    <li><strong>修复建议</strong>：提供具体修复步骤</li>
+                    <li><strong>代码示例</strong>：给出修复代码片段</li>
+                    <li><strong>风险等级</strong>：评估修复风险</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- 流程4：协作讨论流程 -->
+        <div class="flow-section" id="flow4">
+            <h2>流程 04：协作讨论流程</h2>
+            <div class="mermaid">
+flowchart TD
+    A[AGENT发布分析报告] --> B{测试评估方案}
+    B -->|满意| C[确认方案]
+    B -->|需调整| D[回复AGENT调整]
+    B -->|不满意| E[拒绝方案]
+    
+    D --> F[AGENT重新分析]
+    F --> A
+    
+    E --> G[AGENT生成替代方案]
+    G --> A
+    
+    C --> H{是否需要协作?}
+    H -->|是| I[@其他成员]
+    H -->|否| J[发起自动修复]
+    
+    I --> K[激活成员AGENT]
+    K --> L[多AGENT协作讨论]
+    L --> M[生成综合建议]
+    M --> N{达成共识?}
+    N -->|否| L
+    N -->|是| J
+
+    style A fill:#e1f5fe
+    style J fill:#c8e6c9
+    style L fill:#fff9c4
+            </div>
+            <div class="description">
+                <h3>📋 协作场景</h3>
+                <ul>
+                    <li><strong>方案调整</strong>：测试对分析结果不满意，请求补充分析</li>
+                    <li><strong>方案替代</strong>：方案不可行，AGENT重新生成方案</li>
+                    <li><strong>跨端协作</strong>：@前端+后端AGENT，对齐接口方案</li>
+                    <li><strong>需求确认</strong>：@产品AGENT，确认需求理解是否正确</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- 流程5：自动修复执行流程 -->
+        <div class="flow-section" id="flow5">
+            <h2>流程 05：自动修复执行流程</h2>
+            <div class="mermaid">
+flowchart TD
+    A[测试发起自动修复] --> B[选择目标修复分支]
+    B --> C[确认发起]
+    C --> D[创建修复任务记录]
+    D --> E[状态: 修复中]
+    
+    E --> F[任务初始化]
+    F --> G[获取缺陷上下文]
+    G --> H[获取分析报告]
+    H --> I[生成修复计划]
+    
+    I --> J[克隆代码仓库]
+    J --> K[切换到目标分支]
+    K --> L[创建修复分支]
+    
+    L --> M[定位目标文件]
+    M --> N[执行代码修改]
+    N --> O{需要构建验证?}
+    O -->|是| P[执行本地构建]
+    O -->|否| Q[提交代码变更]
+    P --> Q
+    
+    Q --> R[推送到远程仓库]
+    R --> S[创建Pull Request]
+    S --> T[记录PR信息]
+    T --> U[更新任务状态: 完成]
+    U --> V[在评论区发布修复报告]
+    V --> W[通知测试人员]
+    W --> X[状态: 待验证]
+
+    style A fill:#e1f5fe
+    style X fill:#c8e6c9
+    style D fill:#fff9c4
+    style S fill:#fff9c4
+            </div>
+            <div class="description">
+                <h3>📋 修复任务信息</h3>
+                <ul>
+                    <li><strong>任务编号</strong>：FT-{年月}-{序号}</li>
+                    <li><strong>修复分支</strong>：fix/{缺陷编号}-{任务序号}</li>
+                    <li><strong>目标分支</strong>：迭代绑定的测试分支</li>
+                    <li><strong>PR链接</strong>：代码审查入口</li>
+                    <li><strong>变更文件</strong>：列出所有修改的文件</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- 流程6：验证与合并流程 -->
+        <div class="flow-section" id="flow6">
+            <h2>流程 06：验证与合并流程</h2>
+            <div class="mermaid">
+flowchart TD
+    A[收到修复完成通知] --> B[拉取测试分支]
+    B --> C[执行测试验证]
+    C --> D{验证结果}
+    
+    D -->|失败| E[描述问题]
+    E --> F[继续与AGENT对话]
+    F --> G{需要新修复?}
+    G -->|是| H[发起新修复任务]
+    H --> I[创建新修复分支]
+    I --> J[执行新修复]
+    J --> A
+    G -->|否| F
+    
+    D -->|通过| K[流转状态: 已修复]
+    K --> L[发送通知给被分配用户]
+    
+    L --> M[被分配用户审核代码]
+    M --> N{审核结果}
+    N -->|需要修改| O[反馈问题]
+    O --> F
+    N -->|通过| P[选择目标合并分支]
+    P --> Q[执行合并操作]
+    Q --> R[关闭关联PR]
+    R --> S[流转状态: 已完成]
+    S --> T[发送完成通知]
+    T --> U[更新迭代统计]
+
+    style A fill:#e1f5fe
+    style S fill:#c8e6c9
+    style K fill:#fff9c4
+            </div>
+            <div class="description">
+                <h3>📋 多轮修复支持</h3>
+                <ul>
+                    <li>第一次修复：fix/BUG-xxx-001</li>
+                    <li>第二次修复：fix/BUG-xxx-002（基于第一次）</li>
+                    <li>第三次修复：fix/BUG-xxx-003（如需要）</li>
+                    <li>每次修复都创建独立的修复分支和PR</li>
+                    <li>验证通过后可选择合并到dev/release/main分支</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- 流程7：实体关系图 -->
+        <div class="flow-section" id="flow7">
+            <h2>流程 07：实体关系图</h2>
+            <div class="mermaid">
+erDiagram
+    ORGANIZATION ||--o{ PROJECT : "包含"
+    ORGANIZATION ||--o{ ORG_MEMBER : "拥有"
+    PROJECT ||--o{ ITERATION : "包含"
+    PROJECT ||--o{ PROJECT_MEMBER : "拥有"
+    PROJECT ||--o{ REPO_BINDING : "绑定"
+    ITERATION ||--o{ DEFECT : "包含"
+    ITERATION ||--o{ REPO_BINDING : "绑定"
+    
+    DEFECT ||--o{ FIX_TASK : "产生"
+    DEFECT ||--o{ COMMENT : "包含"
+    DEFECT ||--o{ ATTACHMENT : "关联"
+    DEFECT }o--|| USER : "被分配"
+    DEFECT }o--|| USER : "由谁报告"
+    
+    FIX_TASK ||--o{ COMMIT : "包含"
+    FIX_TASK ||--o| PULL_REQUEST : "创建"
+    
+    USER }o--o{ AGENT_IDENTITY : "绑定"
+    USER ||--o{ COMMENT : "发布"
+    
+    ORGANIZATION {
+        bigint id PK
+        string name
+        string logo
+        timestamp created_at
+    }
+    
+    PROJECT {
+        bigint id PK
+        bigint org_id FK
+        string name
+        string code
+        string status
+    }
+    
+    ITERATION {
+        bigint id PK
+        bigint project_id FK
+        string name
+        date start_date
+        date end_date
+        string status
+    }
+    
+    DEFECT {
+        bigint id PK
+        string code
+        bigint iteration_id FK
+        string title
+        text description
+        string severity
+        string priority
+        string type
+        string status
+        bigint assignee_id FK
+        bigint reporter_id FK
+    }
+    
+    FIX_TASK {
+        bigint id PK
+        bigint defect_id FK
+        string agent_type
+        string status
+        string target_branch
+        string fix_branch
+        json plan
+        json result
+    }
+    
+    USER {
+        bigint id PK
+        string username
+        string email
+        string avatar
+    }
+    
+    AGENT_IDENTITY {
+        bigint id PK
+        string type
+        string name
+        string description
+    }
+    
+    COMMENT {
+        bigint id PK
+        bigint defect_id FK
+        bigint user_id FK
+        text content
+        string agent_type
+        boolean is_agent_message
+    }
+            </div>
+            <div class="description">
+                <h3>📋 核心实体说明</h3>
+                <ul>
+                    <li><strong>组织</strong>：最上层管理单元，包含多个项目</li>
+                    <li><strong>项目</strong>：具体软件开发项目</li>
+                    <li><strong>迭代</strong>：时间盒管理单元，可绑定多个仓库</li>
+                    <li><strong>缺陷</strong>：核心业务实体，记录问题</li>
+                    <li><strong>修复任务</strong>：AGENT执行的自动修复实例</li>
+                    <li><strong>AGENT身份</strong>：内置AI角色，与用户多对多绑定</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- 流程8：完整业务主流程 -->
+        <div class="flow-section" id="flow8">
+            <h2>流程 08：完整业务主流程</h2>
+            <div class="mermaid">
+flowchart TD
+    subgraph S1[缺陷创建阶段]
+        A1[测试创建缺陷] --> A2[填写缺陷信息]
+        A2 --> A3[提交缺陷]
+        A3 --> A4[系统生成编号]
+    end
+    
+    subgraph S2[缺陷分配阶段]
+        B1[系统推荐分配对象] --> B2[测试选择用户]
+        B2 --> B3[确认分配]
+        B3 --> B4[激活用户AGENT]
+    end
+    
+    subgraph S3[AGENT分析阶段]
+        C1[AGENT读取上下文] --> C2[执行代码分析]
+        C2 --> C3[生成分析报告]
+        C3 --> C4[发布到评论区]
+    end
+    
+    subgraph S4[协作讨论阶段]
+        D1[测试评估方案] --> D2{满意?}
+        D2 -->|需调整| D3[回复AGENT调整]
+        D3 --> C1
+        D2 -->|需协作| D4[@其他成员]
+        D4 --> D5[多AGENT协作]
+        D5 --> C3
+        D2 -->|满意| D6[确认方案]
+    end
+    
+    subgraph S5[自动修复阶段]
+        E1[测试发起修复] --> E2[AGENT制定计划]
+        E2 --> E3[克隆仓库]
+        E3 --> E4[创建修复分支]
+        E4 --> E5[执行代码修改]
+        E5 --> E6[推送并创建PR]
+        E6 --> E7[发布修复报告]
+    end
+    
+    subgraph S6[验证合并阶段]
+        F1[测试拉取验证] --> F2{验证结果}
+        F2 -->|失败| F3[描述问题]
+        F3 --> E1
+        F2 -->|通过| F4[状态: 已修复]
+        F4 --> F5[被分配用户审核]
+        F5 --> F6[合并代码]
+        F6 --> F7[状态: 已完成]
+    end
+    
+    A4 --> B1
+    B4 --> C1
+    C4 --> D1
+    D6 --> E1
+    E7 --> F1
+
+    style S1 fill:#e3f2fd,stroke:#1976d2,stroke-width:2px
+    style S2 fill:#e8f5e9,stroke:#388e3c,stroke-width:2px
+    style S3 fill:#fff3e0,stroke:#f57c00,stroke-width:2px
+    style S4 fill:#fce4ec,stroke:#c2185b,stroke-width:2px
+    style S5 fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
+    style S6 fill:#e0f2f1,stroke:#00796b,stroke-width:2px
+            </div>
+            <div class="description">
+                <h3>📋 主流程阶段</h3>
+                <ul>
+                    <li><strong>缺陷创建</strong>：测试创建并提交缺陷（蓝色阶段）</li>
+                    <li><strong>缺陷分配</strong>：分配给具体开发人员（绿色阶段）</li>
+                    <li><strong>AGENT分析</strong>：自动分析问题成因（橙色阶段）</li>
+                    <li><strong>协作讨论</strong>：多AGENT协作确定方案（粉色阶段）</li>
+                    <li><strong>自动修复</strong>：AGENT自动修改代码（紫色阶段）</li>
+                    <li><strong>验证合并</strong>：测试验证并合并代码（青色阶段）</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: 'default',
+            flowchart: {
+                useMaxWidth: true,
+                htmlLabels: true,
+                curve: 'basis'
+            },
+            stateDiagram: {
+                useMaxWidth: true
+            },
+            er: {
+                useMaxWidth: true
+            }
+        });
+    </script>
+</body>
+</html>

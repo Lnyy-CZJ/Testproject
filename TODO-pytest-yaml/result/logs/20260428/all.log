@@ -1,0 +1,147 @@
+2026-04-28 11:35:34,266 | DEBUG | [REQ-2026-04-28-7692-0001] | -------------------------------------------------------------------------------------------
+2026-04-28 11:35:34,266 | DEBUG | [REQ-2026-04-28-7692-0001] | 请求信息:
+2026-04-28 11:35:34,266 | DEBUG | [REQ-2026-04-28-7692-0001] | ---request_url:---http://shop-xo.hctestedu.com/index.php?s=/api/user/login
+2026-04-28 11:35:34,266 | DEBUG | [REQ-2026-04-28-7692-0001] | ---request_headers:---{'User-Agent': 'python-requests/2.27.1', 'Accept-Encoding': 'gzip, deflate, br', 'Accept': '*/*', 'Connection': 'keep-alive', 'application': 'web', 'application_client_type': 'PC', 'Content-Length': '58', 'Content-Type': 'application/json'}
+2026-04-28 11:35:34,267 | DEBUG | [REQ-2026-04-28-7692-0001] | ---request_body:---b'{"type": "username", "accounts": "czj11", "pwd": "czj111"}'
+2026-04-28 11:35:34,267 | DEBUG | [REQ-2026-04-28-7692-0001] | ---request_cookies:---<RequestsCookieJar[<Cookie PHPSESSID=varb1urpt3pl0slq9546d8all2 for shop-xo.hctestedu.com/>]>
+2026-04-28 11:35:34,267 | DEBUG | [REQ-2026-04-28-7692-0001] | ---request_method:---POST
+2026-04-28 11:35:34,267 | DEBUG | [REQ-2026-04-28-7692-0001] | ---request_data:---{'type': 'username', 'accounts': 'czj11', 'pwd': 'czj111'}
+2026-04-28 11:35:34,268 | DEBUG | [REQ-2026-04-28-7692-0001] | 响应信息:
+2026-04-28 11:35:34,268 | DEBUG | [REQ-2026-04-28-7692-0001] | ---response_code:---200
+2026-04-28 11:35:34,268 | DEBUG | [REQ-2026-04-28-7692-0001] | ---response_headers:---{'Connection': 'close', 'Transfer-Encoding': 'chunked', 'Cache-Control': 'no-store, no-cache, must-revalidate', 'Content-Encoding': 'gzip', 'Content-Type': 'application/json; charset=utf-8', 'Date': 'Tue, 28 Apr 2026 03:35:32 GMT', 'Expires': 'Thu, 19 Nov 1981 08:52:00 GMT', 'Pragma': 'no-cache', 'Server': 'nginx', 'Set-Cookie': 'PHPSESSID=varb1urpt3pl0slq9546d8all2; path=/; HttpOnly', 'Vary': 'Accept-Encoding'}
+2026-04-28 11:35:34,269 | DEBUG | [REQ-2026-04-28-7692-0001] | ---response_body:---{"msg":"登录成功","code":0,"data":{"body_html":""}}
+2026-04-28 11:35:34,269 | DEBUG | [REQ-2026-04-28-7692-0001] | -------------------------------------------------------------------------------------------
+2026-04-28 11:35:34,270 | INFO | [REQ-2026-04-28-7692-0001] | [AssertManager INIT] soft=True
+2026-04-28 11:35:34,270 | ERROR | [REQ-2026-04-28-7692-0001] | [SoftAssert 失败] 0 == 1
+NoneType: None
+2026-04-28 11:35:34,270 | INFO | [REQ-2026-04-28-7692-0001] | [SoftAssert 通过] 登录成功 == 登录成功
+2026-04-28 11:35:34,271 | INFO | [REQ-2026-04-28-7692-0001] | [AssertManager] assert_all triggered
+2026-04-28 11:35:34,271 | ERROR | [REQ-2026-04-28-7692-0001] | [SoftAssert------断言不通过------
+0 == 1
+NoneType: None
+2026-04-28 11:35:34,999 | DEBUG | [REQ-2026-04-28-7692-0002] | -------------------------------------------------------------------------------------------
+2026-04-28 11:35:34,999 | DEBUG | [REQ-2026-04-28-7692-0002] | 请求信息:
+2026-04-28 11:35:34,999 | DEBUG | [REQ-2026-04-28-7692-0002] | ---request_url:---http://shop-xo.hctestedu.com/index.php?s=/api/user/login
+2026-04-28 11:35:35,000 | DEBUG | [REQ-2026-04-28-7692-0002] | ---request_headers:---{'User-Agent': 'python-requests/2.27.1', 'Accept-Encoding': 'gzip, deflate, br', 'Accept': '*/*', 'Connection': 'keep-alive', 'application': 'web', 'application_client_type': 'PC', 'Content-Length': '59', 'Content-Type': 'application/json'}
+2026-04-28 11:35:35,000 | DEBUG | [REQ-2026-04-28-7692-0002] | ---request_body:---b'{"type": "username", "accounts": "czj11", "pwd": "czj1112"}'
+2026-04-28 11:35:35,000 | DEBUG | [REQ-2026-04-28-7692-0002] | ---request_cookies:---<RequestsCookieJar[<Cookie PHPSESSID=mtcuqafuusu5ngl562g58qs8ms for shop-xo.hctestedu.com/>]>
+2026-04-28 11:35:35,000 | DEBUG | [REQ-2026-04-28-7692-0002] | ---request_method:---POST
+2026-04-28 11:35:35,001 | DEBUG | [REQ-2026-04-28-7692-0002] | ---request_data:---{'type': 'username', 'accounts': 'czj11', 'pwd': 'czj1112'}
+2026-04-28 11:35:35,001 | DEBUG | [REQ-2026-04-28-7692-0002] | 响应信息:
+2026-04-28 11:35:35,001 | DEBUG | [REQ-2026-04-28-7692-0002] | ---response_code:---200
+2026-04-28 11:35:35,001 | DEBUG | [REQ-2026-04-28-7692-0002] | ---response_headers:---{'Connection': 'close', 'Transfer-Encoding': 'chunked', 'Cache-Control': 'no-store, no-cache, must-revalidate', 'Content-Encoding': 'gzip', 'Content-Type': 'application/json; charset=utf-8', 'Date': 'Tue, 28 Apr 2026 03:35:33 GMT', 'Expires': 'Thu, 19 Nov 1981 08:52:00 GMT', 'Pragma': 'no-cache', 'Server': 'nginx', 'Set-Cookie': 'PHPSESSID=mtcuqafuusu5ngl562g58qs8ms; path=/; HttpOnly', 'Vary': 'Accept-Encoding'}
+2026-04-28 11:35:35,002 | DEBUG | [REQ-2026-04-28-7692-0002] | ---response_body:---{"msg":"密码错误","code":-4,"data":""}
+2026-04-28 11:35:35,002 | DEBUG | [REQ-2026-04-28-7692-0002] | -------------------------------------------------------------------------------------------
+2026-04-28 11:35:35,002 | INFO | [REQ-2026-04-28-7692-0002] | [AssertManager INIT] soft=True
+2026-04-28 11:35:35,002 | INFO | [REQ-2026-04-28-7692-0002] | [SoftAssert 通过] -4 == -4
+2026-04-28 11:35:35,003 | INFO | [REQ-2026-04-28-7692-0002] | [SoftAssert 通过] 密码错误 == 密码错误
+2026-04-28 11:35:35,003 | INFO | [REQ-2026-04-28-7692-0002] | [AssertManager] assert_all triggered
+2026-04-28 11:35:35,003 | INFO | [REQ-2026-04-28-7692-0002] | [SoftAssert] ------全部断言通过------
+2026-04-28 11:35:35,668 | DEBUG | [REQ-2026-04-28-7692-0003] | -------------------------------------------------------------------------------------------
+2026-04-28 11:35:35,668 | DEBUG | [REQ-2026-04-28-7692-0003] | 请求信息:
+2026-04-28 11:35:35,668 | DEBUG | [REQ-2026-04-28-7692-0003] | ---request_url:---http://shop-xo.hctestedu.com/index.php?s=/api/user/login
+2026-04-28 11:35:35,668 | DEBUG | [REQ-2026-04-28-7692-0003] | ---request_headers:---{'User-Agent': 'python-requests/2.27.1', 'Accept-Encoding': 'gzip, deflate, br', 'Accept': '*/*', 'Connection': 'keep-alive', 'application': 'web', 'application_client_type': 'PC', 'Content-Length': '59', 'Content-Type': 'application/json'}
+2026-04-28 11:35:35,669 | DEBUG | [REQ-2026-04-28-7692-0003] | ---request_body:---b'{"type": "username", "accounts": "czj112", "pwd": "czj111"}'
+2026-04-28 11:35:35,669 | DEBUG | [REQ-2026-04-28-7692-0003] | ---request_cookies:---<RequestsCookieJar[<Cookie PHPSESSID=ftg3d7h4akbsmu3ijvak8tv5ji for shop-xo.hctestedu.com/>]>
+2026-04-28 11:35:35,669 | DEBUG | [REQ-2026-04-28-7692-0003] | ---request_method:---POST
+2026-04-28 11:35:35,669 | DEBUG | [REQ-2026-04-28-7692-0003] | ---request_data:---{'type': 'username', 'accounts': 'czj112', 'pwd': 'czj111'}
+2026-04-28 11:35:35,670 | DEBUG | [REQ-2026-04-28-7692-0003] | 响应信息:
+2026-04-28 11:35:35,670 | DEBUG | [REQ-2026-04-28-7692-0003] | ---response_code:---200
+2026-04-28 11:35:35,670 | DEBUG | [REQ-2026-04-28-7692-0003] | ---response_headers:---{'Connection': 'close', 'Transfer-Encoding': 'chunked', 'Cache-Control': 'no-store, no-cache, must-revalidate', 'Content-Encoding': 'gzip', 'Content-Type': 'application/json; charset=utf-8', 'Date': 'Tue, 28 Apr 2026 03:35:33 GMT', 'Expires': 'Thu, 19 Nov 1981 08:52:00 GMT', 'Pragma': 'no-cache', 'Server': 'nginx', 'Set-Cookie': 'PHPSESSID=ftg3d7h4akbsmu3ijvak8tv5ji; path=/; HttpOnly', 'Vary': 'Accept-Encoding'}
+2026-04-28 11:35:35,670 | DEBUG | [REQ-2026-04-28-7692-0003] | ---response_body:---{"msg":"登录帐号不存在","code":-3,"data":""}
+2026-04-28 11:35:35,671 | DEBUG | [REQ-2026-04-28-7692-0003] | -------------------------------------------------------------------------------------------
+2026-04-28 11:35:35,671 | INFO | [REQ-2026-04-28-7692-0003] | [AssertManager INIT] soft=True
+2026-04-28 11:35:35,671 | INFO | [REQ-2026-04-28-7692-0003] | [SoftAssert 通过] -3 == -3
+2026-04-28 11:35:35,672 | INFO | [REQ-2026-04-28-7692-0003] | [SoftAssert 通过] 登录帐号不存在 == 登录帐号不存在
+2026-04-28 11:35:35,672 | INFO | [REQ-2026-04-28-7692-0003] | [AssertManager] assert_all triggered
+2026-04-28 11:35:35,672 | INFO | [REQ-2026-04-28-7692-0003] | [SoftAssert] ------全部断言通过------
+2026-04-28 11:35:36,617 | DEBUG | [REQ-2026-04-28-7692-0004] | -------------------------------------------------------------------------------------------
+2026-04-28 11:35:36,617 | DEBUG | [REQ-2026-04-28-7692-0004] | 请求信息:
+2026-04-28 11:35:36,617 | DEBUG | [REQ-2026-04-28-7692-0004] | ---request_url:---http://shop-xo.hctestedu.com/index.php?s=/api/user/login
+2026-04-28 11:35:36,617 | DEBUG | [REQ-2026-04-28-7692-0004] | ---request_headers:---{'User-Agent': 'python-requests/2.27.1', 'Accept-Encoding': 'gzip, deflate, br', 'Accept': '*/*', 'Connection': 'keep-alive', 'application': 'web', 'application_client_type': 'PC', 'Content-Length': '53', 'Content-Type': 'application/json'}
+2026-04-28 11:35:36,618 | DEBUG | [REQ-2026-04-28-7692-0004] | ---request_body:---b'{"type": "username", "accounts": "", "pwd": "czj111"}'
+2026-04-28 11:35:36,618 | DEBUG | [REQ-2026-04-28-7692-0004] | ---request_cookies:---<RequestsCookieJar[<Cookie PHPSESSID=stveiet4kqgem4qbtilvqsu31m for shop-xo.hctestedu.com/>]>
+2026-04-28 11:35:36,618 | DEBUG | [REQ-2026-04-28-7692-0004] | ---request_method:---POST
+2026-04-28 11:35:36,618 | DEBUG | [REQ-2026-04-28-7692-0004] | ---request_data:---{'type': 'username', 'accounts': '', 'pwd': 'czj111'}
+2026-04-28 11:35:36,618 | DEBUG | [REQ-2026-04-28-7692-0004] | 响应信息:
+2026-04-28 11:35:36,619 | DEBUG | [REQ-2026-04-28-7692-0004] | ---response_code:---200
+2026-04-28 11:35:36,619 | DEBUG | [REQ-2026-04-28-7692-0004] | ---response_headers:---{'Connection': 'close', 'Transfer-Encoding': 'chunked', 'Cache-Control': 'no-store, no-cache, must-revalidate', 'Content-Encoding': 'gzip', 'Content-Type': 'application/json; charset=utf-8', 'Date': 'Tue, 28 Apr 2026 03:35:34 GMT', 'Expires': 'Thu, 19 Nov 1981 08:52:00 GMT', 'Pragma': 'no-cache', 'Server': 'nginx', 'Set-Cookie': 'PHPSESSID=stveiet4kqgem4qbtilvqsu31m; path=/; HttpOnly', 'Vary': 'Accept-Encoding'}
+2026-04-28 11:35:36,619 | DEBUG | [REQ-2026-04-28-7692-0004] | ---response_body:---{"msg":"登录账号不能为空","code":-1,"data":""}
+2026-04-28 11:35:36,619 | DEBUG | [REQ-2026-04-28-7692-0004] | -------------------------------------------------------------------------------------------
+2026-04-28 11:35:36,620 | INFO | [REQ-2026-04-28-7692-0004] | [AssertManager INIT] soft=True
+2026-04-28 11:35:36,620 | INFO | [REQ-2026-04-28-7692-0004] | [SoftAssert 通过] -1 == -1
+2026-04-28 11:35:36,620 | INFO | [REQ-2026-04-28-7692-0004] | [SoftAssert 通过] 登录账号不能为空 == 登录账号不能为空
+2026-04-28 11:35:36,620 | INFO | [REQ-2026-04-28-7692-0004] | [AssertManager] assert_all triggered
+2026-04-28 11:35:36,620 | INFO | [REQ-2026-04-28-7692-0004] | [SoftAssert] ------全部断言通过------
+2026-04-28 11:35:37,358 | DEBUG | [REQ-2026-04-28-7692-0005] | -------------------------------------------------------------------------------------------
+2026-04-28 11:35:37,358 | DEBUG | [REQ-2026-04-28-7692-0005] | 请求信息:
+2026-04-28 11:35:37,358 | DEBUG | [REQ-2026-04-28-7692-0005] | ---request_url:---http://shop-xo.hctestedu.com/index.php?s=/api/user/login
+2026-04-28 11:35:37,359 | DEBUG | [REQ-2026-04-28-7692-0005] | ---request_headers:---{'User-Agent': 'python-requests/2.27.1', 'Accept-Encoding': 'gzip, deflate, br', 'Accept': '*/*', 'Connection': 'keep-alive', 'application': 'web', 'application_client_type': 'PC', 'Content-Length': '52', 'Content-Type': 'application/json'}
+2026-04-28 11:35:37,359 | DEBUG | [REQ-2026-04-28-7692-0005] | ---request_body:---b'{"type": "username", "accounts": "czj11", "pwd": ""}'
+2026-04-28 11:35:37,359 | DEBUG | [REQ-2026-04-28-7692-0005] | ---request_cookies:---<RequestsCookieJar[<Cookie PHPSESSID=v7ia0khv52j9o4sm2lnga2sggj for shop-xo.hctestedu.com/>]>
+2026-04-28 11:35:37,359 | DEBUG | [REQ-2026-04-28-7692-0005] | ---request_method:---POST
+2026-04-28 11:35:37,360 | DEBUG | [REQ-2026-04-28-7692-0005] | ---request_data:---{'type': 'username', 'accounts': 'czj11', 'pwd': ''}
+2026-04-28 11:35:37,360 | DEBUG | [REQ-2026-04-28-7692-0005] | 响应信息:
+2026-04-28 11:35:37,360 | DEBUG | [REQ-2026-04-28-7692-0005] | ---response_code:---200
+2026-04-28 11:35:37,360 | DEBUG | [REQ-2026-04-28-7692-0005] | ---response_headers:---{'Connection': 'close', 'Transfer-Encoding': 'chunked', 'Cache-Control': 'no-store, no-cache, must-revalidate', 'Content-Encoding': 'gzip', 'Content-Type': 'application/json; charset=utf-8', 'Date': 'Tue, 28 Apr 2026 03:35:35 GMT', 'Expires': 'Thu, 19 Nov 1981 08:52:00 GMT', 'Pragma': 'no-cache', 'Server': 'nginx', 'Set-Cookie': 'PHPSESSID=v7ia0khv52j9o4sm2lnga2sggj; path=/; HttpOnly', 'Vary': 'Accept-Encoding'}
+2026-04-28 11:35:37,361 | DEBUG | [REQ-2026-04-28-7692-0005] | ---response_body:---{"msg":"密码格式 6~18 个字符之间","code":-1,"data":""}
+2026-04-28 11:35:37,361 | DEBUG | [REQ-2026-04-28-7692-0005] | -------------------------------------------------------------------------------------------
+2026-04-28 11:35:37,361 | INFO | [REQ-2026-04-28-7692-0005] | [AssertManager INIT] soft=True
+2026-04-28 11:35:37,361 | INFO | [REQ-2026-04-28-7692-0005] | [SoftAssert 通过] -1 == -1
+2026-04-28 11:35:37,361 | INFO | [REQ-2026-04-28-7692-0005] | [SoftAssert 通过] 密码格式 6~18 个字符之间 == 密码格式 6~18 个字符之间
+2026-04-28 11:35:37,362 | INFO | [REQ-2026-04-28-7692-0005] | [AssertManager] assert_all triggered
+2026-04-28 11:35:37,362 | INFO | [REQ-2026-04-28-7692-0005] | [SoftAssert] ------全部断言通过------
+2026-04-28 11:35:37,970 | DEBUG | [REQ-2026-04-28-7692-0006] | -------------------------------------------------------------------------------------------
+2026-04-28 11:35:37,970 | DEBUG | [REQ-2026-04-28-7692-0006] | 请求信息:
+2026-04-28 11:35:37,971 | DEBUG | [REQ-2026-04-28-7692-0006] | ---request_url:---http://shop-xo.hctestedu.com/index.php?s=/api/user/login
+2026-04-28 11:35:37,971 | DEBUG | [REQ-2026-04-28-7692-0006] | ---request_headers:---{'User-Agent': 'python-requests/2.27.1', 'Accept-Encoding': 'gzip, deflate, br', 'Accept': '*/*', 'Connection': 'keep-alive', 'application': 'web', 'application_client_type': 'PC', 'Content-Length': '47', 'Content-Type': 'application/json'}
+2026-04-28 11:35:37,972 | DEBUG | [REQ-2026-04-28-7692-0006] | ---request_body:---b'{"type": "username", "accounts": "", "pwd": ""}'
+2026-04-28 11:35:37,972 | DEBUG | [REQ-2026-04-28-7692-0006] | ---request_cookies:---<RequestsCookieJar[<Cookie PHPSESSID=fn60hfqsc949sg2537o235758d for shop-xo.hctestedu.com/>]>
+2026-04-28 11:35:37,972 | DEBUG | [REQ-2026-04-28-7692-0006] | ---request_method:---POST
+2026-04-28 11:35:37,973 | DEBUG | [REQ-2026-04-28-7692-0006] | ---request_data:---{'type': 'username', 'accounts': '', 'pwd': ''}
+2026-04-28 11:35:37,973 | DEBUG | [REQ-2026-04-28-7692-0006] | 响应信息:
+2026-04-28 11:35:37,973 | DEBUG | [REQ-2026-04-28-7692-0006] | ---response_code:---200
+2026-04-28 11:35:37,973 | DEBUG | [REQ-2026-04-28-7692-0006] | ---response_headers:---{'Connection': 'close', 'Transfer-Encoding': 'chunked', 'Cache-Control': 'no-store, no-cache, must-revalidate', 'Content-Encoding': 'gzip', 'Content-Type': 'application/json; charset=utf-8', 'Date': 'Tue, 28 Apr 2026 03:35:36 GMT', 'Expires': 'Thu, 19 Nov 1981 08:52:00 GMT', 'Pragma': 'no-cache', 'Server': 'nginx', 'Set-Cookie': 'PHPSESSID=fn60hfqsc949sg2537o235758d; path=/; HttpOnly', 'Vary': 'Accept-Encoding'}
+2026-04-28 11:35:37,974 | DEBUG | [REQ-2026-04-28-7692-0006] | ---response_body:---{"msg":"登录账号不能为空","code":-1,"data":""}
+2026-04-28 11:35:37,974 | DEBUG | [REQ-2026-04-28-7692-0006] | -------------------------------------------------------------------------------------------
+2026-04-28 11:35:37,975 | INFO | [REQ-2026-04-28-7692-0006] | [AssertManager INIT] soft=True
+2026-04-28 11:35:37,976 | INFO | [REQ-2026-04-28-7692-0006] | [SoftAssert 通过] -1 == -1
+2026-04-28 11:35:37,976 | INFO | [REQ-2026-04-28-7692-0006] | [SoftAssert 通过] 登录账号不能为空 == 登录账号不能为空
+2026-04-28 11:35:37,976 | INFO | [REQ-2026-04-28-7692-0006] | [AssertManager] assert_all triggered
+2026-04-28 11:35:37,977 | INFO | [REQ-2026-04-28-7692-0006] | [SoftAssert] ------全部断言通过------
+2026-04-28 11:35:38,671 | DEBUG | [REQ-2026-04-28-7692-0007] | -------------------------------------------------------------------------------------------
+2026-04-28 11:35:38,671 | DEBUG | [REQ-2026-04-28-7692-0007] | 请求信息:
+2026-04-28 11:35:38,671 | DEBUG | [REQ-2026-04-28-7692-0007] | ---request_url:---http://shop-xo.hctestedu.com/index.php?s=/api/user/login
+2026-04-28 11:35:38,672 | DEBUG | [REQ-2026-04-28-7692-0007] | ---request_headers:---{'User-Agent': 'python-requests/2.27.1', 'Accept-Encoding': 'gzip, deflate, br', 'Accept': '*/*', 'Connection': 'keep-alive', 'application': 'web', 'application_client_type': 'PC', 'Content-Length': '65', 'Content-Type': 'application/json'}
+2026-04-28 11:35:38,672 | DEBUG | [REQ-2026-04-28-7692-0007] | ---request_body:---b'{"type": "username", "accounts": "czj111\\u6211", "pwd": "czj111"}'
+2026-04-28 11:35:38,672 | DEBUG | [REQ-2026-04-28-7692-0007] | ---request_cookies:---<RequestsCookieJar[<Cookie PHPSESSID=4lnm3iu3e33neaoa9i78aohv83 for shop-xo.hctestedu.com/>]>
+2026-04-28 11:35:38,673 | DEBUG | [REQ-2026-04-28-7692-0007] | ---request_method:---POST
+2026-04-28 11:35:38,673 | DEBUG | [REQ-2026-04-28-7692-0007] | ---request_data:---{'type': 'username', 'accounts': 'czj111我', 'pwd': 'czj111'}
+2026-04-28 11:35:38,673 | DEBUG | [REQ-2026-04-28-7692-0007] | 响应信息:
+2026-04-28 11:35:38,674 | DEBUG | [REQ-2026-04-28-7692-0007] | ---response_code:---200
+2026-04-28 11:35:38,674 | DEBUG | [REQ-2026-04-28-7692-0007] | ---response_headers:---{'Connection': 'close', 'Transfer-Encoding': 'chunked', 'Cache-Control': 'no-store, no-cache, must-revalidate', 'Content-Encoding': 'gzip', 'Content-Type': 'application/json; charset=utf-8', 'Date': 'Tue, 28 Apr 2026 03:35:36 GMT', 'Expires': 'Thu, 19 Nov 1981 08:52:00 GMT', 'Pragma': 'no-cache', 'Server': 'nginx', 'Set-Cookie': 'PHPSESSID=4lnm3iu3e33neaoa9i78aohv83; path=/; HttpOnly', 'Vary': 'Accept-Encoding'}
+2026-04-28 11:35:38,674 | DEBUG | [REQ-2026-04-28-7692-0007] | ---response_body:---{"msg":"登录帐号不存在","code":-3,"data":""}
+2026-04-28 11:35:38,675 | DEBUG | [REQ-2026-04-28-7692-0007] | -------------------------------------------------------------------------------------------
+2026-04-28 11:35:38,675 | INFO | [REQ-2026-04-28-7692-0007] | [AssertManager INIT] soft=True
+2026-04-28 11:35:38,675 | INFO | [REQ-2026-04-28-7692-0007] | [SoftAssert 通过] -3 == -3
+2026-04-28 11:35:38,676 | INFO | [REQ-2026-04-28-7692-0007] | [SoftAssert 通过] 登录帐号不存在 == 登录帐号不存在
+2026-04-28 11:35:38,676 | INFO | [REQ-2026-04-28-7692-0007] | [AssertManager] assert_all triggered
+2026-04-28 11:35:38,676 | INFO | [REQ-2026-04-28-7692-0007] | [SoftAssert] ------全部断言通过------
+2026-04-28 11:35:39,306 | DEBUG | [REQ-2026-04-28-7692-0008] | -------------------------------------------------------------------------------------------
+2026-04-28 11:35:39,306 | DEBUG | [REQ-2026-04-28-7692-0008] | 请求信息:
+2026-04-28 11:35:39,306 | DEBUG | [REQ-2026-04-28-7692-0008] | ---request_url:---http://shop-xo.hctestedu.com/index.php?s=/api/user/login
+2026-04-28 11:35:39,306 | DEBUG | [REQ-2026-04-28-7692-0008] | ---request_headers:---{'User-Agent': 'python-requests/2.27.1', 'Accept-Encoding': 'gzip, deflate, br', 'Accept': '*/*', 'Connection': 'keep-alive', 'application': 'web', 'application_client_type': 'PC', 'Content-Length': '64', 'Content-Type': 'application/json'}
+2026-04-28 11:35:39,307 | DEBUG | [REQ-2026-04-28-7692-0008] | ---request_body:---b'{"type": "username", "accounts": "czj11", "pwd": "czj111\\u6211"}'
+2026-04-28 11:35:39,308 | DEBUG | [REQ-2026-04-28-7692-0008] | ---request_cookies:---<RequestsCookieJar[<Cookie PHPSESSID=i98125n62skmu3fasvr1l1abl0 for shop-xo.hctestedu.com/>]>
+2026-04-28 11:35:39,308 | DEBUG | [REQ-2026-04-28-7692-0008] | ---request_method:---POST
+2026-04-28 11:35:39,308 | DEBUG | [REQ-2026-04-28-7692-0008] | ---request_data:---{'type': 'username', 'accounts': 'czj11', 'pwd': 'czj111我'}
+2026-04-28 11:35:39,309 | DEBUG | [REQ-2026-04-28-7692-0008] | 响应信息:
+2026-04-28 11:35:39,309 | DEBUG | [REQ-2026-04-28-7692-0008] | ---response_code:---200
+2026-04-28 11:35:39,309 | DEBUG | [REQ-2026-04-28-7692-0008] | ---response_headers:---{'Connection': 'close', 'Transfer-Encoding': 'chunked', 'Cache-Control': 'no-store, no-cache, must-revalidate', 'Content-Encoding': 'gzip', 'Content-Type': 'application/json; charset=utf-8', 'Date': 'Tue, 28 Apr 2026 03:35:37 GMT', 'Expires': 'Thu, 19 Nov 1981 08:52:00 GMT', 'Pragma': 'no-cache', 'Server': 'nginx', 'Set-Cookie': 'PHPSESSID=i98125n62skmu3fasvr1l1abl0; path=/; HttpOnly', 'Vary': 'Accept-Encoding'}
+2026-04-28 11:35:39,310 | DEBUG | [REQ-2026-04-28-7692-0008] | ---response_body:---{"msg":"密码错误","code":-4,"data":""}
+2026-04-28 11:35:39,310 | DEBUG | [REQ-2026-04-28-7692-0008] | -------------------------------------------------------------------------------------------
+2026-04-28 11:35:39,310 | INFO | [REQ-2026-04-28-7692-0008] | [AssertManager INIT] soft=True
+2026-04-28 11:35:39,311 | INFO | [REQ-2026-04-28-7692-0008] | [SoftAssert 通过] -4 == -4
+2026-04-28 11:35:39,311 | INFO | [REQ-2026-04-28-7692-0008] | [SoftAssert 通过] 密码错误 == 密码错误
+2026-04-28 11:35:39,311 | INFO | [REQ-2026-04-28-7692-0008] | [AssertManager] assert_all triggered
+2026-04-28 11:35:39,311 | INFO | [REQ-2026-04-28-7692-0008] | [SoftAssert] ------全部断言通过------

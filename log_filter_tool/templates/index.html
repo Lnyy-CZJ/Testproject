@@ -1,0 +1,753 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Log 过滤工具</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%232457d6'/><text x='50%25' y='50%25' dominant-baseline='central' text-anchor='middle' fill='white' font-family='Arial,sans-serif' font-size='20' font-weight='bold'>L</text></svg>">
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #f5f7fb;
+        color: #172033;
+      }
+
+      body {
+        margin: 0;
+      }
+
+      main {
+        max-width: 1180px;
+        margin: 0 auto;
+        padding: 28px 20px 40px;
+      }
+
+      h1 {
+        margin: 0 0 18px;
+        font-size: 28px;
+        font-weight: 700;
+      }
+
+      form {
+        display: grid;
+        gap: 16px;
+      }
+
+      label {
+        display: block;
+        margin-bottom: 8px;
+        font-weight: 650;
+      }
+
+      textarea,
+      pre,
+      select {
+        box-sizing: border-box;
+        width: 100%;
+        border: 1px solid #c8d1e1;
+        border-radius: 8px;
+        background: #ffffff;
+        color: #172033;
+      }
+
+      textarea,
+      pre {
+        min-height: 300px;
+        padding: 12px;
+        font-family: "SFMono-Regular", Consolas, monospace;
+        font-size: 13px;
+        line-height: 1.55;
+        white-space: pre-wrap;
+      }
+
+      textarea {
+        resize: vertical;
+      }
+
+      pre {
+        margin: 0;
+        overflow: auto;
+        height: 600px;
+        resize: vertical;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        background: #ffffff;
+        border: 1px solid #c8d1e1;
+      }
+
+      th,
+      td {
+        padding: 10px 12px;
+        border-bottom: 1px solid #e5eaf2;
+        text-align: left;
+        white-space: nowrap;
+      }
+
+      th {
+        background: #f0f3f8;
+        color: #526070;
+        font-size: 13px;
+      }
+
+      .analysis {
+        display: grid;
+        gap: 14px;
+      }
+
+      .analysis-summary {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(110px, 1fr));
+        gap: 10px;
+      }
+
+      .metric {
+        padding: 12px;
+        border: 1px solid #d8e0ed;
+        border-radius: 8px;
+        background: #ffffff;
+      }
+
+      .metric-label {
+        color: #526070;
+        font-size: 13px;
+      }
+
+      .metric-value {
+        margin-top: 4px;
+        font-size: 22px;
+        font-weight: 700;
+      }
+
+      .table-scroll {
+        overflow-x: auto;
+      }
+
+      select {
+        min-height: 38px;
+        padding: 0 10px;
+      }
+
+      button {
+        min-height: 38px;
+        padding: 0 16px;
+        border: 0;
+        border-radius: 8px;
+        background: #2457d6;
+        color: #ffffff;
+        font-weight: 650;
+        cursor: pointer;
+      }
+
+      button:hover {
+        background: #1d49b7;
+      }
+
+      .toolbar {
+        display: grid;
+        grid-template-columns: minmax(180px, 320px) auto 1fr;
+        gap: 12px;
+        align-items: end;
+      }
+
+      .stats {
+        align-self: center;
+        color: #526070;
+        font-size: 14px;
+      }
+
+      .message {
+        padding: 10px 12px;
+        border: 1px solid #e0bc63;
+        border-radius: 8px;
+        background: #fff8e6;
+        color: #694a00;
+      }
+
+      .result-header {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: center;
+      }
+
+      .field-header {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: center;
+        margin-bottom: 8px;
+      }
+
+      .field-header label {
+        margin: 0;
+      }
+
+      .result-tools,
+      .search-controls {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .search-input {
+        box-sizing: border-box;
+        width: 220px;
+        min-height: 38px;
+        padding: 0 10px;
+        border: 1px solid #c8d1e1;
+        border-radius: 8px;
+        background: #ffffff;
+        color: #172033;
+      }
+
+      .search-count {
+        min-width: 48px;
+        color: #526070;
+        font-size: 13px;
+        text-align: center;
+      }
+
+      mark {
+        background: #ffe58f;
+        color: inherit;
+      }
+
+      mark.current-match {
+        background: #ffb84d;
+        outline: 2px solid #c16a00;
+      }
+
+      .action-message {
+        position: fixed;
+        top: 20px;
+        left: 50%;
+        z-index: 20;
+        max-width: min(560px, calc(100vw - 40px));
+        margin: 0;
+        transform: translateX(-50%);
+        box-shadow: 0 6px 18px rgba(23, 32, 51, 0.2);
+      }
+
+      .action-message.success {
+        border-color: #8ac79b;
+        background: #effaf1;
+        color: #1d6b32;
+      }
+
+      .action-message.error {
+        border-color: #e19a9a;
+        background: #fff0f0;
+        color: #8a1f1f;
+      }
+
+      .multi-select {
+        position: relative;
+      }
+
+      .multi-select-toggle {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        min-height: 38px;
+        padding: 0 10px;
+        border: 1px solid #c8d1e1;
+        border-radius: 8px;
+        background: #ffffff;
+        cursor: pointer;
+        user-select: none;
+      }
+
+      .multi-select-toggle:focus {
+        outline: 2px solid #2457d6;
+        outline-offset: -2px;
+      }
+
+      .multi-select-toggle-text {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .multi-select-toggle-arrow {
+        margin-left: 8px;
+        font-size: 11px;
+        color: #526070;
+      }
+
+      .multi-select-dropdown {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        z-index: 10;
+        margin-top: 4px;
+        border: 1px solid #c8d1e1;
+        border-radius: 8px;
+        background: #ffffff;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+        display: none;
+      }
+
+      .multi-select-dropdown.open {
+        display: block;
+      }
+
+      .multi-select-actions {
+        display: flex;
+        gap: 8px;
+        padding: 8px 10px;
+        border-bottom: 1px solid #e5eaf2;
+      }
+
+      .multi-select-actions button {
+        min-height: 28px;
+        padding: 0 10px;
+        font-size: 13px;
+        border-radius: 6px;
+      }
+
+      .multi-select-list {
+        max-height: 220px;
+        overflow-y: auto;
+        padding: 4px 0;
+      }
+
+      .multi-select-list label {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 10px;
+        margin: 0;
+        font-weight: 400;
+        cursor: pointer;
+      }
+
+      .multi-select-list label:hover {
+        background: #f0f3f8;
+      }
+
+      .multi-select-list input[type="checkbox"] {
+        width: auto;
+        margin: 0;
+        accent-color: #2457d6;
+      }
+
+      @media (max-width: 720px) {
+        .toolbar {
+          grid-template-columns: 1fr;
+        }
+
+        .analysis-summary {
+          grid-template-columns: repeat(2, minmax(110px, 1fr));
+        }
+
+        .result-header,
+        .field-header {
+          align-items: stretch;
+          flex-direction: column;
+        }
+
+        .search-input {
+          width: 100%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Log 过滤工具</h1>
+
+      <form method="post">
+        <section>
+          <div class="field-header">
+            <label for="log_text">日志内容</label>
+            <button type="button" id="export-log-content-btn" onclick="exportLog('log_content')">导出日志</button>
+          </div>
+          <textarea id="log_text" name="log_text" placeholder="把日志粘贴到这里">{{ log_text }}</textarea>
+        </section>
+
+        <section class="toolbar">
+          <div class="multi-select" id="multi-select">
+            <label for="method-toggle">method</label>
+            <div class="multi-select-toggle" id="method-toggle" tabindex="0">
+              <span class="multi-select-toggle-text" id="method-toggle-text">全部</span>
+              <span class="multi-select-toggle-arrow">&#9660;</span>
+            </div>
+            <div class="multi-select-dropdown" id="method-dropdown">
+              <div class="multi-select-actions">
+                <button type="button" id="btn-select-all">全选</button>
+                <button type="button" id="btn-deselect-all">取消全选</button>
+              </div>
+              <div class="multi-select-list">
+                <label>
+                  <input type="checkbox" name="method" value="{{ all_method }}" data-is-all="1"
+                    {% if all_method in selected_methods %}checked{% endif %}>
+                  全部
+                </label>
+                {% for method in methods %}
+                  <label>
+                    <input type="checkbox" name="method" value="{{ method }}"
+                      {% if method in selected_methods %}checked{% endif %}>
+                    {{ method }}
+                  </label>
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+
+          <button type="submit">解析日志</button>
+
+          <div class="stats">
+            识别到 {{ method_count }} 个 method，当前匹配 {{ match_count }} 个日志块
+          </div>
+        </section>
+
+        {% if message %}
+          <div class="message">{{ message }}</div>
+        {% endif %}
+      </form>
+
+      <section>
+        <div class="result-header">
+          <h2>过滤结果</h2>
+          <div class="result-tools">
+            <div class="search-controls">
+              <input class="search-input" id="result-search" type="search" placeholder="搜索过滤结果" aria-label="搜索过滤结果">
+              <button type="button" id="search-prev-btn" onclick="moveSearchMatch(-1)">上一个</button>
+              <button type="button" id="search-next-btn" onclick="moveSearchMatch(1)">下一个</button>
+              <span class="search-count" id="search-count">0/0</span>
+            </div>
+            <button type="button" id="copy-btn" onclick="copyResult()">复制</button>
+            <button type="button" id="export-filtered-result-btn" onclick="exportLog('filtered_result')">导出日志</button>
+          </div>
+        </div>
+        <pre id="result-text">{{ result_text }}</pre>
+      </section>
+
+      <div class="message action-message" id="action-message" role="status" hidden></div>
+
+      {% if overall_analysis %}
+        <section class="analysis">
+          <div class="result-header">
+            <h2>接口分析</h2>
+            <div class="stats">当前接口：{{ selected_analysis.method }}</div>
+          </div>
+
+          <div class="analysis-summary">
+            <div class="metric">
+              <div class="metric-label">请求次数</div>
+              <div class="metric-value">{{ selected_analysis.request_count }}</div>
+            </div>
+            <div class="metric">
+              <div class="metric-label">响应次数</div>
+              <div class="metric-value">{{ selected_analysis.response_count }}</div>
+            </div>
+            <div class="metric">
+              <div class="metric-label">成功次数</div>
+              <div class="metric-value">{{ selected_analysis.success_count }}</div>
+            </div>
+            <div class="metric">
+              <div class="metric-label">失败次数</div>
+              <div class="metric-value">{{ selected_analysis.failure_count }}</div>
+            </div>
+            <div class="metric">
+              <div class="metric-label">成功率</div>
+              <div class="metric-value">{{ selected_analysis.success_rate }}%</div>
+            </div>
+          </div>
+
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>接口</th>
+                  <th>请求</th>
+                  <th>响应</th>
+                  <th>成功</th>
+                  <th>失败</th>
+                  <th>未响应</th>
+                  <th>成功率</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for method, item in analysis.items() %}
+                  <tr>
+                    <td>{{ method }}</td>
+                    <td>{{ item.request_count }}</td>
+                    <td>{{ item.response_count }}</td>
+                    <td>{{ item.success_count }}</td>
+                    <td>{{ item.failure_count }}</td>
+                    <td>{{ item.unresponded_count }}</td>
+                    <td>{{ item.success_rate }}%</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>HTTP 状态码</th>
+                  <th>次数</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for status_code, count in selected_analysis.status_codes.items() %}
+                  <tr>
+                    <td>{{ status_code }}</td>
+                    <td>{{ count }}</td>
+                  </tr>
+                {% else %}
+                  <tr>
+                    <td colspan="2">暂无可识别的 HTTP 状态码</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      {% endif %}
+    </main>
+    <script>
+      (function() {
+        var toggle = document.getElementById('method-toggle');
+        var dropdown = document.getElementById('method-dropdown');
+        var toggleText = document.getElementById('method-toggle-text');
+        var container = document.getElementById('multi-select');
+        var allCheckbox = dropdown.querySelector('input[data-is-all="1"]');
+        var checkboxes = dropdown.querySelectorAll('input[name="method"]');
+        var methodCheckboxes = dropdown.querySelectorAll('input[name="method"]:not([data-is-all="1"])');
+        var form = container.closest('form');
+        var selectionSnapshot = '';
+
+        /** 返回当前选中 method 的稳定字符串，用于判断用户是否修改了选择。 */
+        function getSelectionSignature() {
+          return Array.from(checkboxes)
+            .filter(function(cb) { return cb.checked; })
+            .map(function(cb) { return cb.value; })
+            .sort()
+            .join('|');
+        }
+
+        function updateToggleText() {
+          var checked = dropdown.querySelectorAll('input[name="method"]:checked');
+          if (checked.length === 0) {
+            toggleText.textContent = '全部';
+          } else if (allCheckbox.checked) {
+            toggleText.textContent = '全部';
+          } else if (checked.length === 1) {
+            toggleText.textContent = checked[0].value;
+          } else {
+            toggleText.textContent = '已选 ' + checked.length + ' 项';
+          }
+        }
+
+        toggle.addEventListener('click', function(e) {
+          e.stopPropagation();
+          if (!dropdown.classList.contains('open')) {
+            selectionSnapshot = getSelectionSignature();
+          }
+          dropdown.classList.toggle('open');
+          toggle.focus();
+        });
+
+        document.addEventListener('click', function(e) {
+          if (!container.contains(e.target) && dropdown.classList.contains('open')) {
+            var selectionChanged = selectionSnapshot !== getSelectionSignature();
+            var clickedInteractiveControl = e.target.closest('button, input, textarea, a');
+            dropdown.classList.remove('open');
+            if (selectionChanged && !clickedInteractiveControl) {
+              form.requestSubmit();
+            }
+          }
+        });
+
+        allCheckbox.addEventListener('change', function() {
+          if (this.checked) {
+            methodCheckboxes.forEach(function(cb) { cb.checked = false; });
+          }
+          updateToggleText();
+        });
+
+        methodCheckboxes.forEach(function(cb) {
+          cb.addEventListener('change', function() {
+            if (this.checked) {
+              allCheckbox.checked = false;
+            }
+            updateToggleText();
+          });
+        });
+
+        document.getElementById('btn-select-all').addEventListener('click', function(e) {
+          e.preventDefault();
+          allCheckbox.checked = false;
+          methodCheckboxes.forEach(function(cb) { cb.checked = true; });
+          updateToggleText();
+        });
+
+        document.getElementById('btn-deselect-all').addEventListener('click', function(e) {
+          e.preventDefault();
+          allCheckbox.checked = true;
+          methodCheckboxes.forEach(function(cb) { cb.checked = false; });
+          updateToggleText();
+        });
+
+        updateToggleText();
+      })();
+
+      var resultElement = document.getElementById('result-text');
+      var resultRawText = resultElement.textContent;
+      var searchMatches = [];
+      var currentSearchIndex = -1;
+      var actionMessageTimer;
+
+      /**
+       * 在页面中展示短暂操作结果。
+       * @param {string} message 用户可见的成功或失败信息。
+       * @param {boolean} isError 是否按错误样式展示。
+       */
+      function showActionMessage(message, isError) {
+        var messageElement = document.getElementById('action-message');
+        clearTimeout(actionMessageTimer);
+        messageElement.textContent = message;
+        messageElement.classList.toggle('error', Boolean(isError));
+        messageElement.classList.toggle('success', !isError);
+        messageElement.hidden = false;
+        actionMessageTimer = setTimeout(function() {
+          messageElement.hidden = true;
+        }, 3000);
+      }
+
+      /**
+       * 导出指定文本区域的当前原始内容，不包含搜索产生的高亮标签。
+       * @param {'log_content'|'filtered_result'} exportType 导出内容来源。
+       */
+      function exportLog(exportType) {
+        var content = exportType === 'log_content'
+          ? document.getElementById('log_text').value
+          : resultRawText;
+        var buttonId = exportType === 'log_content'
+          ? 'export-log-content-btn'
+          : 'export-filtered-result-btn';
+        var button = document.getElementById(buttonId);
+        var originalText = button.textContent;
+
+        button.disabled = true;
+        button.textContent = '导出中...';
+        fetch('/export', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({export_type: exportType, content: content})
+        })
+          .then(function(response) {
+            return response.json().then(function(payload) {
+              if (!response.ok) {
+                throw new Error(payload.message || '导出失败');
+              }
+              return payload;
+            });
+          })
+          .then(function(payload) {
+            showActionMessage('已保存：' + payload.path, false);
+          })
+          .catch(function(error) {
+            showActionMessage(error.message, true);
+          })
+          .finally(function() {
+            button.disabled = false;
+            button.textContent = originalText;
+          });
+      }
+
+      /** 根据关键词重新渲染过滤结果中的全部匹配项，并定位到第一项。 */
+      function renderSearchMatches() {
+        var query = document.getElementById('result-search').value;
+        var searchCount = document.getElementById('search-count');
+        resultElement.textContent = '';
+        searchMatches = [];
+        currentSearchIndex = -1;
+
+        if (!query) {
+          resultElement.textContent = resultRawText;
+          searchCount.textContent = '0/0';
+          return;
+        }
+
+        var sourceLower = resultRawText.toLowerCase();
+        var queryLower = query.toLowerCase();
+        var cursor = 0;
+        var matchIndex = sourceLower.indexOf(queryLower, cursor);
+
+        while (matchIndex !== -1) {
+          resultElement.appendChild(
+            document.createTextNode(resultRawText.slice(cursor, matchIndex))
+          );
+          var mark = document.createElement('mark');
+          mark.textContent = resultRawText.slice(matchIndex, matchIndex + query.length);
+          resultElement.appendChild(mark);
+          searchMatches.push(mark);
+          cursor = matchIndex + query.length;
+          matchIndex = sourceLower.indexOf(queryLower, cursor);
+        }
+        resultElement.appendChild(document.createTextNode(resultRawText.slice(cursor)));
+
+        if (searchMatches.length > 0) {
+          focusSearchMatch(0);
+        } else {
+          searchCount.textContent = '0/0';
+        }
+      }
+
+      /**
+       * 定位到指定匹配项并更新当前项样式和计数。
+       * @param {number} index 目标匹配项下标，会循环到有效范围。
+       */
+      function focusSearchMatch(index) {
+        if (searchMatches.length === 0) {
+          return;
+        }
+        if (currentSearchIndex >= 0) {
+          searchMatches[currentSearchIndex].classList.remove('current-match');
+        }
+        currentSearchIndex = (index + searchMatches.length) % searchMatches.length;
+        searchMatches[currentSearchIndex].classList.add('current-match');
+        document.getElementById('search-count').textContent =
+          (currentSearchIndex + 1) + '/' + searchMatches.length;
+        searchMatches[currentSearchIndex].scrollIntoView({block: 'center'});
+      }
+
+      /**
+       * 前后循环切换当前搜索匹配项。
+       * @param {number} direction 1 表示下一个，-1 表示上一个。
+       */
+      function moveSearchMatch(direction) {
+        if (searchMatches.length > 0) {
+          focusSearchMatch(currentSearchIndex + direction);
+        }
+      }
+
+      document.getElementById('result-search').addEventListener('input', renderSearchMatches);
+      document.getElementById('result-search').addEventListener('keydown', function(event) {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          moveSearchMatch(event.shiftKey ? -1 : 1);
+        }
+      });
+
+      function copyResult() {
+        navigator.clipboard.writeText(resultRawText).then(function() {
+          var btn = document.getElementById('copy-btn');
+          btn.textContent = '已复制';
+          setTimeout(function() { btn.textContent = '复制'; }, 1500);
+        });
+      }
+    </script>
+  </body>
+</html>

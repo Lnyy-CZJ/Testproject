@@ -1,0 +1,30 @@
+name: 获取媒体上传配置
+tags: [media, post]
+request:
+  service_name: tool.people_insight.MediaService
+  method_name: GetMediaUploadConfig
+  params: {}
+assert:
+  http_status: 200
+  gateway:
+    code: 0
+    message: ok
+  response:
+    id: req_0
+    success: true
+    code: 0
+    message: ok
+  data_fields:
+    - allowed_content_types
+    - asset_ttl_seconds
+    - cache_expires_time
+    - complete_retry
+    - config_cache_ttl_seconds
+    - config_version
+    - face_detection_required
+    - max_size_bytes
+    - recommended_jpeg_quality
+    - recommended_max_height
+    - recommended_max_width
+    - strip_exif
+    - upload_url_ttl_seconds

@@ -1,0 +1,366 @@
+/* DefectDetail & sub-components — extracted inline styles */
+
+/* Tag with rounded-6 (repeated 30+ times across components) */
+.tag-rounded {
+  border-radius: 6px;
+  margin: 0;
+}
+
+/* Status tag in header */
+.tag-status {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 2px 12px;
+  border-radius: 8px;
+  line-height: 24px;
+  margin: 0;
+}
+
+/* System tag in comments */
+.tag-system {
+  font-size: 10px;
+  line-height: 16px;
+  padding: 0 4px;
+  border-radius: 4px;
+  margin: 0;
+}
+
+/* File tag in analysis panel */
+.tag-file {
+  border-radius: 4px;
+  font-size: 12px;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Small tag with ml */
+.tag-ml {
+  border-radius: 6px;
+  margin-left: 4px;
+}
+
+/* Tab content padding */
+.tab-content {
+  padding: 4px 0;
+}
+
+/* Summary header panel */
+.summary-header {
+  border-radius: var(--radius-panel);
+  background: var(--color-surface-glass);
+  backdrop-filter: blur(18px);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  box-shadow: var(--shadow-sm);
+  padding: 18px 22px 14px;
+  margin-bottom: 18px;
+}
+
+/* Action card (quick actions / defect info) */
+.action-card {
+  padding: 16px 18px;
+  border-radius: 20px;
+}
+
+/* Action button in quick actions */
+.action-btn {
+  border-radius: 12px;
+  justify-content: flex-start;
+  height: 38px;
+}
+
+/* Analysis info card */
+.analysis-info-card {
+  padding: 12px 14px;
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+/* Fix task info card */
+.fix-info-card {
+  padding: 10px 14px;
+  border-radius: 14px;
+}
+
+/* Ellipsis single line */
+.ellipsis-single {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Steps padding */
+.steps-compact {
+  padding: 0 8px;
+}
+
+/* Comment textarea */
+.comment-textarea {
+  border-radius: 14px;
+  border-color: var(--color-border-default);
+}
+
+/* Comment send button */
+.comment-send-btn {
+  align-self: flex-end;
+  border-radius: 14px;
+}
+
+/* Avatar brand gradient */
+.avatar-brand {
+  background: var(--color-brand-gradient);
+  font-size: 11px;
+}
+
+/* Avatar system message */
+.avatar-system {
+  background: var(--purple-500);
+  font-size: 11px;
+}
+
+/* Select full width */
+.select-full {
+  width: 100%;
+}
+
+/* Edit button color */
+.edit-btn-color {
+  color: var(--purple-600);
+}
+
+@keyframes thinking-fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes thinking-pulse {
+  0%, 100% { transform: scale(1); opacity: 0.6; }
+  50% { transform: scale(1.8); opacity: 0; }
+}
+
+.thinking-process-root {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.thinking-progress-bar {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 12px 16px;
+  background: var(--color-surface-glass);
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.8);
+}
+
+.thinking-progress-phase {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+
+.thinking-progress-node-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.thinking-progress-node {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid transparent;
+  transition: all 0.3s ease;
+  z-index: 1;
+}
+
+.thinking-progress-pulse {
+  position: absolute;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  animation: thinking-pulse 2s ease-in-out infinite;
+  z-index: 0;
+}
+
+.thinking-progress-label {
+  font-size: 13px;
+  white-space: nowrap;
+  transition: all 0.3s ease;
+}
+
+.thinking-progress-line {
+  flex: 1;
+  height: 2px;
+  margin: 0 8px;
+  border-radius: 1px;
+  transition: background 0.3s ease;
+}
+
+.thinking-steps-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  max-height: 420px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.thinking-step-item {
+  display: flex;
+  gap: 12px;
+  animation: thinking-fade-in 0.3s ease-out;
+}
+
+.thinking-step-line {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 20px;
+  flex-shrink: 0;
+  padding-top: 4px;
+}
+
+.thinking-step-dot {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.thinking-step-connector {
+  width: 2px;
+  flex: 1;
+  min-height: 12px;
+  background: var(--color-border-default);
+  margin: 4px 0;
+}
+
+.thinking-step-body {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding-bottom: 12px;
+  flex: 1;
+  min-width: 0;
+}
+
+.thinking-step-time {
+  font-size: 11px;
+  color: var(--color-text-quaternary);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.thinking-reasoning-block {
+  background: var(--purple-50);
+  border-radius: 10px;
+  padding: 8px 12px;
+  margin-bottom: 4px;
+}
+
+.thinking-reasoning-text {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.thinking-tool-card {
+  background: var(--color-surface-elevated);
+  border: 1px solid var(--color-border-default);
+  border-radius: 10px;
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: border-color 0.2s;
+  width: 100%;
+}
+
+.thinking-tool-card:hover {
+  border-color: var(--purple-300);
+}
+
+.thinking-tool-result {
+  border-color: var(--color-border-default);
+  margin-top: -4px;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
+.thinking-tool-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.thinking-tool-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.thinking-tool-toggle {
+  font-size: 11px;
+  color: var(--color-text-quaternary);
+}
+
+.thinking-tool-content {
+  overflow: hidden;
+}
+
+.thinking-tool-code {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-text-tertiary);
+  background: var(--color-surface-muted);
+  border-radius: 6px;
+  padding: 6px 8px;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.thinking-error-block {
+  background: #fef2f2;
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: #dc2626;
+}
+
+.thinking-error-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: #fef2f2;
+  border-radius: 10px;
+  font-size: 13px;
+  color: #dc2626;
+}
+
+.thinking-complete-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: #f0fdf4;
+  border-radius: 10px;
+  animation: thinking-fade-in 0.4s ease-out;
+}

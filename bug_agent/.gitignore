@@ -1,0 +1,49 @@
+# Dependencies
+node_modules/
+web/node_modules/
+
+# Build output
+server/bug-agent
+server/tmp/
+web/dist/
+web/.vite/
+
+# Environment
+.env
+.env.local
+.env.*.local
+server/cmd/server/config-*.yaml
+server/cmd/server/config.yaml
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+.playwright-cli/
+
+# Test coverage
+coverage/
+*.cover
+*.prof
+
+# Temp files
+*.tmp
+*.temp
+.cache/
+
+# AI/Tool artifacts
+.claude/
+.workbuddy/
+.worktrees/
+server/bug_agent.db
+server/.github/
+.playwright/
+server/server

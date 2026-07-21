@@ -1,0 +1,35 @@
+name: 获取搜索任务状态
+tags: [search, post]
+flow_only: true
+request:
+  service_name: tool.people_insight.SearchService
+  method_name: GetTask
+  params:
+    task_id: "{{task_id}}"
+assert:
+  http_status: 200
+  gateway:
+    code: 0
+    message: ok
+  response:
+    id: req_0
+    success: true
+    code: 0
+    message: ok
+  data_fields:
+    - cache_hit
+    - candidate_confidence_scores
+    - candidate_count
+    - error_code
+    - failure_reason
+    - has_additional_clues
+    - is_initial_search
+    - no_result_reason
+    - progress
+    - provider_execution
+    - provider_summary
+    - result_type
+    - status
+    - task_id
+    - top_confidence_score
+    - update_time

@@ -1,0 +1,26 @@
+2026-04-27 11:05:35,273 | ERROR | [REQ-2026-04-27-9384-0002] | [SoftAssert 失败] 0 == 1
+NoneType: None
+2026-04-27 11:05:35,273 | ERROR | [REQ-2026-04-27-9384-0002] | [SoftAssert------断言不通过------
+0 == 1
+NoneType: None
+2026-04-27 11:05:37,560 | ERROR | [REQ-2026-04-27-9384-0005] | [SoftAssert 失败] -1 == 0
+NoneType: None
+2026-04-27 11:05:37,563 | ERROR | [REQ-2026-04-27-9384-0005] | [SoftAssert 失败] 商品不存在或已删除 == success
+NoneType: None
+2026-04-27 11:05:37,563 | ERROR | [REQ-2026-04-27-9384-0005] | [SoftAssert------断言不通过------
+-1 == 0
+商品不存在或已删除 == success
+NoneType: None
+2026-04-27 11:05:38,102 | ERROR | [REQ-2026-04-27-9384-0006] | [SoftAssert 失败] 0 == -1
+NoneType: None
+2026-04-27 11:05:38,103 | ERROR | [REQ-2026-04-27-9384-0006] | [SoftAssert 失败] success == 商品不存在或已删除
+NoneType: None
+2026-04-27 11:05:38,104 | ERROR | [REQ-2026-04-27-9384-0006] | [SoftAssert------断言不通过------
+0 == -1
+success == 商品不存在或已删除
+NoneType: None
+2026-04-27 11:06:37,291 | ERROR | [REQ-2026-04-27-7428-0001] | [SoftAssert 失败] 0 == 1
+NoneType: None
+2026-04-27 11:06:37,293 | ERROR | [REQ-2026-04-27-7428-0001] | [SoftAssert------断言不通过------
+0 == 1
+NoneType: None

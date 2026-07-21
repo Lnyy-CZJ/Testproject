@@ -1,0 +1,30 @@
+name: 查询任务候选集列表
+tags: [search, post]
+flow_only: true
+request:
+  service_name: tool.people_insight.SearchService
+  method_name: ListTaskCandidates
+  params:
+    task_id: "{{task_id}}"
+    page:
+      page_size: 10
+      page_token: ""
+assert:
+  http_status: 200
+  gateway:
+    code: 0
+    message: ok
+  response:
+    id: req_0
+    success: true
+    code: 0
+    message: ok
+  data_fields:
+    - empty_reason
+    - items
+    - next_page_token
+    - provider_summary
+    - task_id
+    - update_time
+extract:
+  candidate_id: $.items[0].candidate_id

@@ -1,0 +1,453 @@
+import os
+import re
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+try:
+    from flask import Flask, jsonify, render_template, request
+except ImportError:  # Allows core log parsing tests to run before Flask is installed.
+    Flask = None
+    jsonify = None
+    render_template = None
+    request = None
+
+
+ALL_METHOD = "__ALL__"
+METHOD_PATTERNS = (
+    re.compile(r"method=([A-Za-z0-9_]+)"),
+    re.compile(r'"method_name"\s*:\s*"([A-Za-z0-9_]+)"'),
+)
+CONSOLE_PREFIX_PATTERN = re.compile(r"^.*?\bflutter:\s?")
+REQUEST_ID_PATTERN = re.compile(
+    r'(?<![A-Za-z0-9_])"?request_id"?\s*[:=]\s*"?([^"\s,}]+)',
+    re.IGNORECASE,
+)
+TRACE_ID_PATTERN = re.compile(
+    r'(?<![A-Za-z0-9_])"?trace_id"?\s*[:=]\s*"?([^"\s,}]+)',
+    re.IGNORECASE,
+)
+STATUS_CODE_PATTERNS = (
+    re.compile(r"\[HTTP\]\s+<--\s+(\d{3})"),
+    re.compile(r"HTTP/\d(?:\.\d)?\s+(\d{3})", re.IGNORECASE),
+    re.compile(r'"?status_code"?\s*[:=]\s*"?(\d{3})', re.IGNORECASE),
+)
+EXPORT_FILE_PREFIXES = {
+    "log_content": "log_content",
+    "filtered_result": "filtered_result",
+}
+DEFAULT_EXPORT_DIR = "/Users/admin/Documents/log"
+# 导出文件名使用用户所在的上海时区，避免 Docker 默认 UTC 造成时间偏差。
+EXPORT_TIMEZONE = timezone(timedelta(hours=8))
+
+
+def extract_methods(log_text):
+    methods = set()
+    for pattern in METHOD_PATTERNS:
+        methods.update(pattern.findall(log_text or ""))
+    return sorted(methods)
+
+
+def extract_request_id(text):
+    match = REQUEST_ID_PATTERN.search(text or "")
+    return match.group(1) if match else None
+
+
+def extract_trace_id(text):
+    match = TRACE_ID_PATTERN.search(text or "")
+    return match.group(1) if match else None
+
+
+def extract_status_code(text):
+    for pattern in STATUS_CODE_PATTERNS:
+        match = pattern.search(text or "")
+        if match:
+            return int(match.group(1))
+    return None
+
+
+def detect_log_kind(text):
+    text = text or ""
+    if "[HTTP] <--" in text or "[HTTP] response:" in text:
+        return "response"
+    if "[HTTP] -->" in text or "[HTTP] request:" in text:
+        return "request"
+    return "other"
+
+
+def parse_log_block(block, index):
+    methods = extract_methods(block)
+    return {
+        "index": index,
+        "raw_text": block,
+        "display_text": format_result_text([block]),
+        "method": methods[0] if methods else None,
+        "request_id": extract_request_id(block),
+        "trace_id": extract_trace_id(block),
+        "kind": detect_log_kind(block),
+        "status_code": extract_status_code(block),
+    }
+
+
+def parse_log_blocks(log_text):
+    return [
+        parse_log_block(block, index)
+        for index, block in enumerate(split_log_blocks(log_text))
+    ]
+
+
+def _empty_interface_statistics(method):
+    return {
+        "method": method,
+        "request_count": 0,
+        "response_count": 0,
+        "success_count": 0,
+        "failure_count": 0,
+        "unresponded_count": 0,
+        "success_rate": 0.0,
+        "status_codes": {},
+    }
+
+
+def _finalize_statistics(statistics):
+    for summary in statistics.values():
+        summary["unresponded_count"] = max(
+            summary["request_count"] - summary["response_count"], 0
+        )
+        response_count = summary["response_count"]
+        summary["success_rate"] = round(
+            summary["success_count"] / response_count * 100, 1
+        ) if response_count else 0.0
+    return statistics
+
+
+def build_interface_statistics(parsed_blocks):
+    statistics = {}
+    for block in parsed_blocks:
+        method = block.get("method")
+        if not method:
+            continue
+
+        summary = statistics.setdefault(method, _empty_interface_statistics(method))
+        is_request_header = "[HTTP] -->" in block.get("raw_text", "")
+        is_response_header = (
+            "[HTTP] <--" in block.get("raw_text", "")
+            and block.get("status_code") is not None
+        )
+        if is_request_header:
+            summary["request_count"] += 1
+        elif is_response_header:
+            summary["response_count"] += 1
+            status_code = block.get("status_code")
+            if status_code is None:
+                continue
+            summary["status_codes"][status_code] = (
+                summary["status_codes"].get(status_code, 0) + 1
+            )
+            if 200 <= status_code <= 299:
+                summary["success_count"] += 1
+            elif status_code >= 400:
+                summary["failure_count"] += 1
+
+    return _finalize_statistics(dict(sorted(statistics.items())))
+
+
+def summarize_interface_statistics(statistics):
+    summary = _empty_interface_statistics("全部")
+    for method_summary in statistics.values():
+        for field in (
+            "request_count",
+            "response_count",
+            "success_count",
+            "failure_count",
+            "unresponded_count",
+        ):
+            summary[field] += method_summary[field]
+        for status_code, count in method_summary["status_codes"].items():
+            summary["status_codes"][status_code] = (
+                summary["status_codes"].get(status_code, 0) + count
+            )
+
+    return _finalize_statistics({"全部": summary})["全部"]
+
+
+def split_log_blocks(log_text):
+    if not log_text:
+        return []
+
+    lines = log_text.splitlines()
+    if not any("┌" in line or "└" in line for line in lines):
+        return [line for line in lines if line.strip()]
+
+    blocks = []
+    current = []
+    loose_lines = []
+    in_block = False
+
+    for line in lines:
+        if "┌" in line:
+            if loose_lines:
+                blocks.extend(line for line in loose_lines if line.strip())
+                loose_lines = []
+            current = [line]
+            in_block = True
+            continue
+
+        if in_block:
+            current.append(line)
+            if "└" in line:
+                blocks.append("\n".join(current))
+                current = []
+                in_block = False
+            continue
+
+        if line.strip():
+            loose_lines.append(line)
+
+    if current:
+        blocks.append("\n".join(current))
+    if loose_lines:
+        blocks.extend(line for line in loose_lines if line.strip())
+
+    return blocks
+
+
+def block_matches_method(block, method):
+    escaped_method = re.escape(method)
+    return (
+        re.search(rf"method={escaped_method}(?![A-Za-z0-9_])", block) is not None
+        or re.search(rf'"method_name"\s*:\s*"{escaped_method}"', block) is not None
+    )
+
+
+def _should_include_next_block(block, next_block):
+    if "[HTTP] -->" in block and "[HTTP] request:" in next_block:
+        return True
+    if "[HTTP] <--" in block and "[HTTP] response:" in next_block:
+        return True
+    return False
+
+
+def _normalize_methods(methods):
+    if isinstance(methods, str):
+        return [methods] if methods else [ALL_METHOD]
+    normalized = list(methods or [])
+    return normalized or [ALL_METHOD]
+
+
+def filter_log_blocks(blocks, methods):
+    methods = _normalize_methods(methods)
+    if ALL_METHOD in methods:
+        return blocks
+
+    selected_indexes = set()
+    for index, block in enumerate(blocks):
+        for method in methods:
+            if block_matches_method(block, method):
+                selected_indexes.add(index)
+                if index + 1 < len(blocks) and _should_include_next_block(block, blocks[index + 1]):
+                    selected_indexes.add(index + 1)
+                break
+
+    return [block for index, block in enumerate(blocks) if index in selected_indexes]
+
+
+def filter_log_text(log_text, methods):
+    methods = _normalize_methods(methods)
+    blocks = split_log_blocks(log_text)
+    if ALL_METHOD in methods:
+        return format_result_text(blocks), len(blocks)
+
+    filtered_blocks = filter_log_blocks(blocks, methods)
+    return format_result_text(filtered_blocks), len(filtered_blocks)
+
+
+def clean_log_line(line):
+    line = CONSOLE_PREFIX_PATTERN.sub("", line, count=1)
+    stripped_line = line.lstrip()
+    if stripped_line.startswith(("┌", "└")):
+        return ""
+    if line.startswith("│ "):
+        return line[2:]
+    if line.startswith("│"):
+        return line[1:]
+    return line.replace("│", "")
+
+
+def format_result_text(blocks):
+    cleaned_blocks = []
+    for block in blocks:
+        cleaned_lines = []
+        for line in block.splitlines():
+            cleaned_line = clean_log_line(line)
+            if cleaned_line:
+                cleaned_lines.append(cleaned_line)
+        cleaned_blocks.append("\n".join(cleaned_lines))
+    return "\n".join(cleaned_blocks)
+
+
+def save_exported_log(content, export_type, export_dir):
+    """将页面中的日志文本安全保存为不覆盖已有文件的 .log 文件。
+
+    功能说明:
+        根据导出来源生成带时间戳的文件名，并使用独占创建模式避免覆盖
+        已存在的日志文件。
+
+    参数说明:
+        content (str): 需要导出的当前文本框内容，不能为空或仅包含空白。
+        export_type (str): 导出来源，只允许 log_content 或 filtered_result。
+        export_dir (str | Path): 服务端实际写入的目录。
+
+    返回值:
+        Path: 已成功创建的日志文件完整路径。
+
+    异常说明:
+        ValueError: 导出类型不受支持或导出内容为空时抛出。
+        OSError: 目录创建或文件写入失败时由调用方统一转换为错误响应。
+    """
+    if export_type not in EXPORT_FILE_PREFIXES:
+        raise ValueError("不支持的导出类型")
+    if not isinstance(content, str) or not content.strip():
+        raise ValueError("当前内容为空，无法导出")
+
+    target_dir = Path(export_dir)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now(EXPORT_TIMEZONE).strftime("%Y%m%d_%H%M%S")
+    filename_base = f"{EXPORT_FILE_PREFIXES[export_type]}_{timestamp}"
+
+    for sequence in range(10000):
+        suffix = "" if sequence == 0 else f"_{sequence}"
+        target_path = target_dir / f"{filename_base}{suffix}.log"
+        try:
+            with target_path.open("x", encoding="utf-8") as export_file:
+                export_file.write(content)
+            return target_path
+        except FileExistsError:
+            continue
+
+    raise OSError("同名导出文件过多，请稍后重试")
+
+
+def create_app():
+    if Flask is None:
+        raise RuntimeError("Flask is not installed. Run: pip install -r requirements.txt")
+
+    app = Flask(__name__)
+    app.config["MAX_FORM_MEMORY_SIZE"] = 20 * 1024 * 1024
+    app.config["MAX_CONTENT_LENGTH"] = 25 * 1024 * 1024
+    app.config["LOG_EXPORT_DIR"] = os.environ.get(
+        "LOG_EXPORT_DIR", DEFAULT_EXPORT_DIR
+    )
+    app.config["LOG_EXPORT_DISPLAY_DIR"] = os.environ.get(
+        "LOG_EXPORT_DISPLAY_DIR", DEFAULT_EXPORT_DIR
+    )
+
+    @app.route("/", methods=["GET", "POST"])
+    def index():
+        log_text = ""
+        methods = []
+        selected_methods = [ALL_METHOD]
+        result_text = ""
+        match_count = 0
+        message = ""
+        analysis = {}
+        selected_analysis = None
+        overall_analysis = None
+
+        if request.method == "POST":
+            log_text = request.form.get("log_text", "")
+            selected_methods = request.form.getlist("method")
+            if not selected_methods or ALL_METHOD in selected_methods:
+                selected_methods = [ALL_METHOD]
+            methods = extract_methods(log_text)
+
+            if not log_text.strip():
+                message = "请先粘贴日志内容"
+            elif not methods:
+                message = "未识别到 method，请检查日志格式"
+            else:
+                valid_methods = [m for m in selected_methods if m == ALL_METHOD or m in methods]
+                if not valid_methods:
+                    selected_methods = [ALL_METHOD]
+
+                result_text, match_count = filter_log_text(log_text, selected_methods)
+                parsed_blocks = parse_log_blocks(log_text)
+                analysis = build_interface_statistics(parsed_blocks)
+                overall_analysis = summarize_interface_statistics(analysis)
+                if ALL_METHOD in selected_methods:
+                    selected_analysis = overall_analysis
+                else:
+                    combined = _empty_interface_statistics("已选接口")
+                    for m in selected_methods:
+                        if m not in analysis:
+                            continue
+                        for field in ("request_count", "response_count", "success_count", "failure_count", "unresponded_count"):
+                            combined[field] += analysis[m][field]
+                        for sc, c in analysis[m]["status_codes"].items():
+                            combined["status_codes"][sc] = combined["status_codes"].get(sc, 0) + c
+                    selected_analysis = _finalize_statistics({"已选接口": combined})["已选接口"]
+                if ALL_METHOD not in selected_methods and not result_text:
+                    message = "没有匹配到相关日志"
+
+        return render_template(
+            "index.html",
+            all_method=ALL_METHOD,
+            log_text=log_text,
+            methods=methods,
+            selected_methods=selected_methods,
+            result_text=result_text,
+            match_count=match_count,
+            method_count=len(methods),
+            message=message,
+            analysis=analysis,
+            selected_analysis=selected_analysis,
+            overall_analysis=overall_analysis,
+        )
+
+    @app.route("/sample", methods=["GET"])
+    def sample_log():
+        sample_path = Path(__file__).with_name("log_default.log")
+        return sample_path.read_text(encoding="utf-8") if sample_path.exists() else ""
+
+    @app.route("/export", methods=["POST"])
+    def export_log():
+        """接收页面日志内容并保存到配置的固定导出目录。
+
+        请求参数:
+            JSON 中的 export_type 表示日志来源，content 表示待保存文本。
+
+        返回值:
+            成功时返回文件名和用户可见路径；参数错误返回 400，写入错误返回 500。
+
+        异常处理:
+            参数校验错误不会创建文件；文件系统异常只返回简洁错误信息，
+            不允许客户端控制服务端保存目录。
+        """
+        payload = request.get_json(silent=True) or {}
+        try:
+            saved_path = save_exported_log(
+                payload.get("content"),
+                payload.get("export_type"),
+                app.config["LOG_EXPORT_DIR"],
+            )
+        except ValueError as error:
+            return jsonify({"message": str(error)}), 400
+        except OSError as error:
+            return jsonify({"message": f"导出失败：{error}"}), 500
+
+        display_path = Path(app.config["LOG_EXPORT_DISPLAY_DIR"]) / saved_path.name
+        return jsonify(
+            {
+                "message": "导出成功",
+                "filename": saved_path.name,
+                "path": str(display_path),
+            }
+        )
+
+    return app
+
+
+app = create_app() if Flask is not None else None
+
+
+if __name__ == "__main__":
+    create_app().run(debug=True, host="127.0.0.1", port=5001)

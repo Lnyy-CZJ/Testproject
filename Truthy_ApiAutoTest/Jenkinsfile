@@ -1,0 +1,126 @@
+pipeline {
+    agent any // TODO: 根据 Jenkins 节点能力配置实际 label
+
+    triggers {
+        cron('H H * * 1-5')
+    }
+
+    options {
+        timeout(time: 35, unit: 'MINUTES')
+        disableConcurrentBuilds()
+        buildDiscarder(logRotator(daysToKeepStr: '30'))
+    }
+
+    parameters {
+        choice(name: 'EXECUTION_MODE', choices: ['auto', 'release', 'payment_sandbox', 'compatibility'], description: '自动安全、发布、支付沙箱或兼容扩展模式')
+        choice(name: 'TARGET_ENV', choices: ['test', 'staging'], description: '目标环境')
+        choice(name: 'TEST_SUITE', choices: ['smoke', 'regression', 'contract', 'unit', 'all'], description: '仅手工普通模式使用的测试集')
+        string(name: 'PYTEST_MARKERS', defaultValue: '', description: '仅手工普通模式使用的附加 marker')
+        string(name: 'WORKERS', defaultValue: '1', description: 'pytest-xdist worker 数')
+    }
+
+    stages {
+        stage('Resolve Execution Mode') {
+            steps {
+                script {
+                    def timerBuild = !currentBuild.getBuildCauses('hudson.triggers.TimerTrigger$TimerTriggerCause').isEmpty()
+                    def manualBuild = !currentBuild.getBuildCauses('hudson.model.Cause$UserIdCause').isEmpty()
+                    if (env.CHANGE_ID?.trim()) {
+                        // MR 不接受参数覆盖：固定离线 contract + P0，并明确排除写入与支付扩展。
+                        env.EFFECTIVE_MODE = 'merge_request'
+                        env.EFFECTIVE_SUITE = 'contract'
+                        env.EFFECTIVE_MARKERS = 'p0 and not (live_write or payment_sandbox or compatibility)'
+                        env.EFFECTIVE_LIVE_ARGS = ''
+                    } else if (timerBuild && params.EXECUTION_MODE == 'auto') {
+                        // 工作日 cron 固定运行已授权的只读 smoke + P0；无外部条件的用例由 fixture 明确 skip。
+                        env.EFFECTIVE_MODE = 'weekday_smoke'
+                        env.EFFECTIVE_SUITE = 'smoke'
+                        env.EFFECTIVE_MARKERS = 'p0 and not (live_write or payment_sandbox or compatibility)'
+                        env.EFFECTIVE_LIVE_ARGS = '--run-live-safe'
+                    } else if (['release', 'payment_sandbox', 'compatibility'].contains(params.EXECUTION_MODE)) {
+                        if (!manualBuild) {
+                            error('release/payment sandbox/compatibility modes require a manual user build')
+                        }
+                        env.EFFECTIVE_MODE = params.EXECUTION_MODE
+                        env.EFFECTIVE_LIVE_ARGS = ''
+                        if (params.EXECUTION_MODE == 'release') {
+                            env.EFFECTIVE_SUITE = 'regression'
+                            env.EFFECTIVE_MARKERS = 'p0+p1 release gates'
+                        } else if (params.EXECUTION_MODE == 'payment_sandbox') {
+                            env.EFFECTIVE_SUITE = 'all'
+                            env.EFFECTIVE_MARKERS = 'payment_sandbox and not live_write'
+                        } else if (params.EXECUTION_MODE == 'compatibility') {
+                            env.EFFECTIVE_SUITE = 'all'
+                            env.EFFECTIVE_MARKERS = 'compatibility and not live_write'
+                        }
+                    } else if (manualBuild) {
+                        env.EFFECTIVE_MODE = 'manual'
+                        env.EFFECTIVE_SUITE = params.TEST_SUITE
+                        env.EFFECTIVE_MARKERS = params.PYTEST_MARKERS
+                        env.EFFECTIVE_LIVE_ARGS = ''
+                    } else {
+                        // 其他自动触发同样降级为固定的非写合同门禁。
+                        env.EFFECTIVE_MODE = 'safe_auto'
+                        env.EFFECTIVE_SUITE = 'contract'
+                        env.EFFECTIVE_MARKERS = 'p0 and not (live_write or payment_sandbox or compatibility)'
+                        env.EFFECTIVE_LIVE_ARGS = ''
+                    }
+                }
+            }
+        }
+        stage('Install') {
+            steps {
+                sh 'python3 -m pip install --require-hashes -r requirements.lock'
+            }
+        }
+        stage('Test') {
+            when {
+                expression { env.EFFECTIVE_MODE != 'release' }
+            }
+            steps {
+                sh '''
+                    mkdir -p artifacts allure-results
+                    if [ -n "$EFFECTIVE_MARKERS" ]; then
+                        python3 runtest.py --env "$TARGET_ENV" --suite "$EFFECTIVE_SUITE" --markers "$EFFECTIVE_MARKERS" --workers "$WORKERS" --junitxml artifacts/junit.xml --alluredir allure-results $EFFECTIVE_LIVE_ARGS
+                    else
+                        python3 runtest.py --env "$TARGET_ENV" --suite "$EFFECTIVE_SUITE" --workers "$WORKERS" --junitxml artifacts/junit.xml --alluredir allure-results $EFFECTIVE_LIVE_ARGS
+                    fi
+                '''
+            }
+        }
+        stage('Release P0') {
+            when {
+                expression { env.EFFECTIVE_MODE == 'release' }
+            }
+            steps {
+                // P0 失败直接阻断，不能由人工确认覆盖。
+                sh 'mkdir -p artifacts allure-results && python3 runtest.py --env "$TARGET_ENV" --suite regression --markers "p0 and not (live_write or payment_sandbox or compatibility)" --workers "$WORKERS" --junitxml artifacts/junit.xml --alluredir allure-results'
+            }
+        }
+        stage('Release P1') {
+            when {
+                expression { env.EFFECTIVE_MODE == 'release' }
+            }
+            steps {
+                script {
+                    def p1Status = sh(
+                        returnStatus: true,
+                        script: 'python3 runtest.py --env "$TARGET_ENV" --suite regression --markers "p1 and not (live_write or payment_sandbox or compatibility)" --workers "$WORKERS" --junitxml artifacts/junit-p1.xml --alluredir allure-results'
+                    )
+                    if (p1Status != 0) {
+                        input message: 'P1 tests failed. Confirm reviewed risk before continuing release.', ok: 'Accept reviewed P1 failures'
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            junit allowEmptyResults: true, testResults: 'artifacts/junit*.xml'
+            archiveArtifacts allowEmptyArchive: true, artifacts: 'artifacts/junit*.xml,allure-results/**'
+            allure includeProperties: false, jdk: '', results: [[path: 'allure-results']]
+            sh 'python3 scripts/notify_feishu.py --env "$TARGET_ENV" --suite "${EFFECTIVE_SUITE:-$TEST_SUITE}" --build-number "$BUILD_NUMBER" || true'
+        }
+    }
+}

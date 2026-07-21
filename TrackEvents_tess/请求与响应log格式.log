@@ -1,0 +1,900 @@
+默认	18:25:04.821685+0800	Runner	flutter: ┌───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:04.821970+0800	Runner	flutter: │ [EventTracking] name=app_foreground id=0aa0647d-82b7-4a32-93c8-7ac3c6253c47 time=1783506304789 props={}
+默认	18:25:04.822030+0800	Runner	flutter: └───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:04.851813+0800	Runner	flutter: ┌───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:04.851885+0800	Runner	flutter: │ [HTTP] --> POST http://gateway.spark-jam.top/gateway/invoke service=tool.event_tracking.EventTrackingService method=TrackEvents
+默认	18:25:04.851911+0800	Runner	flutter: └───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:04.852091+0800	Runner	flutter: ┌───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:04.852119+0800	Runner	flutter: │ [HTTP] request:
+默认	18:25:04.852180+0800	Runner	flutter: │ {
+默认	18:25:04.852237+0800	Runner	flutter: │   "comm": {
+默认	18:25:04.852298+0800	Runner	flutter: │     "auth_token": "anon.dXNlcl9lZmMwNWZhODllOGNkMGE2MmYxZGJkODg.dd5ae1c04c31fb76d7cf76c68c9f4f01",
+默认	18:25:04.852355+0800	Runner	flutter: │     "user_id": "user_efc05fa89e8cd0a62f1dbd88",
+默认	18:25:04.852557+0800	Runner	flutter: │     "device_id": "50de3fff-6143-4049-8bbf-0cac20439c2b",
+默认	18:25:04.852634+0800	Runner	flutter: │     "client_request_id": "crid_1783506304815859",
+默认	18:25:04.852658+0800	Runner	flutter: │     "platform": "ios",
+默认	18:25:04.852689+0800	Runner	flutter: │     "app_version": "1.0.0",
+默认	18:25:04.852716+0800	Runner	flutter: │     "locale": "zh-Hans-CN",
+默认	18:25:04.852739+0800	Runner	flutter: │     "country": "CN",
+默认	18:25:04.852766+0800	Runner	flutter: │     "timezone": "UTC+08:00"
+默认	18:25:04.852794+0800	Runner	flutter: │   },
+默认	18:25:04.852972+0800	Runner	flutter: │   "requests": [
+默认	18:25:04.853003+0800	Runner	flutter: │     {
+默认	18:25:04.853027+0800	Runner	flutter: │       "id": "req_0",
+默认	18:25:04.853056+0800	Runner	flutter: │       "service_name": "tool.event_tracking.EventTrackingService",
+默认	18:25:04.853086+0800	Runner	flutter: │       "method_name": "TrackEvents",
+默认	18:25:04.853116+0800	Runner	flutter: │       "params": {
+默认	18:25:04.853147+0800	Runner	flutter: │         "events": [
+默认	18:25:04.853202+0800	Runner	flutter: │           {
+默认	18:25:04.853259+0800	Runner	flutter: │             "event_id": "0aa0647d-82b7-4a32-93c8-7ac3c6253c47",
+默认	18:25:04.853308+0800	Runner	flutter: │             "event_name": "app_foreground",
+默认	18:25:04.853334+0800	Runner	flutter: │             "event_time_ms": 1783506304789,
+默认	18:25:04.853368+0800	Runner	flutter: │             "properties": {
+默认	18:25:04.853395+0800	Runner	flutter: │               "logtime": 1783506304789,
+默认	18:25:04.853423+0800	Runner	flutter: │               "log_id": "0aa0647d-82b7-4a32-93c8-7ac3c6253c47",
+默认	18:25:04.853450+0800	Runner	flutter: │               "net": "wifi",
+默认	18:25:04.853476+0800	Runner	flutter: │               "pkg": "com.sparkjam.truthy.ios",
+默认	18:25:04.853513+0800	Runner	flutter: │               "bucket": 18,
+默认	18:25:04.853552+0800	Runner	flutter: │               "abslot": 80,
+默认	18:25:04.853606+0800	Runner	flutter: │               "ram": "3889MB",
+默认	18:25:04.853688+0800	Runner	flutter: │               "cpu": "arm64",
+默认	18:25:04.853714+0800	Runner	flutter: │               "sh": 667,
+默认	18:25:04.853774+0800	Runner	flutter: │               "sw": 375,
+默认	18:25:04.853858+0800	Runner	flutter: │               "city": "",
+默认	18:25:04.853933+0800	Runner	flutter: │               "ste": "",
+默认	18:25:04.853961+0800	Runner	flutter: │               "lat": "",
+默认	18:25:04.854007+0800	Runner	flutter: │               "lng": "",
+默认	18:25:04.854032+0800	Runner	flutter: │               "sty": "desk",
+默认	18:25:04.854083+0800	Runner	flutter: │               "isp": "",
+默认	18:25:04.854106+0800	Runner	flutter: │               "mod": "iphone14,6",
+默认	18:25:04.854160+0800	Runner	flutter: │               "brd": "apple",
+默认	18:25:04.854208+0800	Runner	flutter: │               "os": "16.3.1",
+默认	18:25:04.854283+0800	Runner	flutter: │               "pf": "ios",
+默认	18:25:04.854305+0800	Runner	flutter: │               "slan": "zh",
+默认	18:25:04.854331+0800	Runner	flutter: │               "reg": "CN",
+默认	18:25:04.854362+0800	Runner	flutter: │               "cou": "CN",
+默认	18:25:04.854389+0800	Runner	flutter: │               "sub": "",
+默认	18:25:04.854507+0800	Runner	flutter: │               "cha": "Organic",
+默认	18:25:04.854576+0800	Runner	flutter: │               "verc": "1",
+默认	18:25:04.854609+0800	Runner	flutter: │               "ver": "1.0.0",
+默认	18:25:04.854676+0800	Runner	flutter: │               "sid": "0ba73bad-cf86-4a9d-b77e-d7dc56c171fc",
+默认	18:25:04.854703+0800	Runner	flutter: │               "uuid": "50de3fff-6143-4049-8bbf-0cac20439c2b",
+默认	18:25:04.854765+0800	Runner	flutter: │               "idfa": "453AC05A-6055-4E7F-BDCD-31DBA54237F9",
+默认	18:25:04.854795+0800	Runner	flutter: │               "idfv": "9BC22C39-C8D3-4D15-8CB1-701C610EF0F6",
+默认	18:25:04.854856+0800	Runner	flutter: │               "aid": "",
+默认	18:25:04.854887+0800	Runner	flutter: │               "gaid": "",
+默认	18:25:04.854917+0800	Runner	flutter: │               "did": "453AC05A-6055-4E7F-BDCD-31DBA54237F9",
+默认	18:25:04.854939+0800	Runner	flutter: │               "uid": "user_efc05fa89e8cd0a62f1dbd88",
+默认	18:25:04.854984+0800	Runner	flutter: │               "anm": "Truthy",
+默认	18:25:04.855056+0800	Runner	flutter: │               "push_id": "",
+默认	18:25:04.855077+0800	Runner	flutter: │               "push_type": "",
+默认	18:25:04.855123+0800	Runner	flutter: │               "is_pro": "0"
+默认	18:25:04.855144+0800	Runner	flutter: │             }
+默认	18:25:04.855216+0800	Runner	flutter: │           }
+默认	18:25:04.855237+0800	Runner	flutter: │         ]
+默认	18:25:04.855266+0800	Runner	flutter: │       }
+默认	18:25:04.855293+0800	Runner	flutter: │     }
+默认	18:25:04.855319+0800	Runner	flutter: │   ]
+默认	18:25:04.855341+0800	Runner	flutter: │ }
+默认	18:25:04.855365+0800	Runner	flutter: └───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:04.855899+0800	Runner	flutter: ┌───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:04.855926+0800	Runner	flutter: │ [HTTP] --> POST http://gateway.spark-jam.top/gateway/invoke service=tool.identity.IdentityService method=RefreshSession
+默认	18:25:04.855948+0800	Runner	flutter: └───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:04.855972+0800	Runner	flutter: ┌───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:04.855994+0800	Runner	flutter: │ [HTTP] request:
+默认	18:25:04.856021+0800	Runner	flutter: │ {
+默认	18:25:04.856044+0800	Runner	flutter: │   "comm": {
+默认	18:25:04.856065+0800	Runner	flutter: │     "device_id": "50de3fff-6143-4049-8bbf-0cac20439c2b",
+默认	18:25:04.856089+0800	Runner	flutter: │     "client_request_id": "crid_1783506304821138",
+默认	18:25:04.856112+0800	Runner	flutter: │     "platform": "ios",
+默认	18:25:04.856138+0800	Runner	flutter: │     "app_version": "1.0.0",
+默认	18:25:04.856161+0800	Runner	flutter: │     "locale": "zh-Hans-CN",
+默认	18:25:04.856183+0800	Runner	flutter: │     "country": "CN",
+默认	18:25:04.856205+0800	Runner	flutter: │     "timezone": "UTC+08:00"
+默认	18:25:04.856226+0800	Runner	flutter: │   },
+默认	18:25:04.856401+0800	Runner	flutter: │   "requests": [
+默认	18:25:04.856463+0800	Runner	flutter: │     {
+默认	18:25:04.856523+0800	Runner	flutter: │       "id": "req_0",
+默认	18:25:04.856550+0800	Runner	flutter: │       "service_name": "tool.identity.IdentityService",
+默认	18:25:04.856573+0800	Runner	flutter: │       "method_name": "RefreshSession",
+默认	18:25:04.856595+0800	Runner	flutter: │       "params": {
+默认	18:25:04.856617+0800	Runner	flutter: │         "refresh_token": "refresh.n3X_FiQE4RpTnUoARYipf1P1NsZ0op3aOq7eb_vqd-Q"
+默认	18:25:04.856641+0800	Runner	flutter: │       }
+默认	18:25:04.856663+0800	Runner	flutter: │     }
+默认	18:25:04.856710+0800	Runner	flutter: │   ]
+默认	18:25:04.856734+0800	Runner	flutter: │ }
+默认	18:25:04.856756+0800	Runner	flutter: └───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:05.338829+0800	Runner	flutter: ┌───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:05.338892+0800	Runner	flutter: │ [EventTracking] name=app_page_stay id=39cdaba1-b251-4ae1-b1cb-ef4fb64e4a93 time=1783506305331 props={"page_from":"candidate","duration_s":0}
+默认	18:25:05.338973+0800	Runner	flutter: └───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:05.834404+0800	Runner	flutter: ┌───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:05.834578+0800	Runner	flutter: │ [HTTP] <-- 200 POST http://gateway.spark-jam.top/gateway/invoke service=tool.event_tracking.EventTrackingService method=TrackEvents
+默认	18:25:05.834716+0800	Runner	flutter: └───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:05.835043+0800	Runner	flutter: ┌───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:05.835360+0800	Runner	flutter: │ [HTTP] response:
+默认	18:25:05.835479+0800	Runner	flutter: │ {
+默认	18:25:05.836616+0800	Runner	flutter: │   "code": 0,
+默认	18:25:05.837579+0800	Runner	flutter: │   "message": "ok",
+默认	18:25:05.837703+0800	Runner	flutter: │   "request_id": "gw_req_4a8376d2915c0741bcea1a7b86b8286f",
+默认	18:25:05.837879+0800	Runner	flutter: │   "trace_id": "trace_5819b8d9fd59c3a9b7acdb6df207b6c6",
+默认	18:25:05.840019+0800	Runner	flutter: │   "responses": [
+默认	18:25:05.840609+0800	Runner	flutter: │     {
+默认	18:25:05.840698+0800	Runner	flutter: │       "id": "req_0",
+默认	18:25:05.840780+0800	Runner	flutter: │       "success": true,
+默认	18:25:05.840838+0800	Runner	flutter: │       "code": 0,
+默认	18:25:05.840933+0800	Runner	flutter: │       "message": "ok",
+默认	18:25:05.841113+0800	Runner	flutter: │       "data": {
+默认	18:25:05.841218+0800	Runner	flutter: │         "request_id": "gw_req_4a8376d2915c0741bcea1a7b86b8286f",
+默认	18:25:05.841325+0800	Runner	flutter: │         "trace_id": "trace_5819b8d9fd59c3a9b7acdb6df207b6c6",
+默认	18:25:05.841487+0800	Runner	flutter: │         "accepted_count": 1
+默认	18:25:05.841552+0800	Runner	flutter: │       }
+默认	18:25:05.842140+0800	Runner	flutter: │     }
+默认	18:25:05.843041+0800	Runner	flutter: │   ]
+默认	18:25:05.843133+0800	Runner	flutter: │ }
+默认	18:25:05.843364+0800	Runner	flutter: └───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:05.853931+0800	Runner	flutter: ┌───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:05.854163+0800	Runner	flutter: │ [HTTP] <-- 200 POST http://gateway.spark-jam.top/gateway/invoke service=tool.identity.IdentityService method=RefreshSession
+默认	18:25:05.854192+0800	Runner	flutter: └───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:05.854221+0800	Runner	flutter: ┌───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:05.854249+0800	Runner	flutter: │ [HTTP] response:
+默认	18:25:05.854275+0800	Runner	flutter: │ {
+默认	18:25:05.854306+0800	Runner	flutter: │   "code": 0,
+默认	18:25:05.854334+0800	Runner	flutter: │   "message": "ok",
+默认	18:25:05.854365+0800	Runner	flutter: │   "request_id": "gw_req_b22290033a068c93592a06c9fef1fed8",
+默认	18:25:05.854736+0800	Runner	flutter: │   "trace_id": "trace_6e26b1b75655af1206566ba70b6fba5f",
+默认	18:25:05.854763+0800	Runner	flutter: │   "responses": [
+默认	18:25:05.854790+0800	Runner	flutter: │     {
+默认	18:25:05.854818+0800	Runner	flutter: │       "id": "req_0",
+默认	18:25:05.855005+0800	Runner	flutter: │       "success": true,
+默认	18:25:05.855103+0800	Runner	flutter: │       "code": 0,
+默认	18:25:05.855161+0800	Runner	flutter: │       "message": "ok",
+默认	18:25:05.855189+0800	Runner	flutter: │       "data": {
+默认	18:25:05.855218+0800	Runner	flutter: │         "access_token": "anon.dXNlcl9lZmMwNWZhODllOGNkMGE2MmYxZGJkODg.579bc8529812fa41612580df7da58017",
+默认	18:25:05.855309+0800	Runner	flutter: │         "expires_time": 1784111105749,
+默认	18:25:05.855370+0800	Runner	flutter: │         "refresh_expires_time": 1799058305749,
+默认	18:25:05.855407+0800	Runner	flutter: │         "refresh_token": "refresh.YYEqyoDeHwEpz2br_uJ55cWEtOFQnjny51WGe-caZ5E",
+默认	18:25:05.855519+0800	Runner	flutter: │         "user_id": "user_efc05fa89e8cd0a62f1dbd88"
+默认	18:25:05.855626+0800	Runner	flutter: │       }
+默认	18:25:05.855741+0800	Runner	flutter: │     }
+默认	18:25:05.855851+0800	Runner	flutter: │   ]
+默认	18:25:05.856033+0800	Runner	flutter: │ }
+默认	18:25:05.856146+0800	Runner	flutter: └───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:05.884831+0800	Runner	flutter: ┌───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:05.884891+0800	Runner	flutter: │ [HTTP] --> POST http://gateway.spark-jam.top/gateway/invoke service=tool.event_tracking.EventTrackingService method=TrackEvents
+默认	18:25:05.884953+0800	Runner	flutter: └───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:05.885277+0800	Runner	flutter: ┌───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:05.885296+0800	Runner	flutter: │ [HTTP] request:
+默认	18:25:05.885314+0800	Runner	flutter: │ {
+默认	18:25:05.885445+0800	Runner	flutter: │   "comm": {
+默认	18:25:05.885562+0800	Runner	flutter: │     "auth_token": "anon.dXNlcl9lZmMwNWZhODllOGNkMGE2MmYxZGJkODg.579bc8529812fa41612580df7da58017",
+默认	18:25:05.885767+0800	Runner	flutter: │     "user_id": "user_efc05fa89e8cd0a62f1dbd88",
+默认	18:25:05.885874+0800	Runner	flutter: │     "device_id": "50de3fff-6143-4049-8bbf-0cac20439c2b",
+默认	18:25:05.885911+0800	Runner	flutter: │     "client_request_id": "crid_1783506305857494",
+默认	18:25:05.885993+0800	Runner	flutter: │     "platform": "ios",
+默认	18:25:05.886141+0800	Runner	flutter: │     "app_version": "1.0.0",
+默认	18:25:05.886200+0800	Runner	flutter: │     "locale": "zh-Hans-CN",
+默认	18:25:05.886281+0800	Runner	flutter: │     "country": "CN",
+默认	18:25:05.886333+0800	Runner	flutter: │     "timezone": "UTC+08:00"
+默认	18:25:05.886383+0800	Runner	flutter: │   },
+默认	18:25:05.886440+0800	Runner	flutter: │   "requests": [
+默认	18:25:05.886495+0800	Runner	flutter: │     {
+默认	18:25:05.886523+0800	Runner	flutter: │       "id": "req_0",
+默认	18:25:05.886545+0800	Runner	flutter: │       "service_name": "tool.event_tracking.EventTrackingService",
+默认	18:25:05.886569+0800	Runner	flutter: │       "method_name": "TrackEvents",
+默认	18:25:05.886594+0800	Runner	flutter: │       "params": {
+默认	18:25:05.886619+0800	Runner	flutter: │         "events": [
+默认	18:25:05.886642+0800	Runner	flutter: │           {
+默认	18:25:05.886667+0800	Runner	flutter: │             "event_id": "39cdaba1-b251-4ae1-b1cb-ef4fb64e4a93",
+默认	18:25:05.886693+0800	Runner	flutter: │             "event_name": "app_page_stay",
+默认	18:25:05.886795+0800	Runner	flutter: │             "event_time_ms": 1783506305331,
+默认	18:25:05.886871+0800	Runner	flutter: │             "properties": {
+默认	18:25:05.886928+0800	Runner	flutter: │               "logtime": 1783506305331,
+默认	18:25:05.886981+0800	Runner	flutter: │               "log_id": "39cdaba1-b251-4ae1-b1cb-ef4fb64e4a93",
+默认	18:25:05.887037+0800	Runner	flutter: │               "net": "wifi",
+默认	18:25:05.887089+0800	Runner	flutter: │               "pkg": "com.sparkjam.truthy.ios",
+默认	18:25:05.887142+0800	Runner	flutter: │               "bucket": 18,
+默认	18:25:05.887198+0800	Runner	flutter: │               "abslot": 80,
+默认	18:25:05.887372+0800	Runner	flutter: │               "ram": "3889MB",
+默认	18:25:05.887448+0800	Runner	flutter: │               "cpu": "arm64",
+默认	18:25:05.887511+0800	Runner	flutter: │               "sh": 667,
+默认	18:25:05.887567+0800	Runner	flutter: │               "sw": 375,
+默认	18:25:05.887746+0800	Runner	flutter: │               "city": "",
+默认	18:25:05.887806+0800	Runner	flutter: │               "ste": "",
+默认	18:25:05.887918+0800	Runner	flutter: │               "lat": "",
+默认	18:25:05.887975+0800	Runner	flutter: │               "lng": "",
+默认	18:25:05.888026+0800	Runner	flutter: │               "sty": "desk",
+默认	18:25:05.888079+0800	Runner	flutter: │               "isp": "",
+默认	18:25:05.888134+0800	Runner	flutter: │               "mod": "iphone14,6",
+默认	18:25:05.888185+0800	Runner	flutter: │               "brd": "apple",
+默认	18:25:05.888240+0800	Runner	flutter: │               "os": "16.3.1",
+默认	18:25:05.888293+0800	Runner	flutter: │               "pf": "ios",
+默认	18:25:05.888351+0800	Runner	flutter: │               "slan": "zh",
+默认	18:25:05.888603+0800	Runner	flutter: │               "reg": "CN",
+默认	18:25:05.888662+0800	Runner	flutter: │               "cou": "CN",
+默认	18:25:05.888740+0800	Runner	flutter: │               "sub": "",
+默认	18:25:05.888804+0800	Runner	flutter: │               "cha": "Organic",
+默认	18:25:05.888860+0800	Runner	flutter: │               "verc": "1",
+默认	18:25:05.888919+0800	Runner	flutter: │               "ver": "1.0.0",
+默认	18:25:05.888977+0800	Runner	flutter: │               "sid": "0ba73bad-cf86-4a9d-b77e-d7dc56c171fc",
+默认	18:25:05.889034+0800	Runner	flutter: │               "uuid": "50de3fff-6143-4049-8bbf-0cac20439c2b",
+默认	18:25:05.889091+0800	Runner	flutter: │               "idfa": "453AC05A-6055-4E7F-BDCD-31DBA54237F9",
+默认	18:25:05.889146+0800	Runner	flutter: │               "idfv": "9BC22C39-C8D3-4D15-8CB1-701C610EF0F6",
+默认	18:25:05.889228+0800	Runner	flutter: │               "aid": "",
+默认	18:25:05.889291+0800	Runner	flutter: │               "gaid": "",
+默认	18:25:05.889345+0800	Runner	flutter: │               "did": "453AC05A-6055-4E7F-BDCD-31DBA54237F9",
+默认	18:25:05.889400+0800	Runner	flutter: │               "uid": "user_efc05fa89e8cd0a62f1dbd88",
+默认	18:25:05.889457+0800	Runner	flutter: │               "anm": "Truthy",
+默认	18:25:05.889511+0800	Runner	flutter: │               "push_id": "",
+默认	18:25:05.889566+0800	Runner	flutter: │               "push_type": "",
+默认	18:25:05.889621+0800	Runner	flutter: │               "is_pro": "0",
+默认	18:25:05.889673+0800	Runner	flutter: │               "page_from": "candidate",
+默认	18:25:05.889733+0800	Runner	flutter: │               "duration_s": 0
+默认	18:25:05.889786+0800	Runner	flutter: │             }
+默认	18:25:05.889842+0800	Runner	flutter: │           }
+默认	18:25:05.889899+0800	Runner	flutter: │         ]
+默认	18:25:05.889957+0800	Runner	flutter: │       }
+默认	18:25:05.890012+0800	Runner	flutter: │     }
+默认	18:25:05.890065+0800	Runner	flutter: │   ]
+默认	18:25:05.890119+0800	Runner	flutter: │ }
+默认	18:25:05.890175+0800	Runner	flutter: └───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:05.890234+0800	Runner	flutter: ┌───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:05.890289+0800	Runner	flutter: │ [HTTP] --> POST http://gateway.spark-jam.top/gateway/invoke service=tool.identity.IdentityService method=GetMe
+默认	18:25:05.890342+0800	Runner	flutter: └───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:05.890400+0800	Runner	flutter: ┌───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:05.890455+0800	Runner	flutter: │ [HTTP] request:
+默认	18:25:05.890511+0800	Runner	flutter: │ {
+默认	18:25:05.890568+0800	Runner	flutter: │   "comm": {
+默认	18:25:05.890623+0800	Runner	flutter: │     "auth_token": "anon.dXNlcl9lZmMwNWZhODllOGNkMGE2MmYxZGJkODg.579bc8529812fa41612580df7da58017",
+默认	18:25:05.890681+0800	Runner	flutter: │     "user_id": "user_efc05fa89e8cd0a62f1dbd88",
+默认	18:25:05.890733+0800	Runner	flutter: │     "device_id": "50de3fff-6143-4049-8bbf-0cac20439c2b",
+默认	18:25:05.890785+0800	Runner	flutter: │     "client_request_id": "crid_1783506305882738",
+默认	18:25:05.890846+0800	Runner	flutter: │     "platform": "ios",
+默认	18:25:05.890899+0800	Runner	flutter: │     "app_version": "1.0.0",
+默认	18:25:05.890953+0800	Runner	flutter: │     "locale": "zh-Hans-CN",
+默认	18:25:05.891010+0800	Runner	flutter: │     "country": "CN",
+默认	18:25:05.891062+0800	Runner	flutter: │     "timezone": "UTC+08:00"
+默认	18:25:05.891117+0800	Runner	flutter: │   },
+默认	18:25:05.891170+0800	Runner	flutter: │   "requests": [
+默认	18:25:05.891226+0800	Runner	flutter: │     {
+默认	18:25:05.891283+0800	Runner	flutter: │       "id": "req_0",
+默认	18:25:05.891341+0800	Runner	flutter: │       "service_name": "tool.identity.IdentityService",
+默认	18:25:05.891395+0800	Runner	flutter: │       "method_name": "GetMe",
+默认	18:25:05.891449+0800	Runner	flutter: │       "params": {}
+默认	18:25:05.891540+0800	Runner	flutter: │     }
+默认	18:25:05.891621+0800	Runner	flutter: │   ]
+默认	18:25:05.891680+0800	Runner	flutter: │ }
+默认	18:25:05.891741+0800	Runner	flutter: └───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:06.065138+0800	Runner	flutter: ┌───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:06.065359+0800	Runner	flutter: │ [HTTP] <-- 200 POST http://gateway.spark-jam.top/gateway/invoke service=tool.event_tracking.EventTrackingService method=TrackEvents
+默认	18:25:06.065614+0800	Runner	flutter: └───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:06.065906+0800	Runner	flutter: ┌───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:06.066226+0800	Runner	flutter: │ [HTTP] response:
+默认	18:25:06.066325+0800	Runner	flutter: │ {
+默认	18:25:06.066418+0800	Runner	flutter: │   "code": 0,
+默认	18:25:06.066497+0800	Runner	flutter: │   "message": "ok",
+默认	18:25:06.066586+0800	Runner	flutter: │   "request_id": "gw_req_0f2e16143a863be5c84267ccd219aacc",
+默认	18:25:06.066797+0800	Runner	flutter: │   "trace_id": "trace_d50bebaf0ab116a12229f5a8db85d916",
+默认	18:25:06.066891+0800	Runner	flutter: │   "responses": [
+默认	18:25:06.067025+0800	Runner	flutter: │     {
+默认	18:25:06.067146+0800	Runner	flutter: │       "id": "req_0",
+默认	18:25:06.067224+0800	Runner	flutter: │       "success": true,
+默认	18:25:06.067300+0800	Runner	flutter: │       "code": 0,
+默认	18:25:06.067375+0800	Runner	flutter: │       "message": "ok",
+默认	18:25:06.067456+0800	Runner	flutter: │       "data": {
+默认	18:25:06.067529+0800	Runner	flutter: │         "request_id": "gw_req_0f2e16143a863be5c84267ccd219aacc",
+默认	18:25:06.067603+0800	Runner	flutter: │         "trace_id": "trace_d50bebaf0ab116a12229f5a8db85d916",
+默认	18:25:06.067770+0800	Runner	flutter: │         "accepted_count": 1
+默认	18:25:06.067850+0800	Runner	flutter: │       }
+默认	18:25:06.067923+0800	Runner	flutter: │     }
+默认	18:25:06.068069+0800	Runner	flutter: │   ]
+默认	18:25:06.068149+0800	Runner	flutter: │ }
+默认	18:25:06.068283+0800	Runner	flutter: └───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:06.070076+0800	Runner	flutter: ┌───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:06.071086+0800	Runner	flutter: │ [HTTP] <-- 200 POST http://gateway.spark-jam.top/gateway/invoke service=tool.identity.IdentityService method=GetMe
+默认	18:25:06.071595+0800	Runner	flutter: └───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:06.071688+0800	Runner	flutter: ┌───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:06.071747+0800	Runner	flutter: │ [HTTP] response:
+默认	18:25:06.071808+0800	Runner	flutter: │ {
+默认	18:25:06.071866+0800	Runner	flutter: │   "code": 0,
+默认	18:25:06.072462+0800	Runner	flutter: │   "message": "ok",
+默认	18:25:06.072516+0800	Runner	flutter: │   "request_id": "gw_req_e75eec789e4e6b4ac3dcbebe10cb9353",
+默认	18:25:06.072568+0800	Runner	flutter: │   "trace_id": "trace_f77358798e8377133829b5688d928b03",
+默认	18:25:06.072628+0800	Runner	flutter: │   "responses": [
+默认	18:25:06.072688+0800	Runner	flutter: │     {
+默认	18:25:06.072794+0800	Runner	flutter: │       "id": "req_0",
+默认	18:25:06.072916+0800	Runner	flutter: │       "success": true,
+默认	18:25:06.073024+0800	Runner	flutter: │       "code": 0,
+默认	18:25:06.073216+0800	Runner	flutter: │       "message": "ok",
+默认	18:25:06.073980+0800	Runner	flutter: │       "data": {
+默认	18:25:06.074063+0800	Runner	flutter: │         "acquisition_summary": {
+默认	18:25:06.074151+0800	Runner	flutter: │           "channel": "Organic",
+默认	18:25:06.074208+0800	Runner	flutter: │           "channel_code": "Organic",
+默认	18:25:06.074335+0800	Runner	flutter: │           "report_time": 1783482635760,
+默认	18:25:06.074400+0800	Runner	flutter: │           "source": "Organic",
+默认	18:25:06.074454+0800	Runner	flutter: │           "sub_channel": "",
+默认	18:25:06.074506+0800	Runner	flutter: │           "sub_channel_code": ""
+默认	18:25:06.074575+0800	Runner	flutter: │         },
+默认	18:25:06.074640+0800	Runner	flutter: │         "consent_policy_version": "2026-06-08",
+默认	18:25:06.074714+0800	Runner	flutter: │         "create_time": 1782900607894,
+默认	18:25:06.074811+0800	Runner	flutter: │         "device_id": "50de3fff-6143-4049-8bbf-0cac20439c2b",
+默认	18:25:06.074882+0800	Runner	flutter: │         "profile_summary": {
+默认	18:25:06.074982+0800	Runner	flutter: │           "bucket": "bucket_61",
+默认	18:25:06.075076+0800	Runner	flutter: │           "country": "CN",
+默认	18:25:06.075149+0800	Runner	flutter: │           "last_app_version": "1.0.0",
+默认	18:25:06.075213+0800	Runner	flutter: │           "last_ip": "43.173.72.75",
+默认	18:25:06.075300+0800	Runner	flutter: │           "last_platform": "ios",
+默认	18:25:06.075365+0800	Runner	flutter: │           "last_seen_time": 1783506305749,
+默认	18:25:06.075417+0800	Runner	flutter: │           "recharge_cnt": 0,
+默认	18:25:06.075678+0800	Runner	flutter: │           "recharge_total_micros": 0
+默认	18:25:06.075769+0800	Runner	flutter: │         },
+默认	18:25:06.075853+0800	Runner	flutter: │         "subscription_summary": {
+默认	18:25:06.075932+0800	Runner	flutter: │           "expires_time": 1783505194000,
+默认	18:25:06.075985+0800	Runner	flutter: │           "plan_code": "basic",
+默认	18:25:06.076061+0800	Runner	flutter: │           "product_code": "people_insight",
+默认	18:25:06.076241+0800	Runner	flutter: │           "subscription_status": "expired"
+默认	18:25:06.076311+0800	Runner	flutter: │         },
+默认	18:25:06.076364+0800	Runner	flutter: │         "user_id": "user_efc05fa89e8cd0a62f1dbd88",
+默认	18:25:06.076422+0800	Runner	flutter: │         "user_type": "anonymous"
+默认	18:25:06.076477+0800	Runner	flutter: │       }
+默认	18:25:06.076530+0800	Runner	flutter: │     }
+默认	18:25:06.076582+0800	Runner	flutter: │   ]
+默认	18:25:06.076636+0800	Runner	flutter: │ }
+默认	18:25:06.076698+0800	Runner	flutter: └───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:06.087374+0800	Runner	flutter: ┌───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:06.087486+0800	Runner	flutter: │ [HTTP] --> POST http://gateway.spark-jam.top/gateway/invoke service=tool.subscription.SubscriptionService method=GetSubscriptionStatus
+默认	18:25:06.087531+0800	Runner	flutter: └───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:06.087568+0800	Runner	flutter: ┌───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:06.087630+0800	Runner	flutter: │ [HTTP] request:
+默认	18:25:06.087702+0800	Runner	flutter: │ {
+默认	18:25:06.087862+0800	Runner	flutter: │   "comm": {
+默认	18:25:06.087902+0800	Runner	flutter: │     "auth_token": "anon.dXNlcl9lZmMwNWZhODllOGNkMGE2MmYxZGJkODg.579bc8529812fa41612580df7da58017",
+默认	18:25:06.087939+0800	Runner	flutter: │     "user_id": "user_efc05fa89e8cd0a62f1dbd88",
+默认	18:25:06.088282+0800	Runner	flutter: │     "device_id": "50de3fff-6143-4049-8bbf-0cac20439c2b",
+默认	18:25:06.088319+0800	Runner	flutter: │     "client_request_id": "crid_1783506306074397",
+默认	18:25:06.088361+0800	Runner	flutter: │     "platform": "ios",
+默认	18:25:06.088398+0800	Runner	flutter: │     "app_version": "1.0.0",
+默认	18:25:06.088438+0800	Runner	flutter: │     "locale": "zh-Hans-CN",
+默认	18:25:06.088474+0800	Runner	flutter: │     "country": "CN",
+默认	18:25:06.088511+0800	Runner	flutter: │     "timezone": "UTC+08:00"
+默认	18:25:06.088551+0800	Runner	flutter: │   },
+默认	18:25:06.088587+0800	Runner	flutter: │   "requests": [
+默认	18:25:06.088665+0800	Runner	flutter: │     {
+默认	18:25:06.088751+0800	Runner	flutter: │       "id": "req_0",
+默认	18:25:06.088840+0800	Runner	flutter: │       "service_name": "tool.subscription.SubscriptionService",
+默认	18:25:06.088990+0800	Runner	flutter: │       "method_name": "GetSubscriptionStatus",
+默认	18:25:06.089082+0800	Runner	flutter: │       "params": {
+默认	18:25:06.089195+0800	Runner	flutter: │         "product_code": "people_insight",
+默认	18:25:06.089373+0800	Runner	flutter: │         "scenario": "app_resume"
+默认	18:25:06.089505+0800	Runner	flutter: │       }
+默认	18:25:06.089560+0800	Runner	flutter: │     }
+默认	18:25:06.089617+0800	Runner	flutter: │   ]
+默认	18:25:06.089672+0800	Runner	flutter: │ }
+默认	18:25:06.089725+0800	Runner	flutter: └───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:06.277579+0800	Runner	flutter: ┌───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:06.277635+0800	Runner	flutter: │ [HTTP] <-- 200 POST http://gateway.spark-jam.top/gateway/invoke service=tool.subscription.SubscriptionService method=GetSubscriptionStatus
+默认	18:25:06.277719+0800	Runner	flutter: └───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:06.277950+0800	Runner	flutter: ┌───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:06.278000+0800	Runner	flutter: │ [HTTP] response:
+默认	18:25:06.278038+0800	Runner	flutter: │ {
+默认	18:25:06.278103+0800	Runner	flutter: │   "code": 0,
+默认	18:25:06.278148+0800	Runner	flutter: │   "message": "ok",
+默认	18:25:06.278222+0800	Runner	flutter: │   "request_id": "gw_req_bb83e82195db3b13e40080464808c8f0",
+默认	18:25:06.278279+0800	Runner	flutter: │   "trace_id": "trace_c7690442d488580d75e2bf376b9c0b3c",
+默认	18:25:06.278413+0800	Runner	flutter: │   "responses": [
+默认	18:25:06.278485+0800	Runner	flutter: │     {
+默认	18:25:06.278549+0800	Runner	flutter: │       "id": "req_0",
+默认	18:25:06.278655+0800	Runner	flutter: │       "success": true,
+默认	18:25:06.278697+0800	Runner	flutter: │       "code": 0,
+默认	18:25:06.278736+0800	Runner	flutter: │       "message": "ok",
+默认	18:25:06.278772+0800	Runner	flutter: │       "data": {
+默认	18:25:06.278809+0800	Runner	flutter: │         "entitlement": {
+默认	18:25:06.278846+0800	Runner	flutter: │           "can_start_search": false,
+默认	18:25:06.278883+0800	Runner	flutter: │           "concurrency_remaining": 0,
+默认	18:25:06.278919+0800	Runner	flutter: │           "decision": "SUBSCRIPTION_EXPIRED",
+默认	18:25:06.279138+0800	Runner	flutter: │           "expires_time": 1783505194000,
+默认	18:25:06.279197+0800	Runner	flutter: │           "plan_code": "basic",
+默认	18:25:06.279335+0800	Runner	flutter: │           "product_code": "people_insight",
+默认	18:25:06.279433+0800	Runner	flutter: │           "quota_remaining": 0,
+默认	18:25:06.279479+0800	Runner	flutter: │           "subscription_status": "expired",
+默认	18:25:06.279521+0800	Runner	flutter: │           "vip_level": 1
+默认	18:25:06.279613+0800	Runner	flutter: │         },
+默认	18:25:06.279675+0800	Runner	flutter: │         "expires_time": 1783505194000,
+默认	18:25:06.279717+0800	Runner	flutter: │         "has_active_subscription": false,
+默认	18:25:06.279755+0800	Runner	flutter: │         "plan_code": "basic",
+默认	18:25:06.279867+0800	Runner	flutter: │         "product_code": "people_insight",
+默认	18:25:06.279911+0800	Runner	flutter: │         "subscription_status": "expired",
+默认	18:25:06.279948+0800	Runner	flutter: │         "tier_code": "vip1",
+默认	18:25:06.279984+0800	Runner	flutter: │         "unavailable_reason": "subscription_expired",
+默认	18:25:06.280020+0800	Runner	flutter: │         "vip_level": 1
+默认	18:25:06.280056+0800	Runner	flutter: │       }
+默认	18:25:06.280092+0800	Runner	flutter: │     }
+默认	18:25:06.280128+0800	Runner	flutter: │   ]
+默认	18:25:06.280179+0800	Runner	flutter: │ }
+默认	18:25:06.280234+0800	Runner	flutter: └───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:06.282030+0800	Runner	flutter: ┌───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:06.282092+0800	Runner	flutter: │ [SubPurchase] coordinator.recoverUnfinished.start trigger=app_resume products=0
+默认	18:25:06.282169+0800	Runner	flutter: └───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:06.282300+0800	Runner	flutter: ┌───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:06.282355+0800	Runner	flutter: │ [SubPurchase] storekitRecovery.queryUnfinishedAll.start
+默认	18:25:06.282483+0800	Runner	flutter: └───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:06.310591+0800	Runner	flutter: ┌───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:06.310638+0800	Runner	flutter: │ [SubPurchase] storekitRecovery.queryUnfinishedAll.result total=0
+默认	18:25:06.310662+0800	Runner	flutter: └───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:06.310739+0800	Runner	flutter: ┌───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:06.310775+0800	Runner	flutter: │ [SubPurchase] coordinator.recoverStoreKitUnfinished.results count=0
+默认	18:25:06.310931+0800	Runner	flutter: └───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:06.310971+0800	Runner	flutter: ┌───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:06.311008+0800	Runner	flutter: │ [SubPurchase] coordinator.recoverUnfinished.finish
+默认	18:25:06.311033+0800	Runner	flutter: └───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:07.383683+0800	Runner	flutter: ┌───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:07.384634+0800	Runner	flutter: │ [EventTracking] name=lead_leave_dialogview id=7f4e3cc4-e380-4e01-b446-31a3bb649189 time=1783506307381 props={}
+默认	18:25:07.384851+0800	Runner	flutter: └───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:07.388150+0800	Runner	flutter: ┌───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:07.388196+0800	Runner	flutter: │ [EventTracking] name=app_page_stay id=53cb7061-b748-46f4-941f-ee98fd0e2f00 time=1783506307381 props={"page_from":"lead","duration_s":2}
+默认	18:25:07.388236+0800	Runner	flutter: └───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:07.413604+0800	Runner	flutter: ┌───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:07.413626+0800	Runner	flutter: │ [HTTP] --> POST http://gateway.spark-jam.top/gateway/invoke service=tool.event_tracking.EventTrackingService method=TrackEvents
+默认	18:25:07.413652+0800	Runner	flutter: └───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:07.413676+0800	Runner	flutter: ┌───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:07.413697+0800	Runner	flutter: │ [HTTP] request:
+默认	18:25:07.413721+0800	Runner	flutter: │ {
+默认	18:25:07.413743+0800	Runner	flutter: │   "comm": {
+默认	18:25:07.413765+0800	Runner	flutter: │     "auth_token": "anon.dXNlcl9lZmMwNWZhODllOGNkMGE2MmYxZGJkODg.579bc8529812fa41612580df7da58017",
+默认	18:25:07.413789+0800	Runner	flutter: │     "user_id": "user_efc05fa89e8cd0a62f1dbd88",
+默认	18:25:07.413811+0800	Runner	flutter: │     "device_id": "50de3fff-6143-4049-8bbf-0cac20439c2b",
+默认	18:25:07.413957+0800	Runner	flutter: │     "client_request_id": "crid_1783506307409643",
+默认	18:25:07.413981+0800	Runner	flutter: │     "platform": "ios",
+默认	18:25:07.414005+0800	Runner	flutter: │     "app_version": "1.0.0",
+默认	18:25:07.414028+0800	Runner	flutter: │     "locale": "zh-Hans-CN",
+默认	18:25:07.414056+0800	Runner	flutter: │     "country": "CN",
+默认	18:25:07.414079+0800	Runner	flutter: │     "timezone": "UTC+08:00"
+默认	18:25:07.414107+0800	Runner	flutter: │   },
+默认	18:25:07.414154+0800	Runner	flutter: │   "requests": [
+默认	18:25:07.414179+0800	Runner	flutter: │     {
+默认	18:25:07.414216+0800	Runner	flutter: │       "id": "req_0",
+默认	18:25:07.414238+0800	Runner	flutter: │       "service_name": "tool.event_tracking.EventTrackingService",
+默认	18:25:07.414262+0800	Runner	flutter: │       "method_name": "TrackEvents",
+默认	18:25:07.414284+0800	Runner	flutter: │       "params": {
+默认	18:25:07.414308+0800	Runner	flutter: │         "events": [
+默认	18:25:07.414330+0800	Runner	flutter: │           {
+默认	18:25:07.414356+0800	Runner	flutter: │             "event_id": "7f4e3cc4-e380-4e01-b446-31a3bb649189",
+默认	18:25:07.414381+0800	Runner	flutter: │             "event_name": "lead_leave_dialogview",
+默认	18:25:07.414407+0800	Runner	flutter: │             "event_time_ms": 1783506307381,
+默认	18:25:07.414453+0800	Runner	flutter: │             "properties": {
+默认	18:25:07.414494+0800	Runner	flutter: │               "logtime": 1783506307381,
+默认	18:25:07.414535+0800	Runner	flutter: │               "log_id": "7f4e3cc4-e380-4e01-b446-31a3bb649189",
+默认	18:25:07.414577+0800	Runner	flutter: │               "net": "wifi",
+默认	18:25:07.414617+0800	Runner	flutter: │               "pkg": "com.sparkjam.truthy.ios",
+默认	18:25:07.414657+0800	Runner	flutter: │               "bucket": 18,
+默认	18:25:07.414696+0800	Runner	flutter: │               "abslot": 80,
+默认	18:25:07.414738+0800	Runner	flutter: │               "ram": "3889MB",
+默认	18:25:07.414798+0800	Runner	flutter: │               "cpu": "arm64",
+默认	18:25:07.414853+0800	Runner	flutter: │               "sh": 667,
+默认	18:25:07.414896+0800	Runner	flutter: │               "sw": 375,
+默认	18:25:07.414954+0800	Runner	flutter: │               "city": "",
+默认	18:25:07.415015+0800	Runner	flutter: │               "ste": "",
+默认	18:25:07.415067+0800	Runner	flutter: │               "lat": "",
+默认	18:25:07.415108+0800	Runner	flutter: │               "lng": "",
+默认	18:25:07.415148+0800	Runner	flutter: │               "sty": "desk",
+默认	18:25:07.415190+0800	Runner	flutter: │               "isp": "",
+默认	18:25:07.415329+0800	Runner	flutter: │               "mod": "iphone14,6",
+默认	18:25:07.415443+0800	Runner	flutter: │               "brd": "apple",
+默认	18:25:07.415493+0800	Runner	flutter: │               "os": "16.3.1",
+默认	18:25:07.415591+0800	Runner	flutter: │               "pf": "ios",
+默认	18:25:07.415621+0800	Runner	flutter: │               "slan": "zh",
+默认	18:25:07.415646+0800	Runner	flutter: │               "reg": "CN",
+默认	18:25:07.415673+0800	Runner	flutter: │               "cou": "CN",
+默认	18:25:07.415695+0800	Runner	flutter: │               "sub": "",
+默认	18:25:07.415718+0800	Runner	flutter: │               "cha": "Organic",
+默认	18:25:07.415741+0800	Runner	flutter: │               "verc": "1",
+默认	18:25:07.415779+0800	Runner	flutter: │               "ver": "1.0.0",
+默认	18:25:07.415802+0800	Runner	flutter: │               "sid": "0ba73bad-cf86-4a9d-b77e-d7dc56c171fc",
+默认	18:25:07.415885+0800	Runner	flutter: │               "uuid": "50de3fff-6143-4049-8bbf-0cac20439c2b",
+默认	18:25:07.415913+0800	Runner	flutter: │               "idfa": "453AC05A-6055-4E7F-BDCD-31DBA54237F9",
+默认	18:25:07.415936+0800	Runner	flutter: │               "idfv": "9BC22C39-C8D3-4D15-8CB1-701C610EF0F6",
+默认	18:25:07.415958+0800	Runner	flutter: │               "aid": "",
+默认	18:25:07.415982+0800	Runner	flutter: │               "gaid": "",
+默认	18:25:07.416027+0800	Runner	flutter: │               "did": "453AC05A-6055-4E7F-BDCD-31DBA54237F9",
+默认	18:25:07.416052+0800	Runner	flutter: │               "uid": "user_efc05fa89e8cd0a62f1dbd88",
+默认	18:25:07.416078+0800	Runner	flutter: │               "anm": "Truthy",
+默认	18:25:07.416101+0800	Runner	flutter: │               "push_id": "",
+默认	18:25:07.416124+0800	Runner	flutter: │               "push_type": "",
+默认	18:25:07.416160+0800	Runner	flutter: │               "is_pro": "0"
+默认	18:25:07.416186+0800	Runner	flutter: │             }
+默认	18:25:07.416208+0800	Runner	flutter: │           }
+默认	18:25:07.416230+0800	Runner	flutter: │         ]
+默认	18:25:07.416260+0800	Runner	flutter: │       }
+默认	18:25:07.416284+0800	Runner	flutter: │     }
+默认	18:25:07.416331+0800	Runner	flutter: │   ]
+默认	18:25:07.416373+0800	Runner	flutter: │ }
+默认	18:25:07.416399+0800	Runner	flutter: └───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:07.604324+0800	Runner	flutter: ┌───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:07.604415+0800	Runner	flutter: │ [HTTP] <-- 200 POST http://gateway.spark-jam.top/gateway/invoke service=tool.event_tracking.EventTrackingService method=TrackEvents
+默认	18:25:07.604474+0800	Runner	flutter: └───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:07.604712+0800	Runner	flutter: ┌───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:07.604772+0800	Runner	flutter: │ [HTTP] response:
+默认	18:25:07.604934+0800	Runner	flutter: │ {
+默认	18:25:07.604993+0800	Runner	flutter: │   "code": 0,
+默认	18:25:07.605098+0800	Runner	flutter: │   "message": "ok",
+默认	18:25:07.605283+0800	Runner	flutter: │   "request_id": "gw_req_0fdda9f06ab58f9bb6f823aaf0db6e52",
+默认	18:25:07.605366+0800	Runner	flutter: │   "trace_id": "trace_df7eeef04c3a53fde270aed644c3aeb7",
+默认	18:25:07.605598+0800	Runner	flutter: │   "responses": [
+默认	18:25:07.605635+0800	Runner	flutter: │     {
+默认	18:25:07.605671+0800	Runner	flutter: │       "id": "req_0",
+默认	18:25:07.605859+0800	Runner	flutter: │       "success": true,
+默认	18:25:07.605990+0800	Runner	flutter: │       "code": 0,
+默认	18:25:07.606148+0800	Runner	flutter: │       "message": "ok",
+默认	18:25:07.606185+0800	Runner	flutter: │       "data": {
+默认	18:25:07.606223+0800	Runner	flutter: │         "request_id": "gw_req_0fdda9f06ab58f9bb6f823aaf0db6e52",
+默认	18:25:07.606259+0800	Runner	flutter: │         "trace_id": "trace_df7eeef04c3a53fde270aed644c3aeb7",
+默认	18:25:07.606620+0800	Runner	flutter: │         "accepted_count": 1
+默认	18:25:07.606656+0800	Runner	flutter: │       }
+默认	18:25:07.606693+0800	Runner	flutter: │     }
+默认	18:25:07.606761+0800	Runner	flutter: │   ]
+默认	18:25:07.606815+0800	Runner	flutter: │ }
+默认	18:25:07.606853+0800	Runner	flutter: └───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:07.623716+0800	Runner	flutter: ┌───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:07.623780+0800	Runner	flutter: │ [HTTP] --> POST http://gateway.spark-jam.top/gateway/invoke service=tool.event_tracking.EventTrackingService method=TrackEvents
+默认	18:25:07.623892+0800	Runner	flutter: └───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:07.624131+0800	Runner	flutter: ┌───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:07.624188+0800	Runner	flutter: │ [HTTP] request:
+默认	18:25:07.624300+0800	Runner	flutter: │ {
+默认	18:25:07.624355+0800	Runner	flutter: │   "comm": {
+默认	18:25:07.624442+0800	Runner	flutter: │     "auth_token": "anon.dXNlcl9lZmMwNWZhODllOGNkMGE2MmYxZGJkODg.579bc8529812fa41612580df7da58017",
+默认	18:25:07.624497+0800	Runner	flutter: │     "user_id": "user_efc05fa89e8cd0a62f1dbd88",
+默认	18:25:07.624622+0800	Runner	flutter: │     "device_id": "50de3fff-6143-4049-8bbf-0cac20439c2b",
+默认	18:25:07.624666+0800	Runner	flutter: │     "client_request_id": "crid_1783506307619403",
+默认	18:25:07.624705+0800	Runner	flutter: │     "platform": "ios",
+默认	18:25:07.624762+0800	Runner	flutter: │     "app_version": "1.0.0",
+默认	18:25:07.624799+0800	Runner	flutter: │     "locale": "zh-Hans-CN",
+默认	18:25:07.624923+0800	Runner	flutter: │     "country": "CN",
+默认	18:25:07.624968+0800	Runner	flutter: │     "timezone": "UTC+08:00"
+默认	18:25:07.625005+0800	Runner	flutter: │   },
+默认	18:25:07.625109+0800	Runner	flutter: │   "requests": [
+默认	18:25:07.625168+0800	Runner	flutter: │     {
+默认	18:25:07.625211+0800	Runner	flutter: │       "id": "req_0",
+默认	18:25:07.625248+0800	Runner	flutter: │       "service_name": "tool.event_tracking.EventTrackingService",
+默认	18:25:07.625345+0800	Runner	flutter: │       "method_name": "TrackEvents",
+默认	18:25:07.625389+0800	Runner	flutter: │       "params": {
+默认	18:25:07.625426+0800	Runner	flutter: │         "events": [
+默认	18:25:07.625514+0800	Runner	flutter: │           {
+默认	18:25:07.625565+0800	Runner	flutter: │             "event_id": "53cb7061-b748-46f4-941f-ee98fd0e2f00",
+默认	18:25:07.625602+0800	Runner	flutter: │             "event_name": "app_page_stay",
+默认	18:25:07.625704+0800	Runner	flutter: │             "event_time_ms": 1783506307381,
+默认	18:25:07.625742+0800	Runner	flutter: │             "properties": {
+默认	18:25:07.625832+0800	Runner	flutter: │               "logtime": 1783506307381,
+默认	18:25:07.625896+0800	Runner	flutter: │               "log_id": "53cb7061-b748-46f4-941f-ee98fd0e2f00",
+默认	18:25:07.625945+0800	Runner	flutter: │               "net": "wifi",
+默认	18:25:07.625982+0800	Runner	flutter: │               "pkg": "com.sparkjam.truthy.ios",
+默认	18:25:07.626019+0800	Runner	flutter: │               "bucket": 18,
+默认	18:25:07.626079+0800	Runner	flutter: │               "abslot": 80,
+默认	18:25:07.626144+0800	Runner	flutter: │               "ram": "3889MB",
+默认	18:25:07.626209+0800	Runner	flutter: │               "cpu": "arm64",
+默认	18:25:07.626240+0800	Runner	flutter: │               "sh": 667,
+默认	18:25:07.626308+0800	Runner	flutter: │               "sw": 375,
+默认	18:25:07.626337+0800	Runner	flutter: │               "city": "",
+默认	18:25:07.626364+0800	Runner	flutter: │               "ste": "",
+默认	18:25:07.626424+0800	Runner	flutter: │               "lat": "",
+默认	18:25:07.626455+0800	Runner	flutter: │               "lng": "",
+默认	18:25:07.626549+0800	Runner	flutter: │               "sty": "desk",
+默认	18:25:07.626580+0800	Runner	flutter: │               "isp": "",
+默认	18:25:07.626607+0800	Runner	flutter: │               "mod": "iphone14,6",
+默认	18:25:07.626635+0800	Runner	flutter: │               "brd": "apple",
+默认	18:25:07.626701+0800	Runner	flutter: │               "os": "16.3.1",
+默认	18:25:07.626729+0800	Runner	flutter: │               "pf": "ios",
+默认	18:25:07.626787+0800	Runner	flutter: │               "slan": "zh",
+默认	18:25:07.626818+0800	Runner	flutter: │               "reg": "CN",
+默认	18:25:07.626899+0800	Runner	flutter: │               "cou": "CN",
+默认	18:25:07.626934+0800	Runner	flutter: │               "sub": "",
+默认	18:25:07.626967+0800	Runner	flutter: │               "cha": "Organic",
+默认	18:25:07.626996+0800	Runner	flutter: │               "verc": "1",
+默认	18:25:07.627024+0800	Runner	flutter: │               "ver": "1.0.0",
+默认	18:25:07.627089+0800	Runner	flutter: │               "sid": "0ba73bad-cf86-4a9d-b77e-d7dc56c171fc",
+默认	18:25:07.627119+0800	Runner	flutter: │               "uuid": "50de3fff-6143-4049-8bbf-0cac20439c2b",
+默认	18:25:07.627161+0800	Runner	flutter: │               "idfa": "453AC05A-6055-4E7F-BDCD-31DBA54237F9",
+默认	18:25:07.627218+0800	Runner	flutter: │               "idfv": "9BC22C39-C8D3-4D15-8CB1-701C610EF0F6",
+默认	18:25:07.627266+0800	Runner	flutter: │               "aid": "",
+默认	18:25:07.627330+0800	Runner	flutter: │               "gaid": "",
+默认	18:25:07.627360+0800	Runner	flutter: │               "did": "453AC05A-6055-4E7F-BDCD-31DBA54237F9",
+默认	18:25:07.627425+0800	Runner	flutter: │               "uid": "user_efc05fa89e8cd0a62f1dbd88",
+默认	18:25:07.627454+0800	Runner	flutter: │               "anm": "Truthy",
+默认	18:25:07.627502+0800	Runner	flutter: │               "push_id": "",
+默认	18:25:07.627548+0800	Runner	flutter: │               "push_type": "",
+默认	18:25:07.627616+0800	Runner	flutter: │               "is_pro": "0",
+默认	18:25:07.627646+0800	Runner	flutter: │               "page_from": "lead",
+默认	18:25:07.627713+0800	Runner	flutter: │               "duration_s": 2
+默认	18:25:07.627758+0800	Runner	flutter: │             }
+默认	18:25:07.627784+0800	Runner	flutter: │           }
+默认	18:25:07.627825+0800	Runner	flutter: │         ]
+默认	18:25:07.627852+0800	Runner	flutter: │       }
+默认	18:25:07.627878+0800	Runner	flutter: │     }
+默认	18:25:07.627943+0800	Runner	flutter: │   ]
+默认	18:25:07.627970+0800	Runner	flutter: │ }
+默认	18:25:07.628046+0800	Runner	flutter: └───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:07.808934+0800	Runner	flutter: ┌───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:07.809109+0800	Runner	flutter: │ [HTTP] <-- 200 POST http://gateway.spark-jam.top/gateway/invoke service=tool.event_tracking.EventTrackingService method=TrackEvents
+默认	18:25:07.809218+0800	Runner	flutter: └───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:07.809587+0800	Runner	flutter: ┌───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:07.809756+0800	Runner	flutter: │ [HTTP] response:
+默认	18:25:07.809855+0800	Runner	flutter: │ {
+默认	18:25:07.810024+0800	Runner	flutter: │   "code": 0,
+默认	18:25:07.810142+0800	Runner	flutter: │   "message": "ok",
+默认	18:25:07.810228+0800	Runner	flutter: │   "request_id": "gw_req_717d734630a74a333e743b567c69dba6",
+默认	18:25:07.810311+0800	Runner	flutter: │   "trace_id": "trace_4e27c12da0a279c8537935f7c9917a55",
+默认	18:25:07.810492+0800	Runner	flutter: │   "responses": [
+默认	18:25:07.810580+0800	Runner	flutter: │     {
+默认	18:25:07.810655+0800	Runner	flutter: │       "id": "req_0",
+默认	18:25:07.810729+0800	Runner	flutter: │       "success": true,
+默认	18:25:07.810862+0800	Runner	flutter: │       "code": 0,
+默认	18:25:07.811100+0800	Runner	flutter: │       "message": "ok",
+默认	18:25:07.811220+0800	Runner	flutter: │       "data": {
+默认	18:25:07.811299+0800	Runner	flutter: │         "request_id": "gw_req_717d734630a74a333e743b567c69dba6",
+默认	18:25:07.811508+0800	Runner	flutter: │         "trace_id": "trace_4e27c12da0a279c8537935f7c9917a55",
+默认	18:25:07.811638+0800	Runner	flutter: │         "accepted_count": 1
+默认	18:25:07.811748+0800	Runner	flutter: │       }
+默认	18:25:07.811835+0800	Runner	flutter: │     }
+默认	18:25:07.811907+0800	Runner	flutter: │   ]
+默认	18:25:07.812100+0800	Runner	flutter: │ }
+默认	18:25:07.812190+0800	Runner	flutter: └───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:08.281642+0800	Runner	flutter: ┌───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:08.281703+0800	Runner	flutter: │ [EventTracking] name=lead_leave_leave_click id=cc50d4ce-e3f4-48c5-b2fe-7f055973090f time=1783506308281 props={}
+默认	18:25:08.281759+0800	Runner	flutter: └───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:08.281986+0800	Runner	flutter: ┌───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:08.282126+0800	Runner	flutter: │ [EventTracking] name=lead_page_exit id=b14886fd-ea3f-408a-849b-7b5c17db79a8 time=1783506308281 props={"has_search":1,"has_name":1,"add_type":""}
+默认	18:25:08.282231+0800	Runner	flutter: └───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:08.282407+0800	Runner	flutter: ┌───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:08.282805+0800	Runner	flutter: │ [EventTracking] name=app_page_stay id=b59b5306-7de3-4697-a2ea-d464d72fe7aa time=1783506308282 props={"page_from":"lead","duration_s":0}
+默认	18:25:08.282901+0800	Runner	flutter: └───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:08.308422+0800	Runner	flutter: ┌───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:08.308454+0800	Runner	flutter: │ [HTTP] --> POST http://gateway.spark-jam.top/gateway/invoke service=tool.event_tracking.EventTrackingService method=TrackEvents
+默认	18:25:08.308482+0800	Runner	flutter: └───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:08.308585+0800	Runner	flutter: ┌───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:08.308645+0800	Runner	flutter: │ [HTTP] request:
+默认	18:25:08.308700+0800	Runner	flutter: │ {
+默认	18:25:08.308871+0800	Runner	flutter: │   "comm": {
+默认	18:25:08.308900+0800	Runner	flutter: │     "auth_token": "anon.dXNlcl9lZmMwNWZhODllOGNkMGE2MmYxZGJkODg.579bc8529812fa41612580df7da58017",
+默认	18:25:08.308922+0800	Runner	flutter: │     "user_id": "user_efc05fa89e8cd0a62f1dbd88",
+默认	18:25:08.308944+0800	Runner	flutter: │     "device_id": "50de3fff-6143-4049-8bbf-0cac20439c2b",
+默认	18:25:08.308967+0800	Runner	flutter: │     "client_request_id": "crid_1783506308304540",
+默认	18:25:08.308989+0800	Runner	flutter: │     "platform": "ios",
+默认	18:25:08.309659+0800	Runner	flutter: │     "app_version": "1.0.0",
+默认	18:25:08.309782+0800	Runner	flutter: │     "locale": "zh-Hans-CN",
+默认	18:25:08.309895+0800	Runner	flutter: │     "country": "CN",
+默认	18:25:08.309925+0800	Runner	flutter: │     "timezone": "UTC+08:00"
+默认	18:25:08.309952+0800	Runner	flutter: │   },
+默认	18:25:08.309978+0800	Runner	flutter: │   "requests": [
+默认	18:25:08.309999+0800	Runner	flutter: │     {
+默认	18:25:08.310022+0800	Runner	flutter: │       "id": "req_0",
+默认	18:25:08.310044+0800	Runner	flutter: │       "service_name": "tool.event_tracking.EventTrackingService",
+默认	18:25:08.310065+0800	Runner	flutter: │       "method_name": "TrackEvents",
+默认	18:25:08.310146+0800	Runner	flutter: │       "params": {
+默认	18:25:08.310180+0800	Runner	flutter: │         "events": [
+默认	18:25:08.310220+0800	Runner	flutter: │           {
+默认	18:25:08.310373+0800	Runner	flutter: │             "event_id": "cc50d4ce-e3f4-48c5-b2fe-7f055973090f",
+默认	18:25:08.310419+0800	Runner	flutter: │             "event_name": "lead_leave_leave_click",
+默认	18:25:08.310456+0800	Runner	flutter: │             "event_time_ms": 1783506308281,
+默认	18:25:08.310492+0800	Runner	flutter: │             "properties": {
+默认	18:25:08.310781+0800	Runner	flutter: │               "logtime": 1783506308281,
+默认	18:25:08.310856+0800	Runner	flutter: │               "log_id": "cc50d4ce-e3f4-48c5-b2fe-7f055973090f",
+默认	18:25:08.310878+0800	Runner	flutter: │               "net": "wifi",
+默认	18:25:08.310930+0800	Runner	flutter: │               "pkg": "com.sparkjam.truthy.ios",
+默认	18:25:08.310954+0800	Runner	flutter: │               "bucket": 18,
+默认	18:25:08.311007+0800	Runner	flutter: │               "abslot": 80,
+默认	18:25:08.311072+0800	Runner	flutter: │               "ram": "3889MB",
+默认	18:25:08.311094+0800	Runner	flutter: │               "cpu": "arm64",
+默认	18:25:08.311115+0800	Runner	flutter: │               "sh": 667,
+默认	18:25:08.311136+0800	Runner	flutter: │               "sw": 375,
+默认	18:25:08.311249+0800	Runner	flutter: │               "city": "",
+默认	18:25:08.311273+0800	Runner	flutter: │               "ste": "",
+默认	18:25:08.311292+0800	Runner	flutter: │               "lat": "",
+默认	18:25:08.311315+0800	Runner	flutter: │               "lng": "",
+默认	18:25:08.311336+0800	Runner	flutter: │               "sty": "desk",
+默认	18:25:08.311357+0800	Runner	flutter: │               "isp": "",
+默认	18:25:08.311383+0800	Runner	flutter: │               "mod": "iphone14,6",
+默认	18:25:08.311404+0800	Runner	flutter: │               "brd": "apple",
+默认	18:25:08.311427+0800	Runner	flutter: │               "os": "16.3.1",
+默认	18:25:08.311448+0800	Runner	flutter: │               "pf": "ios",
+默认	18:25:08.311470+0800	Runner	flutter: │               "slan": "zh",
+默认	18:25:08.311491+0800	Runner	flutter: │               "reg": "CN",
+默认	18:25:08.311513+0800	Runner	flutter: │               "cou": "CN",
+默认	18:25:08.311554+0800	Runner	flutter: │               "sub": "",
+默认	18:25:08.311897+0800	Runner	flutter: │               "cha": "Organic",
+默认	18:25:08.311920+0800	Runner	flutter: │               "verc": "1",
+默认	18:25:08.311963+0800	Runner	flutter: │               "ver": "1.0.0",
+默认	18:25:08.312004+0800	Runner	flutter: │               "sid": "0ba73bad-cf86-4a9d-b77e-d7dc56c171fc",
+默认	18:25:08.312078+0800	Runner	flutter: │               "uuid": "50de3fff-6143-4049-8bbf-0cac20439c2b",
+默认	18:25:08.312231+0800	Runner	flutter: │               "idfa": "453AC05A-6055-4E7F-BDCD-31DBA54237F9",
+默认	18:25:08.312340+0800	Runner	flutter: │               "idfv": "9BC22C39-C8D3-4D15-8CB1-701C610EF0F6",
+默认	18:25:08.312406+0800	Runner	flutter: │               "aid": "",
+默认	18:25:08.312428+0800	Runner	flutter: │               "gaid": "",
+默认	18:25:08.312526+0800	Runner	flutter: │               "did": "453AC05A-6055-4E7F-BDCD-31DBA54237F9",
+默认	18:25:08.312557+0800	Runner	flutter: │               "uid": "user_efc05fa89e8cd0a62f1dbd88",
+默认	18:25:08.312585+0800	Runner	flutter: │               "anm": "Truthy",
+默认	18:25:08.312618+0800	Runner	flutter: │               "push_id": "",
+默认	18:25:08.312640+0800	Runner	flutter: │               "push_type": "",
+默认	18:25:08.312663+0800	Runner	flutter: │               "is_pro": "0"
+默认	18:25:08.312747+0800	Runner	flutter: │             }
+默认	18:25:08.312788+0800	Runner	flutter: │           }
+默认	18:25:08.312815+0800	Runner	flutter: │         ]
+默认	18:25:08.312839+0800	Runner	flutter: │       }
+默认	18:25:08.312927+0800	Runner	flutter: │     }
+默认	18:25:08.313014+0800	Runner	flutter: │   ]
+默认	18:25:08.313110+0800	Runner	flutter: │ }
+默认	18:25:08.313230+0800	Runner	flutter: └───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:08.670574+0800	Runner	flutter: ┌───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:08.670691+0800	Runner	flutter: │ [HTTP] <-- 200 POST http://gateway.spark-jam.top/gateway/invoke service=tool.event_tracking.EventTrackingService method=TrackEvents
+默认	18:25:08.670731+0800	Runner	flutter: └───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:08.670933+0800	Runner	flutter: ┌───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:08.670972+0800	Runner	flutter: │ [HTTP] response:
+默认	18:25:08.671010+0800	Runner	flutter: │ {
+默认	18:25:08.671046+0800	Runner	flutter: │   "code": 0,
+默认	18:25:08.671102+0800	Runner	flutter: │   "message": "ok",
+默认	18:25:08.671154+0800	Runner	flutter: │   "request_id": "gw_req_936dc1c8f6a9f8a0485f381d7d5a58ac",
+默认	18:25:08.671221+0800	Runner	flutter: │   "trace_id": "trace_3ef677d1d01574610fc92230ac95417f",
+默认	18:25:08.671287+0800	Runner	flutter: │   "responses": [
+默认	18:25:08.671333+0800	Runner	flutter: │     {
+默认	18:25:08.671390+0800	Runner	flutter: │       "id": "req_0",
+默认	18:25:08.671436+0800	Runner	flutter: │       "success": true,
+默认	18:25:08.671513+0800	Runner	flutter: │       "code": 0,
+默认	18:25:08.671569+0800	Runner	flutter: │       "message": "ok",
+默认	18:25:08.671606+0800	Runner	flutter: │       "data": {
+默认	18:25:08.671643+0800	Runner	flutter: │         "request_id": "gw_req_936dc1c8f6a9f8a0485f381d7d5a58ac",
+默认	18:25:08.671678+0800	Runner	flutter: │         "trace_id": "trace_3ef677d1d01574610fc92230ac95417f",
+默认	18:25:08.671714+0800	Runner	flutter: │         "accepted_count": 1
+默认	18:25:08.671750+0800	Runner	flutter: │       }
+默认	18:25:08.671785+0800	Runner	flutter: │     }
+默认	18:25:08.671822+0800	Runner	flutter: │   ]
+默认	18:25:08.671857+0800	Runner	flutter: │ }
+默认	18:25:08.671894+0800	Runner	flutter: └───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:08.693837+0800	Runner	flutter: ┌───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:08.694008+0800	Runner	flutter: │ [HTTP] --> POST http://gateway.spark-jam.top/gateway/invoke service=tool.event_tracking.EventTrackingService method=TrackEvents
+默认	18:25:08.694080+0800	Runner	flutter: └───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:08.694235+0800	Runner	flutter: ┌───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:08.694287+0800	Runner	flutter: │ [HTTP] request:
+默认	18:25:08.694317+0800	Runner	flutter: │ {
+默认	18:25:08.694341+0800	Runner	flutter: │   "comm": {
+默认	18:25:08.694366+0800	Runner	flutter: │     "auth_token": "anon.dXNlcl9lZmMwNWZhODllOGNkMGE2MmYxZGJkODg.579bc8529812fa41612580df7da58017",
+默认	18:25:08.694391+0800	Runner	flutter: │     "user_id": "user_efc05fa89e8cd0a62f1dbd88",
+默认	18:25:08.694416+0800	Runner	flutter: │     "device_id": "50de3fff-6143-4049-8bbf-0cac20439c2b",
+默认	18:25:08.694441+0800	Runner	flutter: │     "client_request_id": "crid_1783506308691482",
+默认	18:25:08.694468+0800	Runner	flutter: │     "platform": "ios",
+默认	18:25:08.694495+0800	Runner	flutter: │     "app_version": "1.0.0",
+默认	18:25:08.694521+0800	Runner	flutter: │     "locale": "zh-Hans-CN",
+默认	18:25:08.694550+0800	Runner	flutter: │     "country": "CN",
+默认	18:25:08.694575+0800	Runner	flutter: │     "timezone": "UTC+08:00"
+默认	18:25:08.694605+0800	Runner	flutter: │   },
+默认	18:25:08.694629+0800	Runner	flutter: │   "requests": [
+默认	18:25:08.694654+0800	Runner	flutter: │     {
+默认	18:25:08.694679+0800	Runner	flutter: │       "id": "req_0",
+默认	18:25:08.694706+0800	Runner	flutter: │       "service_name": "tool.event_tracking.EventTrackingService",
+默认	18:25:08.694732+0800	Runner	flutter: │       "method_name": "TrackEvents",
+默认	18:25:08.694777+0800	Runner	flutter: │       "params": {
+默认	18:25:08.694807+0800	Runner	flutter: │         "events": [
+默认	18:25:08.694832+0800	Runner	flutter: │           {
+默认	18:25:08.694858+0800	Runner	flutter: │             "event_id": "b14886fd-ea3f-408a-849b-7b5c17db79a8",
+默认	18:25:08.694911+0800	Runner	flutter: │             "event_name": "lead_page_exit",
+默认	18:25:08.694936+0800	Runner	flutter: │             "event_time_ms": 1783506308281,
+默认	18:25:08.694962+0800	Runner	flutter: │             "properties": {
+默认	18:25:08.695008+0800	Runner	flutter: │               "logtime": 1783506308281,
+默认	18:25:08.695077+0800	Runner	flutter: │               "log_id": "b14886fd-ea3f-408a-849b-7b5c17db79a8",
+默认	18:25:08.695153+0800	Runner	flutter: │               "net": "wifi",
+默认	18:25:08.695214+0800	Runner	flutter: │               "pkg": "com.sparkjam.truthy.ios",
+默认	18:25:08.695277+0800	Runner	flutter: │               "bucket": 18,
+默认	18:25:08.695334+0800	Runner	flutter: │               "abslot": 80,
+默认	18:25:08.695394+0800	Runner	flutter: │               "ram": "3889MB",
+默认	18:25:08.695457+0800	Runner	flutter: │               "cpu": "arm64",
+默认	18:25:08.695518+0800	Runner	flutter: │               "sh": 667,
+默认	18:25:08.695573+0800	Runner	flutter: │               "sw": 375,
+默认	18:25:08.695632+0800	Runner	flutter: │               "city": "",
+默认	18:25:08.695688+0800	Runner	flutter: │               "ste": "",
+默认	18:25:08.695775+0800	Runner	flutter: │               "lat": "",
+默认	18:25:08.695832+0800	Runner	flutter: │               "lng": "",
+默认	18:25:08.695899+0800	Runner	flutter: │               "sty": "desk",
+默认	18:25:08.695960+0800	Runner	flutter: │               "isp": "",
+默认	18:25:08.696019+0800	Runner	flutter: │               "mod": "iphone14,6",
+默认	18:25:08.696075+0800	Runner	flutter: │               "brd": "apple",
+默认	18:25:08.696139+0800	Runner	flutter: │               "os": "16.3.1",
+默认	18:25:08.696193+0800	Runner	flutter: │               "pf": "ios",
+默认	18:25:08.696255+0800	Runner	flutter: │               "slan": "zh",
+默认	18:25:08.696342+0800	Runner	flutter: │               "reg": "CN",
+默认	18:25:08.696403+0800	Runner	flutter: │               "cou": "CN",
+默认	18:25:08.696510+0800	Runner	flutter: │               "sub": "",
+默认	18:25:08.696701+0800	Runner	flutter: │               "cha": "Organic",
+默认	18:25:08.696769+0800	Runner	flutter: │               "verc": "1",
+默认	18:25:08.696837+0800	Runner	flutter: │               "ver": "1.0.0",
+默认	18:25:08.696908+0800	Runner	flutter: │               "sid": "0ba73bad-cf86-4a9d-b77e-d7dc56c171fc",
+默认	18:25:08.696955+0800	Runner	flutter: │               "uuid": "50de3fff-6143-4049-8bbf-0cac20439c2b",
+默认	18:25:08.696980+0800	Runner	flutter: │               "idfa": "453AC05A-6055-4E7F-BDCD-31DBA54237F9",
+默认	18:25:08.697007+0800	Runner	flutter: │               "idfv": "9BC22C39-C8D3-4D15-8CB1-701C610EF0F6",
+默认	18:25:08.697036+0800	Runner	flutter: │               "aid": "",
+默认	18:25:08.697160+0800	Runner	flutter: │               "gaid": "",
+默认	18:25:08.697190+0800	Runner	flutter: │               "did": "453AC05A-6055-4E7F-BDCD-31DBA54237F9",
+默认	18:25:08.697216+0800	Runner	flutter: │               "uid": "user_efc05fa89e8cd0a62f1dbd88",
+默认	18:25:08.697242+0800	Runner	flutter: │               "anm": "Truthy",
+默认	18:25:08.697280+0800	Runner	flutter: │               "push_id": "",
+默认	18:25:08.697309+0800	Runner	flutter: │               "push_type": "",
+默认	18:25:08.697339+0800	Runner	flutter: │               "is_pro": "0",
+默认	18:25:08.697366+0800	Runner	flutter: │               "has_search": 1,
+默认	18:25:08.697407+0800	Runner	flutter: │               "has_name": 1,
+默认	18:25:08.697443+0800	Runner	flutter: │               "add_type": ""
+默认	18:25:08.697470+0800	Runner	flutter: │             }
+默认	18:25:08.697508+0800	Runner	flutter: │           },
+默认	18:25:08.697540+0800	Runner	flutter: │           {
+默认	18:25:08.697566+0800	Runner	flutter: │             "event_id": "b59b5306-7de3-4697-a2ea-d464d72fe7aa",
+默认	18:25:08.697643+0800	Runner	flutter: │             "event_name": "app_page_stay",
+默认	18:25:08.697905+0800	Runner	flutter: │             "event_time_ms": 1783506308282,
+默认	18:25:08.697958+0800	Runner	flutter: │             "properties": {
+默认	18:25:08.698069+0800	Runner	flutter: │               "logtime": 1783506308282,
+默认	18:25:08.698257+0800	Runner	flutter: │               "log_id": "b59b5306-7de3-4697-a2ea-d464d72fe7aa",
+默认	18:25:08.698333+0800	Runner	flutter: │               "net": "wifi",
+默认	18:25:08.698378+0800	Runner	flutter: │               "pkg": "com.sparkjam.truthy.ios",
+默认	18:25:08.698402+0800	Runner	flutter: │               "bucket": 18,
+默认	18:25:08.698457+0800	Runner	flutter: │               "abslot": 80,
+默认	18:25:08.698482+0800	Runner	flutter: │               "ram": "3889MB",
+默认	18:25:08.698503+0800	Runner	flutter: │               "cpu": "arm64",
+默认	18:25:08.698527+0800	Runner	flutter: │               "sh": 667,
+默认	18:25:08.698549+0800	Runner	flutter: │               "sw": 375,
+默认	18:25:08.698575+0800	Runner	flutter: │               "city": "",
+默认	18:25:08.698596+0800	Runner	flutter: │               "ste": "",
+默认	18:25:08.698636+0800	Runner	flutter: │               "lat": "",
+默认	18:25:08.698658+0800	Runner	flutter: │               "lng": "",
+默认	18:25:08.698679+0800	Runner	flutter: │               "sty": "desk",
+默认	18:25:08.698702+0800	Runner	flutter: │               "isp": "",
+默认	18:25:08.698740+0800	Runner	flutter: │               "mod": "iphone14,6",
+默认	18:25:08.698782+0800	Runner	flutter: │               "brd": "apple",
+默认	18:25:08.698820+0800	Runner	flutter: │               "os": "16.3.1",
+默认	18:25:08.698846+0800	Runner	flutter: │               "pf": "ios",
+默认	18:25:08.698874+0800	Runner	flutter: │               "slan": "zh",
+默认	18:25:08.698896+0800	Runner	flutter: │               "reg": "CN",
+默认	18:25:08.698918+0800	Runner	flutter: │               "cou": "CN",
+默认	18:25:08.698956+0800	Runner	flutter: │               "sub": "",
+默认	18:25:08.698982+0800	Runner	flutter: │               "cha": "Organic",
+默认	18:25:08.699094+0800	Runner	flutter: │               "verc": "1",
+默认	18:25:08.699172+0800	Runner	flutter: │               "ver": "1.0.0",
+默认	18:25:08.699286+0800	Runner	flutter: │               "sid": "0ba73bad-cf86-4a9d-b77e-d7dc56c171fc",
+默认	18:25:08.699378+0800	Runner	flutter: │               "uuid": "50de3fff-6143-4049-8bbf-0cac20439c2b",
+默认	18:25:08.699431+0800	Runner	flutter: │               "idfa": "453AC05A-6055-4E7F-BDCD-31DBA54237F9",
+默认	18:25:08.699529+0800	Runner	flutter: │               "idfv": "9BC22C39-C8D3-4D15-8CB1-701C610EF0F6",
+默认	18:25:08.699603+0800	Runner	flutter: │               "aid": "",
+默认	18:25:08.699656+0800	Runner	flutter: │               "gaid": "",
+默认	18:25:08.699709+0800	Runner	flutter: │               "did": "453AC05A-6055-4E7F-BDCD-31DBA54237F9",
+默认	18:25:08.699795+0800	Runner	flutter: │               "uid": "user_efc05fa89e8cd0a62f1dbd88",
+默认	18:25:08.699940+0800	Runner	flutter: │               "anm": "Truthy",
+默认	18:25:08.700037+0800	Runner	flutter: │               "push_id": "",
+默认	18:25:08.700098+0800	Runner	flutter: │               "push_type": "",
+默认	18:25:08.700253+0800	Runner	flutter: │               "is_pro": "0",
+默认	18:25:08.700319+0800	Runner	flutter: │               "page_from": "lead",
+默认	18:25:08.700372+0800	Runner	flutter: │               "duration_s": 0
+默认	18:25:08.700426+0800	Runner	flutter: │             }
+默认	18:25:08.700514+0800	Runner	flutter: │           }
+默认	18:25:08.700576+0800	Runner	flutter: │         ]
+默认	18:25:08.700648+0800	Runner	flutter: │       }
+默认	18:25:08.700701+0800	Runner	flutter: │     }
+默认	18:25:08.700758+0800	Runner	flutter: │   ]
+默认	18:25:08.700820+0800	Runner	flutter: │ }
+默认	18:25:08.700875+0800	Runner	flutter: └───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:09.073944+0800	Runner	flutter: ┌───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:09.074184+0800	Runner	flutter: │ [HTTP] <-- 200 POST http://gateway.spark-jam.top/gateway/invoke service=tool.event_tracking.EventTrackingService method=TrackEvents
+默认	18:25:09.074336+0800	Runner	flutter: └───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:09.074697+0800	Runner	flutter: ┌───────────────────────────────────────────────────────────────────────────────────────────────────
+默认	18:25:09.074831+0800	Runner	flutter: │ [HTTP] response:
+默认	18:25:09.074920+0800	Runner	flutter: │ {
+默认	18:25:09.074997+0800	Runner	flutter: │   "code": 0,
+默认	18:25:09.075155+0800	Runner	flutter: │   "message": "ok",
+默认	18:25:09.075292+0800	Runner	flutter: │   "request_id": "gw_req_9826878c5a333da2316211af7316fc81",
+默认	18:25:09.075387+0800	Runner	flutter: │   "trace_id": "trace_d1f3ad577c08f0ad14f9e688d1fb924b",
+默认	18:25:09.075464+0800	Runner	flutter: │   "responses": [
+默认	18:25:09.075541+0800	Runner	flutter: │     {
+默认	18:25:09.075615+0800	Runner	flutter: │       "id": "req_0",
+默认	18:25:09.075773+0800	Runner	flutter: │       "success": true,
+默认	18:25:09.075885+0800	Runner	flutter: │       "code": 0,
+默认	18:25:09.075969+0800	Runner	flutter: │       "message": "ok",
+默认	18:25:09.076175+0800	Runner	flutter: │       "data": {
+默认	18:25:09.076400+0800	Runner	flutter: │         "request_id": "gw_req_9826878c5a333da2316211af7316fc81",
+默认	18:25:09.076488+0800	Runner	flutter: │         "trace_id": "trace_d1f3ad577c08f0ad14f9e688d1fb924b",
+默认	18:25:09.076564+0800	Runner	flutter: │         "accepted_count": 2
+默认	18:25:09.076637+0800	Runner	flutter: │       }
+默认	18:25:09.076713+0800	Runner	flutter: │     }
+默认	18:25:09.076863+0800	Runner	flutter: │   ]
+默认	18:25:09.076946+0800	Runner	flutter: │ }
+默认	18:25:09.077128+0800	Runner	flutter: └───────────────────────────────────────────────────────────────────────────────────────────────────

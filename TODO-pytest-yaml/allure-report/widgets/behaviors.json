@@ -1,0 +1,1 @@
+{"total":2,"items":[{"uid":"02345e0e6b54f305ee5b0ce5ad83688d","name":"商品管理接口测试","statistic":{"failed":1,"broken":0,"skipped":0,"passed":0,"unknown":0,"total":1}},{"uid":"c3cab6e97b3cdb703bd04a73225360e6","name":"用户管理接口测试","statistic":{"failed":1,"broken":0,"skipped":0,"passed":0,"unknown":0,"total":1}}]}
