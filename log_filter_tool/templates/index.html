@@ -362,7 +362,11 @@
     <main>
       <h1>Log 过滤工具</h1>
 
-      <form method="post">
+      {% if platform_home_url %}
+        <p><a href="{{ platform_home_url }}">返回测试开发平台</a></p>
+      {% endif %}
+
+      <form method="post" action="{{ url_for('tool.index') }}">
         <section>
           <div class="field-header">
             <label for="log_text">日志内容</label>
@@ -641,7 +645,8 @@
 
         button.disabled = true;
         button.textContent = '导出中...';
-        fetch('/export', {
+        var exportUrl = {{ url_for('tool.export_log')|tojson }};
+        fetch(exportUrl, {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({export_type: exportType, content: content})

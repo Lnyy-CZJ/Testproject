@@ -14,6 +14,7 @@ from app import (
     format_result_text,
     parse_log_block,
     parse_log_blocks,
+    normalize_base_path,
     split_log_blocks,
 )
 
@@ -242,6 +243,45 @@ class LogFilterTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("GetMe", response.get_data(as_text=True))
+
+    def test_base_path_is_normalized_and_rejects_unsafe_values(self):
+        """基础路径应格式统一，并拒绝可能改变路由语义的配置。"""
+        self.assertEqual(normalize_base_path(""), "")
+        self.assertEqual(normalize_base_path("log-filter/"), "/log-filter")
+
+        for invalid_path in ("/../log-filter", "/log-filter?debug=1", "//log-filter"):
+            with self.subTest(invalid_path=invalid_path):
+                with self.assertRaises(ValueError):
+                    normalize_base_path(invalid_path)
+
+    def test_prefixed_routes_keep_forms_and_export_on_platform_path(self):
+        """平台模式下页面、导出与示例接口必须使用相同工具前缀。"""
+        app = create_app(base_path="/log-filter")
+        app.testing = True
+        client = app.test_client()
+
+        response = client.get("/log-filter/")
+        html = response.get_data(as_text=True)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('action="/log-filter/"', html)
+        self.assertIn('var exportUrl = "/log-filter/export"', html)
+        self.assertEqual(client.get("/log-filter/sample").status_code, 200)
+        self.assertEqual(client.get("/").status_code, 404)
+
+    def test_prefixed_health_route_returns_service_status(self):
+        """健康检查应轻量返回服务标识，且遵循基础路径。"""
+        app = create_app(base_path="/log-filter")
+        app.testing = True
+        client = app.test_client()
+
+        response = client.get("/log-filter/health")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.get_json(),
+            {"service": "log-filter", "status": "ok"},
+        )
 
 
 if __name__ == "__main__":

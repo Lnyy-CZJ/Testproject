@@ -1,0 +1,55 @@
+services:
+  platform-gateway:
+    image: nginx:1.27-alpine
+    ports:
+      - "${PLATFORM_PORT:-8080}:80"
+    volumes:
+      - ./web:/usr/share/nginx/html:ro
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/tool-unavailable.html:/etc/nginx/errors/tool-unavailable.html:ro
+    depends_on:
+      - trackevents-web
+      - log-filter-tool
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 3s
+    restart: unless-stopped
+
+  trackevents-web:
+    build:
+      context: ../TrackEvents_tess
+    environment:
+      TRACKEVENTS_HOST: 0.0.0.0
+      TRACKEVENTS_PORT: 8000
+      TRACKEVENTS_BASE_PATH: /trackevents
+      PLATFORM_HOME_URL: /
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/trackevents/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+
+  log-filter-tool:
+    build:
+      context: ../log_filter_tool
+    environment:
+      LOG_FILTER_BASE_PATH: /log-filter
+      LOG_EXPORT_DIR: /tmp/log-exports
+      LOG_EXPORT_DISPLAY_DIR: /tmp/log-exports
+      PLATFORM_HOME_URL: /
+    expose:
+      - "5001"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5001/log-filter/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped

@@ -1,0 +1,664 @@
+{
+    "code": 0,
+    "message": "ok",
+    "request_id": "gw_req_002544c1d7a393bd2c9fe3339e1aa8ea",
+    "trace_id": "trace_78f038c82ca672631685f607649c1dc3",
+    "responses": [
+        {
+            "id": "req_0",
+            "success": true,
+            "code": 0,
+            "message": "ok",
+            "data": {
+                "cache_ttl_seconds": 10,
+                "content_version": "home_feishu_celebrity_cases_20260710_v1",
+                "search_examples": [
+                    {
+                        "action": {
+                            "sample_case_id": "sample_case_taylor_swift",
+                            "type": "OPEN_SAMPLE_DETAIL"
+                        },
+                        "clue_types": [
+                            "FULL_NAME",
+                            "LOCATION",
+                            "SOCIAL_LINK",
+                            "SOCIAL_LINK",
+                            "SOCIAL_LINK",
+                            "SOCIAL_LINK",
+                            "PHOTO"
+                        ],
+                        "example_id": "example_taylor_swift",
+                        "requires_auth": true,
+                        "requires_entitlement": true,
+                        "sample_case_id": "sample_case_taylor_swift",
+                        "sample_input": {
+                            "additional_details": [
+                                {
+                                    "type": "PROFESSION",
+                                    "value": "Singer-songwriter · Producer"
+                                },
+                                {
+                                    "type": "OTHER",
+                                    "value": "Full Name: Taylor Alison Swift"
+                                },
+                                {
+                                    "type": "OTHER",
+                                    "value": "Birth Date: 1989/12/13"
+                                },
+                                {
+                                    "type": "OTHER",
+                                    "value": "Birthplace: Reading, Pennsylvania, USA"
+                                },
+                                {
+                                    "type": "OTHER",
+                                    "value": "Nationality: American"
+                                },
+                                {
+                                    "type": "OTHER",
+                                    "value": "Genres: Pop · Country · Folk · Alternative"
+                                },
+                                {
+                                    "type": "OTHER",
+                                    "value": "Major Albums: Fearless · 1989 · Folklore · Midnights · The Tortured Poets Department"
+                                },
+                                {
+                                    "type": "OTHER",
+                                    "value": "Major Awards: 14 Grammy Awards (as of 2025)"
+                                },
+                                {
+                                    "type": "OTHER",
+                                    "value": "Key Record: First artist to win the Grammy Award for Album of the Year four times"
+                                }
+                            ],
+                            "clues": [
+                                {
+                                    "full_name_query": {
+                                        "city": "",
+                                        "country": "US",
+                                        "extra_hint": "Singer · Songwriter · Entrepreneur",
+                                        "full_name": "Taylor Swift"
+                                    },
+                                    "type": "FULL_NAME"
+                                },
+                                {
+                                    "location_query": {
+                                        "address_components": null,
+                                        "address_types": null,
+                                        "formatted_address": "Nashville · New York City · Los Angeles",
+                                        "location": "Nashville · New York City · Los Angeles",
+                                        "place_id": "",
+                                        "source": "sample"
+                                    },
+                                    "type": "LOCATION"
+                                },
+                                {
+                                    "social_link_query": {
+                                        "platform_hint": "instagram",
+                                        "url": "https://www.instagram.com/taylorswift/"
+                                    },
+                                    "type": "SOCIAL_LINK"
+                                },
+                                {
+                                    "social_link_query": {
+                                        "platform_hint": "x",
+                                        "url": "https://x.com/taylorswift13"
+                                    },
+                                    "type": "SOCIAL_LINK"
+                                },
+                                {
+                                    "social_link_query": {
+                                        "platform_hint": "facebook",
+                                        "url": "https://www.facebook.com/TaylorSwift/"
+                                    },
+                                    "type": "SOCIAL_LINK"
+                                },
+                                {
+                                    "social_link_query": {
+                                        "platform_hint": "youtube",
+                                        "url": "https://www.youtube.com/channel/UCqECaJ8Gagnn7YCbPEzWH6g"
+                                    },
+                                    "type": "SOCIAL_LINK"
+                                },
+                                {
+                                    "photo_query": {
+                                        "media_asset_id": "media_sample_taylor_swift_face_1",
+                                        "photo_type_hint": "face"
+                                    },
+                                    "type": "PHOTO"
+                                }
+                            ],
+                            "is_demo": true,
+                            "match_strategy": "UNION"
+                        },
+                        "sort_order": 10,
+                        "subtitle": "Singer, songwriter, entrepreneur, public social profiles, and career highlights sample.",
+                        "thumbnail_url": "https://tool-srv-people-insight-1349591044.cos.na-siliconvalley.myqcloud.com/static/home/sample-thumbnails/taylor-swift.jpg",
+                        "title": "Taylor Swift"
+                    },
+                    {
+                        "action": {
+                            "sample_case_id": "sample_case_beyonce",
+                            "type": "OPEN_SAMPLE_DETAIL"
+                        },
+                        "clue_types": [
+                            "FULL_NAME",
+                            "LOCATION",
+                            "SOCIAL_LINK",
+                            "SOCIAL_LINK",
+                            "SOCIAL_LINK",
+                            "SOCIAL_LINK",
+                            "PHOTO"
+                        ],
+                        "example_id": "example_beyonce",
+                        "requires_auth": true,
+                        "requires_entitlement": true,
+                        "sample_case_id": "sample_case_beyonce",
+                        "sample_input": {
+                            "additional_details": [
+                                {
+                                    "type": "PROFESSION",
+                                    "value": "Singer · Songwriter · Producer · Entrepreneur"
+                                },
+                                {
+                                    "type": "EMPLOYER",
+                                    "value": "Parkwood Entertainment · Ivy Park · Cécred"
+                                },
+                                {
+                                    "type": "OTHER",
+                                    "value": "Full Name: Beyoncé Giselle Knowles-Carter"
+                                },
+                                {
+                                    "type": "OTHER",
+                                    "value": "Birth Date: 1981/9/4"
+                                },
+                                {
+                                    "type": "OTHER",
+                                    "value": "Birthplace: Houston, Texas, USA"
+                                },
+                                {
+                                    "type": "OTHER",
+                                    "value": "Nationality: American"
+                                },
+                                {
+                                    "type": "OTHER",
+                                    "value": "Early Career: Lead Vocalist of Destiny’s Child"
+                                },
+                                {
+                                    "type": "OTHER",
+                                    "value": "Major Albums: Dangerously in Love · Lemonade · Renaissance · Cowboy Carter"
+                                },
+                                {
+                                    "type": "OTHER",
+                                    "value": "Major Awards: 35 Grammy Awards (as of 2025)"
+                                },
+                                {
+                                    "type": "OTHER",
+                                    "value": "Key Record: Artist with the most Grammy Awards in history"
+                                }
+                            ],
+                            "clues": [
+                                {
+                                    "full_name_query": {
+                                        "city": "",
+                                        "country": "US",
+                                        "extra_hint": "Singer · Songwriter · Producer · Entrepreneur",
+                                        "full_name": "Beyoncé"
+                                    },
+                                    "type": "FULL_NAME"
+                                },
+                                {
+                                    "location_query": {
+                                        "address_components": null,
+                                        "address_types": null,
+                                        "formatted_address": "Houston, Texas",
+                                        "location": "Houston, Texas",
+                                        "place_id": "",
+                                        "source": "sample"
+                                    },
+                                    "type": "LOCATION"
+                                },
+                                {
+                                    "social_link_query": {
+                                        "platform_hint": "instagram",
+                                        "url": "https://www.instagram.com/beyonce/"
+                                    },
+                                    "type": "SOCIAL_LINK"
+                                },
+                                {
+                                    "social_link_query": {
+                                        "platform_hint": "x",
+                                        "url": "https://x.com/Beyonce"
+                                    },
+                                    "type": "SOCIAL_LINK"
+                                },
+                                {
+                                    "social_link_query": {
+                                        "platform_hint": "facebook",
+                                        "url": "https://www.facebook.com/beyonce/"
+                                    },
+                                    "type": "SOCIAL_LINK"
+                                },
+                                {
+                                    "social_link_query": {
+                                        "platform_hint": "youtube",
+                                        "url": "https://www.youtube.com/channel/UCuHZBCaKmtaLCRAOoazhCPA"
+                                    },
+                                    "type": "SOCIAL_LINK"
+                                },
+                                {
+                                    "photo_query": {
+                                        "media_asset_id": "media_sample_beyonce_face_1",
+                                        "photo_type_hint": "face"
+                                    },
+                                    "type": "PHOTO"
+                                }
+                            ],
+                            "is_demo": true,
+                            "match_strategy": "UNION"
+                        },
+                        "sort_order": 20,
+                        "subtitle": "Singer, songwriter, producer, entrepreneur, public social profiles, and career highlights sample.",
+                        "thumbnail_url": "https://tool-srv-people-insight-1349591044.cos.na-siliconvalley.myqcloud.com/static/home/sample-thumbnails/beyonce.jpg",
+                        "title": "Beyoncé"
+                    },
+                    {
+                        "action": {
+                            "sample_case_id": "sample_case_cristiano_ronaldo",
+                            "type": "OPEN_SAMPLE_DETAIL"
+                        },
+                        "clue_types": [
+                            "FULL_NAME",
+                            "LOCATION",
+                            "SOCIAL_LINK",
+                            "SOCIAL_LINK",
+                            "SOCIAL_LINK",
+                            "SOCIAL_LINK",
+                            "PHOTO"
+                        ],
+                        "example_id": "example_cristiano_ronaldo",
+                        "requires_auth": true,
+                        "requires_entitlement": true,
+                        "sample_case_id": "sample_case_cristiano_ronaldo",
+                        "sample_input": {
+                            "additional_details": [
+                                {
+                                    "type": "PROFESSION",
+                                    "value": "Professional Footballer · Athlete"
+                                },
+                                {
+                                    "type": "EMPLOYER",
+                                    "value": "Sporting CP · Manchester United · Real Madrid · Juventus · Al-Nassr"
+                                },
+                                {
+                                    "type": "OTHER",
+                                    "value": "Full Name: Cristiano Ronaldo dos Santos Aveiro"
+                                },
+                                {
+                                    "type": "OTHER",
+                                    "value": "Birth Date: 1985/2/5"
+                                },
+                                {
+                                    "type": "OTHER",
+                                    "value": "Birthplace: Funchal, Madeira, Portugal"
+                                },
+                                {
+                                    "type": "OTHER",
+                                    "value": "Nationality: Portuguese"
+                                },
+                                {
+                                    "type": "OTHER",
+                                    "value": "Position: Forward"
+                                },
+                                {
+                                    "type": "OTHER",
+                                    "value": "National Team: Portugal"
+                                },
+                                {
+                                    "type": "OTHER",
+                                    "value": "Major Awards: 5 Ballon d’Or Awards"
+                                },
+                                {
+                                    "type": "OTHER",
+                                    "value": "Key Record: One of football’s all-time leading goal scorers and one of the most-followed athletes worldwide"
+                                }
+                            ],
+                            "clues": [
+                                {
+                                    "full_name_query": {
+                                        "city": "",
+                                        "country": "PT",
+                                        "extra_hint": "Professional Footballer · Forward",
+                                        "full_name": "Cristiano Ronaldo"
+                                    },
+                                    "type": "FULL_NAME"
+                                },
+                                {
+                                    "location_query": {
+                                        "address_components": null,
+                                        "address_types": null,
+                                        "formatted_address": "Madeira, Portugal · Riyadh, Saudi Arabia",
+                                        "location": "Madeira, Portugal · Riyadh, Saudi Arabia",
+                                        "place_id": "",
+                                        "source": "sample"
+                                    },
+                                    "type": "LOCATION"
+                                },
+                                {
+                                    "social_link_query": {
+                                        "platform_hint": "instagram",
+                                        "url": "https://www.instagram.com/cristiano/"
+                                    },
+                                    "type": "SOCIAL_LINK"
+                                },
+                                {
+                                    "social_link_query": {
+                                        "platform_hint": "x",
+                                        "url": "https://x.com/Cristiano"
+                                    },
+                                    "type": "SOCIAL_LINK"
+                                },
+                                {
+                                    "social_link_query": {
+                                        "platform_hint": "facebook",
+                                        "url": "https://www.facebook.com/Cristiano/"
+                                    },
+                                    "type": "SOCIAL_LINK"
+                                },
+                                {
+                                    "social_link_query": {
+                                        "platform_hint": "youtube",
+                                        "url": "https://www.youtube.com/@cristiano"
+                                    },
+                                    "type": "SOCIAL_LINK"
+                                },
+                                {
+                                    "photo_query": {
+                                        "media_asset_id": "media_sample_cristiano_ronaldo_face_1",
+                                        "photo_type_hint": "face"
+                                    },
+                                    "type": "PHOTO"
+                                }
+                            ],
+                            "is_demo": true,
+                            "match_strategy": "UNION"
+                        },
+                        "sort_order": 30,
+                        "subtitle": "Professional footballer, public social profiles, career highlights, and public records sample.",
+                        "thumbnail_url": "https://tool-srv-people-insight-1349591044.cos.na-siliconvalley.myqcloud.com/static/home/sample-thumbnails/cristiano-ronaldo.jpg",
+                        "title": "Cristiano Ronaldo"
+                    },
+                    {
+                        "action": {
+                            "sample_case_id": "sample_case_mrbeast",
+                            "type": "OPEN_SAMPLE_DETAIL"
+                        },
+                        "clue_types": [
+                            "FULL_NAME",
+                            "LOCATION",
+                            "SOCIAL_LINK",
+                            "SOCIAL_LINK",
+                            "SOCIAL_LINK",
+                            "SOCIAL_LINK",
+                            "PHOTO"
+                        ],
+                        "example_id": "example_mrbeast",
+                        "requires_auth": true,
+                        "requires_entitlement": true,
+                        "sample_case_id": "sample_case_mrbeast",
+                        "sample_input": {
+                            "additional_details": [
+                                {
+                                    "type": "PROFESSION",
+                                    "value": "YouTuber · Entrepreneur · Philanthropist"
+                                },
+                                {
+                                    "type": "EMPLOYER",
+                                    "value": "Beast Industries · Feastables · Beast Philanthropy"
+                                },
+                                {
+                                    "type": "SCHOOL",
+                                    "value": "Greenville Christian Academy"
+                                },
+                                {
+                                    "type": "OTHER",
+                                    "value": "Full Name: MrBeast · Jimmy Donaldson · James Donaldson"
+                                },
+                                {
+                                    "type": "OTHER",
+                                    "value": "Alias: MrBeast · Jimmy Donaldson"
+                                },
+                                {
+                                    "type": "OTHER",
+                                    "value": "Birth Date: 1998/5/7"
+                                },
+                                {
+                                    "type": "OTHER",
+                                    "value": "Birthplace: Wichita, Kansas, USA"
+                                },
+                                {
+                                    "type": "OTHER",
+                                    "value": "Nationality: American"
+                                },
+                                {
+                                    "type": "OTHER",
+                                    "value": "Content Style: Large-scale challenges · Entertainment videos · Philanthropic content"
+                                },
+                                {
+                                    "type": "OTHER",
+                                    "value": "Public Brand: One of the largest creator-led media brands on YouTube"
+                                }
+                            ],
+                            "clues": [
+                                {
+                                    "full_name_query": {
+                                        "city": "",
+                                        "country": "US",
+                                        "extra_hint": "YouTuber · Entrepreneur · Philanthropist",
+                                        "full_name": "MrBeast"
+                                    },
+                                    "type": "FULL_NAME"
+                                },
+                                {
+                                    "location_query": {
+                                        "address_components": null,
+                                        "address_types": null,
+                                        "formatted_address": "Greenville, North Carolina",
+                                        "location": "Greenville, North Carolina",
+                                        "place_id": "",
+                                        "source": "sample"
+                                    },
+                                    "type": "LOCATION"
+                                },
+                                {
+                                    "social_link_query": {
+                                        "platform_hint": "youtube",
+                                        "url": "https://www.youtube.com/@MrBeast"
+                                    },
+                                    "type": "SOCIAL_LINK"
+                                },
+                                {
+                                    "social_link_query": {
+                                        "platform_hint": "instagram",
+                                        "url": "https://www.instagram.com/mrbeast/"
+                                    },
+                                    "type": "SOCIAL_LINK"
+                                },
+                                {
+                                    "social_link_query": {
+                                        "platform_hint": "x",
+                                        "url": "https://x.com/MrBeast"
+                                    },
+                                    "type": "SOCIAL_LINK"
+                                },
+                                {
+                                    "social_link_query": {
+                                        "platform_hint": "tiktok",
+                                        "url": "https://www.tiktok.com/@mrbeast"
+                                    },
+                                    "type": "SOCIAL_LINK"
+                                },
+                                {
+                                    "photo_query": {
+                                        "media_asset_id": "media_sample_mrbeast_face_1",
+                                        "photo_type_hint": "face"
+                                    },
+                                    "type": "PHOTO"
+                                }
+                            ],
+                            "is_demo": true,
+                            "match_strategy": "UNION"
+                        },
+                        "sort_order": 40,
+                        "subtitle": "YouTuber, entrepreneur, philanthropist, public social profiles, and career highlights sample.",
+                        "thumbnail_url": "https://tool-srv-people-insight-1349591044.cos.na-siliconvalley.myqcloud.com/static/home/sample-thumbnails/mrbeast.jpg",
+                        "title": "MrBeast"
+                    },
+                    {
+                        "action": {
+                            "sample_case_id": "sample_case_elon_musk",
+                            "type": "OPEN_SAMPLE_DETAIL"
+                        },
+                        "clue_types": [
+                            "FULL_NAME",
+                            "LOCATION",
+                            "SOCIAL_LINK",
+                            "SOCIAL_LINK",
+                            "SOCIAL_LINK",
+                            "PHOTO"
+                        ],
+                        "example_id": "example_elon_musk",
+                        "requires_auth": true,
+                        "requires_entitlement": true,
+                        "sample_case_id": "sample_case_elon_musk",
+                        "sample_input": {
+                            "additional_details": [
+                                {
+                                    "type": "PROFESSION",
+                                    "value": "Entrepreneur · CEO · Engineer"
+                                },
+                                {
+                                    "type": "EMPLOYER",
+                                    "value": "Tesla · SpaceX · X · xAI · Neuralink · The Boring Company"
+                                },
+                                {
+                                    "type": "SCHOOL",
+                                    "value": "Queen’s University · University of Pennsylvania"
+                                },
+                                {
+                                    "type": "OTHER",
+                                    "value": "Full Name: Elon Reeve Musk"
+                                },
+                                {
+                                    "type": "OTHER",
+                                    "value": "Birth Date: 1971/6/28"
+                                },
+                                {
+                                    "type": "OTHER",
+                                    "value": "Birthplace: Pretoria, South Africa"
+                                },
+                                {
+                                    "type": "OTHER",
+                                    "value": "Nationality: South African-born American"
+                                },
+                                {
+                                    "type": "OTHER",
+                                    "value": "Early Ventures: Zip2 · X.com · PayPal"
+                                },
+                                {
+                                    "type": "OTHER",
+                                    "value": "Key Themes: Electric vehicles · Space exploration · Artificial intelligence · Social platforms · Brain-computer interfaces"
+                                },
+                                {
+                                    "type": "OTHER",
+                                    "value": "Public Role: Technology entrepreneur and executive involved in multiple technology companies"
+                                }
+                            ],
+                            "clues": [
+                                {
+                                    "full_name_query": {
+                                        "city": "",
+                                        "country": "US",
+                                        "extra_hint": "Entrepreneur · CEO · Engineer",
+                                        "full_name": "Elon Musk"
+                                    },
+                                    "type": "FULL_NAME"
+                                },
+                                {
+                                    "location_query": {
+                                        "address_components": null,
+                                        "address_types": null,
+                                        "formatted_address": "Austin, Texas",
+                                        "location": "Austin, Texas",
+                                        "place_id": "",
+                                        "source": "sample"
+                                    },
+                                    "type": "LOCATION"
+                                },
+                                {
+                                    "social_link_query": {
+                                        "platform_hint": "x",
+                                        "url": "https://x.com/elonmusk"
+                                    },
+                                    "type": "SOCIAL_LINK"
+                                },
+                                {
+                                    "social_link_query": {
+                                        "platform_hint": "instagram",
+                                        "url": "https://www.instagram.com/elonmusk/"
+                                    },
+                                    "type": "SOCIAL_LINK"
+                                },
+                                {
+                                    "social_link_query": {
+                                        "platform_hint": "tiktok",
+                                        "url": "https://www.tiktok.com/@elonmusk"
+                                    },
+                                    "type": "SOCIAL_LINK"
+                                },
+                                {
+                                    "photo_query": {
+                                        "media_asset_id": "media_sample_elon_musk_face_1",
+                                        "photo_type_hint": "face"
+                                    },
+                                    "type": "PHOTO"
+                                }
+                            ],
+                            "is_demo": true,
+                            "match_strategy": "UNION"
+                        },
+                        "sort_order": 50,
+                        "subtitle": "Entrepreneur, CEO, engineer, public social profiles, and technology career highlights sample.",
+                        "thumbnail_url": "https://tool-srv-people-insight-1349591044.cos.na-siliconvalley.myqcloud.com/static/home/sample-thumbnails/elon-musk.jpg",
+                        "title": "Elon Musk"
+                    }
+                ],
+                "user_stories": [
+                    {
+                        "age": "21",
+                        "avatar_url": "",
+                        "content": "I felt safer knowing more before we met.",
+                        "display_order": 10,
+                        "id": "story_001",
+                        "name": "Sarah"
+                    },
+                    {
+                        "age": "34",
+                        "avatar_url": "",
+                        "content": "I uncovered accounts he never mentioned.",
+                        "display_order": 20,
+                        "id": "story_002",
+                        "name": "Michael"
+                    },
+                    {
+                        "age": "26",
+                        "avatar_url": "",
+                        "content": "The photos weren't what they seemed.",
+                        "display_order": 30,
+                        "id": "story_003",
+                        "name": "Emily"
+                    }
+                ]
+            }
+        }
+    ]
+}

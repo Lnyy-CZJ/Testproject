@@ -1,8 +1,17 @@
 import tempfile
+import threading
 import unittest
 from pathlib import Path
+from urllib.error import HTTPError
+from urllib.request import urlopen
 
-from trackevents_web import HTML, resolve_log_text
+from trackevents_web import (
+    HTML,
+    create_server,
+    normalize_base_path,
+    render_html,
+    resolve_log_text,
+)
 
 
 class TrackEventsWebTest(unittest.TestCase):
@@ -45,6 +54,44 @@ class TrackEventsWebTest(unittest.TestCase):
         self.assertIn('function parseExpectedCounts(text)', HTML)
         self.assertIn("const match = value.match(/^(.+?)(\\d+)?$/)", HTML)
         self.assertIn("counts[action] = match[2] ? Number(match[2]) : 1", HTML)
+
+    def test_base_path_is_normalized_and_rejects_unsafe_values(self):
+        """基础路径应使用统一格式，并拒绝可能改变路由语义的配置。"""
+        self.assertEqual(normalize_base_path(""), "")
+        self.assertEqual(normalize_base_path("trackevents/"), "/trackevents")
+
+        for invalid_path in ("/../trackevents", "/trackevents?debug=1", "//trackevents"):
+            with self.subTest(invalid_path=invalid_path):
+                with self.assertRaises(ValueError):
+                    normalize_base_path(invalid_path)
+
+    def test_rendered_page_uses_platform_routes(self):
+        """平台模式页面中的资源与 API 地址必须保留工具前缀。"""
+        html = render_html("/trackevents", platform_home_url="/")
+
+        self.assertIn('href="/trackevents/favicon.svg"', html)
+        self.assertIn("fetch('/trackevents/api/analyze'", html)
+        self.assertIn('href="/"', html)
+
+    def test_server_exposes_prefixed_health_route_only(self):
+        """平台模式应只在配置的基础路径下暴露健康检查。"""
+        server = create_server("127.0.0.1", 0, base_path="/trackevents")
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        port = server.server_address[1]
+
+        try:
+            with urlopen(f"http://127.0.0.1:{port}/trackevents/health") as response:
+                self.assertEqual(response.status, 200)
+                self.assertIn('"status": "ok"', response.read().decode("utf-8"))
+
+            with self.assertRaises(HTTPError) as error:
+                urlopen(f"http://127.0.0.1:{port}/health")
+            self.assertEqual(error.exception.code, 404)
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
 
 
 if __name__ == "__main__":

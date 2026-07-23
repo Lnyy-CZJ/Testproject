@@ -4,8 +4,9 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 try:
-    from flask import Flask, jsonify, render_template, request
+    from flask import Blueprint, Flask, jsonify, render_template, request
 except ImportError:  # Allows core log parsing tests to run before Flask is installed.
+    Blueprint = None
     Flask = None
     jsonify = None
     render_template = None
@@ -38,6 +39,30 @@ EXPORT_FILE_PREFIXES = {
 DEFAULT_EXPORT_DIR = "/Users/admin/Documents/log"
 # 导出文件名使用用户所在的上海时区，避免 Docker 默认 UTC 造成时间偏差。
 EXPORT_TIMEZONE = timezone(timedelta(hours=8))
+
+
+def normalize_base_path(value):
+    """将部署基础路径转换为 Flask Blueprint 可使用的安全前缀。
+
+    参数说明:
+        value (str | None): 环境变量或调用方传入的路径，空值表示根路径。
+
+    返回值:
+        str: 不带末尾斜杠的标准路径；根路径模式返回空字符串。
+
+    异常说明:
+        ValueError: 路径包含查询参数、父目录或重复斜杠时抛出。
+    """
+    raw_path = (value or "").strip()
+    if not raw_path or raw_path == "/":
+        return ""
+    if any(marker in raw_path for marker in ("?", "#", "..", "://")):
+        raise ValueError(f"LOG_FILTER_BASE_PATH 不是有效路径: {raw_path}")
+    normalized = raw_path if raw_path.startswith("/") else f"/{raw_path}"
+    normalized = normalized.rstrip("/")
+    if "//" in normalized:
+        raise ValueError(f"LOG_FILTER_BASE_PATH 不能包含重复斜杠: {raw_path}")
+    return normalized
 
 
 def extract_methods(log_text):
@@ -327,10 +352,29 @@ def save_exported_log(content, export_type, export_dir):
     raise OSError("同名导出文件过多，请稍后重试")
 
 
-def create_app():
+def create_app(base_path=None):
+    """创建日志工具 Flask 应用，并按配置注册可选的 URL 基础路径。
+
+    参数说明:
+        base_path (str | None): 显式部署前缀；未提供时读取
+            LOG_FILTER_BASE_PATH，默认保持原根路径行为。
+
+    返回值:
+        Flask: 已注册业务、导出和健康检查路由的应用实例。
+
+    异常说明:
+        RuntimeError: Flask 未安装时抛出。
+        ValueError: 基础路径不符合安全格式时抛出。
+    """
     if Flask is None:
         raise RuntimeError("Flask is not installed. Run: pip install -r requirements.txt")
 
+    configured_base_path = (
+        os.environ.get("LOG_FILTER_BASE_PATH", "")
+        if base_path is None
+        else base_path
+    )
+    normalized_base_path = normalize_base_path(configured_base_path)
     app = Flask(__name__)
     app.config["MAX_FORM_MEMORY_SIZE"] = 20 * 1024 * 1024
     app.config["MAX_CONTENT_LENGTH"] = 25 * 1024 * 1024
@@ -340,8 +384,11 @@ def create_app():
     app.config["LOG_EXPORT_DISPLAY_DIR"] = os.environ.get(
         "LOG_EXPORT_DISPLAY_DIR", DEFAULT_EXPORT_DIR
     )
+    app.config["LOG_FILTER_BASE_PATH"] = normalized_base_path
+    app.config["PLATFORM_HOME_URL"] = os.environ.get("PLATFORM_HOME_URL", "").strip()
+    tool = Blueprint("tool", __name__)
 
-    @app.route("/", methods=["GET", "POST"])
+    @tool.route("/", methods=["GET", "POST"])
     def index():
         log_text = ""
         methods = []
@@ -401,14 +448,15 @@ def create_app():
             analysis=analysis,
             selected_analysis=selected_analysis,
             overall_analysis=overall_analysis,
+            platform_home_url=app.config["PLATFORM_HOME_URL"],
         )
 
-    @app.route("/sample", methods=["GET"])
+    @tool.route("/sample", methods=["GET"])
     def sample_log():
         sample_path = Path(__file__).with_name("log_default.log")
         return sample_path.read_text(encoding="utf-8") if sample_path.exists() else ""
 
-    @app.route("/export", methods=["POST"])
+    @tool.route("/export", methods=["POST"])
     def export_log():
         """接收页面日志内容并保存到配置的固定导出目录。
 
@@ -443,6 +491,14 @@ def create_app():
             }
         )
 
+    @tool.route("/health", methods=["GET"])
+    def health():
+        """返回不依赖日志文件和分析逻辑的轻量服务状态。"""
+        response = jsonify({"service": "log-filter", "status": "ok"})
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
+    app.register_blueprint(tool, url_prefix=normalized_base_path)
     return app
 
 
@@ -450,4 +506,8 @@ app = create_app() if Flask is not None else None
 
 
 if __name__ == "__main__":
-    create_app().run(debug=True, host="127.0.0.1", port=5001)
+    create_app().run(
+        debug=False,
+        host=os.environ.get("LOG_FILTER_HOST", "127.0.0.1"),
+        port=int(os.environ.get("LOG_FILTER_PORT", "5001")),
+    )

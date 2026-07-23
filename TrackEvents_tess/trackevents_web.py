@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from html import escape
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
@@ -9,18 +10,44 @@ from urllib.parse import urlparse
 from trackevents_core import analyze_log_text
 
 
+def normalize_base_path(value: str | None) -> str:
+    """将工具基础路径转换为可安全参与路由匹配的标准格式。
+
+    参数说明:
+        value: 环境变量或调用方传入的 URL 路径前缀。空值表示根路径。
+
+    返回值:
+        不带末尾斜杠的路径；根路径模式返回空字符串。
+
+    异常说明:
+        ValueError: 路径包含查询参数、父目录、重复斜杠等危险结构时抛出。
+    """
+    raw_path = (value or "").strip()
+    if not raw_path or raw_path == "/":
+        return ""
+    if any(marker in raw_path for marker in ("?", "#", "..", "://")):
+        raise ValueError(f"TRACKEVENTS_BASE_PATH 不是有效路径: {raw_path}")
+    normalized = raw_path if raw_path.startswith("/") else f"/{raw_path}"
+    normalized = normalized.rstrip("/")
+    if "//" in normalized:
+        raise ValueError(f"TRACKEVENTS_BASE_PATH 不能包含重复斜杠: {raw_path}")
+    return normalized
+
+
 HOST = os.environ.get("TRACKEVENTS_HOST", "127.0.0.1")
 PORT = int(os.environ.get("TRACKEVENTS_PORT", "8000"))
+BASE_PATH = normalize_base_path(os.environ.get("TRACKEVENTS_BASE_PATH"))
+PLATFORM_HOME_URL = os.environ.get("PLATFORM_HOME_URL", "").strip()
 DEFAULT_LOG_PATH = Path(__file__).with_name("default.log")
 FAVICON_PATH = Path(__file__).with_name("favicon.svg")
 
 
-HTML = r"""<!doctype html>
+HTML_TEMPLATE = r"""<!doctype html>
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="icon" type="image/svg+xml" href="__FAVICON_URL__">
   <title>埋点测试工具</title>
   <style>
     :root {
@@ -283,7 +310,7 @@ HTML = r"""<!doctype html>
 <body>
   <header>
     <h1>埋点测试工具</h1>
-    <span class="hint">TrackEvents log 解析与校验</span>
+    <span class="hint">TrackEvents log 解析与校验 __PLATFORM_HOME_LINK__</span>
   </header>
   <main>
     <div class="layout">
@@ -338,7 +365,7 @@ HTML = r"""<!doctype html>
       analyzeBtn.textContent = hasPastedLog ? '解析粘贴内容中...' : (file ? '解析上传文件中...' : '解析 default.log 中...');
       try {
         const logText = hasPastedLog ? pastedLog : (file ? await file.text() : '');
-        const response = await fetch('/api/analyze', {
+        const response = await fetch('__ANALYZE_URL__', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({log_text: logText, expected_counts: expectedCounts})
@@ -595,20 +622,55 @@ HTML = r"""<!doctype html>
 """
 
 
+def route_path(path: str, base_path: str = BASE_PATH) -> str:
+    """拼接经过校验的工具基础路径和应用内部路由。"""
+    normalized_base = normalize_base_path(base_path)
+    if not path.startswith("/"):
+        raise ValueError(f"应用路由必须以 / 开头: {path}")
+    return f"{normalized_base}{path}" if normalized_base else path
+
+
+def render_html(
+    base_path: str = BASE_PATH,
+    platform_home_url: str = PLATFORM_HOME_URL,
+) -> str:
+    """生成与当前部署前缀一致的页面，避免资源和 API 请求跳到根路径。"""
+    home_link = ""
+    if platform_home_url:
+        safe_home_url = escape(platform_home_url, quote=True)
+        home_link = f'· <a href="{safe_home_url}">返回测试开发平台</a>'
+    return (
+        HTML_TEMPLATE.replace("__FAVICON_URL__", route_path("/favicon.svg", base_path))
+        .replace("__ANALYZE_URL__", route_path("/api/analyze", base_path))
+        .replace("__PLATFORM_HOME_LINK__", home_link)
+    )
+
+
+# 保留根路径渲染结果，兼容现有页面内容测试和独立运行调用方。
+HTML = render_html("")
+
+
 class TrackEventsHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         path = urlparse(self.path).path
-        if path in {"/", "/index.html"}:
-            self._send_text(HTML, "text/html; charset=utf-8")
+        base_path = self.server.base_path
+        if base_path and path == base_path:
+            self._redirect(f"{base_path}/")
             return
-        if path == "/favicon.svg":
+        if path in {route_path("/", base_path), route_path("/index.html", base_path)}:
+            self._send_text(self.server.page_html, "text/html; charset=utf-8")
+            return
+        if path == route_path("/favicon.svg", base_path):
             self._send_text(FAVICON_PATH.read_text("utf-8"), "image/svg+xml")
+            return
+        if path == route_path("/health", base_path):
+            self._send_json({"service": "trackevents", "status": "ok"})
             return
         self.send_error(404)
 
     def do_POST(self) -> None:
         path = urlparse(self.path).path
-        if path != "/api/analyze":
+        if path != route_path("/api/analyze", self.server.base_path):
             self.send_error(404)
             return
         try:
@@ -636,10 +698,18 @@ class TrackEventsHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _redirect(self, location: str) -> None:
+        """将缺少末尾斜杠的工具入口重定向到标准页面地址。"""
+        self.send_response(308)
+        self.send_header("Location", location)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
     def _send_json(self, payload: dict, status: int = 200) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -653,9 +723,24 @@ def resolve_log_text(log_text: str, default_log_path: Path = DEFAULT_LOG_PATH) -
     return default_log_path.read_text(encoding="utf-8")
 
 
-def run_server(host: str = HOST, port: int = PORT) -> None:
+def create_server(
+    host: str,
+    port: int,
+    base_path: str = BASE_PATH,
+    platform_home_url: str = PLATFORM_HOME_URL,
+) -> ThreadingHTTPServer:
+    """创建配置了部署前缀的 HTTP 服务实例，供运行入口和测试共同使用。"""
+    normalized_base = normalize_base_path(base_path)
     server = ThreadingHTTPServer((host, port), TrackEventsHandler)
-    print(f"埋点测试工具已启动: http://{host}:{port}")
+    server.base_path = normalized_base
+    server.page_html = render_html(normalized_base, platform_home_url)
+    return server
+
+
+def run_server(host: str = HOST, port: int = PORT) -> None:
+    server = create_server(host, port)
+    entry_path = f"{BASE_PATH}/" if BASE_PATH else "/"
+    print(f"埋点测试工具已启动: http://{host}:{port}{entry_path}")
     print("按 Ctrl+C 停止服务")
     server.serve_forever()
 

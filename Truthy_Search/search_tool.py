@@ -10,6 +10,7 @@ import sys
 import time
 import uuid
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
@@ -47,6 +48,9 @@ class Config:
     app_version: str = "1.0.0"
     locale: str = "zh-Hans-CN"
     timezone: str = "UTC+08:00"
+    input_file: str = "input/tasks.jsonl"
+    output_dir: str = "output"
+    allow_duplicate_run: bool = False
 
     @classmethod
     def from_env(cls, env_file: Path | None = None) -> "Config":
@@ -90,6 +94,10 @@ class Config:
             app_version=os.getenv("APP_VERSION", "1.0.0").strip() or "1.0.0",
             locale=os.getenv("LOCALE", "zh-Hans-CN").strip() or "zh-Hans-CN",
             timezone=os.getenv("TIMEZONE", "UTC+08:00").strip() or "UTC+08:00",
+            input_file=os.getenv("SEARCH_INPUT_FILE", "input/tasks.jsonl").strip()
+            or "input/tasks.jsonl",
+            output_dir=os.getenv("SEARCH_OUTPUT_DIR", "output").strip() or "output",
+            allow_duplicate_run=_env_bool("ALLOW_DUPLICATE_RUN", False),
         )
 
 
@@ -113,6 +121,81 @@ def _positive_int(name: str, default: int) -> int:
     if value <= 0:
         raise ConfigError(f"{name} 必须大于 0")
     return value
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    """Parse a strict boolean environment setting.
+
+    Args:
+        name: Environment variable name.
+        default: Value returned when the variable is absent or blank.
+
+    Returns:
+        ``True`` for ``true/1/yes/on`` and ``False`` for
+        ``false/0/no/off`` (case-insensitive).
+
+    Raises:
+        ConfigError: If a non-empty value is not a recognized boolean.
+    """
+
+    raw = os.getenv(name, "").strip().lower()
+    if not raw:
+        return default
+    if raw in {"true", "1", "yes", "on"}:
+        return True
+    if raw in {"false", "0", "no", "off"}:
+        return False
+    raise ConfigError(f"{name} 必须是 true 或 false")
+
+
+def select_output_paths(
+    input_path: Path,
+    output_dir: Path,
+    allow_duplicate: bool,
+    run_date: date | None = None,
+) -> tuple[Path, Path]:
+    """Choose protected result/failure paths for one search run.
+
+    Args:
+        input_path: Selected JSONL input. Only its filename stem is used.
+        output_dir: Directory receiving result files.
+        allow_duplicate: Whether an existing same-day run may create a new,
+            incremented ``runNN`` pair.
+        run_date: Date used in filenames. Defaults to the local current date;
+            tests inject a fixed date.
+
+    Returns:
+        ``(results_path, failures_path)`` using ``YYYYMMDD_input`` naming.
+
+    Raises:
+        FileExistsError: If the first pair already exists and duplicate runs are
+        disabled. Existing files are never overwritten by this selector.
+    """
+
+    date_text = (run_date or date.today()).strftime("%Y%m%d")
+    base_prefix = f"{date_text}_{input_path.stem}"
+
+    def paths_for(prefix: str) -> tuple[Path, Path]:
+        return (
+            output_dir / f"{prefix}_results.jsonl",
+            output_dir / f"{prefix}_failures.jsonl",
+        )
+
+    first = paths_for(base_prefix)
+    if not any(path.exists() for path in first):
+        return first
+    if not allow_duplicate:
+        raise FileExistsError(
+            f"同日同输入的结果已存在: {first[0]}。如需新增一次运行，请在 .env 设置 "
+            "ALLOW_DUPLICATE_RUN=true"
+        )
+
+    run_number = 2
+    while True:
+        candidate = paths_for(f"{base_prefix}_run{run_number:02d}")
+        if not any(path.exists() for path in candidate):
+            return candidate
+        run_number += 1
 
 
 class SearchClient:
@@ -238,8 +321,25 @@ def process_one(
     client: SearchClient,
     sleep_fn: Callable[[float], None] = time.sleep,
 ) -> dict[str, Any]:
+    """顺序执行单条完整检索流程并生成 JSONL 结果记录。
+
+    参数说明:
+        item: 已校验的 CreateIntentTask 参数，包含唯一 ``input_id``。
+        client: 按顺序调用四个接口的同步客户端。
+        sleep_fn: GetTask 轮询等待函数，测试时可注入无等待实现。
+
+    返回值:
+        包含候选人总数、List 实际返回数及全部候选人详情的字典。每名候选人
+        保留从 1 开始的排名和 ``rank_score``；分数缺失或不是数值时返回 None。
+
+    异常说明:
+        FlowError: 任一接口失败、轮询超时或必要响应字段结构不合法时抛出，
+        上层批处理会记录失败并继续处理下一条输入。
+    """
+
     input_id = item["input_id"]
     task_id = ""
+    candidate_count_total: int | None = None
     try:
         create_body = client.call(
             "CreateIntentTask",
@@ -258,29 +358,42 @@ def process_one(
         for _ in range(client.config.max_poll_count):
             sleep_fn(client.config.poll_interval_seconds)
             task_body = client.call("GetTask", {"task_id": task_id})
-            status = response_data(task_body, "GetTask", task_id).get("status")
+            task_data = response_data(task_body, "GetTask", task_id)
+            status = task_data.get("status")
             if status == "SUCCEEDED":
+                total_value = task_data.get("candidate_count")
+                if isinstance(total_value, int) and not isinstance(total_value, bool) and total_value >= 0:
+                    candidate_count_total = total_value
                 break
-            if status != "QUEUED":
+            # QUEUED 和 SEARCHING 都表示任务尚未完成，继续下一轮 GetTask 轮询。
+            if status not in {"QUEUED", "SEARCHING"}:
                 raise FlowError("GetTask", f"未知任务状态: {status!r}", task_id)
         else:
             raise FlowError("GetTask", "任务轮询超时", task_id)
 
         list_body = client.call(
             "ListTaskCandidates",
-            {"task_id": task_id, "page": {"page_size": 5, "page_token": ""}},
+            # 分页字段当前仅为接口预留；固定放大 page_size，接收接口返回的全部候选人。
+            {"task_id": task_id, "page": {"page_size": 100, "page_token": ""}},
         )
         items = response_data(list_body, "ListTaskCandidates", task_id).get("items")
         if not isinstance(items, list):
             raise FlowError("ListTaskCandidates", "响应中的 items 必须是数组", task_id)
 
         results = []
-        for candidate in items[:5]:
+        for candidate_rank, candidate in enumerate(items, start=1):
             if not isinstance(candidate, dict):
                 raise FlowError("ListTaskCandidates", "候选人数据必须是对象", task_id)
             candidate_id = candidate.get("candidate_id")
             if not isinstance(candidate_id, str) or not candidate_id:
                 raise FlowError("ListTaskCandidates", "候选人缺少 candidate_id", task_id)
+            rank_score_value = candidate.get("rank_score")
+            rank_score = (
+                rank_score_value
+                if isinstance(rank_score_value, (int, float))
+                and not isinstance(rank_score_value, bool)
+                else None
+            )
             detail_body = client.call(
                 "GetTaskCandidateDetail",
                 {"task_id": task_id, "candidate_id": candidate_id},
@@ -293,9 +406,22 @@ def process_one(
                     f"候选人 {candidate_id} 的 ui_sections 必须是对象",
                     task_id,
                 )
-            results.append({"candidate_id": candidate_id, "ui_sections": ui_sections})
+            results.append(
+                {
+                    "candidate_rank": candidate_rank,
+                    "candidate_id": candidate_id,
+                    "rank_score": rank_score,
+                    "ui_sections": ui_sections,
+                }
+            )
 
-        return {"input_id": input_id, "task_id": task_id, "results": results}
+        return {
+            "input_id": input_id,
+            "task_id": task_id,
+            "candidate_count_total": candidate_count_total,
+            "candidate_count_listed": len(items),
+            "results": results,
+        }
     except FlowError as exc:
         if not exc.task_id and task_id:
             exc.task_id = task_id
@@ -313,10 +439,12 @@ def run_batch(
     output_dir: Path,
     client: SearchClient,
     sleep_fn: Callable[[float], None] = time.sleep,
+    results_path: Path | None = None,
+    failures_path: Path | None = None,
 ) -> tuple[int, int]:
     output_dir.mkdir(parents=True, exist_ok=True)
-    results_path = output_dir / "results.jsonl"
-    failures_path = output_dir / "failures.jsonl"
+    results_path = results_path or output_dir / "results.jsonl"
+    failures_path = failures_path or output_dir / "failures.jsonl"
     results_path.write_text("", encoding="utf-8")
     failures_path.write_text("", encoding="utf-8")
 
@@ -360,29 +488,53 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="顺序执行 People Insight 搜索任务并提取 ui_sections"
     )
-    parser.add_argument("--input", default="input/tasks.jsonl", help="输入 JSONL 文件")
-    parser.add_argument("--output", default="output", help="结果输出目录")
+    parser.add_argument(
+        "--input",
+        default=None,
+        help="输入 JSONL 文件；未提供时读取 .env 的 SEARCH_INPUT_FILE",
+    )
+    parser.add_argument(
+        "--output",
+        default=None,
+        help="结果输出目录；未提供时读取 .env 的 SEARCH_OUTPUT_DIR",
+    )
     parser.add_argument("--env-file", default=".env", help="环境变量文件")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    input_path = Path(args.input)
-    if not input_path.is_file():
-        print(f"输入文件不存在: {input_path}", file=sys.stderr)
-        return 1
-
     try:
         config = Config.from_env(Path(args.env_file))
     except ConfigError as exc:
         print(f"配置错误: {exc}", file=sys.stderr)
         return 1
 
+    input_path = Path(args.input or config.input_file)
+    if not input_path.is_file():
+        print(f"输入文件不存在: {input_path}", file=sys.stderr)
+        return 1
+    output_dir = Path(args.output or config.output_dir)
+    try:
+        results_path, failures_path = select_output_paths(
+            input_path,
+            output_dir,
+            config.allow_duplicate_run,
+        )
+    except FileExistsError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+
+    print(f"输入文件: {input_path}")
+    print(f"结果文件: {results_path}")
+    print(f"失败文件: {failures_path}")
+
     success_count, failure_count = run_batch(
         input_path=input_path,
-        output_dir=Path(args.output),
+        output_dir=output_dir,
         client=SearchClient(config),
+        results_path=results_path,
+        failures_path=failures_path,
     )
     print(f"处理结束：成功 {success_count} 条，失败 {failure_count} 条")
     return 2 if failure_count else 0

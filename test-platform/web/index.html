@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="统一访问埋点测试、日志分析及后续测试开发工具。">
+    <title>测试开发平台</title>
+    <link rel="stylesheet" href="/styles.css">
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="/" aria-label="测试开发平台首页">
+        <span class="brand-mark" aria-hidden="true">T</span>
+        <span>测试开发平台</span>
+      </a>
+      <span class="version">MVP · V0.1</span>
+    </header>
+
+    <main>
+      <section class="hero" aria-labelledby="page-title">
+        <p class="eyebrow">TEST ENGINEERING WORKSPACE</p>
+        <h1 id="page-title">让测试工具各自专注，<br>让使用入口保持统一。</h1>
+        <p class="hero-copy">
+          从一个工作台进入埋点校验与日志分析。每个工具独立运行，故障互不影响，
+          后续可持续接入测试 Agent、接口自动化和用例管理。
+        </p>
+        <div class="platform-summary" aria-label="平台当前能力">
+          <span><strong>2</strong> 个已接入工具</span>
+          <span><strong>1</strong> 个统一入口</span>
+          <span><strong>独立</strong> 服务隔离</span>
+        </div>
+      </section>
+
+      <section class="tools-section" aria-labelledby="tools-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">AVAILABLE TOOLS</p>
+            <h2 id="tools-title">测试工具</h2>
+          </div>
+          <button id="refresh-status" class="refresh-button" type="button">
+            重新检测状态
+          </button>
+        </div>
+
+        <div class="tool-grid">
+          <article class="tool-card" data-tool="trackevents">
+            <div class="card-topline">
+              <span class="tool-code">EVENT</span>
+              <span class="status status-checking" data-status aria-live="polite">
+                <span class="status-dot" aria-hidden="true"></span>
+                <span data-status-text>检测中</span>
+              </span>
+            </div>
+            <div class="tool-icon tool-icon-event" aria-hidden="true">EV</div>
+            <h3>埋点测试</h3>
+            <p>解析 TrackEvents 日志，检查事件触发次数、业务字段和公共参数。</p>
+            <ul class="feature-list" aria-label="埋点测试能力">
+              <li>事件统计</li>
+              <li>字段校验</li>
+              <li>结果报告</li>
+            </ul>
+            <a class="tool-link" href="/trackevents/">
+              进入工具 <span aria-hidden="true">→</span>
+            </a>
+          </article>
+
+          <article class="tool-card" data-tool="log-filter">
+            <div class="card-topline">
+              <span class="tool-code">LOG</span>
+              <span class="status status-checking" data-status aria-live="polite">
+                <span class="status-dot" aria-hidden="true"></span>
+                <span data-status-text>检测中</span>
+              </span>
+            </div>
+            <div class="tool-icon tool-icon-log" aria-hidden="true">LG</div>
+            <h3>日志分析</h3>
+            <p>按接口筛选请求与响应日志，快速查看状态码、成功率和异常请求。</p>
+            <ul class="feature-list" aria-label="日志分析能力">
+              <li>接口筛选</li>
+              <li>状态统计</li>
+              <li>日志导出</li>
+            </ul>
+            <a class="tool-link" href="/log-filter/">
+              进入工具 <span aria-hidden="true">→</span>
+            </a>
+          </article>
+        </div>
+      </section>
+
+      <section class="roadmap" aria-labelledby="roadmap-title">
+        <div>
+          <p class="eyebrow">COMING NEXT</p>
+          <h2 id="roadmap-title">平台将持续生长</h2>
+          <p>统一登录、权限、任务记录和结果汇总将在后续阶段逐步接入。</p>
+        </div>
+        <div class="roadmap-items" aria-label="计划接入能力">
+          <span>测试 Agent</span>
+          <span>接口自动化</span>
+          <span>用例管理</span>
+          <span>报告中心</span>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <span>Testing Platform MVP</span>
+      <span>工具独立运行 · 平台统一连接</span>
+    </footer>
+
+    <noscript>
+      <div class="noscript-message">JavaScript 未启用，工具入口仍可使用，但无法展示实时服务状态。</div>
+    </noscript>
+  </body>
+</html>
