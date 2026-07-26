@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% block title %}{{ evaluation.name }} · Truthy Search{% endblock %}
+{% block content %}
+  <div class="page-heading split">
+    <div>
+      <p class="eyebrow mono">{{ evaluation.evaluation_id }}</p>
+      <h1>{{ evaluation.name }}</h1>
+      <p>{{ evaluation.notes or '暂无评测说明' }}</p>
+    </div>
+    <a class="button secondary" href="{{ url_for('imports') }}">导入 Dataset / 历史结果</a>
+  </div>
+
+  <section class="form-panel">
+    <div>
+      <p class="eyebrow">Thresholds</p>
+      <h2>参考线与建议</h2>
+      <p>比例填写0到1；成本和耗时填写非负数。留空表示该项不参与建议判断。</p>
+    </div>
+    <form method="post" action="{{ url_for('evaluation_thresholds_update', evaluation_id=evaluation.evaluation_id) }}">
+      {% for query_stage in ['FULL_NAME', 'FULL_NAME_SOCIAL'] %}
+        <fieldset>
+          <legend class="mono">{{ query_stage }}</legend>
+          {% for field_key in threshold_fields %}
+            {% set value = thresholds.get(query_stage, {}).get(field_key) %}
+            <label>
+              <span>
+                {% if field_key == 'min_retrieval_success' %}最低检索成功率
+                {% elif field_key == 'min_matched_completeness' %}最低命中完整度
+                {% elif field_key == 'min_matched_accuracy' %}最低命中准确率
+                {% elif field_key == 'max_average_total_cost' %}最高平均总成本
+                {% else %}最高平均检索耗时（ms）{% endif %}
+              </span>
+              <input type="number"
+                     name="threshold__{{ query_stage }}__{{ field_key }}"
+                     step="any" min="0"
+                     {% if field_key.startswith('min_') %}max="1"{% endif %}
+                     value="{{ value if value is not none else '' }}">
+              <small class="mono">{{ field_key }}</small>
+            </label>
+          {% endfor %}
+        </fieldset>
+      {% endfor %}
+      <button class="button primary" type="submit">保存参考线</button>
+    </form>
+  </section>
+
+  <section class="form-panel run-launcher">
+    <div>
+      <p class="eyebrow">New Execution</p>
+      <h2>启动 searchTool</h2>
+      <p>后台仍按 Create → GetTask 轮询 → List → 全部 Candidate Detail 的顺序执行。</p>
+    </div>
+    <form method="post" action="{{ url_for('run_create', evaluation_id=evaluation.evaluation_id) }}">
+      <label>
+        <span>Query Dataset</span>
+        <select name="dataset_id" required>
+          <option value="">请选择</option>
+          {% for dataset in datasets %}
+            <option value="{{ dataset.dataset_id }}">{{ dataset.name }} · {{ dataset.query_count }} 条</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        <span>run_label</span>
+        <input name="run_label" required placeholder="candidate">
+      </label>
+      <label>
+        <span>system_version</span>
+        <input name="system_version" required placeholder="commit / build / version">
+      </label>
+      <label>
+        <span>Evaluation Phase</span>
+        <select name="evaluation_phase" required>
+          <option value="">请选择明确评估阶段</option>
+          {% for phase in evaluation_phases %}
+            <option value="{{ phase }}">{{ phase }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <button class="button primary" type="submit" {% if not datasets %}disabled{% endif %}>启动执行</button>
+    </form>
+    {% if not datasets %}
+      <p class="inline-note">还没有 Dataset，请先到“数据导入”上传 JSONL 或 Excel。</p>
+    {% endif %}
+  </section>
+
+  <section class="section-head">
+    <div>
+      <p class="eyebrow">Runs</p>
+      <h2>运行记录</h2>
+    </div>
+    <span class="count">{{ runs|length }} 次</span>
+  </section>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Run</th><th>来源</th><th>版本</th><th>评估阶段</th><th>状态</th>
+          <th>Query</th><th>成功</th><th>失败/部分失败</th><th>创建时间</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for run in runs %}
+          <tr>
+            <td><a class="mono" href="{{ url_for('run_detail', run_id=run.run_id) }}">{{ run.run_label }}<small>{{ run.run_id }}</small></a></td>
+            <td>{{ run.source_type }}</td>
+            <td>{{ run.system_version }}</td>
+            <td class="mono">{{ run.evaluation_phase }}</td>
+            <td><span class="status {{ run.status|status_class }}">{{ run.status }}</span></td>
+            <td>{{ run.total_queries }}</td>
+            <td>{{ run.success_queries }}</td>
+            <td>{{ run.failed_queries }}</td>
+            <td>{{ run.created_at }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="9" class="empty-cell">尚无 Run</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if reports %}
+    <section class="section-head">
+      <div><p class="eyebrow">Reports</p><h2>报告快照</h2></div>
+      <span class="count">{{ reports|length }} 份</span>
+    </section>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>报告</th><th>Run</th><th>版本</th><th>类型</th><th>状态</th><th>生成时间</th></tr></thead>
+        <tbody>
+          {% for report in reports %}
+            <tr>
+              <td><a class="mono" href="{{ url_for('report_detail', report_id=report.report_id) }}">{{ report.report_id }}</a></td>
+              <td>{{ report.run_label }}</td>
+              <td>{{ report.system_version }}</td>
+              <td>{{ report.report_type }}</td>
+              <td><span class="status {{ report.status|status_class }}">{{ report.status }}</span></td>
+              <td>{{ report.created_at }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
+{% endblock %}

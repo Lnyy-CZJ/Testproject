@@ -12,6 +12,7 @@ from search_tool import (
     ConfigError,
     FlowError,
     SearchClient,
+    normalize_result_status,
     process_one,
     run_batch,
     select_output_paths,
@@ -72,6 +73,315 @@ def config(**overrides):
 
 
 class SearchToolTests(unittest.TestCase):
+    def test_normalize_result_status_uses_candidate_count_before_detail_status(self):
+        """规范化状态区分有结果、无结果和执行失败。"""
+
+        self.assertEqual(
+            "HAS_CANDIDATES",
+            normalize_result_status("PARTIAL_DETAIL_FAILED", 2),
+        )
+        self.assertEqual(
+            "NO_CANDIDATES",
+            normalize_result_status("NO_CANDIDATE", 0),
+        )
+        self.assertEqual(
+            "EXECUTION_FAILED",
+            normalize_result_status("FAILED", 0),
+        )
+        self.assertEqual(
+            "HAS_CANDIDATES",
+            normalize_result_status("FAILED", 1),
+        )
+
+    def test_phase0_optimization_contract_fixtures_are_frozen(self):
+        """冻结新增公共字段与可选空路径的脱敏接口契约样例。
+
+        功能说明:
+            验证阶段0 Mock 保持标准响应信封、公共字段类型和可选空结构，
+            防止后续开发在接口真实路径尚未确认时自行改写契约样例。
+
+        返回值:
+            无；断言失败表示阶段0契约夹具发生了非预期变化。
+
+        异常说明:
+            文件不存在或 JSON 非法时由测试直接失败，避免使用损坏夹具。
+        """
+
+        fixture_dir = (
+            Path(__file__).parent
+            / "fixtures"
+            / "v1_3_optimization_phase0"
+        )
+        full = json.loads(
+            (fixture_dir / "get_task_public_fields_full.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        partial = json.loads(
+            (fixture_dir / "get_task_public_fields_partial.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        optional = json.loads(
+            (
+                fixture_dir
+                / "candidate_detail_optional_fields_missing.json"
+            ).read_text(encoding="utf-8")
+        )
+
+        full_data = full["responses"][0]["data"]
+        self.assertEqual("SUCCEEDED", full_data["status"])
+        self.assertEqual(2, full_data["candidate_count"])
+        self.assertIsInstance(full_data["llm_cost"], float)
+        self.assertIsInstance(full_data["third_party_cost"], float)
+        self.assertIsInstance(full_data["total_cost"], float)
+        self.assertIs(full_data["pdl_called"], True)
+        self.assertIsInstance(full_data["search_duration_ms"], int)
+
+        partial_data = partial["responses"][0]["data"]
+        self.assertEqual(0.0, partial_data["llm_cost"])
+        self.assertIs(partial_data["pdl_called"], False)
+        self.assertNotIn("third_party_cost", partial_data)
+        self.assertNotIn("total_cost", partial_data)
+        self.assertNotIn("search_duration_ms", partial_data)
+
+        sections = optional["responses"][0]["data"]["ui_sections"]
+        self.assertEqual([], sections["insights"]["data"]["items"])
+        self.assertIsNone(sections["summary"]["data"]["primary_image"])
+        self.assertEqual(
+            "MEDIUM",
+            sections["summary"]["data"]["confidence_level"],
+        )
+
+    def test_candidate_detail_failure_isolated_and_raw_is_sanitized(self):
+        """验证单候选人详情失败隔离、Raw 脱敏及进度事件。"""
+
+        create_body = api_body({"task_id": "task-v13"})
+        create_body["auth_token"] = "response-secret"
+        create_body["device_id"] = "response-device"
+        create_body["future_field"] = {"kept": True}
+        session = FakeSession(
+            [
+                create_body,
+                api_body(
+                    {
+                        "status": "SUCCEEDED",
+                        "candidate_count": 3,
+                        "llm_cost": 1.25,
+                        "third_party_cost": 2.5,
+                        "total_cost": 3.75,
+                        "pdl_called": True,
+                        "search_duration_ms": 4321,
+                    }
+                ),
+                api_body(
+                    {
+                        "items": [
+                            {"candidate_id": "c1", "rank_score": 0.9},
+                            {"candidate_id": "c2", "rank_score": 0.8},
+                            {"candidate_id": "c3", "rank_score": 0.7},
+                        ]
+                    }
+                ),
+                api_body({"ui_sections": {"summary": {"status": "data"}}}),
+                api_body({}, code=7, success=False),
+                api_body({"ui_sections": {"social": {"status": "data"}}}),
+            ]
+        )
+        client = SearchClient(config(), session)
+        progress_events = []
+        raw_events = []
+        candidate_failures = []
+
+        result = process_one(
+            {
+                "input_id": "case-v13",
+                "query_stage": "FULL_NAME_SOCIAL",
+                "match_strategy": "UNION",
+                "clues": [
+                    {"type": "FULL_NAME"},
+                    {"type": "SOCIAL_LINK", "auth_token": "input-secret"},
+                ],
+                "additional_details": [],
+            },
+            client,
+            sleep_fn=lambda _: None,
+            progress_callback=progress_events.append,
+            raw_callback=raw_events.append,
+            failure_callback=candidate_failures.append,
+            run_id="run-v13",
+        )
+
+        self.assertEqual("1.3.1", result["result_schema_version"])
+        self.assertEqual("run-v13", result["run_id"])
+        self.assertEqual("FULL_NAME_SOCIAL", result["query_stage"])
+        self.assertEqual("PARTIAL_DETAIL_FAILED", result["query_status"])
+        self.assertEqual("HAS_CANDIDATES", result["result_status"])
+        self.assertEqual(
+            {
+                "llm_cost": 1.25,
+                "third_party_cost": 2.5,
+                "total_cost": 3.75,
+                "pdl_called": True,
+                "search_duration_ms": 4321,
+            },
+            result["task_fields"],
+        )
+        self.assertEqual(2, result["detail_success_count"])
+        self.assertEqual(1, result["detail_failure_count"])
+        self.assertEqual(
+            ["SUCCESS", "FAILED", "SUCCESS"],
+            [candidate["detail_status"] for candidate in result["results"]],
+        )
+        self.assertIn("code=7", result["results"][1]["detail_error"])
+        self.assertIsNone(result["results"][1]["detail_data_raw"])
+        self.assertEqual("data", result["results"][2]["ui_sections"]["social"]["status"])
+
+        self.assertEqual(1, len(candidate_failures))
+        self.assertEqual("CANDIDATE", candidate_failures[0]["scope"])
+        self.assertEqual("c2", candidate_failures[0]["candidate_id"])
+        self.assertIn("code=7", candidate_failures[0]["error"])
+
+        self.assertEqual(
+            [
+                "CreateIntentTask",
+                "GetTask",
+                "ListTaskCandidates",
+                "GetTaskCandidateDetail",
+                "GetTaskCandidateDetail",
+                "GetTaskCandidateDetail",
+            ],
+            [event["stage"] for event in raw_events],
+        )
+        serialized_raw = json.dumps(
+            {"result_raw": result["raw"], "events": raw_events},
+            ensure_ascii=False,
+        )
+        self.assertNotIn("response-secret", serialized_raw)
+        self.assertNotIn("response-device", serialized_raw)
+        self.assertNotIn("input-secret", serialized_raw)
+        self.assertTrue(
+            result["raw"]["create_intent_task"]["response_body"]["future_field"]["kept"]
+        )
+
+        event_names = [event["event"] for event in progress_events]
+        self.assertEqual("query_started", event_names[0])
+        self.assertIn("candidate_failed", event_names)
+        self.assertEqual("query_succeeded", event_names[-1])
+        self.assertEqual(
+            "PARTIAL_DETAIL_FAILED",
+            progress_events[-1]["status"],
+        )
+
+    def test_run_batch_writes_failed_candidate_to_results_and_failures(self):
+        """验证部分详情失败同时写入 v1.3 结果与失败文件。"""
+
+        session = FakeSession(
+            [
+                api_body({"task_id": "task-partial"}),
+                api_body({"status": "SUCCEEDED", "candidate_count": 2}),
+                api_body(
+                    {
+                        "items": [
+                            {"candidate_id": "c1", "rank_score": 0.9},
+                            {"candidate_id": "c2", "rank_score": 0.8},
+                        ]
+                    }
+                ),
+                api_body({}, code=8, success=False),
+                api_body({"ui_sections": {"summary": {"status": "data"}}}),
+            ]
+        )
+        client = SearchClient(config(), session)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            input_path = root / "tasks.jsonl"
+            input_path.write_text(
+                json.dumps(
+                    {
+                        "input_id": "partial",
+                        "query_stage": "FULL_NAME",
+                        "clues": [{"type": "FULL_NAME"}],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            succeeded, failed = run_batch(
+                input_path,
+                root / "output",
+                client,
+                lambda _: None,
+                run_id="run-partial",
+            )
+            result = json.loads(
+                (root / "output/results.jsonl").read_text(encoding="utf-8")
+            )
+            failure = json.loads(
+                (root / "output/failures.jsonl").read_text(encoding="utf-8")
+            )
+
+        self.assertEqual((0, 1), (succeeded, failed))
+        self.assertEqual("PARTIAL_DETAIL_FAILED", result["query_status"])
+        self.assertEqual("FAILED", result["results"][0]["detail_status"])
+        self.assertEqual("SUCCESS", result["results"][1]["detail_status"])
+        self.assertEqual("1.3.1", failure["failure_schema_version"])
+        self.assertEqual("run-partial", failure["run_id"])
+        self.assertEqual("CANDIDATE", failure["scope"])
+        self.assertEqual("c1", failure["candidate_id"])
+
+    def test_invalid_list_items_are_candidate_failures_and_do_not_stop(self):
+        """验证非法 List 单项按候选级失败保留，并继续合法候选人。"""
+
+        session = FakeSession(
+            [
+                api_body({"task_id": "task-invalid-list"}),
+                api_body({"status": "SUCCEEDED", "candidate_count": 3}),
+                api_body(
+                    {
+                        "items": [
+                            "invalid-item",
+                            {"rank_score": 0.5},
+                            {"candidate_id": "c3", "rank_score": 0.4},
+                        ]
+                    }
+                ),
+                api_body({"ui_sections": {}}),
+            ]
+        )
+        client = SearchClient(config(), session)
+        candidate_failures = []
+
+        result = process_one(
+            {
+                "input_id": "invalid-list",
+                "match_strategy": "UNION",
+                "clues": [{"type": "FULL_NAME"}],
+                "additional_details": [],
+            },
+            client,
+            sleep_fn=lambda _: None,
+            failure_callback=candidate_failures.append,
+        )
+
+        self.assertEqual("PARTIAL_DETAIL_FAILED", result["query_status"])
+        self.assertEqual(1, result["detail_success_count"])
+        self.assertEqual(2, result["detail_failure_count"])
+        self.assertEqual(3, len(result["results"]))
+        self.assertEqual(
+            ["FAILED", "FAILED", "SUCCESS"],
+            [candidate["detail_status"] for candidate in result["results"]],
+        )
+        self.assertEqual(2, len(candidate_failures))
+        detail_calls = [
+            call
+            for call in session.calls
+            if call[1]["json"]["requests"][0]["method_name"]
+            == "GetTaskCandidateDetail"
+        ]
+        self.assertEqual(1, len(detail_calls))
+
     def test_process_one_queued_then_succeeded_and_two_candidates(self):
         session = FakeSession(
             [
@@ -108,6 +418,10 @@ class SearchToolTests(unittest.TestCase):
         self.assertEqual("task-1", result["task_id"])
         self.assertEqual(2, result["candidate_count_total"])
         self.assertEqual(2, result["candidate_count_listed"])
+        self.assertEqual("SUCCESS", result["query_status"])
+        self.assertEqual(2, result["detail_success_count"])
+        self.assertEqual(0, result["detail_failure_count"])
+        self.assertEqual(2, len(result["raw"]["get_task_history"]))
         self.assertEqual(["c1", "c2"], [item["candidate_id"] for item in result["results"]])
         self.assertEqual([1, 2], [item["candidate_rank"] for item in result["results"]])
         self.assertEqual([0.91, None], [item["rank_score"] for item in result["results"]])
@@ -152,6 +466,8 @@ class SearchToolTests(unittest.TestCase):
         )
 
         self.assertEqual([5, 5], sleeps)
+        self.assertEqual("NO_CANDIDATE", result["query_status"])
+        self.assertEqual("NO_CANDIDATES", result["result_status"])
         self.assertEqual(0, result["candidate_count_total"])
         self.assertEqual(0, result["candidate_count_listed"])
         methods = [call[1]["json"]["requests"][0]["method_name"] for call in session.calls]
@@ -260,6 +576,12 @@ class SearchToolTests(unittest.TestCase):
             self.assertEqual([], results[0]["results"])
             self.assertEqual("bad", failures[0]["input_id"])
             self.assertEqual("GetTask", failures[0]["stage"])
+            self.assertEqual("1.3.1", failures[0]["failure_schema_version"])
+            self.assertEqual("QUERY", failures[0]["scope"])
+            self.assertEqual(
+                ["CreateIntentTask", "GetTask"],
+                [record["stage"] for record in failures[0]["raw"]],
+            )
 
     def test_rejects_business_error(self):
         session = FakeSession([api_body({}, code=7, success=False)])

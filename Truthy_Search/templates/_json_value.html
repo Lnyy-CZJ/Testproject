@@ -1,0 +1,33 @@
+{% macro render_value(value, path='root') -%}
+  {% if value is mapping %}
+    <dl class="data-list">
+      {% for key, item in value.items() %}
+        <div>
+          <dt>{{ key }}</dt>
+          <dd>{{ render_value(item, path ~ '.' ~ key) }}</dd>
+        </div>
+      {% endfor %}
+    </dl>
+  {% elif value is sequence and value is not string %}
+    {% if value %}
+      <ol class="data-array">
+        {% for item in value %}
+          <li>{{ render_value(item, path ~ '[' ~ loop.index0 ~ ']') }}</li>
+        {% endfor %}
+      </ol>
+    {% else %}
+      <span class="empty-value">空数组</span>
+    {% endif %}
+  {% elif value is string and value|is_http_url %}
+    {% if value|is_image_url %}
+      <a class="image-link" href="{{ value }}" target="_blank" rel="noopener noreferrer">
+        <img src="{{ value }}" alt="候选人返回图片" loading="lazy">
+      </a>
+    {% endif %}
+    <a href="{{ value }}" target="_blank" rel="noopener noreferrer">{{ value }}</a>
+  {% elif value is none or value == '' %}
+    <span class="empty-value">空</span>
+  {% else %}
+    <span class="scalar-value">{{ value }}</span>
+  {% endif %}
+{%- endmacro %}

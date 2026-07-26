@@ -1,0 +1,2 @@
+{"person_id":"person-e2e-001","display_name":"Example Person One","fields":{"social_urls":["https://social.example.test/person-one"],"future_label":"alpha"},"evidence":{"source":"stage7-fixture"}}
+{"person_id":"person-e2e-002","display_name":"Example Person Two","fields":{"social_urls":["https://social.example.test/person-two"],"future_label":"beta"},"evidence":{"source":"stage7-fixture"}}

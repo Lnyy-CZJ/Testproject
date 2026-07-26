@@ -1,0 +1,198 @@
+{% extends "base.html" %}
+{% from "_json_value.html" import render_value %}
+{% block title %}Candidate #{{ candidate.candidate_rank }} · Truthy Search{% endblock %}
+{% block content %}
+  <div class="breadcrumbs">
+    <a href="{{ url_for('run_detail', run_id=candidate.run_id) }}">{{ candidate.run_label }}</a>
+    <span>/</span>
+    <a href="{{ url_for('query_detail', run_id=candidate.run_id, query_id=candidate.query_id) }}">{{ candidate.query_id }}</a>
+    <span>/</span><span>#{{ candidate.candidate_rank }}</span>
+  </div>
+  <div class="page-heading split">
+    <div>
+      <p class="eyebrow">Candidate #{{ candidate.candidate_rank }}</p>
+      <h1>{{ candidate.candidate_id or '缺失 candidate_id' }}</h1>
+      <p>rank_score {{ candidate.rank_score if candidate.rank_score is not none else '未返回' }} · {{ candidate.system_version }}</p>
+    </div>
+    <span class="status large {{ candidate.detail_status|status_class }}">{{ candidate.detail_status }}</span>
+  </div>
+
+  {% if candidate.detail_error %}
+    <div class="error-list"><p>{{ candidate.detail_error }}</p></div>
+  {% endif %}
+
+  {% if processed %}
+    <section class="section-head">
+      <div>
+        <p class="eyebrow">Processed Fields</p>
+        <h2>结构化字段</h2>
+      </div>
+      <a class="count mono" href="{{ url_for('process_detail', process_id=processed.process_id) }}">
+        {{ processed.schema_name }} · {{ processed.schema_version }}
+      </a>
+    </section>
+    <article class="panel">
+      {% if processed.fields %}
+        <dl class="data-list processed-fields">
+          {% for field_key, value in processed.fields.items() %}
+            {% set definition = processed.definitions.get(field_key, {}) %}
+            <div>
+              <dt>
+                {{ definition.get('display_name', field_key) }}
+                <small class="mono">{{ field_key }}</small>
+              </dt>
+              <dd>
+                {{ render_value(value, field_key) }}
+                {% if processed.empty_fields.get(field_key) %}
+                  <span class="status neutral">EMPTY</span>
+                {% endif %}
+              </dd>
+            </div>
+          {% endfor %}
+        </dl>
+      {% else %}
+        <p class="empty-value">该候选人没有正常结构化字段。</p>
+      {% endif %}
+      {% if processed.errors %}
+        <div class="processing-errors">
+          <h3>处理错误</h3>
+          {% for error in processed.errors %}
+            <p><strong>{{ error.field_key or error.code }}</strong> · {{ error.error }}</p>
+          {% endfor %}
+        </div>
+      {% endif %}
+    </article>
+  {% else %}
+    <div class="inline-note processing-note">当前候选人还没有字段处理结果，可从 Run 页面选择字段配置启动处理。</div>
+  {% endif %}
+
+  {% if review %}
+    <section class="section-head">
+      <div>
+        <p class="eyebrow">Candidate Review</p>
+        <h2>候选人复核</h2>
+      </div>
+      <span class="status {{ review.judgement|status_class }}">
+        {{ 'FINAL · ' if review.is_final else '建议 · ' }}{{ review.judgement }}
+      </span>
+    </section>
+    <article class="panel">
+      <div class="inline-note">
+        基准版本：<span class="mono">{{ review.baseline_version or '未关联' }}</span>
+        · Person：<span class="mono">{{ review.person_id or '缺失' }}</span>
+        {% if not review.is_final %}· 当前判定仅为系统建议，不进入正式指标{% endif %}
+      </div>
+      <form method="post" action="{{ url_for('candidate_review', process_id=review.process_id, candidate_pk=review.candidate_pk) }}">
+        <input type="hidden" name="expected_reviewed_at" value="{{ review.reviewed_at or '' }}">
+        <div class="form-pair">
+          <label>
+            <span>最终判定</span>
+            <select name="judgement" required>
+              <option value="">请选择</option>
+              {% for value in ['HIT', 'NOT_HIT', 'SUSPECTED'] %}
+                <option value="{{ value }}" {% if review.judgement == value %}selected{% endif %}>{{ value }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label>
+            <span>判定原因</span>
+            <select name="reason" required>
+              {% for value in ['SOCIAL_MATCH', 'SOCIAL_CONFLICT', 'NO_STRONG_FIELD', 'MANUAL'] %}
+                <option value="{{ value }}" {% if review.reason == value %}selected{% endif %}>{{ value }}</option>
+              {% endfor %}
+            </select>
+          </label>
+        </div>
+        <div class="form-pair">
+          <label><span>复核人</span><input name="reviewer" value="{{ review.reviewer }}"></label>
+          <label><span>证据</span><input name="evidence" value="{{ review.evidence }}"></label>
+        </div>
+
+        {% if review.field_scores %}
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>字段</th><th>基准值</th><th>返回值</th><th>完整度</th><th>准确率</th><th>字段说明</th></tr>
+              </thead>
+              <tbody>
+                {% for field_key, score in review.field_scores.items() %}
+                  {% set definition = review.definitions.get(field_key, {}) %}
+                  <tr>
+                    <td>{{ definition.get('display_name', field_key) }}<small class="mono">{{ field_key }} · {{ score.compare_mode }}</small></td>
+                    <td>{{ render_value(review.baseline_fields.get(field_key), 'baseline.' ~ field_key) }}</td>
+                    <td>{{ render_value(review.fields.get(field_key), 'returned.' ~ field_key) }}</td>
+                    <td>
+                      <input type="number" min="0" max="1" step="0.01"
+                             name="completeness__{{ field_key }}"
+                             value="{{ score.completeness_score if score.completeness_score is not none else '' }}"
+                             placeholder="N/A">
+                    </td>
+                    <td>
+                      <input type="number" min="0" max="1" step="0.01"
+                             name="accuracy__{{ field_key }}"
+                             value="{{ score.accuracy_score if score.accuracy_score is not none else '' }}"
+                             placeholder="N/A">
+                    </td>
+                    <td><input name="field_note__{{ field_key }}" value="{{ score.review_note }}" placeholder="{{ score.comparison_error or '可选' }}"></td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% endif %}
+        <label>
+          <span>复核说明{% if review.is_final %}（修改已有复核时建议说明原因）{% endif %}</span>
+          <textarea name="review_note" rows="3">{{ review.review_note }}</textarea>
+        </label>
+        <button class="button primary" type="submit">保存最终复核</button>
+      </form>
+      {% if review.reviewed_at %}
+        <p class="muted">最后复核：{{ review.reviewer or '未填写复核人' }} · {{ review.reviewed_at }}</p>
+      {% endif %}
+    </article>
+  {% endif %}
+
+  <div class="module-grid">
+    {% for module_name in ['summary', 'profile', 'social', 'photos', 'insights'] %}
+      <article class="panel module-panel">
+        <div class="panel-head">
+          <p class="eyebrow">{{ module_name }}</p>
+          <h2>{{ module_name|capitalize }}</h2>
+        </div>
+        {% if module_name in ui_sections %}
+          {{ render_value(ui_sections[module_name], 'ui_sections.' ~ module_name) }}
+        {% else %}
+          <p class="empty-value">当前响应未返回该模块</p>
+        {% endif %}
+      </article>
+    {% endfor %}
+  </div>
+
+  {% set extra_modules = ui_sections.keys()|reject('in', ['summary','profile','social','photos','insights'])|list %}
+  {% if extra_modules %}
+    <section class="section-head"><div><p class="eyebrow">New Fields</p><h2>未配置的新模块</h2></div></section>
+    <article class="panel">
+      {% for module_name in extra_modules %}
+        <h3>{{ module_name }}</h3>
+        {{ render_value(ui_sections[module_name], 'ui_sections.' ~ module_name) }}
+      {% endfor %}
+    </article>
+  {% endif %}
+
+  <section class="section-head"><div><p class="eyebrow">Raw Records</p><h2>候选人原始响应</h2></div><span class="count">{{ raw_records|length }} 条</span></section>
+  <div class="action-row">
+    {% for raw in raw_records %}
+      <button class="button secondary" type="button" data-raw-id="{{ raw.raw_id }}" data-raw-label="{{ raw.stage }} #{{ raw.sequence_no }}">查看 {{ raw.stage }} JSON</button>
+    {% else %}
+      <span class="inline-note">历史结构化数据未保留 Candidate Detail Raw。</span>
+    {% endfor %}
+  </div>
+
+  <details class="panel technical">
+    <summary>查看结构化 Detail / List 数据</summary>
+    <h3>Detail data</h3>
+    {{ render_value(detail_data, 'detail_data') }}
+    <h3>List item</h3>
+    {{ render_value(list_item, 'list_item') }}
+  </details>
+{% endblock %}

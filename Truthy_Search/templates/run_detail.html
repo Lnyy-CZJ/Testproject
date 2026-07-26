@@ -1,0 +1,186 @@
+{% extends "base.html" %}
+{% block title %}{{ run.run_label }} · Truthy Search{% endblock %}
+{% block content %}
+  <div class="breadcrumbs">
+    <a href="{{ url_for('evaluation_detail', evaluation_id=run.evaluation_id) }}">{{ run.evaluation_name }}</a>
+    <span>/</span><span>{{ run.run_label }}</span>
+  </div>
+  <div class="page-heading split"
+       {% if run.status not in terminal_statuses %}
+       data-run-status-url="{{ url_for('run_status', run_id=run.run_id) }}"
+       {% endif %}>
+    <div>
+      <p class="eyebrow mono">{{ run.run_id }}</p>
+      <h1>{{ run.run_label }}</h1>
+      <p>{{ run.system_version }} · {{ run.source_type }} · {{ run.evaluation_phase }} · <span data-progress-message>{{ run.message or '暂无进度消息' }}</span></p>
+    </div>
+    <span class="status large {{ run.status|status_class }}" data-run-status>{{ run.status }}</span>
+  </div>
+
+  <form class="filter-bar compact-filter" method="post" action="{{ url_for('run_evaluation_phase_update', run_id=run.run_id) }}">
+    <select name="evaluation_phase" required>
+      {% for phase in evaluation_phases %}
+        <option value="{{ phase }}" {% if run.evaluation_phase == phase %}selected{% endif %}>{{ phase }}</option>
+      {% endfor %}
+    </select>
+    <button class="button secondary" type="submit">更新 Evaluation Phase</button>
+  </form>
+
+  <div class="metric-strip four">
+    <div><span>有候选人</span><strong>{{ result_status_counts.get('HAS_CANDIDATES', 0) }}</strong></div>
+    <div><span>无候选人</span><strong>{{ result_status_counts.get('NO_CANDIDATES', 0) }}</strong></div>
+    <div><span>执行失败</span><strong>{{ result_status_counts.get('EXECUTION_FAILED', 0) }}</strong></div>
+    <div><span>未规范化</span><strong>{{ result_status_counts.get('UNSPECIFIED', 0) }}</strong></div>
+  </div>
+
+  <div class="metric-strip">
+    <div><span>Query 总数</span><strong data-total>{{ run.total_queries }}</strong></div>
+    <div><span>已完成</span><strong data-completed>{{ run.success_queries + run.failed_queries }}</strong></div>
+    <div><span>成功 / 无候选</span><strong data-success>{{ run.success_queries }}</strong></div>
+    <div><span>失败 / 部分失败</span><strong data-failed>{{ run.failed_queries }}</strong></div>
+    <div><span>当前 Query</span><strong class="mono" data-current-query>—</strong></div>
+    <div><span>当前阶段</span><strong data-current-stage>—</strong></div>
+  </div>
+
+  <div class="action-row">
+    {% if run.results_file %}<a class="button secondary" href="{{ url_for('download_run_file', file_type='results', run_id=run.run_id) }}">下载 results.jsonl</a>{% endif %}
+    {% if run.failures_file %}<a class="button secondary" href="{{ url_for('download_run_file', file_type='failures', run_id=run.run_id) }}">下载 failures.jsonl</a>{% endif %}
+  </div>
+
+  <section class="form-panel process-launcher">
+    <div>
+      <p class="eyebrow">Field Processing</p>
+      <h2>使用字段配置处理</h2>
+      <p>每次处理都会生成新的结果快照，不覆盖 Raw、Candidate 或旧处理结果。</p>
+    </div>
+    <form method="post" action="{{ url_for('process_run', run_id=run.run_id) }}">
+      <label>
+        <span>字段配置版本</span>
+        <select name="schema_version" required>
+          {% for schema in field_schemas %}
+            <option value="{{ schema.schema_version }}">
+              {{ schema.name }} · {{ schema.schema_version }}{% if schema.is_active %}（当前）{% endif %}
+            </option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        <span>基准版本</span>
+        <select name="baseline_version">
+          <option value="">暂不关联（只能预览指标）</option>
+          {% for baseline in baseline_sets %}
+            <option value="{{ baseline.baseline_version }}">
+              {{ baseline.name }} · {{ baseline.baseline_version }} · {{ baseline.person_count }}人
+            </option>
+          {% endfor %}
+        </select>
+      </label>
+      <button class="button primary" type="submit"
+              {% if run.status in ['PENDING', 'RUNNING'] %}disabled{% endif %}>启动处理</button>
+    </form>
+  </section>
+
+  {% if process_runs %}
+    <section class="section-head">
+      <div><p class="eyebrow">Process History</p><h2>处理记录</h2></div>
+      <span class="count">{{ process_runs|length }} 次</span>
+    </section>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>处理版本</th><th>字段配置</th><th>基准版本</th><th>状态</th><th>字段错误</th><th>完成时间</th></tr></thead>
+        <tbody>
+          {% for process in process_runs %}
+            <tr>
+              <td><a class="mono" href="{{ url_for('process_detail', process_id=process.process_id) }}">{{ process.process_id }}</a></td>
+              <td>{{ process.schema_name }}<small class="mono">{{ process.schema_version }}</small></td>
+              <td class="mono">{{ process.baseline_version or '未关联' }}</td>
+              <td><span class="status {{ process.status|status_class }}">{{ process.status }}</span></td>
+              <td>{{ process.error_count }}</td>
+              <td>{{ process.finished_at or '处理中' }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
+
+  <section class="section-head">
+    <div><p class="eyebrow">Queries</p><h2>Query 列表</h2></div>
+    <span class="count">{{ total }} 条</span>
+  </section>
+  <form class="filter-bar" method="get">
+    <input type="search" name="q" value="{{ filters.q }}" placeholder="搜索 query_id / person_id / task_id">
+    <select name="status">
+      <option value="">全部状态</option>
+      {% for value in ['PENDING','RUNNING','SUCCESS','NO_CANDIDATE','PARTIAL_DETAIL_FAILED','FAILED'] %}
+        <option value="{{ value }}" {% if filters.status == value %}selected{% endif %}>{{ value }}</option>
+      {% endfor %}
+    </select>
+    <select name="query_stage">
+      <option value="">全部检索条件</option>
+      <option value="FULL_NAME" {% if filters.query_stage == 'FULL_NAME' %}selected{% endif %}>FULL_NAME</option>
+      <option value="FULL_NAME_SOCIAL" {% if filters.query_stage == 'FULL_NAME_SOCIAL' %}selected{% endif %}>FULL_NAME_SOCIAL</option>
+    </select>
+    <select name="result_status">
+      <option value="">全部结果状态</option>
+      {% for value in ['HAS_CANDIDATES','NO_CANDIDATES','EXECUTION_FAILED'] %}
+        <option value="{{ value }}" {% if filters.result_status == value %}selected{% endif %}>{{ value }}</option>
+      {% endfor %}
+    </select>
+    <select name="sort">
+      {% for value, label in [('query_id','Query ID'),('status','采集状态'),('result_status','结果状态'),('query_stage','检索条件'),('candidate_count_listed','候选人数'),('detail_failure_count','详情失败数')] %}
+        <option value="{{ value }}" {% if filters.sort == value %}selected{% endif %}>按{{ label }}</option>
+      {% endfor %}
+    </select>
+    <select name="direction">
+      <option value="asc" {% if filters.direction == 'asc' %}selected{% endif %}>升序</option>
+      <option value="desc" {% if filters.direction == 'desc' %}selected{% endif %}>降序</option>
+    </select>
+    <button class="button primary" type="submit">筛选</button>
+  </form>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Query / Person</th><th>检索条件</th><th>Task</th><th>采集状态</th><th>结果状态</th>
+          <th>List 人数</th><th>详情成功</th><th>详情失败</th><th>阶段</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for query in queries %}
+          <tr>
+            <td><a class="mono" href="{{ url_for('query_detail', run_id=run.run_id, query_id=query.query_id) }}">{{ query.query_id }}<small>{{ query.person_id or '无 person_id' }}</small></a></td>
+            <td>{{ query.query_stage or '—' }}</td>
+            <td class="mono">{{ query.task_id or '—' }}</td>
+            <td><span class="status {{ query.status|status_class }}">{{ query.status }}</span></td>
+            <td><span class="status {{ query.result_status|status_class }}">{{ query.result_status or 'UNSPECIFIED' }}</span></td>
+            <td>{{ query.candidate_count_listed }}</td>
+            <td>{{ query.detail_success_count }}</td>
+            <td>{{ query.detail_failure_count }}</td>
+            <td>{{ query.current_stage or '—' }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="9" class="empty-cell">没有匹配的 Query</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% set pages = ((total + per_page - 1) // per_page) %}
+  {% if pages > 1 %}
+    <nav class="pagination" aria-label="Query 分页">
+      {% for number in range(1, pages + 1) %}
+        <a class="{% if number == page %}current{% endif %}" href="{{ url_for('run_detail', run_id=run.run_id, page=number, q=filters.q, status=filters.status, result_status=filters.result_status, query_stage=filters.query_stage, sort=filters.sort, direction=filters.direction) }}">{{ number }}</a>
+      {% endfor %}
+    </nav>
+  {% endif %}
+
+  {% if failures %}
+    <section class="section-head"><div><p class="eyebrow">Failures</p><h2>最近失败</h2></div></section>
+    <div class="failure-list">
+      {% for failure in failures %}
+        <article><strong>{{ failure.query_id or 'Run' }} · {{ failure.stage }}</strong><p>{{ failure.error }}</p><span>{{ failure.scope }} · {{ failure.created_at }}</span></article>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endblock %}

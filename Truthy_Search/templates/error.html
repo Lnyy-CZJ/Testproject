@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} · Truthy Search{% endblock %}
+{% block content %}
+  <section class="error-page">
+    <p class="eyebrow">Error {{ status_code }}</p>
+    <h1>{{ title }}</h1>
+    <p>{{ message }}</p>
+    <div class="form-actions">
+      <a class="button primary" href="{{ url_for('index') }}">返回评测列表</a>
+      <button class="button secondary" type="button" onclick="history.back()">返回上一页</button>
+    </div>
+  </section>
+{% endblock %}

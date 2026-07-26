@@ -1,0 +1,39 @@
+services:
+  searchtool:
+    image: truthy-search:v1.3
+    build:
+      context: .
+      dockerfile: Dockerfile
+    init: true
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5002:5002"
+    environment:
+      SEARCH_DATA_DIR: /app/data
+      SEARCH_DB_FILE: /app/data/searchtool_v1_3.db
+      SEARCH_IMPORT_DIR: /app/data/imports
+      SEARCH_RAW_DIR: /app/data/raw
+      SEARCH_REPORT_DIR: /app/output/reports
+      SEARCH_OUTPUT_DIR: /app/output
+      SEARCH_WEB_HOST: 0.0.0.0
+      SEARCH_WEB_PORT: "5002"
+      # artifact-tool 是 Codex 宿主运行时依赖，容器内先关闭自动 Excel。
+      SEARCH_REPORT_EXCEL_ENABLED: "false"
+    volumes:
+      - ./.env:/run/secrets/searchtool.env:ro
+      - ./data:/app/data
+      - ./output:/app/output
+      - ./input:/app/input:ro
+    healthcheck:
+      test:
+        - CMD
+        - python3
+        - -c
+        - >-
+          from urllib.request import urlopen;
+          response = urlopen('http://127.0.0.1:5002/', timeout=5);
+          raise SystemExit(0 if response.status == 200 else 1)
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s

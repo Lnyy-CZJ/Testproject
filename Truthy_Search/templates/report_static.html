@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ report.metadata.evaluation_name }} · {{ report.metadata.report_id }}</title>
+  <style>
+    :root { color-scheme: light; font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #17212b; background: #f5f7f8; }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 32px; }
+    main { max-width: 1180px; margin: 0 auto; }
+    h1 { font-size: 36px; margin: 6px 0; }
+    h2 { margin: 0 0 14px; }
+    h3 { margin-top: 26px; }
+    p, li { line-height: 1.6; }
+    .report-section { background: #fff; border: 1px solid #dce3e7; border-radius: 16px; padding: 24px; margin-bottom: 18px; }
+    .page-heading, .section-head { display: flex; justify-content: space-between; gap: 20px; align-items: flex-start; }
+    .eyebrow { margin: 0; color: #0c776d; font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+    .status { display: inline-block; border-radius: 999px; padding: 7px 11px; background: #e6f4f1; font-weight: 700; }
+    .metric-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+    .metric-strip > div { background: #f4f7f7; border-radius: 12px; padding: 16px; }
+    .metric-strip span, .metric-strip small { display: block; color: #65737e; }
+    .metric-strip strong { display: block; margin: 8px 0; font-size: 22px; }
+    .data-list { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+    .data-list div { background: #f4f7f7; border-radius: 10px; padding: 12px; }
+    dt { color: #65737e; font-size: 12px; } dd { margin: 5px 0 0; }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 10px; border-bottom: 1px solid #e2e7ea; text-align: left; vertical-align: top; }
+    th { background: #eef3f3; font-size: 12px; }
+    small { display: block; color: #65737e; margin-top: 4px; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
+    details { border-top: 1px solid #e2e7ea; padding: 12px 0; }
+    summary { cursor: pointer; font-weight: 700; }
+    .report-warnings { border-color: #e5c76b; background: #fffaf0; }
+    @media (max-width: 800px) { body { padding: 12px; } .metric-strip, .data-list { grid-template-columns: 1fr 1fr; } }
+    @media print { body { padding: 0; background: #fff; } .report-section { break-inside: avoid; box-shadow: none; } }
+  </style>
+</head>
+<body>
+  <main>
+    {% include "_report_content.html" %}
+  </main>
+</body>
+</html>

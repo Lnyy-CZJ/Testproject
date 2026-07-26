@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}创建评测 · Truthy Search{% endblock %}
+{% block content %}
+  <div class="page-heading">
+    <div>
+      <p class="eyebrow">New Evaluation</p>
+      <h1>创建评测</h1>
+      <p>Evaluation 用来归集同一测试目标下的多个系统版本 Run。</p>
+    </div>
+  </div>
+
+  {% if errors %}
+    <div class="error-list">
+      {% for error in errors %}<p>{{ error }}</p>{% endfor %}
+    </div>
+  {% endif %}
+
+  <form class="form-panel narrow" method="post">
+    <label>
+      <span>evaluation_id</span>
+      <input name="evaluation_id" required maxlength="128"
+             value="{{ form.evaluation_id if form else '' }}"
+             placeholder="例如 eval_20260723">
+      <small>只使用字母、数字、点、下划线和连字符。</small>
+    </label>
+    <label>
+      <span>评测名称</span>
+      <input name="name" required maxlength="200"
+             value="{{ form.name if form else '' }}"
+             placeholder="例如 7月常态化检索评测">
+    </label>
+    <label>
+      <span>说明</span>
+      <textarea name="notes" rows="5" placeholder="数据范围、测试目标或版本说明">{{ form.notes if form else '' }}</textarea>
+    </label>
+    <div>
+      <p class="eyebrow">Thresholds</p>
+      <h2>参考线与建议</h2>
+      <p class="inline-note">首版可留空；比例填写0到1，成本和耗时填写非负数。报告会保存生成时的参考线快照。</p>
+    </div>
+    {% for query_stage in ['FULL_NAME', 'FULL_NAME_SOCIAL'] %}
+      <fieldset>
+        <legend class="mono">{{ query_stage }}</legend>
+        {% for field_key in threshold_fields %}
+          {% set input_name = 'threshold__' ~ query_stage ~ '__' ~ field_key %}
+          {% set configured = thresholds.get(query_stage, {}).get(field_key) %}
+          <label>
+            <span>
+              {% if field_key == 'min_retrieval_success' %}最低检索成功率
+              {% elif field_key == 'min_matched_completeness' %}最低命中完整度
+              {% elif field_key == 'min_matched_accuracy' %}最低命中准确率
+              {% elif field_key == 'max_average_total_cost' %}最高平均总成本
+              {% else %}最高平均检索耗时（ms）{% endif %}
+            </span>
+            <input type="number" name="{{ input_name }}" step="any" min="0"
+                   {% if field_key.startswith('min_') %}max="1"{% endif %}
+                   value="{{ form.get(input_name, '') if form else (configured if configured is not none else '') }}">
+            <small class="mono">{{ field_key }}</small>
+          </label>
+        {% endfor %}
+      </fieldset>
+    {% endfor %}
+    <div class="form-actions">
+      <button class="button primary" type="submit">创建评测</button>
+      <a class="button text" href="{{ url_for('index') }}">取消</a>
+    </div>
+  </form>
+{% endblock %}

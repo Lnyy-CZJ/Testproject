@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}字段配置 · Truthy Search{% endblock %}
+{% block content %}
+  <div class="page-heading split">
+    <div>
+      <p class="eyebrow">Versioned Field Schemas</p>
+      <h1>字段配置</h1>
+      <p>每次发布都会保存完整配置快照。已有版本不可修改，停用字段请在新版本中设置 enabled=false。</p>
+    </div>
+    <a class="button primary" href="{{ url_for('field_schema_new') }}">发布新版本</a>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>版本</th><th>名称</th><th>字段数</th><th>状态</th><th>处理引用</th><th>维护人</th><th>创建时间</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for schema in schemas %}
+          <tr>
+            <td class="mono">{{ schema.schema_version }}</td>
+            <td>{{ schema.name }}</td>
+            <td>
+              {{ schema.definitions|length }}
+              <small class="mono">QUERY {{ schema.query_field_count }} · CANDIDATE {{ schema.candidate_field_count }}</small>
+            </td>
+            <td>
+              {% if schema.is_active %}
+                <span class="status success">CURRENT</span>
+              {% else %}
+                <span class="status neutral">HISTORY</span>
+              {% endif %}
+            </td>
+            <td>{{ schema.process_count }}</td>
+            <td>{{ schema.created_by or '—' }}</td>
+            <td>{{ schema.created_at }}</td>
+            <td><a class="button small secondary" href="{{ url_for('field_schema_new', base=schema.schema_version) }}">复制并编辑</a></td>
+          </tr>
+          <tr class="schema-definition-row">
+            <td colspan="8">
+              <details>
+                <summary>查看 {{ schema.definitions|length }} 个字段定义</summary>
+                <div class="field-definition-grid">
+                  {% for field in schema.definitions %}
+                    <article>
+                      <strong>{{ field.display_name }}</strong>
+                      <span class="mono">{{ field.field_key }}</span>
+                      <code>{{ field.source_path }}</code>
+                      <small>{{ field.value_scope }} · {{ field.module }} · {{ field.data_type }} · {{ field.normalizer }} · missing={{ field.missing_policy }}{% if not field.enabled %} · disabled{% endif %}</small>
+                    </article>
+                  {% endfor %}
+                </div>
+              </details>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endblock %}

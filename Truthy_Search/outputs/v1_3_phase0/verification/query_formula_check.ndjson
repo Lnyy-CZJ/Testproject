@@ -1,0 +1,12 @@
+{"kind":"formula","sheet":"Query对比","address":"L2","formula":"=IF(ISNUMBER(K2),--(K2<=1),\"\")"}
+{"kind":"formula","sheet":"Query对比","address":"M2","formula":"=IF(ISNUMBER(K2),--(K2<=3),\"\")"}
+{"kind":"formula","sheet":"Query对比","address":"N2","formula":"=IF(ISNUMBER(K2),--(K2<=5),\"\")"}
+{"kind":"formula","sheet":"Query对比","address":"O2","formula":"=IF(ISNUMBER(K2),IF(AND(K2>=1,K2<=5),1/K2,0),\"\")"}
+{"kind":"formula","sheet":"Query对比","address":"L3","formula":"=IF(ISNUMBER(K3),--(K3<=1),\"\")"}
+{"kind":"formula","sheet":"Query对比","address":"M3","formula":"=IF(ISNUMBER(K3),--(K3<=3),\"\")"}
+{"kind":"formula","sheet":"Query对比","address":"N3","formula":"=IF(ISNUMBER(K3),--(K3<=5),\"\")"}
+{"kind":"formula","sheet":"Query对比","address":"O3","formula":"=IF(ISNUMBER(K3),IF(AND(K3>=1,K3<=5),1/K3,0),\"\")"}
+{"kind":"formula","sheet":"Query对比","address":"L4","formula":"=IF(ISNUMBER(K4),--(K4<=1),\"\")"}
+{"kind":"formula","sheet":"Query对比","address":"M4","formula":"=IF(ISNUMBER(K4),--(K4<=3),\"\")"}
+{"kind":"formula","sheet":"Query对比","address":"N4","formula":"=IF(ISNUMBER(K4),--(K4<=5),\"\")"}
+{"kind":"formula","sheet":"Query对比","address":"O4","formula":"=IF(ISNUMBER(K4),IF(AND(K4>=1,K4<=5),1/K4,0),\"\")"}

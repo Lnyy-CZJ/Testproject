@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Truthy Search{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+  <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="{{ url_for('index') }}">
+      <span class="brand-mark">TS</span>
+      <span>Truthy Search</span>
+      <small>检索分析系统</small>
+    </a>
+    <nav aria-label="主导航">
+      <a href="{{ url_for('index') }}">评测</a>
+      <a href="{{ url_for('imports') }}">数据导入</a>
+      <a href="{{ url_for('baselines') }}">基准数据</a>
+      <a href="{{ url_for('field_schemas') }}">字段配置</a>
+      <a class="primary-link" href="{{ url_for('evaluation_new') }}">新建评测</a>
+    </nav>
+  </header>
+
+  <main class="page-shell">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for category, message in messages %}
+        <div class="flash {{ category }}">{{ message }}</div>
+      {% endfor %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
+
+  <dialog id="raw-dialog" class="raw-dialog">
+    <div class="dialog-head">
+      <div>
+        <p class="eyebrow">按需加载</p>
+        <h2 id="raw-dialog-title">Raw JSON</h2>
+      </div>
+      <button class="icon-button" type="button" data-close-dialog aria-label="关闭">×</button>
+    </div>
+    <div class="raw-toolbar">
+      <label>
+        <span>搜索字段名或值</span>
+        <input id="raw-search" type="search" placeholder="例如 ui_sections">
+      </label>
+      <button type="button" class="button secondary" data-copy-json>复制完整 JSON</button>
+    </div>
+    <p id="raw-loading" class="muted">正在加载…</p>
+    <div id="raw-tree" class="json-tree" aria-live="polite"></div>
+  </dialog>
+</body>
+</html>

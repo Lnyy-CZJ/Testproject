@@ -54,8 +54,8 @@ def prepare_arguments(argv: list[str]) -> list[str]:
     """Load an optional dotenv file and inject missing Excel CLI settings.
 
     Args:
-        argv: Original command-line arguments, including the ``single`` or
-            ``compare`` mode.
+        argv: Original command-line arguments, including ``single``、
+            ``compare`` or ``processed`` mode.
 
     Returns:
         Arguments for the JavaScript builder. ``--env-file`` is consumed by this
@@ -100,9 +100,28 @@ def prepare_arguments(argv: list[str]) -> list[str]:
             "--metadata": "EXCEL_METADATA_FILE",
             "--output": "EXCEL_OUTPUT_FILE",
         },
+        "processed": {
+            "--input-file": "EXCEL_PROCESSED_INPUT_FILE",
+            "--report-model": "EXCEL_REPORT_MODEL_FILE",
+            "--output": "EXCEL_OUTPUT_FILE",
+        },
     }
+    # 显式 Run 目录已经确定输入来源，不能再从 .env 注入另一组结果文件。
+    blocked_flags: set[str] = set()
+    if mode == "single" and "--run-dir" in prepared:
+        blocked_flags.update({"--results-file", "--failures-file"})
+    if mode == "compare":
+        if "--baseline-dir" in prepared:
+            blocked_flags.update(
+                {"--baseline-results-file", "--baseline-failures-file"}
+            )
+        if "--candidate-dir" in prepared:
+            blocked_flags.update(
+                {"--candidate-results-file", "--candidate-failures-file"}
+            )
+
     for flag, env_name in mappings.get(mode, {}).items():
-        if flag in prepared:
+        if flag in prepared or flag in blocked_flags:
             continue
         value = os.getenv(env_name, "").strip()
         if value:

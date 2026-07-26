@@ -1,0 +1,10 @@
+{"kind":"sheet","id":"ws/bsa7q9","name":"说明","index":0,"range":"A1:B22","address":"A1:B22"}
+{"kind":"sheet","id":"ws/71rwu7","name":"核心指标","index":1,"range":"A1:U22","address":"A1:U22"}
+{"kind":"sheet","id":"ws/kb5a3j","name":"Query明细","index":2,"range":"A1:W2","address":"A1:W2"}
+{"kind":"sheet","id":"ws/j900rk","name":"候选结果","index":3,"range":"A1:W3","address":"A1:W3"}
+{"kind":"sheet","id":"ws/ds8csc","name":"同条件对比","index":4,"range":"A1:AA2","address":"A1:AA2"}
+{"kind":"sheet","id":"ws/7dt2fw","name":"新增线索","index":5,"range":"A1:N2","address":"A1:N2"}
+{"kind":"sheet","id":"ws/royq5t","name":"模块字段统计","index":6,"range":"A1:AO4","address":"A1:AO4"}
+{"kind":"sheet","id":"ws/52fzsm","name":"失败记录","index":7,"range":"A1:H2","address":"A1:H2"}
+{"kind":"sheet","id":"ws/rguc0i","name":"人工复核","index":8,"range":"A1:M3","address":"A1:M3"}
+{"kind":"sheet","id":"ws/msn63q","name":"Raw数据","index":9,"range":"A1:H3","address":"A1:H3"}

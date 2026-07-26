@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% from "_json_value.html" import render_value %}
+{% block title %}{{ query.query_id }} · Truthy Search{% endblock %}
+{% block content %}
+  <div class="breadcrumbs">
+    <a href="{{ url_for('run_detail', run_id=query.run_id) }}">{{ query.run_label }}</a>
+    <span>/</span><span>{{ query.query_id }}</span>
+  </div>
+  <div class="page-heading split">
+    <div>
+      <p class="eyebrow mono">{{ query.person_id or '无 person_id' }}</p>
+      <h1>{{ query.query_id }}</h1>
+      <p>{{ query.query_stage or '未知检索条件' }} · {{ query.result_status or 'UNSPECIFIED' }} · Task <span class="mono">{{ query.task_id or '尚未创建' }}</span></p>
+    </div>
+    <span class="status large {{ query.status|status_class }}">{{ query.status }}</span>
+  </div>
+
+  <div class="metric-strip">
+    <div><span>GetTask 总数</span><strong>{{ query.candidate_count_total if query.candidate_count_total is not none else '—' }}</strong></div>
+    <div><span>List 返回</span><strong>{{ query.candidate_count_listed }}</strong></div>
+    <div><span>详情成功</span><strong>{{ query.detail_success_count }}</strong></div>
+    <div><span>详情失败</span><strong>{{ query.detail_failure_count }}</strong></div>
+    <div><span>结果状态</span><strong>{{ query.result_status or 'UNSPECIFIED' }}</strong></div>
+    <div><span>评估阶段</span><strong>{{ query.evaluation_phase }}</strong></div>
+  </div>
+
+  <section class="section-head">
+    <div><p class="eyebrow">Task Public Fields</p><h2>Query 公共字段</h2></div>
+  </section>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>字段</th><th>值</th><th>数据状态</th></tr></thead>
+      <tbody>
+        {% for field in task_field_states %}
+          <tr>
+            <td class="mono">{{ field.field_key }}</td>
+            <td>{{ render_value(field.value, field.field_key) if field.value is not none else '未接入' }}</td>
+            <td><span class="status {{ field.data_status|status_class }}">{{ field.data_status }}</span></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if public_fields %}
+    <article class="panel">
+      <div class="panel-head"><p class="eyebrow">Extensible Fields</p><h2>扩展公共字段</h2></div>
+      {{ render_value(public_fields, 'public_fields') }}
+    </article>
+  {% endif %}
+
+  <section class="detail-grid">
+    <article class="panel">
+      <div class="panel-head"><p class="eyebrow">Input</p><h2>输入线索</h2></div>
+      {{ render_value(input_payload) }}
+    </article>
+    <article class="panel">
+      <div class="panel-head"><p class="eyebrow">Trace</p><h2>执行信息</h2></div>
+      <dl class="key-values">
+        <div><dt>当前阶段</dt><dd>{{ query.current_stage or '—' }}</dd></div>
+        <div><dt>开始时间</dt><dd>{{ query.started_at or '—' }}</dd></div>
+        <div><dt>结束时间</dt><dd>{{ query.finished_at or '—' }}</dd></div>
+        <div><dt>错误</dt><dd>{{ query.error or '无' }}</dd></div>
+      </dl>
+    </article>
+  </section>
+
+  <section class="section-head">
+    <div><p class="eyebrow">Candidates</p><h2>全部候选人</h2></div>
+    <span class="count">{{ candidate_total }} 人</span>
+  </section>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>排名</th><th>Candidate ID</th><th>rank_score</th><th>详情状态</th><th>错误</th></tr></thead>
+      <tbody>
+        {% for candidate in candidates %}
+          <tr>
+            <td>#{{ candidate.candidate_rank }}</td>
+            <td><a class="mono" href="{{ url_for('candidate_detail', candidate_pk=candidate.candidate_pk) }}">{{ candidate.candidate_id or '缺失 ID' }}</a></td>
+            <td>{{ candidate.rank_score if candidate.rank_score is not none else '—' }}</td>
+            <td><span class="status {{ candidate.detail_status|status_class }}">{{ candidate.detail_status }}</span></td>
+            <td>{{ candidate.detail_error or '—' }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="5" class="empty-cell">没有候选人</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% set pages = ((candidate_total + per_page - 1) // per_page) %}
+  {% if pages > 1 %}
+    <nav class="pagination" aria-label="候选人分页">
+      {% for number in range(1, pages + 1) %}
+        <a class="{% if number == page %}current{% endif %}" href="{{ url_for('query_detail', run_id=query.run_id, query_id=query.query_id, page=number) }}">{{ number }}</a>
+      {% endfor %}
+    </nav>
+  {% endif %}
+
+  <section class="section-head"><div><p class="eyebrow">Raw Records</p><h2>原始响应</h2></div><span class="count">{{ raw_records|length }} 条</span></section>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>接口阶段</th><th>序号</th><th>候选关联</th><th>采集时间</th><th></th></tr></thead>
+      <tbody>
+        {% for raw in raw_records %}
+          <tr>
+            <td>{{ raw.stage }}</td><td>{{ raw.sequence_no }}</td>
+            <td class="mono">{{ raw.candidate_pk or 'Query' }}</td><td>{{ raw.collected_at }}</td>
+            <td><button class="button small secondary" type="button" data-raw-id="{{ raw.raw_id }}" data-raw-label="{{ raw.stage }} #{{ raw.sequence_no }}">查看 JSON</button></td>
+          </tr>
+        {% else %}
+          <tr><td colspan="5" class="empty-cell">无可恢复的 Raw；历史 Excel 可能仅有结构化数据。</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if failures %}
+    <section class="section-head"><div><p class="eyebrow">Failures</p><h2>失败记录</h2></div></section>
+    <div class="failure-list">
+      {% for failure in failures %}
+        <article><strong>{{ failure.stage }}{% if failure.candidate_id %} · {{ failure.candidate_id }}{% endif %}</strong><p>{{ failure.error }}</p><span>{{ failure.scope }} · {{ failure.created_at }}</span></article>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endblock %}

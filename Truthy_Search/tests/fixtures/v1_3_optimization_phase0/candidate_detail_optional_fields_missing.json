@@ -1,0 +1,30 @@
+{
+  "code": 0,
+  "message": "ok",
+  "responses": [
+    {
+      "id": "req-contract-optional-empty",
+      "success": true,
+      "code": 0,
+      "message": "ok",
+      "data": {
+        "ui_sections": {
+          "insights": {
+            "status": "empty",
+            "data": {
+              "count": 0,
+              "items": []
+            }
+          },
+          "summary": {
+            "status": "data",
+            "data": {
+              "confidence_level": "MEDIUM",
+              "primary_image": null
+            }
+          }
+        }
+      }
+    }
+  ]
+}

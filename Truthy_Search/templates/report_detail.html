@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}报告 {{ report.metadata.report_id }} · Truthy Search{% endblock %}
+{% block content %}
+  <div class="breadcrumbs">
+    <a href="{{ url_for('evaluation_detail', evaluation_id=report.metadata.evaluation_id) }}">{{ report.metadata.evaluation_name }}</a>
+    <span>/</span><span>{{ report.metadata.report_id }}</span>
+  </div>
+  <div class="action-row">
+    <a class="button secondary" href="{{ url_for('download_run_file', file_type='report-html', run_id=report.metadata.report_id) }}">下载静态 HTML</a>
+    {% if report_row.excel_file %}
+      <a class="button secondary" href="{{ url_for('download_run_file', file_type='report-excel', run_id=report.metadata.report_id) }}">下载 Excel</a>
+    {% else %}
+      <span class="inline-note">Excel 当前不可用，Web 与 HTML 报告不受影响。</span>
+    {% endif %}
+    <span class="status {{ report_row.status|status_class }}">{{ report_row.status }}</span>
+  </div>
+  {% include "_report_content.html" %}
+{% endblock %}

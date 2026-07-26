@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}评测中心 · Truthy Search{% endblock %}
+{% block content %}
+  <section class="hero compact">
+    <div>
+      <p class="eyebrow">阶段 4 · 原始与结构化数据中心</p>
+      <h1>从一次检索，追溯到原始响应与字段结果</h1>
+      <p>组织评测、启动顺序检索、导入历史结果，并用版本化字段配置处理和下钻每名候选人。</p>
+    </div>
+    <div class="hero-actions">
+      <a class="button primary" href="{{ url_for('evaluation_new') }}">创建评测</a>
+      <a class="button secondary" href="{{ url_for('imports') }}">导入数据</a>
+    </div>
+  </section>
+
+  <section class="section-head">
+    <div>
+      <p class="eyebrow">Evaluations</p>
+      <h2>评测列表</h2>
+    </div>
+    <span class="count">{{ evaluations|length }} 个评测</span>
+  </section>
+
+  {% if evaluations %}
+    <div class="evaluation-grid">
+      {% for evaluation in evaluations %}
+        <a class="evaluation-card" href="{{ url_for('evaluation_detail', evaluation_id=evaluation.evaluation_id) }}">
+          <div class="card-topline">
+            <span class="mono">{{ evaluation.evaluation_id }}</span>
+            {% if evaluation.running_count %}
+              <span class="status active">执行中</span>
+            {% else %}
+              <span class="status neutral">{{ evaluation.run_count }} Runs</span>
+            {% endif %}
+          </div>
+          <h3>{{ evaluation.name }}</h3>
+          <p>{{ evaluation.notes or '暂无说明' }}</p>
+          <div class="card-meta">
+            <span>最近运行</span>
+            <strong>{{ evaluation.latest_run_at or '尚未运行' }}</strong>
+          </div>
+        </a>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="empty-state">
+      <strong>还没有评测</strong>
+      <p>先创建一个 Evaluation，再选择 Dataset 启动检索或导入历史结果。</p>
+    </div>
+  {% endif %}
+{% endblock %}

@@ -1,0 +1,1779 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; style-src 'unsafe-inline' blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; img-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; font-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; media-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; worker-src blob:; connect-src blob: data:; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<title>检索系统分阶段评估报告 Mock 示例</title>
+<style>:root{color-scheme:light dark;background:light-dark(rgb(255 255 255), rgb(24 24 24))}html,body{margin:0}body{box-sizing:border-box;padding:1rem;background:inherit}iframe{display:block;width:100%;max-width:736px;height:calc(100vh - 2rem);margin:0 auto;border:0}</style>
+</head>
+<body>
+<iframe sandbox="allow-scripts" referrerpolicy="no-referrer" title="检索系统分阶段评估报告 Mock 示例" srcdoc="&lt;!doctype html&gt;
+&lt;html lang=&quot;zh-CN&quot;&gt;
+&lt;head&gt;
+&lt;meta charset=&quot;utf-8&quot;&gt;
+&lt;meta name=&quot;viewport&quot; content=&quot;width=device-width, initial-scale=1&quot;&gt;
+&lt;meta name=&quot;referrer&quot; content=&quot;no-referrer&quot;&gt;
+&lt;meta http-equiv=&quot;Content-Security-Policy&quot; content=&quot;default-src &#x27;none&#x27;; script-src &#x27;unsafe-inline&#x27; &#x27;unsafe-eval&#x27; &#x27;wasm-unsafe-eval&#x27; blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; style-src &#x27;unsafe-inline&#x27; blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; img-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; font-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; media-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; worker-src blob:; connect-src blob: data:; frame-src &#x27;none&#x27;; object-src &#x27;none&#x27;; base-uri &#x27;none&#x27;; form-action &#x27;none&#x27;&quot;&gt;
+&lt;title&gt;检索系统分阶段评估报告 Mock 示例&lt;/title&gt;
+&lt;style&gt;:root {
+  color-scheme: light dark;
+  background-color: var(--background) !important;
+
+  /* Agent-facing contract; keep in sync with SKILL.md. */
+  --background: light-dark(rgb(255 255 255), rgb(24 24 24));
+  --foreground: light-dark(rgb(26 28 31), rgb(255 255 255));
+  --card: color-mix(in oklab, var(--foreground) 5%, transparent);
+  --card-foreground: var(--foreground);
+  --popover: light-dark(rgb(255 255 255), rgb(45 45 45));
+  --popover-foreground: var(--foreground);
+  --primary: light-dark(rgb(51 156 255), rgb(131 195 255));
+  --primary-foreground: light-dark(rgb(255 255 255), rgb(13 13 13));
+  --secondary: light-dark(rgb(255 255 255 / 96%), rgb(54 54 54 / 96%));
+  --secondary-foreground: var(--foreground);
+  --muted: color-mix(in srgb, var(--foreground) 10%, transparent);
+  --muted-foreground: light-dark(
+    rgb(26 28 31 / 49.4%),
+    rgb(255 255 255 / 49.8%)
+  );
+  --accent: light-dark(rgb(229 242 255), rgb(13 39 63));
+  --accent-foreground: var(--primary);
+  --destructive: light-dark(rgb(226 85 7), rgb(255 133 73));
+  --border: light-dark(rgb(26 28 31 / 8%), rgb(255 255 255 / 8.2%));
+  --input: light-dark(
+    rgb(26 28 31 / 11.8%),
+    color-mix(in oklab, rgb(0 0 0) 10%, transparent)
+  );
+  --ring: light-dark(rgb(51 156 255), rgb(131 195 255 / 76%));
+  --font-size-base: 14px;
+  --viz-series-1: var(--primary);
+  --viz-series-2: light-dark(rgb(243 136 59), rgb(245 154 86));
+  --viz-series-3: light-dark(rgb(93 201 119), rgb(116 213 139));
+  --viz-series-4: light-dark(rgb(235 119 177), rgb(240 143 192));
+  --viz-series-5: light-dark(rgb(155 121 236), rgb(170 145 239));
+  --viz-series-6: light-dark(rgb(58 185 177), rgb(90 203 194));
+
+  /* Internal implementation variables; not part of the agent contract. */
+  --font-sans: -apple-system, system-ui, &quot;Segoe UI&quot;, sans-serif;
+  --font-mono:
+    ui-monospace, SFMono-Regular, &quot;SF Mono&quot;, Menlo, Consolas, &quot;Liberation Mono&quot;,
+    monospace;
+  --font-size-normal: max(11px, var(--font-size-base));
+  --font-size-tooltip: calc(var(--font-size-base) - 1px);
+  --font-size-small: max(11px, calc(var(--font-size-base) - 2px));
+  --font-size-h1: calc(var(--font-size-normal) * 1.7142857143);
+  --font-size-h2: calc(var(--font-size-normal) * 1.4285714286);
+  --font-size-h3: calc(var(--font-size-normal) * 1.2857142857);
+  --font-weight-normal: 430;
+  --font-weight-medium: 500;
+  --line-height-normal: calc(var(--font-size-normal) * 1.5);
+  --line-height-tooltip: calc(var(--font-size-tooltip) * 1.4285714286);
+  --line-height-small: calc(var(--font-size-small) + 4px);
+  --radius: 12.5px;
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-2xl: calc(var(--radius) * 1.6);
+  --radius-full: 9999px;
+  --shadow-sm: 0 1px 2px -1px rgb(0 0 0 / 8%);
+  --checkmark-image: url(&quot;data:image/svg+xml,%3Csvg xmlns=&#x27;http://www.w3.org/2000/svg&#x27; viewBox=&#x27;0 0 17 17&#x27;%3E%3Cpath d=&#x27;M12.8961 3.64101C13.1297 3.41418 13.4984 3.37523 13.7779 3.56581C14.0571 3.75635 14.1554 4.11331 14.0299 4.41347L13.9615 4.53847L7.71151 13.7045C7.59411 13.8767 7.4063 13.9877 7.19881 14.0072C6.99136 14.0267 6.78564 13.9533 6.63826 13.806L2.88826 10.056L2.79842 9.9457C2.6192 9.67407 2.64927 9.30496 2.88826 9.06581C3.12738 8.82669 3.49647 8.79676 3.76815 8.97597L3.8785 9.06581L7.03084 12.2182L12.8053 3.74941L12.8961 3.64101Z&#x27;/%3E%3C/svg%3E&quot;);
+
+  /* Legacy aliases; not part of the current agent contract. */
+  --viz-bg: transparent;
+  --viz-panel: var(--card);
+  --viz-border: var(--border);
+  --viz-text: var(--foreground);
+  --viz-muted: var(--muted-foreground);
+  --viz-accent: var(--primary);
+  --viz-accent-text: var(--primary-foreground);
+  --viz-accent-bg: var(--accent);
+  --viz-font-size: var(--font-size-base);
+  --viz-warning: var(--destructive);
+  --color-background-primary: var(--background);
+  --color-text-primary: var(--foreground);
+  --color-border-secondary: var(--border);
+}
+
+:root[data-theme=&quot;light&quot;] {
+  color-scheme: light;
+}
+
+:root[data-theme=&quot;dark&quot;] {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html &gt; body {
+  margin: 0;
+  padding: 5px;
+  color: var(--foreground);
+  background: transparent !important;
+  font-family: var(--font-sans);
+  font-size: var(--font-size-normal);
+  font-weight: var(--font-weight-normal);
+  line-height: var(--line-height-normal);
+}
+
+a {
+  color: color-mix(in srgb, var(--viz-accent) 80%, var(--viz-text) 20%);
+  cursor: pointer;
+  font-weight: var(--viz-font-weight-medium);
+  text-decoration: none;
+  text-underline-offset: 2px;
+}
+
+a:is(:hover, :focus-visible) {
+  text-decoration-line: underline;
+  text-decoration-style: dashed;
+  text-decoration-thickness: 0.5px;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p {
+  margin-block: 0;
+}
+
+h1 {
+  font-size: var(--font-size-h1);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.25;
+}
+
+h2 {
+  font-size: var(--font-size-h2);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.25;
+}
+
+h3,
+h4,
+h5,
+h6 {
+  font-size: var(--font-size-h3);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.3;
+}
+
+b,
+strong,
+th {
+  font-weight: var(--font-weight-medium);
+}
+
+code:not(pre code) {
+  display: inline;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  corner-shape: superellipse(1.5);
+  background: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  overflow-wrap: anywhere;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  word-break: break-word;
+}
+
+.table-responsive {
+  width: 100%;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  color: var(--foreground);
+  font: inherit;
+  text-align: start;
+}
+
+.table :is(th, td) {
+  padding-block: 10px;
+  padding-inline: 0 24px;
+  overflow-wrap: anywhere;
+  border-bottom: 1px solid var(--border);
+  text-align: start;
+  vertical-align: top;
+}
+
+.table-responsive &gt; .table :is(th, td) {
+  overflow-wrap: break-word;
+}
+
+.table :is(th, td):last-child {
+  padding-inline-end: 0;
+}
+
+.table :is(caption, thead th) {
+  font-weight: 600;
+}
+
+.table thead th {
+  padding-block: 8px;
+  border-bottom-color: color-mix(in srgb, var(--foreground) 16%, transparent);
+}
+
+.table tbody tr:last-child :is(th, td) {
+  border-bottom: 0;
+}
+
+.table.table-sm :is(th, td) {
+  padding-block: 6px;
+}
+
+.table.table-sm :is(th, td):not(:last-child) {
+  padding-inline-end: 16px;
+}
+
+.table :is(.text-end, [align=&quot;right&quot;]) {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+
+.table :is(.text-center, [align=&quot;center&quot;]) {
+  text-align: center;
+}
+
+.table .text-nowrap {
+  white-space: nowrap;
+}
+
+#widget {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  padding: 0;
+  background: transparent !important;
+}
+
+.card {
+  min-width: 0;
+  padding: 12px;
+  overflow: hidden;
+  overflow-wrap: break-word;
+  border-radius: var(--radius-2xl);
+  corner-shape: superellipse(1.5);
+  color: var(--card-foreground);
+  background: var(--card);
+}
+
+#widget &gt; :not(.card) {
+  width: 100% !important;
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.tooltip {
+  position: fixed;
+  z-index: 50;
+  top: 0;
+  left: 0;
+  width: max-content;
+  max-width: min(
+    20rem,
+    var(--tooltip-available-width, calc(100vw - 10px)),
+    calc(100vw - 10px)
+  );
+  max-height: min(
+    var(--tooltip-available-height, calc(100vh - 10px)),
+    calc(100vh - 10px)
+  );
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  corner-shape: superellipse(1.5);
+  color: var(--popover-foreground);
+  background: var(--popover);
+  box-shadow: none;
+  font-size: var(--font-size-tooltip);
+  line-height: var(--line-height-tooltip);
+  overflow-wrap: break-word;
+  white-space: normal;
+  pointer-events: none;
+  user-select: none;
+}
+
+.viz-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(max(180px, 24%), 1fr));
+  gap: 10px;
+}
+
+.viz-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.viz-stat-value {
+  font-size: var(--font-size-h2);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.25;
+}
+
+.viz-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.viz-badge {
+  padding: 3px 8px;
+  border-radius: var(--radius-full);
+  color: var(--accent-foreground);
+  background: var(--accent);
+  font-weight: var(--font-weight-medium);
+}
+
+small,
+.text-small,
+.viz-badge {
+  font-size: var(--font-size-small);
+  line-height: var(--line-height-small);
+}
+
+.text-muted {
+  color: var(--muted-foreground);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.viz-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.viz-controls &gt; .form-label {
+  display: grid;
+  min-width: min(100%, 260px);
+  flex: 1 1 280px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 2px 12px;
+  margin-bottom: 0;
+}
+
+.viz-controls &gt; .form-label &gt; :is(.form-control, .form-range, .form-select) {
+  grid-column: 1 / -1;
+}
+
+.btn,
+.form-check-input,
+.form-control,
+.form-range,
+.form-select {
+  font: inherit;
+}
+
+.btn {
+  appearance: button;
+  display: inline-flex;
+  inline-size: fit-content;
+  max-inline-size: 100%;
+  min-height: 28px;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin: 0;
+  padding: 0 8px;
+  -webkit-app-region: no-drag;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-lg);
+  corner-shape: superellipse(1.5);
+  color: var(--secondary-foreground);
+  background: var(--secondary);
+  cursor: var(--cursor-interaction, pointer);
+  text-align: center;
+  text-decoration: none;
+  white-space: nowrap;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+.btn:is(.btn-block, .viz-tile) {
+  inline-size: 100%;
+}
+
+.btn.viz-tile {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+a.btn {
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.btn:not(:disabled):hover {
+  background: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.btn-primary {
+  border-color: transparent;
+  color: var(--primary-foreground);
+  background: var(--foreground);
+  background-clip: padding-box;
+}
+
+.btn-primary .text-muted {
+  color: color-mix(in srgb, var(--primary-foreground) 50%, transparent);
+}
+
+.btn-primary:not(:disabled):hover {
+  background: color-mix(in srgb, var(--foreground) 80%, transparent);
+  background-clip: padding-box;
+}
+
+.btn-ghost {
+  border-color: transparent;
+  color: var(--muted-foreground);
+  background: transparent;
+}
+
+.btn-ghost:not(:disabled):hover {
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+[data-lucide] {
+  stroke-width: 1.6;
+}
+
+.form-label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--foreground);
+}
+
+.form-control {
+  display: block;
+  width: 100%;
+  min-height: 28px;
+  padding: 0 8px;
+  outline: none;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-lg);
+  corner-shape: superellipse(1.5);
+  color: var(--foreground);
+  background: var(--secondary);
+}
+
+.form-control::placeholder {
+  color: var(--muted-foreground);
+}
+
+.form-control[type=&quot;file&quot;] {
+  padding: 0;
+  overflow: hidden;
+  cursor: var(--cursor-interaction, pointer);
+}
+
+.form-control[type=&quot;file&quot;]::file-selector-button {
+  min-height: 26px;
+  margin-right: 8px;
+  padding: 0 8px;
+  border: 0;
+  border-right: 1px solid var(--input);
+  color: var(--secondary-foreground);
+  background: var(--secondary);
+  cursor: inherit;
+  font: inherit;
+}
+
+.form-control[type=&quot;file&quot;]:not(:disabled):hover::file-selector-button {
+  background: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.form-control-color[type=&quot;color&quot;] {
+  width: 40px;
+  height: 28px;
+  padding: 3px;
+  cursor: var(--cursor-interaction, pointer);
+}
+
+.form-control-color[type=&quot;color&quot;]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.form-control-color[type=&quot;color&quot;]::-webkit-color-swatch {
+  border: 0;
+  border-radius: calc(var(--radius-lg) - 4px);
+  corner-shape: superellipse(1.5);
+}
+
+textarea.form-control {
+  height: auto;
+  min-height: 72px;
+  padding: 8px 10px;
+  resize: vertical;
+}
+
+.form-control:focus-visible {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.form-control:disabled,
+.form-select:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.form-select {
+  appearance: none;
+  display: block;
+  width: 100%;
+  min-height: 28px;
+  margin: 0;
+  padding: 0 32px 0 8px;
+  outline: none;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-lg);
+  corner-shape: superellipse(1.5);
+  color: var(--foreground);
+  background-color: var(--secondary);
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--muted-foreground) 50%),
+    linear-gradient(135deg, var(--muted-foreground) 50%, transparent 50%);
+  background-position:
+    calc(100% - 14px) 50%,
+    calc(100% - 10px) 50%;
+  background-repeat: no-repeat;
+  background-size: 4px 4px;
+  cursor: var(--cursor-interaction, default);
+}
+
+.form-select:not(:disabled):hover {
+  background-color: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.form-select:focus-visible {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.form-check {
+  display: flex;
+  min-height: 20px;
+  align-items: center;
+  gap: 6px;
+}
+
+.form-check-input {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  margin: 0;
+  border: 1px solid var(--input);
+  color: var(--primary-foreground);
+  background-color: transparent;
+  cursor: var(--cursor-interaction, default);
+  transition:
+    background-color 150ms,
+    border-color 150ms,
+    box-shadow 150ms;
+}
+
+.form-check:not(.form-switch) .form-check-input[type=&quot;checkbox&quot;] {
+  border-color: var(--input);
+  border-radius: var(--radius-sm);
+  corner-shape: superellipse(1.5);
+  background-color: var(--secondary);
+  box-shadow: var(--shadow-sm);
+}
+
+.form-check:not(.form-switch)
+  .form-check-input:not(:disabled):not(:checked):hover {
+  background-color: var(--card);
+}
+
+.form-check:not(.form-switch) .form-check-input[type=&quot;checkbox&quot;]:checked {
+  border-color: var(--primary);
+  background-color: var(--primary);
+}
+
+.form-check:not(.form-switch)
+  .form-check-input[type=&quot;checkbox&quot;]:checked::before {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--primary-foreground);
+  content: &quot;&quot;;
+  mask: var(--checkmark-image) center / 12px 12px no-repeat;
+}
+
+.form-check-input[type=&quot;radio&quot;] {
+  width: 14px;
+  height: 14px;
+  border-radius: var(--radius-full);
+}
+
+.form-check-input[type=&quot;radio&quot;]:checked {
+  border: 2px solid var(--primary);
+  background:
+    radial-gradient(circle, var(--primary-foreground) 0 2.5px, transparent 3px),
+    var(--primary);
+}
+
+.form-check:not(.form-switch) .form-check-input:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.form-check:not(.form-switch) .form-check-input:disabled {
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.form-check:not(.form-switch) .form-check-input:disabled + .form-check-label {
+  cursor: not-allowed;
+}
+
+.form-switch .form-check-input:disabled,
+.form-switch .form-check-input:disabled + .form-check-label {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.form-check-label {
+  color: var(--foreground);
+  cursor: var(--cursor-interaction, default);
+}
+
+.form-switch .form-check-input {
+  position: relative;
+  width: 32px;
+  height: 20px;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--muted);
+  box-shadow: none;
+  transition: background-color 200ms cubic-bezier(0, 0, 0.2, 1);
+}
+
+.form-switch .form-check-input::before {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 16px;
+  height: 16px;
+  box-sizing: border-box;
+  border: 1px solid light-dark(var(--primary-foreground), var(--foreground));
+  border-radius: var(--radius-full);
+  background: light-dark(var(--primary-foreground), var(--foreground));
+  box-shadow: var(--shadow-sm);
+  content: &quot;&quot;;
+  transform: translate(2px, -50%);
+  transition: transform 200ms cubic-bezier(0, 0, 0.2, 1);
+}
+
+.form-switch .form-check-input:checked {
+  background: var(--primary);
+}
+
+.form-switch .form-check-input:checked::before {
+  transform: translate(14px, -50%);
+}
+
+.form-switch .form-check-input:focus-visible {
+  box-shadow: 0 0 0 2px var(--ring);
+}
+
+.form-range {
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: 28px;
+  flex: 1;
+  margin: 0;
+  padding: 0;
+  outline: none;
+  border: 0;
+  accent-color: var(--primary);
+  background: linear-gradient(
+      color-mix(in srgb, var(--foreground) 7%, transparent),
+      color-mix(in srgb, var(--foreground) 7%, transparent)
+    )
+    center / 100% 2px no-repeat;
+}
+
+.form-range::-webkit-slider-runnable-track {
+  height: 28px;
+  background: transparent;
+}
+
+.form-range::-webkit-slider-thumb {
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  margin-top: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: light-dark(var(--primary-foreground), var(--foreground));
+}
+
+.form-range:focus-visible::-webkit-slider-thumb {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.form-range::-moz-range-track {
+  height: 28px;
+  background: transparent;
+}
+
+.form-range::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: light-dark(var(--primary-foreground), var(--foreground));
+}
+
+.form-range:focus-visible::-moz-range-thumb {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.form-range:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.btn:not(.btn-primary, .viz-tile):is(
+    [aria-pressed=&quot;true&quot;],
+    [aria-selected=&quot;true&quot;],
+    .is-selected
+  ) {
+  border-color: var(--primary);
+  color: var(--primary-foreground);
+  background: var(--primary);
+}
+
+.btn.viz-tile:is([aria-pressed=&quot;true&quot;], [aria-selected=&quot;true&quot;], .is-selected) {
+  border-color: var(--primary);
+  box-shadow: inset 0 0 0 1px var(--primary);
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+#widget &gt; svg {
+  width: 100%;
+}
+
+.text-warning,
+.text-destructive {
+  color: var(--destructive);
+}
+
+html&gt;body{padding:0}&lt;/style&gt;
+&lt;/head&gt;
+&lt;body&gt;
+&lt;div id=&quot;search-evaluation-stage-report&quot;&gt;
+  &lt;style&gt;
+    #search-evaluation-stage-report {
+      color: var(--foreground);
+      background: transparent;
+      padding: 20px;
+    }
+
+    #search-evaluation-stage-report * {
+      box-sizing: border-box;
+    }
+
+    #search-evaluation-stage-report .report-shell {
+      max-width: 1040px;
+      margin: 0 auto;
+    }
+
+    #search-evaluation-stage-report .meta-row,
+    #search-evaluation-stage-report .section-head,
+    #search-evaluation-stage-report .legend,
+    #search-evaluation-stage-report .bar-labels {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    #search-evaluation-stage-report .meta-row {
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    #search-evaluation-stage-report .phase-lane {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      margin: 24px 0;
+    }
+
+    #search-evaluation-stage-report .phase-step {
+      position: relative;
+      padding-top: 18px;
+      border-top: 2px solid var(--border);
+    }
+
+    #search-evaluation-stage-report .phase-step::before {
+      content: &quot;&quot;;
+      position: absolute;
+      top: -7px;
+      left: 0;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--muted);
+      border: 2px solid var(--background);
+    }
+
+    #search-evaluation-stage-report .phase-step.is-baseline {
+      border-top-color: var(--viz-series-6);
+    }
+
+    #search-evaluation-stage-report .phase-step.is-baseline::before {
+      background: var(--viz-series-6);
+    }
+
+    #search-evaluation-stage-report .phase-step.is-current {
+      border-top-color: var(--viz-series-1);
+    }
+
+    #search-evaluation-stage-report .phase-step.is-current::before {
+      background: var(--viz-series-1);
+    }
+
+    #search-evaluation-stage-report .phase-step.is-next {
+      border-top-style: dashed;
+    }
+
+    #search-evaluation-stage-report .phase-step p,
+    #search-evaluation-stage-report .phase-step h3,
+    #search-evaluation-stage-report .section-head h2,
+    #search-evaluation-stage-report .section-head p {
+      margin: 0;
+    }
+
+    #search-evaluation-stage-report .phase-step p,
+    #search-evaluation-stage-report .section-head p {
+      margin-top: 6px;
+    }
+
+    #search-evaluation-stage-report .metric-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      margin-top: 18px;
+    }
+
+    #search-evaluation-stage-report .report-section {
+      margin-top: 30px;
+    }
+
+    #search-evaluation-stage-report .section-head {
+      margin-bottom: 12px;
+      align-items: flex-end;
+    }
+
+    #search-evaluation-stage-report .legend {
+      justify-content: flex-start;
+    }
+
+    #search-evaluation-stage-report .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    #search-evaluation-stage-report .legend-mark {
+      width: 12px;
+      height: 4px;
+      border-radius: 999px;
+      background: var(--viz-series-6);
+    }
+
+    #search-evaluation-stage-report .legend-mark.after {
+      background: var(--viz-series-1);
+    }
+
+    #search-evaluation-stage-report .metric-cell {
+      min-width: 128px;
+    }
+
+    #search-evaluation-stage-report .metric-values {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 6px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    #search-evaluation-stage-report .metric-track {
+      position: relative;
+      height: 9px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: var(--muted);
+    }
+
+    #search-evaluation-stage-report .metric-before,
+    #search-evaluation-stage-report .metric-after {
+      position: absolute;
+      left: 0;
+      border-radius: 999px;
+    }
+
+    #search-evaluation-stage-report .metric-before {
+      top: 0;
+      bottom: 0;
+      background: var(--viz-series-6);
+    }
+
+    #search-evaluation-stage-report .metric-after {
+      top: 3px;
+      height: 3px;
+      background: var(--viz-series-1);
+    }
+
+    #search-evaluation-stage-report .paired-chart {
+      margin-top: 18px;
+    }
+
+    #search-evaluation-stage-report .stacked-bar {
+      display: flex;
+      width: 100%;
+      height: 26px;
+      overflow: hidden;
+      border-radius: 8px;
+      background: var(--muted);
+    }
+
+    #search-evaluation-stage-report .stacked-bar span {
+      display: block;
+      height: 100%;
+    }
+
+    #search-evaluation-stage-report .stable-hit {
+      background: var(--viz-series-2);
+    }
+
+    #search-evaluation-stage-report .new-hit {
+      background: var(--viz-series-1);
+    }
+
+    #search-evaluation-stage-report .regression {
+      background: var(--viz-series-4);
+    }
+
+    #search-evaluation-stage-report .stable-miss {
+      background: var(--viz-series-6);
+    }
+
+    #search-evaluation-stage-report .paired-values {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 10px;
+    }
+
+    #search-evaluation-stage-report .paired-values strong,
+    #search-evaluation-stage-report .paired-values span {
+      display: block;
+    }
+
+    #search-evaluation-stage-report .paired-values strong {
+      font-variant-numeric: tabular-nums;
+    }
+
+    #search-evaluation-stage-report .decision-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+    }
+
+    #search-evaluation-stage-report .decision-list {
+      margin: 0;
+      padding-left: 20px;
+    }
+
+    #search-evaluation-stage-report .decision-list li + li {
+      margin-top: 8px;
+    }
+
+    #search-evaluation-stage-report .decision-kpis {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 14px;
+    }
+
+    #search-evaluation-stage-report .decision-kpis div {
+      padding-left: 10px;
+      border-left: 2px solid var(--border);
+    }
+
+    #search-evaluation-stage-report .decision-kpis strong,
+    #search-evaluation-stage-report .decision-kpis span {
+      display: block;
+    }
+
+    #search-evaluation-stage-report details {
+      border-top: 1px solid var(--border);
+    }
+
+    #search-evaluation-stage-report details:last-child {
+      border-bottom: 1px solid var(--border);
+    }
+
+    #search-evaluation-stage-report summary {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 14px 0;
+      cursor: pointer;
+      list-style: none;
+    }
+
+    #search-evaluation-stage-report summary::-webkit-details-marker {
+      display: none;
+    }
+
+    #search-evaluation-stage-report summary::after {
+      content: &quot;+&quot;;
+    }
+
+    #search-evaluation-stage-report details[open] summary::after {
+      content: &quot;−&quot;;
+    }
+
+    #search-evaluation-stage-report .detail-body {
+      padding-bottom: 16px;
+    }
+
+    #search-evaluation-stage-report .table {
+      font-variant-numeric: tabular-nums;
+    }
+
+    #search-evaluation-stage-report .table td,
+    #search-evaluation-stage-report .table th {
+      vertical-align: middle;
+    }
+
+    #search-evaluation-stage-report .footer-note {
+      margin-top: 24px;
+      padding-top: 14px;
+      border-top: 1px solid var(--border);
+    }
+
+    @media (max-width: 640px) {
+      #search-evaluation-stage-report {
+        padding: 14px;
+      }
+
+      #search-evaluation-stage-report .phase-lane,
+      #search-evaluation-stage-report .decision-grid,
+      #search-evaluation-stage-report .metric-grid {
+        grid-template-columns: 1fr;
+      }
+
+      #search-evaluation-stage-report .paired-values {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      #search-evaluation-stage-report .decision-kpis {
+        grid-template-columns: 1fr;
+      }
+    }
+  &lt;/style&gt;
+
+  &lt;main class=&quot;report-shell&quot; aria-label=&quot;检索系统分阶段评估Mock报告&quot;&gt;
+    &lt;div class=&quot;meta-row&quot;&gt;
+      &lt;span class=&quot;viz-badge&quot;&gt;&lt;i data-lucide=&quot;flask-conical&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt; Mock数据 · 100人配对&lt;/span&gt;
+      &lt;span class=&quot;text-small text-muted&quot;&gt;PHASE 1 → PHASE 2 · 优化前 v1.2 / 优化后 v1.3&lt;/span&gt;
+    &lt;/div&gt;
+
+    &lt;section class=&quot;phase-lane&quot; aria-label=&quot;三个评估阶段&quot;&gt;
+      &lt;div class=&quot;phase-step is-baseline&quot;&gt;
+        &lt;span class=&quot;text-small text-muted&quot;&gt;PHASE 1 · 已完成&lt;/span&gt;
+        &lt;h3&gt;优化前基础能力&lt;/h3&gt;
+        &lt;p class=&quot;text-small text-muted&quot;&gt;全名 · 100次&lt;br&gt;全名 + Link · 未执行&lt;/p&gt;
+      &lt;/div&gt;
+      &lt;div class=&quot;phase-step is-current&quot;&gt;
+        &lt;span class=&quot;text-small text-muted&quot;&gt;PHASE 2 · 本报告&lt;/span&gt;
+        &lt;h3&gt;优化后复测与加线索&lt;/h3&gt;
+        &lt;p class=&quot;text-small text-muted&quot;&gt;全名复测 · 100次&lt;br&gt;新增全名 + Link · 100次&lt;/p&gt;
+      &lt;/div&gt;
+      &lt;div class=&quot;phase-step is-next&quot;&gt;
+        &lt;span class=&quot;text-small text-muted&quot;&gt;PHASE 3 · 待评审&lt;/span&gt;
+        &lt;h3&gt;下一轮专项优化&lt;/h3&gt;
+        &lt;p class=&quot;text-small text-muted&quot;&gt;根据退化与持续未命中案例决定&lt;br&gt;照片条件当前未执行&lt;/p&gt;
+      &lt;/div&gt;
+    &lt;/section&gt;
+
+    &lt;div class=&quot;viz-grid metric-grid&quot; aria-label=&quot;全名同条件优化后核心指标&quot;&gt;
+      &lt;article class=&quot;card viz-stat&quot;&gt;
+        &lt;span class=&quot;text-muted&quot;&gt;全名检索成功率&lt;/span&gt;
+        &lt;span class=&quot;viz-stat-value&quot;&gt;73.0%&lt;/span&gt;
+        &lt;span class=&quot;text-small&quot;&gt;61/100 → 73/100 · ↑12.0pp&lt;/span&gt;
+      &lt;/article&gt;
+      &lt;article class=&quot;card viz-stat&quot;&gt;
+        &lt;span class=&quot;text-muted&quot;&gt;命中候选人完整度&lt;/span&gt;
+        &lt;span class=&quot;viz-stat-value&quot;&gt;64.1%&lt;/span&gt;
+        &lt;span class=&quot;text-small&quot;&gt;52.8% → 64.1% · ↑11.3pp&lt;/span&gt;
+      &lt;/article&gt;
+      &lt;article class=&quot;card viz-stat&quot;&gt;
+        &lt;span class=&quot;text-muted&quot;&gt;命中候选人准确率&lt;/span&gt;
+        &lt;span class=&quot;viz-stat-value&quot;&gt;93.2%&lt;/span&gt;
+        &lt;span class=&quot;text-small&quot;&gt;91.7% → 93.2% · ↑1.5pp&lt;/span&gt;
+      &lt;/article&gt;
+      &lt;article class=&quot;card viz-stat&quot;&gt;
+        &lt;span class=&quot;text-muted&quot;&gt;非命中候选人填充程度&lt;/span&gt;
+        &lt;span class=&quot;viz-stat-value&quot;&gt;39.8%&lt;/span&gt;
+        &lt;span class=&quot;text-small&quot;&gt;34.6% → 39.8% · ↑5.2pp&lt;/span&gt;
+      &lt;/article&gt;
+    &lt;/div&gt;
+
+    &lt;section class=&quot;report-section&quot; aria-labelledby=&quot;same-condition-title&quot;&gt;
+      &lt;div class=&quot;section-head&quot;&gt;
+        &lt;div&gt;
+          &lt;span class=&quot;text-small text-muted&quot;&gt;01 · 同条件版本对比&lt;/span&gt;
+          &lt;h2 id=&quot;same-condition-title&quot;&gt;全名检索：优化后成功率提升12个百分点&lt;/h2&gt;
+          &lt;p class=&quot;text-small text-muted&quot;&gt;相同100人、相同全名Query、相同基准与评分规则&lt;/p&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;legend&quot; aria-label=&quot;图例&quot;&gt;
+          &lt;span class=&quot;legend-item text-small&quot;&gt;&lt;span class=&quot;legend-mark&quot;&gt;&lt;/span&gt;优化前 v1.2&lt;/span&gt;
+          &lt;span class=&quot;legend-item text-small&quot;&gt;&lt;span class=&quot;legend-mark after&quot;&gt;&lt;/span&gt;优化后 v1.3&lt;/span&gt;
+        &lt;/div&gt;
+      &lt;/div&gt;
+
+      &lt;div class=&quot;table-responsive&quot;&gt;
+        &lt;table class=&quot;table table-sm&quot;&gt;
+          &lt;caption class=&quot;sr-only&quot;&gt;全名检索优化前后四项核心指标对比&lt;/caption&gt;
+          &lt;thead&gt;
+            &lt;tr&gt;
+              &lt;th&gt;指标&lt;/th&gt;
+              &lt;th&gt;优化前&lt;/th&gt;
+              &lt;th&gt;优化后&lt;/th&gt;
+              &lt;th&gt;变化&lt;/th&gt;
+              &lt;th&gt;百分比对比&lt;/th&gt;
+            &lt;/tr&gt;
+          &lt;/thead&gt;
+          &lt;tbody&gt;
+            &lt;tr&gt;
+              &lt;td&gt;检索成功率&lt;/td&gt;
+              &lt;td class=&quot;text-end&quot;&gt;61.0%&lt;/td&gt;
+              &lt;td class=&quot;text-end&quot;&gt;73.0%&lt;/td&gt;
+              &lt;td class=&quot;text-end&quot;&gt;↑12.0pp&lt;/td&gt;
+              &lt;td class=&quot;metric-cell&quot;&gt;
+                &lt;div class=&quot;metric-track&quot; aria-label=&quot;成功率61%提升到73%&quot;&gt;
+                  &lt;span class=&quot;metric-before&quot; style=&quot;width:61%&quot;&gt;&lt;/span&gt;
+                  &lt;span class=&quot;metric-after&quot; style=&quot;width:73%&quot;&gt;&lt;/span&gt;
+                &lt;/div&gt;
+              &lt;/td&gt;
+            &lt;/tr&gt;
+            &lt;tr&gt;
+              &lt;td&gt;命中完整度&lt;/td&gt;
+              &lt;td class=&quot;text-end&quot;&gt;52.8%&lt;/td&gt;
+              &lt;td class=&quot;text-end&quot;&gt;64.1%&lt;/td&gt;
+              &lt;td class=&quot;text-end&quot;&gt;↑11.3pp&lt;/td&gt;
+              &lt;td class=&quot;metric-cell&quot;&gt;
+                &lt;div class=&quot;metric-track&quot; aria-label=&quot;命中完整度52.8%提升到64.1%&quot;&gt;
+                  &lt;span class=&quot;metric-before&quot; style=&quot;width:52.8%&quot;&gt;&lt;/span&gt;
+                  &lt;span class=&quot;metric-after&quot; style=&quot;width:64.1%&quot;&gt;&lt;/span&gt;
+                &lt;/div&gt;
+              &lt;/td&gt;
+            &lt;/tr&gt;
+            &lt;tr&gt;
+              &lt;td&gt;命中准确率&lt;/td&gt;
+              &lt;td class=&quot;text-end&quot;&gt;91.7%&lt;/td&gt;
+              &lt;td class=&quot;text-end&quot;&gt;93.2%&lt;/td&gt;
+              &lt;td class=&quot;text-end&quot;&gt;↑1.5pp&lt;/td&gt;
+              &lt;td class=&quot;metric-cell&quot;&gt;
+                &lt;div class=&quot;metric-track&quot; aria-label=&quot;命中准确率91.7%提升到93.2%&quot;&gt;
+                  &lt;span class=&quot;metric-before&quot; style=&quot;width:91.7%&quot;&gt;&lt;/span&gt;
+                  &lt;span class=&quot;metric-after&quot; style=&quot;width:93.2%&quot;&gt;&lt;/span&gt;
+                &lt;/div&gt;
+              &lt;/td&gt;
+            &lt;/tr&gt;
+            &lt;tr&gt;
+              &lt;td&gt;非命中填充程度&lt;/td&gt;
+              &lt;td class=&quot;text-end&quot;&gt;34.6%&lt;/td&gt;
+              &lt;td class=&quot;text-end&quot;&gt;39.8%&lt;/td&gt;
+              &lt;td class=&quot;text-end&quot;&gt;↑5.2pp&lt;/td&gt;
+              &lt;td class=&quot;metric-cell&quot;&gt;
+                &lt;div class=&quot;metric-track&quot; aria-label=&quot;非命中填充程度34.6%提升到39.8%&quot;&gt;
+                  &lt;span class=&quot;metric-before&quot; style=&quot;width:34.6%&quot;&gt;&lt;/span&gt;
+                  &lt;span class=&quot;metric-after&quot; style=&quot;width:39.8%&quot;&gt;&lt;/span&gt;
+                &lt;/div&gt;
+              &lt;/td&gt;
+            &lt;/tr&gt;
+          &lt;/tbody&gt;
+        &lt;/table&gt;
+      &lt;/div&gt;
+
+      &lt;div class=&quot;paired-chart&quot; role=&quot;img&quot; aria-label=&quot;100人全名检索配对结果：持续命中57人，新增命中16人，退化未命中4人，持续未命中23人&quot;&gt;
+        &lt;div class=&quot;bar-labels&quot;&gt;
+          &lt;strong&gt;同一个人前后配对&lt;/strong&gt;
+          &lt;span class=&quot;text-small text-muted&quot;&gt;100人合计&lt;/span&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;stacked-bar&quot;&gt;
+          &lt;span class=&quot;stable-hit&quot; style=&quot;width:57%&quot;&gt;&lt;/span&gt;
+          &lt;span class=&quot;new-hit&quot; style=&quot;width:16%&quot;&gt;&lt;/span&gt;
+          &lt;span class=&quot;regression&quot; style=&quot;width:4%&quot;&gt;&lt;/span&gt;
+          &lt;span class=&quot;stable-miss&quot; style=&quot;width:23%&quot;&gt;&lt;/span&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;paired-values&quot;&gt;
+          &lt;div&gt;&lt;strong&gt;57&lt;/strong&gt;&lt;span class=&quot;text-small text-muted&quot;&gt;持续命中&lt;/span&gt;&lt;/div&gt;
+          &lt;div&gt;&lt;strong&gt;16&lt;/strong&gt;&lt;span class=&quot;text-small text-muted&quot;&gt;新增命中&lt;/span&gt;&lt;/div&gt;
+          &lt;div&gt;&lt;strong&gt;4&lt;/strong&gt;&lt;span class=&quot;text-small text-muted&quot;&gt;退化未命中&lt;/span&gt;&lt;/div&gt;
+          &lt;div&gt;&lt;strong&gt;23&lt;/strong&gt;&lt;span class=&quot;text-small text-muted&quot;&gt;持续未命中&lt;/span&gt;&lt;/div&gt;
+        &lt;/div&gt;
+      &lt;/div&gt;
+    &lt;/section&gt;
+
+    &lt;section class=&quot;report-section&quot; aria-labelledby=&quot;new-clue-title&quot;&gt;
+      &lt;div class=&quot;section-head&quot;&gt;
+        &lt;div&gt;
+          &lt;span class=&quot;text-small text-muted&quot;&gt;02 · 优化后新增线索实验&lt;/span&gt;
+          &lt;h2 id=&quot;new-clue-title&quot;&gt;增加Link后成功率达到88%，但不能归因为版本提升&lt;/h2&gt;
+          &lt;p class=&quot;text-small text-muted&quot;&gt;同为优化后v1.3：全名 vs 全名 + Link&lt;/p&gt;
+        &lt;/div&gt;
+        &lt;span class=&quot;viz-badge&quot;&gt;新增条件 · 无优化前基线&lt;/span&gt;
+      &lt;/div&gt;
+
+      &lt;div class=&quot;table-responsive&quot;&gt;
+        &lt;table class=&quot;table table-sm&quot;&gt;
+          &lt;caption class=&quot;sr-only&quot;&gt;优化后全名与全名加Link的横向对比&lt;/caption&gt;
+          &lt;thead&gt;
+            &lt;tr&gt;
+              &lt;th&gt;优化后检索条件&lt;/th&gt;
+              &lt;th class=&quot;text-end&quot;&gt;成功率&lt;/th&gt;
+              &lt;th class=&quot;text-end&quot;&gt;命中完整度&lt;/th&gt;
+              &lt;th class=&quot;text-end&quot;&gt;命中准确率&lt;/th&gt;
+              &lt;th class=&quot;text-end&quot;&gt;非命中填充&lt;/th&gt;
+              &lt;th class=&quot;text-end&quot;&gt;100次成本&lt;/th&gt;
+            &lt;/tr&gt;
+          &lt;/thead&gt;
+          &lt;tbody&gt;
+            &lt;tr&gt;
+              &lt;td&gt;全名&lt;/td&gt;
+              &lt;td class=&quot;text-end&quot;&gt;73.0%&lt;/td&gt;
+              &lt;td class=&quot;text-end&quot;&gt;64.1%&lt;/td&gt;
+              &lt;td class=&quot;text-end&quot;&gt;93.2%&lt;/td&gt;
+              &lt;td class=&quot;text-end&quot;&gt;39.8%&lt;/td&gt;
+              &lt;td class=&quot;text-end&quot;&gt;$48.90&lt;/td&gt;
+            &lt;/tr&gt;
+            &lt;tr&gt;
+              &lt;td&gt;全名 + Link&lt;/td&gt;
+              &lt;td class=&quot;text-end&quot;&gt;88.0%&lt;/td&gt;
+              &lt;td class=&quot;text-end&quot;&gt;75.6%&lt;/td&gt;
+              &lt;td class=&quot;text-end&quot;&gt;95.4%&lt;/td&gt;
+              &lt;td class=&quot;text-end&quot;&gt;45.7%&lt;/td&gt;
+              &lt;td class=&quot;text-end&quot;&gt;$61.40&lt;/td&gt;
+            &lt;/tr&gt;
+            &lt;tr&gt;
+              &lt;td&gt;增加Link后的变化&lt;/td&gt;
+              &lt;td class=&quot;text-end&quot;&gt;↑15.0pp&lt;/td&gt;
+              &lt;td class=&quot;text-end&quot;&gt;↑11.5pp&lt;/td&gt;
+              &lt;td class=&quot;text-end&quot;&gt;↑2.2pp&lt;/td&gt;
+              &lt;td class=&quot;text-end&quot;&gt;↑5.9pp&lt;/td&gt;
+              &lt;td class=&quot;text-end&quot;&gt;+$12.50&lt;/td&gt;
+            &lt;/tr&gt;
+          &lt;/tbody&gt;
+        &lt;/table&gt;
+      &lt;/div&gt;
+
+      &lt;div class=&quot;paired-chart&quot; role=&quot;img&quot; aria-label=&quot;优化后同一个人全名与全名加Link配对：两种条件都命中70人，Link新增命中18人，Link条件丢失3人，两种都未命中9人&quot;&gt;
+        &lt;div class=&quot;bar-labels&quot;&gt;
+          &lt;strong&gt;优化后同人横向配对&lt;/strong&gt;
+          &lt;span class=&quot;text-small text-muted&quot;&gt;Link带来18个新增命中，同时丢失3个原命中&lt;/span&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;stacked-bar&quot;&gt;
+          &lt;span class=&quot;stable-hit&quot; style=&quot;width:70%&quot;&gt;&lt;/span&gt;
+          &lt;span class=&quot;new-hit&quot; style=&quot;width:18%&quot;&gt;&lt;/span&gt;
+          &lt;span class=&quot;regression&quot; style=&quot;width:3%&quot;&gt;&lt;/span&gt;
+          &lt;span class=&quot;stable-miss&quot; style=&quot;width:9%&quot;&gt;&lt;/span&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;paired-values&quot;&gt;
+          &lt;div&gt;&lt;strong&gt;70&lt;/strong&gt;&lt;span class=&quot;text-small text-muted&quot;&gt;两种均命中&lt;/span&gt;&lt;/div&gt;
+          &lt;div&gt;&lt;strong&gt;18&lt;/strong&gt;&lt;span class=&quot;text-small text-muted&quot;&gt;Link新增命中&lt;/span&gt;&lt;/div&gt;
+          &lt;div&gt;&lt;strong&gt;3&lt;/strong&gt;&lt;span class=&quot;text-small text-muted&quot;&gt;Link条件丢失&lt;/span&gt;&lt;/div&gt;
+          &lt;div&gt;&lt;strong&gt;9&lt;/strong&gt;&lt;span class=&quot;text-small text-muted&quot;&gt;两种均未命中&lt;/span&gt;&lt;/div&gt;
+        &lt;/div&gt;
+      &lt;/div&gt;
+    &lt;/section&gt;
+
+    &lt;section class=&quot;report-section&quot; aria-labelledby=&quot;cost-title&quot;&gt;
+      &lt;div class=&quot;section-head&quot;&gt;
+        &lt;div&gt;
+          &lt;span class=&quot;text-small text-muted&quot;&gt;03 · 执行与成本&lt;/span&gt;
+          &lt;h2 id=&quot;cost-title&quot;&gt;两阶段共执行300次检索，总成本$154.50&lt;/h2&gt;
+          &lt;p class=&quot;text-small text-muted&quot;&gt;成本按evaluation_phase + query_stage分组；Mock币种为USD&lt;/p&gt;
+        &lt;/div&gt;
+      &lt;/div&gt;
+
+      &lt;div class=&quot;table-responsive&quot;&gt;
+        &lt;table class=&quot;table table-sm&quot;&gt;
+          &lt;caption class=&quot;sr-only&quot;&gt;三个检索组的执行状态、成本和PDL调用&lt;/caption&gt;
+          &lt;thead&gt;
+            &lt;tr&gt;
+              &lt;th&gt;阶段 / 条件&lt;/th&gt;
+              &lt;th class=&quot;text-end&quot;&gt;任务&lt;/th&gt;
+              &lt;th class=&quot;text-end&quot;&gt;正常完成&lt;/th&gt;
+              &lt;th class=&quot;text-end&quot;&gt;无候选人&lt;/th&gt;
+              &lt;th class=&quot;text-end&quot;&gt;部分详情失败&lt;/th&gt;
+              &lt;th class=&quot;text-end&quot;&gt;LLM成本&lt;/th&gt;
+              &lt;th class=&quot;text-end&quot;&gt;总成本&lt;/th&gt;
+              &lt;th class=&quot;text-end&quot;&gt;PDL&lt;/th&gt;
+            &lt;/tr&gt;
+          &lt;/thead&gt;
+          &lt;tbody&gt;
+            &lt;tr&gt;
+              &lt;td&gt;第一阶段 · 全名&lt;/td&gt;
+              &lt;td class=&quot;text-end&quot;&gt;100&lt;/td&gt;
+              &lt;td class=&quot;text-end&quot;&gt;92&lt;/td&gt;
+              &lt;td class=&quot;text-end&quot;&gt;5&lt;/td&gt;
+              &lt;td class=&quot;text-end&quot;&gt;3&lt;/td&gt;
+              &lt;td class=&quot;text-end&quot;&gt;$17.80&lt;/td&gt;
+              &lt;td class=&quot;text-end&quot;&gt;$44.20&lt;/td&gt;
+              &lt;td class=&quot;text-end&quot;&gt;42&lt;/td&gt;
+            &lt;/tr&gt;
+            &lt;tr&gt;
+              &lt;td&gt;第二阶段 · 全名&lt;/td&gt;
+              &lt;td class=&quot;text-end&quot;&gt;100&lt;/td&gt;
+              &lt;td class=&quot;text-end&quot;&gt;96&lt;/td&gt;
+              &lt;td class=&quot;text-end&quot;&gt;2&lt;/td&gt;
+              &lt;td class=&quot;text-end&quot;&gt;2&lt;/td&gt;
+              &lt;td class=&quot;text-end&quot;&gt;$19.50&lt;/td&gt;
+              &lt;td class=&quot;text-end&quot;&gt;$48.90&lt;/td&gt;
+              &lt;td class=&quot;text-end&quot;&gt;47&lt;/td&gt;
+            &lt;/tr&gt;
+            &lt;tr&gt;
+              &lt;td&gt;第二阶段 · 全名 + Link&lt;/td&gt;
+              &lt;td class=&quot;text-end&quot;&gt;100&lt;/td&gt;
+              &lt;td class=&quot;text-end&quot;&gt;98&lt;/td&gt;
+              &lt;td class=&quot;text-end&quot;&gt;1&lt;/td&gt;
+              &lt;td class=&quot;text-end&quot;&gt;1&lt;/td&gt;
+              &lt;td class=&quot;text-end&quot;&gt;$23.70&lt;/td&gt;
+              &lt;td class=&quot;text-end&quot;&gt;$61.40&lt;/td&gt;
+              &lt;td class=&quot;text-end&quot;&gt;63&lt;/td&gt;
+            &lt;/tr&gt;
+            &lt;tr&gt;
+              &lt;td&gt;&lt;strong&gt;全部实际任务&lt;/strong&gt;&lt;/td&gt;
+              &lt;td class=&quot;text-end&quot;&gt;&lt;strong&gt;300&lt;/strong&gt;&lt;/td&gt;
+              &lt;td class=&quot;text-end&quot;&gt;&lt;strong&gt;286&lt;/strong&gt;&lt;/td&gt;
+              &lt;td class=&quot;text-end&quot;&gt;&lt;strong&gt;8&lt;/strong&gt;&lt;/td&gt;
+              &lt;td class=&quot;text-end&quot;&gt;&lt;strong&gt;6&lt;/strong&gt;&lt;/td&gt;
+              &lt;td class=&quot;text-end&quot;&gt;&lt;strong&gt;$61.00&lt;/strong&gt;&lt;/td&gt;
+              &lt;td class=&quot;text-end&quot;&gt;&lt;strong&gt;$154.50&lt;/strong&gt;&lt;/td&gt;
+              &lt;td class=&quot;text-end&quot;&gt;&lt;strong&gt;152&lt;/strong&gt;&lt;/td&gt;
+            &lt;/tr&gt;
+          &lt;/tbody&gt;
+        &lt;/table&gt;
+      &lt;/div&gt;
+    &lt;/section&gt;
+
+    &lt;section class=&quot;report-section&quot; aria-labelledby=&quot;phase-three-title&quot;&gt;
+      &lt;div class=&quot;section-head&quot;&gt;
+        &lt;div&gt;
+          &lt;span class=&quot;text-small text-muted&quot;&gt;04 · 第三阶段决策输入&lt;/span&gt;
+          &lt;h2 id=&quot;phase-three-title&quot;&gt;下一轮优先处理持续未命中与Social绑定退化&lt;/h2&gt;
+          &lt;p class=&quot;text-small text-muted&quot;&gt;建议草案 · 尚未开始执行&lt;/p&gt;
+        &lt;/div&gt;
+        &lt;span class=&quot;viz-badge&quot;&gt;待产品 / 开发 / 测试评审&lt;/span&gt;
+      &lt;/div&gt;
+
+      &lt;div class=&quot;decision-grid&quot;&gt;
+        &lt;article class=&quot;card&quot;&gt;
+          &lt;strong&gt;报告证据&lt;/strong&gt;
+          &lt;div class=&quot;decision-kpis&quot;&gt;
+            &lt;div&gt;&lt;strong&gt;23人&lt;/strong&gt;&lt;span class=&quot;text-small text-muted&quot;&gt;全名持续未命中&lt;/span&gt;&lt;/div&gt;
+            &lt;div&gt;&lt;strong&gt;4人&lt;/strong&gt;&lt;span class=&quot;text-small text-muted&quot;&gt;全名命中退化&lt;/span&gt;&lt;/div&gt;
+            &lt;div&gt;&lt;strong&gt;3人&lt;/strong&gt;&lt;span class=&quot;text-small text-muted&quot;&gt;加Link后反而丢失&lt;/span&gt;&lt;/div&gt;
+          &lt;/div&gt;
+        &lt;/article&gt;
+        &lt;article class=&quot;card&quot;&gt;
+          &lt;strong&gt;第三阶段建议定义&lt;/strong&gt;
+          &lt;ul class=&quot;decision-list&quot;&gt;
+            &lt;li&gt;保留100人全名同条件回归组&lt;/li&gt;
+            &lt;li&gt;增加27人持续失败 / 退化专项组&lt;/li&gt;
+            &lt;li&gt;重点复核候选人召回与Social冲突规则&lt;/li&gt;
+            &lt;li&gt;照片检索继续待功能与回显口径确认&lt;/li&gt;
+          &lt;/ul&gt;
+        &lt;/article&gt;
+      &lt;/div&gt;
+    &lt;/section&gt;
+
+    &lt;section class=&quot;report-section&quot; aria-labelledby=&quot;appendix-title&quot;&gt;
+      &lt;div class=&quot;section-head&quot;&gt;
+        &lt;div&gt;
+          &lt;span class=&quot;text-small text-muted&quot;&gt;05 · 详情附录&lt;/span&gt;
+          &lt;h2 id=&quot;appendix-title&quot;&gt;用于定位改善、退化和数据来源&lt;/h2&gt;
+        &lt;/div&gt;
+      &lt;/div&gt;
+
+      &lt;details open&gt;
+        &lt;summary&gt;典型配对案例&lt;/summary&gt;
+        &lt;div class=&quot;detail-body table-responsive&quot;&gt;
+          &lt;table class=&quot;table table-sm&quot;&gt;
+            &lt;caption class=&quot;sr-only&quot;&gt;六个模拟人物的阶段与检索条件变化案例&lt;/caption&gt;
+            &lt;thead&gt;
+              &lt;tr&gt;
+                &lt;th&gt;人物&lt;/th&gt;
+                &lt;th&gt;对比&lt;/th&gt;
+                &lt;th&gt;变化&lt;/th&gt;
+                &lt;th&gt;完整度&lt;/th&gt;
+                &lt;th&gt;准确率&lt;/th&gt;
+                &lt;th&gt;原因&lt;/th&gt;
+              &lt;/tr&gt;
+            &lt;/thead&gt;
+            &lt;tbody&gt;
+              &lt;tr&gt;&lt;td&gt;P-007&lt;/td&gt;&lt;td&gt;全名 v1.2 → v1.3&lt;/td&gt;&lt;td&gt;未命中 → 命中&lt;/td&gt;&lt;td&gt;— → 62%&lt;/td&gt;&lt;td&gt;— → 95%&lt;/td&gt;&lt;td&gt;候选人进入返回列表&lt;/td&gt;&lt;/tr&gt;
+              &lt;tr&gt;&lt;td&gt;P-018&lt;/td&gt;&lt;td&gt;全名 v1.2 → v1.3&lt;/td&gt;&lt;td&gt;命中 → 命中&lt;/td&gt;&lt;td&gt;55% → 76%&lt;/td&gt;&lt;td&gt;92% → 95%&lt;/td&gt;&lt;td&gt;Profile与Insights增加&lt;/td&gt;&lt;/tr&gt;
+              &lt;tr&gt;&lt;td&gt;P-042&lt;/td&gt;&lt;td&gt;全名 v1.2 → v1.3&lt;/td&gt;&lt;td&gt;命中 → 未命中&lt;/td&gt;&lt;td&gt;68% → —&lt;/td&gt;&lt;td&gt;96% → —&lt;/td&gt;&lt;td&gt;正确候选人跌出返回范围&lt;/td&gt;&lt;/tr&gt;
+              &lt;tr&gt;&lt;td&gt;P-063&lt;/td&gt;&lt;td&gt;v1.3全名 → 加Link&lt;/td&gt;&lt;td&gt;未命中 → 命中&lt;/td&gt;&lt;td&gt;— → 74%&lt;/td&gt;&lt;td&gt;— → 97%&lt;/td&gt;&lt;td&gt;Link帮助同名消歧&lt;/td&gt;&lt;/tr&gt;
+              &lt;tr&gt;&lt;td&gt;P-081&lt;/td&gt;&lt;td&gt;v1.3全名 → 加Link&lt;/td&gt;&lt;td&gt;命中 → 命中&lt;/td&gt;&lt;td&gt;66% → 82%&lt;/td&gt;&lt;td&gt;94% → 96%&lt;/td&gt;&lt;td&gt;Social与Profile补全&lt;/td&gt;&lt;/tr&gt;
+              &lt;tr&gt;&lt;td&gt;P-096&lt;/td&gt;&lt;td&gt;v1.3全名 → 加Link&lt;/td&gt;&lt;td&gt;命中 → 未命中&lt;/td&gt;&lt;td&gt;59% → —&lt;/td&gt;&lt;td&gt;93% → —&lt;/td&gt;&lt;td&gt;同平台Link冲突，待复核&lt;/td&gt;&lt;/tr&gt;
+            &lt;/tbody&gt;
+          &lt;/table&gt;
+        &lt;/div&gt;
+      &lt;/details&gt;
+
+      &lt;details&gt;
+        &lt;summary&gt;模块与字段变化&lt;/summary&gt;
+        &lt;div class=&quot;detail-body table-responsive&quot;&gt;
+          &lt;table class=&quot;table table-sm&quot;&gt;
+            &lt;caption class=&quot;sr-only&quot;&gt;全名检索优化前后模块返回与字段变化&lt;/caption&gt;
+            &lt;thead&gt;
+              &lt;tr&gt;
+                &lt;th&gt;模块 / 字段&lt;/th&gt;
+                &lt;th class=&quot;text-end&quot;&gt;优化前&lt;/th&gt;
+                &lt;th class=&quot;text-end&quot;&gt;优化后&lt;/th&gt;
+                &lt;th class=&quot;text-end&quot;&gt;变化&lt;/th&gt;
+              &lt;/tr&gt;
+            &lt;/thead&gt;
+            &lt;tbody&gt;
+              &lt;tr&gt;&lt;td&gt;Profile模块返回率&lt;/td&gt;&lt;td class=&quot;text-end&quot;&gt;78%&lt;/td&gt;&lt;td class=&quot;text-end&quot;&gt;87%&lt;/td&gt;&lt;td class=&quot;text-end&quot;&gt;↑9pp&lt;/td&gt;&lt;/tr&gt;
+              &lt;tr&gt;&lt;td&gt;Social模块返回率&lt;/td&gt;&lt;td class=&quot;text-end&quot;&gt;69%&lt;/td&gt;&lt;td class=&quot;text-end&quot;&gt;82%&lt;/td&gt;&lt;td class=&quot;text-end&quot;&gt;↑13pp&lt;/td&gt;&lt;/tr&gt;
+              &lt;tr&gt;&lt;td&gt;Current Role正确找回&lt;/td&gt;&lt;td class=&quot;text-end&quot;&gt;48%&lt;/td&gt;&lt;td class=&quot;text-end&quot;&gt;62%&lt;/td&gt;&lt;td class=&quot;text-end&quot;&gt;↑14pp&lt;/td&gt;&lt;/tr&gt;
+              &lt;tr&gt;&lt;td&gt;Education正确找回&lt;/td&gt;&lt;td class=&quot;text-end&quot;&gt;39%&lt;/td&gt;&lt;td class=&quot;text-end&quot;&gt;51%&lt;/td&gt;&lt;td class=&quot;text-end&quot;&gt;↑12pp&lt;/td&gt;&lt;/tr&gt;
+              &lt;tr&gt;&lt;td&gt;Social URL准确率&lt;/td&gt;&lt;td class=&quot;text-end&quot;&gt;94%&lt;/td&gt;&lt;td class=&quot;text-end&quot;&gt;96%&lt;/td&gt;&lt;td class=&quot;text-end&quot;&gt;↑2pp&lt;/td&gt;&lt;/tr&gt;
+            &lt;/tbody&gt;
+          &lt;/table&gt;
+        &lt;/div&gt;
+      &lt;/details&gt;
+
+      &lt;details&gt;
+        &lt;summary&gt;报告版本与数据范围&lt;/summary&gt;
+        &lt;div class=&quot;detail-body table-responsive&quot;&gt;
+          &lt;table class=&quot;table table-sm&quot;&gt;
+            &lt;caption class=&quot;sr-only&quot;&gt;报告所使用的版本和数据范围&lt;/caption&gt;
+            &lt;tbody&gt;
+              &lt;tr&gt;&lt;th&gt;Evaluation&lt;/th&gt;&lt;td&gt;eval_mock_2026_07&lt;/td&gt;&lt;/tr&gt;
+              &lt;tr&gt;&lt;th&gt;第一阶段Run&lt;/th&gt;&lt;td&gt;phase1_baseline_v1_2&lt;/td&gt;&lt;/tr&gt;
+              &lt;tr&gt;&lt;th&gt;第二阶段同条件Run&lt;/th&gt;&lt;td&gt;phase2_candidate_v1_3_fullname&lt;/td&gt;&lt;/tr&gt;
+              &lt;tr&gt;&lt;th&gt;第二阶段新增线索Run&lt;/th&gt;&lt;td&gt;phase2_candidate_v1_3_social&lt;/td&gt;&lt;/tr&gt;
+              &lt;tr&gt;&lt;th&gt;字段配置&lt;/th&gt;&lt;td&gt;field_schema_v1.0&lt;/td&gt;&lt;/tr&gt;
+              &lt;tr&gt;&lt;th&gt;基准数据&lt;/th&gt;&lt;td&gt;baseline_people_v1.0&lt;/td&gt;&lt;/tr&gt;
+              &lt;tr&gt;&lt;th&gt;评分规则&lt;/th&gt;&lt;td&gt;evaluation_rule_v1.0&lt;/td&gt;&lt;/tr&gt;
+              &lt;tr&gt;&lt;th&gt;照片条件&lt;/th&gt;&lt;td&gt;未执行&lt;/td&gt;&lt;/tr&gt;
+            &lt;/tbody&gt;
+          &lt;/table&gt;
+        &lt;/div&gt;
+      &lt;/details&gt;
+    &lt;/section&gt;
+
+    &lt;footer class=&quot;footer-note text-small text-muted&quot;&gt;
+      全部数字均为演示用Mock数据，不代表真实系统表现。第一阶段未执行全名 + Link，
+      因此第二阶段Link结果只表示新增线索增益，不作为版本优化提升结论。
+    &lt;/footer&gt;
+  &lt;/main&gt;
+&lt;/div&gt;
+
+&lt;script src=&quot;https://unpkg.com/@floating-ui/core@1.7.3/dist/floating-ui.core.umd.min.js&quot;&gt;&lt;/script&gt;
+&lt;script src=&quot;https://unpkg.com/@floating-ui/dom@1.7.4/dist/floating-ui.dom.umd.min.js&quot;&gt;&lt;/script&gt;
+&lt;script&gt;
+(() =&gt; {
+  if (window.FloatingUIDOM == null) {
+    return;
+  }
+  const { autoUpdate, computePosition, flip, offset, shift, size } =
+    window.FloatingUIDOM;
+  const tooltipPlacements = new Set([&quot;top&quot;, &quot;right&quot;, &quot;bottom&quot;, &quot;left&quot;]);
+  const tooltipId = `codex-visualization-tooltip-${
+    window.crypto?.randomUUID?.() ?? Date.now().toString(36)
+  }`;
+  const tooltipGap = 5;
+  const hoverDelay = 700;
+  const skipDelay = 300;
+  let activeTrigger = null;
+  let pendingTrigger = null;
+  let tooltip = null;
+  let openTimeout = null;
+  let autoUpdateCleanup = null;
+  let positionRequest = 0;
+  let skipDelayUntil = 0;
+
+  const getTrigger = (target) =&gt;
+    target?.nodeType === Node.ELEMENT_NODE
+      ? target.closest(&quot;[data-tooltip]&quot;)
+      : null;
+  const containsTarget = (trigger, target) =&gt;
+    target?.nodeType != null &amp;&amp; trigger.contains(target);
+  const getContent = (trigger) =&gt;
+    trigger.getAttribute(&quot;data-tooltip&quot;)?.trim() ?? &quot;&quot;;
+  const getPlacement = (trigger) =&gt; {
+    const placement = trigger.getAttribute(&quot;data-tooltip-placement&quot;);
+    return tooltipPlacements.has(placement) ? placement : &quot;top&quot;;
+  };
+  const getTooltip = () =&gt; {
+    if (tooltip == null) {
+      tooltip = document.createElement(&quot;div&quot;);
+      tooltip.id = tooltipId;
+      tooltip.className = &quot;tooltip&quot;;
+      tooltip.setAttribute(&quot;role&quot;, &quot;tooltip&quot;);
+    }
+    return tooltip;
+  };
+  const setDescribedBy = (trigger, described) =&gt; {
+    const ids = new Set(
+      (trigger.getAttribute(&quot;aria-describedby&quot;) ?? &quot;&quot;)
+        .split(/\s+/)
+        .filter(Boolean),
+    );
+    if (described) {
+      ids.add(tooltipId);
+    } else {
+      ids.delete(tooltipId);
+    }
+    if (ids.size === 0) {
+      trigger.removeAttribute(&quot;aria-describedby&quot;);
+    } else {
+      trigger.setAttribute(&quot;aria-describedby&quot;, [...ids].join(&quot; &quot;));
+    }
+  };
+  const clearOpenTimeout = () =&gt; {
+    if (openTimeout != null) {
+      window.clearTimeout(openTimeout);
+      openTimeout = null;
+    }
+    pendingTrigger = null;
+  };
+  const closeTooltip = (activateSkipDelay = true) =&gt; {
+    clearOpenTimeout();
+    positionRequest += 1;
+    autoUpdateCleanup?.();
+    autoUpdateCleanup = null;
+    if (activeTrigger == null) {
+      return;
+    }
+    setDescribedBy(activeTrigger, false);
+    activeTrigger = null;
+    tooltip?.remove();
+    if (activateSkipDelay) {
+      skipDelayUntil = Date.now() + skipDelay;
+    }
+  };
+  const updatePosition = (trigger, floating) =&gt; {
+    const request = ++positionRequest;
+    void computePosition(trigger, floating, {
+      middleware: [
+        offset(tooltipGap),
+        flip({ padding: tooltipGap }),
+        shift({ padding: tooltipGap }),
+        size({
+          padding: tooltipGap,
+          apply({ availableHeight, availableWidth, elements }) {
+            elements.floating.style.setProperty(
+              &quot;--tooltip-available-width&quot;,
+              `${Math.max(0, availableWidth)}px`,
+            );
+            elements.floating.style.setProperty(
+              &quot;--tooltip-available-height&quot;,
+              `${Math.max(0, availableHeight)}px`,
+            );
+          },
+        }),
+      ],
+      placement: getPlacement(trigger),
+      strategy: &quot;fixed&quot;,
+    })
+      .then(({ x, y }) =&gt; {
+        if (activeTrigger !== trigger || request !== positionRequest) {
+          return;
+        }
+        const scale = window.devicePixelRatio || 1;
+        floating.style.transform = `translate(${Math.round(x * scale) / scale}px, ${Math.round(y * scale) / scale}px)`;
+        floating.style.visibility = &quot;visible&quot;;
+      })
+      .catch(() =&gt; {
+        if (activeTrigger === trigger &amp;&amp; request === positionRequest) {
+          closeTooltip(false);
+        }
+      });
+  };
+  const openTooltip = (trigger) =&gt; {
+    const content = getContent(trigger);
+    if (!trigger.isConnected || content.length === 0) {
+      return;
+    }
+    clearOpenTimeout();
+    if (activeTrigger === trigger) {
+      return;
+    }
+    closeTooltip();
+    const floating = getTooltip();
+    floating.textContent = content;
+    floating.style.visibility = &quot;hidden&quot;;
+    floating.style.transform = &quot;translate(0, 0)&quot;;
+    document.body.appendChild(floating);
+    activeTrigger = trigger;
+    setDescribedBy(trigger, true);
+    autoUpdateCleanup = autoUpdate(trigger, floating, () =&gt; {
+      updatePosition(trigger, floating);
+    });
+  };
+  const requestOpen = (trigger, immediate = false) =&gt; {
+    if (
+      getContent(trigger).length === 0 ||
+      activeTrigger === trigger ||
+      pendingTrigger === trigger
+    ) {
+      return;
+    }
+    clearOpenTimeout();
+    pendingTrigger = trigger;
+    const delay =
+      immediate || activeTrigger != null || Date.now() &lt; skipDelayUntil
+        ? 0
+        : hoverDelay;
+    if (delay === 0) {
+      openTooltip(trigger);
+      return;
+    }
+    openTimeout = window.setTimeout(() =&gt; {
+      openTimeout = null;
+      pendingTrigger = null;
+      openTooltip(trigger);
+    }, delay);
+  };
+  const handlePointerOpen = (event) =&gt; {
+    if (event.pointerType === &quot;touch&quot;) {
+      return;
+    }
+    const trigger = getTrigger(event.target);
+    if (trigger == null || containsTarget(trigger, event.relatedTarget)) {
+      return;
+    }
+    requestOpen(trigger);
+  };
+  const handleLeave = (event) =&gt; {
+    const trigger = getTrigger(event.target);
+    if (trigger == null || containsTarget(trigger, event.relatedTarget)) {
+      return;
+    }
+    if (activeTrigger === trigger || pendingTrigger === trigger) {
+      closeTooltip();
+    }
+  };
+  const handleFocusIn = (event) =&gt; {
+    const trigger = getTrigger(event.target);
+    if (trigger?.matches(&quot;:focus-visible&quot;)) {
+      requestOpen(trigger, true);
+    }
+  };
+  const handleKeyDown = (event) =&gt; {
+    if (event.key === &quot;Escape&quot;) {
+      closeTooltip();
+    }
+  };
+  const handleContextMenu = (event) =&gt; {
+    const trigger = getTrigger(event.target);
+    if (activeTrigger === trigger || pendingTrigger === trigger) {
+      closeTooltip();
+    }
+  };
+  const destroy = () =&gt; {
+    closeTooltip(false);
+    document.removeEventListener(&quot;pointerover&quot;, handlePointerOpen);
+    document.removeEventListener(&quot;pointerout&quot;, handleLeave);
+    document.removeEventListener(&quot;focusin&quot;, handleFocusIn);
+    document.removeEventListener(&quot;focusout&quot;, handleLeave);
+    document.removeEventListener(&quot;keydown&quot;, handleKeyDown);
+    document.removeEventListener(&quot;contextmenu&quot;, handleContextMenu);
+    tooltip = null;
+  };
+
+  document.addEventListener(&quot;pointerover&quot;, handlePointerOpen);
+  document.addEventListener(&quot;pointerout&quot;, handleLeave);
+  document.addEventListener(&quot;focusin&quot;, handleFocusIn);
+  document.addEventListener(&quot;focusout&quot;, handleLeave);
+  document.addEventListener(&quot;keydown&quot;, handleKeyDown);
+  document.addEventListener(&quot;contextmenu&quot;, handleContextMenu);
+  window.addEventListener(&quot;pagehide&quot;, destroy, { once: true });
+})();
+&lt;/script&gt;
+&lt;script id=&quot;codex-visualization-lucide&quot; async src=&quot;https://unpkg.com/lucide@1.17.0/dist/umd/lucide.js&quot;&gt;&lt;/script&gt;
+&lt;script&gt;
+(() =&gt; {
+  const initialize = () =&gt; {
+    globalThis.lucide?.createIcons({ attrs: { width: 16, height: 16 } });
+  };
+  if (globalThis.lucide != null) {
+    initialize();
+    return;
+  }
+  document
+    .getElementById(&quot;codex-visualization-lucide&quot;)
+    ?.addEventListener(&quot;load&quot;, initialize, { once: true });
+})();
+&lt;/script&gt;
+
+&lt;/body&gt;
+&lt;/html&gt;
+"></iframe>
+</body>
+</html>

@@ -14,10 +14,15 @@ import tempfile
 import unittest
 import zipfile
 from pathlib import Path
+from unittest.mock import patch
 
+from openpyxl import load_workbook
+
+from result_to_excel import prepare_arguments
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 EXPORTER = PROJECT_ROOT / "result_to_excel.py"
+BASELINE_FIXTURE = PROJECT_ROOT / "tests" / "fixtures" / "v1_3_baseline"
 
 
 def write_jsonl(path: Path, records: list[dict]) -> None:
@@ -152,6 +157,66 @@ def candidate(
 
 class ResultToExcelTests(unittest.TestCase):
     """End-to-end tests for model construction and workbook export."""
+
+    def test_explicit_run_directory_prevents_env_result_file_injection(self):
+        """验证显式 Run 目录优先于 .env 中配置的结果文件。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            env_file = Path(temp_dir) / ".env"
+            env_file.write_text(
+                "EXCEL_RESULTS_FILE=output/unrelated_results.jsonl\n",
+                encoding="utf-8",
+            )
+            with patch.dict(os.environ, {}, clear=True):
+                prepared = prepare_arguments(
+                    [
+                        "single",
+                        "--run-dir",
+                        "output/explicit-run",
+                        "--env-file",
+                        str(env_file),
+                    ]
+                )
+
+        self.assertIn("--run-dir", prepared)
+        self.assertNotIn("--results-file", prepared)
+
+    def test_phase0_baseline_fixture_remains_exportable(self):
+        """验证阶段0冻结的当前 JSONL 结构可以稳定生成导出模型。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            model_path = root / "model.json"
+            self.run_exporter(
+                [
+                    "single",
+                    "--results-file",
+                    str(BASELINE_FIXTURE / "results.jsonl"),
+                    "--failures-file",
+                    str(BASELINE_FIXTURE / "failures.jsonl"),
+                    "--run-label",
+                    "baseline",
+                    "--system-version",
+                    "phase0",
+                    "--evaluation-id",
+                    "eval-phase0",
+                    "--metadata",
+                    str(BASELINE_FIXTURE / "query_metadata.jsonl"),
+                    "--output",
+                    str(root / "baseline.xlsx"),
+                ],
+                model_path,
+            )
+
+            model = json.loads(model_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(2, len(model["candidateRows"]))
+        self.assertEqual(3, len(model["queryRows"]))
+        self.assertEqual(1, len(model["failureRows"]))
+        self.assertEqual(
+            [1, 2],
+            [row["candidate_rank"] for row in model["candidateRows"]],
+        )
 
     def run_exporter(
         self,
@@ -394,6 +459,495 @@ class ResultToExcelTests(unittest.TestCase):
             self.assertEqual("SUCCESS", query_row["candidate_status"])
             self.assertEqual(1, query_row["baseline_candidate_count"])
             self.assertEqual(1, query_row["candidate_candidate_count"])
+
+    def test_processed_mode_uses_dynamic_fields_reviews_and_raw_sheet(self):
+        """阶段6 processed 模式展开 ReportModel v2 并保留复核和超长值。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            processed_path = root / "processed_export.jsonl"
+            report_model_path = root / "report_model.json"
+            output_path = root / "processed.xlsx"
+            model_path = root / "model.json"
+            long_value = "长" * 33000
+            write_jsonl(
+                processed_path,
+                [
+                    {
+                        "record_type": "candidate",
+                        "evaluation_id": "eval-processed",
+                        "process_id": "process-processed",
+                        "run_id": "run-processed",
+                        "run_label": "candidate",
+                        "system_version": "v-next",
+                        "query_id": "query-processed",
+                        "person_id": "person-processed",
+                        "query_stage": "FULL_NAME_SOCIAL",
+                        "task_id": "task-processed",
+                        "query_status": "SUCCESS",
+                        "candidate_pk": "candidate-pk-1",
+                        "candidate_id": "candidate-1",
+                        "candidate_rank": 1,
+                        "rank_score": 0.95,
+                        "detail_status": "SUCCESS",
+                        "judgement": "HIT",
+                        "reason": "SOCIAL_MATCH",
+                        "reviewer": "tester",
+                        "review_note": "已确认",
+                        "reviewed_at": "2026-07-24T00:00:00+00:00",
+                        "fields": {
+                            "display_name": "=unsafe",
+                            "profile_data": long_value,
+                        },
+                        "empty_fields": {
+                            "display_name": False,
+                            "profile_data": False,
+                        },
+                        "field_scores": {
+                            "display_name": {
+                                "completeness_score": 1.0,
+                                "accuracy_score": 1.0,
+                            }
+                        },
+                        "processing_errors": [],
+                    },
+                    {
+                        "record_type": "candidate",
+                        "evaluation_id": "eval-processed",
+                        "process_id": "process-processed",
+                        "run_id": "run-processed",
+                        "run_label": "candidate",
+                        "system_version": "v-next",
+                        "query_id": "query-processed",
+                        "person_id": "person-processed",
+                        "query_stage": "FULL_NAME_SOCIAL",
+                        "task_id": "task-processed",
+                        "query_status": "SUCCESS",
+                        "candidate_pk": "candidate-pk-2",
+                        "candidate_id": "candidate-2",
+                        "candidate_rank": 2,
+                        "rank_score": 0.5,
+                        "detail_status": "FAILED",
+                        "judgement": "PENDING_REVIEW",
+                        "reason": "NO_STRONG_FIELD",
+                        "reviewer": "",
+                        "review_note": "",
+                        "reviewed_at": None,
+                        "fields": {},
+                        "empty_fields": {},
+                        "field_scores": {},
+                        "processing_errors": [
+                            {
+                                "code": "DETAIL_FAILED",
+                                "error": "timeout",
+                            }
+                        ],
+                    },
+                    {
+                        "record_type": "query",
+                        "run_id": "run-processed",
+                        "run_label": "candidate",
+                        "system_version": "v-next",
+                        "evaluation_phase": "PHASE_2_POST_OPTIMIZATION",
+                        "query_id": "query-processed",
+                        "person_id": "person-processed",
+                        "query_stage": "FULL_NAME_SOCIAL",
+                        "task_id": "task-processed",
+                        "query_status": "SUCCESS",
+                        "result_status": "HAS_CANDIDATES",
+                        "candidate_count_total": 2,
+                        "candidate_count_listed": 2,
+                        "detail_success_count": 1,
+                        "detail_failure_count": 1,
+                        "llm_cost": 1.25,
+                        "third_party_cost": None,
+                        "total_cost": 3.75,
+                        "pdl_called": False,
+                        "search_duration_ms": 1250,
+                        "retrieval_success": True,
+                        "matched_completeness": 0.1,
+                        "matched_accuracy": 1.0,
+                        "formal_ready": True,
+                    },
+                    {
+                        "record_type": "failure",
+                        "query_id": "query-processed",
+                        "candidate_id": "candidate-2",
+                        "scope": "CANDIDATE",
+                        "stage": "GetTaskCandidateDetail",
+                        "error": "timeout",
+                    },
+                ],
+            )
+            report_model_path.write_text(
+                json.dumps(
+                    {
+                        "metadata": {
+                            "report_id": "report-processed",
+                            "evaluation_id": "eval-processed",
+                            "report_type": "SINGLE",
+                            "report_model_version": "report-model-v2",
+                            "metrics_rule_version": "metrics-v2",
+                            "evaluation_phase": "PHASE_2_POST_OPTIMIZATION",
+                            "candidate_system_version": "v-next",
+                        },
+                        "summary": {"formal_ready": True},
+                        "result_status_metrics": {
+                            "total_formal_queries": 1,
+                            "has_candidates_count": 1,
+                            "no_candidates_count": 0,
+                            "execution_failed_count": 0,
+                            "has_result_rate": 1.0,
+                            "no_result_rate": 0.0,
+                            "execution_failed_rate": 0.0,
+                        },
+                        "quality_metrics": {
+                            "retrieval_success": {
+                                "status": "READY",
+                                "numerator": 1,
+                                "denominator": 1,
+                                "value": 1.0,
+                                "preview_value": 1.0,
+                            },
+                            "matched_completeness": {
+                                "status": "READY",
+                                "numerator": 0.1,
+                                "denominator": 1,
+                                "value": 0.1,
+                                "preview_value": 0.1,
+                            },
+                            "matched_accuracy": {
+                                "status": "READY",
+                                "numerator": 1,
+                                "denominator": 1,
+                                "value": 1.0,
+                                "preview_value": 1.0,
+                            },
+                        },
+                        "cost_metrics": {
+                            "llm_cost": {
+                                "status": "COMPLETE",
+                                "task_count": 1,
+                                "value_count": 1,
+                                "missing_count": 0,
+                                "invalid_count": 0,
+                                "total": 1.25,
+                                "average": 1.25,
+                                "minimum": 1.25,
+                                "maximum": 1.25,
+                            },
+                            "third_party_cost": {
+                                "status": "NOT_CONNECTED",
+                                "task_count": 1,
+                                "value_count": 0,
+                                "missing_count": 1,
+                                "invalid_count": 0,
+                                "total": None,
+                                "average": None,
+                                "minimum": None,
+                                "maximum": None,
+                            },
+                            "total_cost": {
+                                "status": "COMPLETE",
+                                "task_count": 1,
+                                "value_count": 1,
+                                "missing_count": 0,
+                                "invalid_count": 0,
+                                "total": 3.75,
+                                "average": 3.75,
+                                "minimum": 3.75,
+                                "maximum": 3.75,
+                            },
+                            "search_duration_ms": {
+                                "status": "COMPLETE",
+                                "task_count": 1,
+                                "value_count": 1,
+                                "missing_count": 0,
+                                "invalid_count": 0,
+                                "total": 1250,
+                                "average": 1250,
+                                "minimum": 1250,
+                                "maximum": 1250,
+                            },
+                        },
+                        "pdl_metrics": {
+                            "true_count": 0,
+                            "false_count": 1,
+                            "unknown_count": 0,
+                            "known_count": 1,
+                            "call_rate": 0.0,
+                        },
+                        "confidence_metrics": {
+                            "overall": {"HIGH": 1, "UNKNOWN": 1},
+                            "matched": {"HIGH": 1},
+                            "nonmatched": {"UNKNOWN": 1},
+                        },
+                        "threshold_assessment": {
+                            "recommendation": "建议上线",
+                            "recommendation_code": "RECOMMEND_RELEASE",
+                            "stages": {
+                                "FULL_NAME_SOCIAL": {
+                                    "query_count": 1,
+                                    "items": {
+                                        "min_retrieval_success": {
+                                            "threshold": 0.8,
+                                            "actual": 1.0,
+                                            "direction": "MINIMUM",
+                                            "status": "PASS",
+                                            "reason": "达到参考线",
+                                        }
+                                    },
+                                }
+                            },
+                        },
+                        "comparison": {
+                            "same_condition": {
+                                "pairs": [
+                                    {
+                                        "person_id": "person-processed",
+                                        "query_stage": "FULL_NAME_SOCIAL",
+                                        "baseline_query_id": "query-old",
+                                        "candidate_query_id": "query-processed",
+                                        "baseline_hit": False,
+                                        "candidate_hit": True,
+                                        "category": "新增命中",
+                                        "baseline_matched_completeness": 0.0,
+                                        "candidate_matched_completeness": 0.1,
+                                        "matched_completeness_delta": 0.1,
+                                        "baseline_matched_accuracy": None,
+                                        "candidate_matched_accuracy": 1.0,
+                                        "matched_accuracy_delta": None,
+                                        "baseline_total_cost": None,
+                                        "candidate_total_cost": 3.75,
+                                        "total_cost_delta": None,
+                                    }
+                                ]
+                            },
+                            "new_clue": {
+                                "queries": [
+                                    {
+                                        "person_id": "person-new",
+                                        "query_stage": "FULL_NAME_SOCIAL",
+                                        "candidate_query_id": "query-new",
+                                        "result_status": "NO_CANDIDATES",
+                                        "retrieval_success": False,
+                                        "matched_completeness": None,
+                                        "matched_accuracy": None,
+                                        "candidate_confidence": None,
+                                        "candidate_count": 0,
+                                        "task_fields": {
+                                            "llm_cost": None,
+                                            "third_party_cost": None,
+                                            "total_cost": None,
+                                            "pdl_called": None,
+                                            "search_duration_ms": None,
+                                        },
+                                    }
+                                ]
+                            },
+                            "not_comparable": {"queries": []},
+                        },
+                        "module_metrics": {
+                            "Summary": {
+                                "module": "Summary",
+                                "returned_candidate_count": 1,
+                                "candidate_count": 2,
+                                "return_rate": 0.5,
+                                "hit_return_rate": 1.0,
+                                "nonmatched_return_rate": 0.0,
+                            }
+                        },
+                        "field_metrics": {
+                            "display_name": {
+                                "field_key": "display_name",
+                                "display_name": "Display Name",
+                                "module": "Summary",
+                                "returned_count": 1,
+                                "empty_count": 1,
+                                "candidate_count": 2,
+                                "return_rate": 0.5,
+                                "hit_completeness": 1.0,
+                                "hit_accuracy": 1.0,
+                            },
+                            "profile_data": {
+                                "field_key": "profile_data",
+                                "display_name": "Profile Data",
+                                "module": "Profile",
+                            },
+                        },
+                        "warnings": ["第三方成本未接入。"],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            self.run_exporter(
+                [
+                    "processed",
+                    "--input-file",
+                    str(processed_path),
+                    "--report-model",
+                    str(report_model_path),
+                    "--output",
+                    str(output_path),
+                ],
+                model_path,
+                create_workbook=True,
+            )
+
+            model = json.loads(model_path.read_text(encoding="utf-8"))
+            self.assertEqual(2, len(model["candidateRows"]))
+            self.assertEqual(1, len(model["queryRows"]))
+            self.assertEqual(2, len(model["reviewRows"]))
+            self.assertIn("display_name", model["candidateHeaders"])
+            self.assertIn("profile_data", model["candidateHeaders"])
+            self.assertTrue(model["rawRows"])
+            self.assertEqual(1, len(model["sameConditionRows"]))
+            self.assertEqual(1, len(model["newClueRows"]))
+            self.assertTrue(
+                any(
+                    row["metric_key"] == "total_cost"
+                    and row["total"] == 3.75
+                    for row in model["coreMetricRows"]
+                )
+            )
+            self.assertTrue(
+                any(
+                    row["row_type"] == "FIELD"
+                    and row["field_key"] == "display_name"
+                    for row in model["moduleFieldRows"]
+                )
+            )
+            self.assertTrue(output_path.is_file())
+            workbook = load_workbook(output_path, read_only=True, data_only=True)
+            try:
+                self.assertTrue(
+                    {
+                        "说明",
+                        "核心指标",
+                        "Query明细",
+                        "候选结果",
+                        "同条件对比",
+                        "新增线索",
+                        "模块字段统计",
+                        "失败记录",
+                        "人工复核",
+                        "Raw数据",
+                    }.issubset(workbook.sheetnames)
+                )
+                query_rows = list(
+                    workbook["Query明细"].iter_rows(values_only=True)
+                )
+                query_record = dict(zip(query_rows[0], query_rows[1]))
+                self.assertEqual(
+                    "PHASE_2_POST_OPTIMIZATION",
+                    query_record["evaluation_phase"],
+                )
+                self.assertEqual("HAS_CANDIDATES", query_record["result_status"])
+                self.assertEqual(1.25, query_record["llm_cost"])
+                self.assertIsNone(query_record["third_party_cost"])
+                self.assertEqual(3.75, query_record["total_cost"])
+                self.assertIs(query_record["pdl_called"], False)
+                self.assertEqual(1250, query_record["search_duration_ms"])
+
+                core_rows = list(
+                    workbook["核心指标"].iter_rows(values_only=True)
+                )
+                core_headers = core_rows[0]
+                total_cost = next(
+                    dict(zip(core_headers, row))
+                    for row in core_rows[1:]
+                    if row[core_headers.index("metric_key")] == "total_cost"
+                )
+                self.assertEqual(3.75, total_cost["total"])
+                self.assertIsNone(
+                    next(
+                        dict(zip(core_headers, row))
+                        for row in core_rows[1:]
+                        if row[core_headers.index("metric_key")]
+                        == "third_party_cost"
+                    )["total"]
+                )
+            finally:
+                workbook.close()
+
+    def test_processed_mode_keeps_report_model_v1_metrics_exportable(self):
+        """旧 ReportModel v1 仍能在核心指标中看到原有质量指标。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            processed_path = root / "processed_export.jsonl"
+            report_model_path = root / "report_model.json"
+            model_path = root / "model.json"
+            write_jsonl(
+                processed_path,
+                [
+                    {
+                        "record_type": "query",
+                        "query_id": "legacy-query",
+                        "person_id": "legacy-person",
+                        "query_stage": "FULL_NAME",
+                        "retrieval_success": False,
+                        "formal_ready": False,
+                    }
+                ],
+            )
+            report_model_path.write_text(
+                json.dumps(
+                    {
+                        "metadata": {
+                            "report_id": "legacy-report",
+                            "report_type": "SINGLE",
+                        },
+                        "summary": {
+                            "formal_ready": False,
+                            "candidate": {
+                                "retrieval_success": {
+                                    "numerator": 0,
+                                    "denominator": 1,
+                                    "value": None,
+                                    "preview_value": 0.0,
+                                },
+                                "matched_completeness": {
+                                    "numerator": 0,
+                                    "denominator": 0,
+                                    "value": None,
+                                    "preview_value": None,
+                                },
+                            },
+                        },
+                        "paired_metrics": None,
+                        "module_metrics": {},
+                        "field_metrics": {},
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            self.run_exporter(
+                [
+                    "processed",
+                    "--input-file",
+                    str(processed_path),
+                    "--report-model",
+                    str(report_model_path),
+                    "--output",
+                    str(root / "legacy.xlsx"),
+                ],
+                model_path,
+            )
+            model = json.loads(model_path.read_text(encoding="utf-8"))
+
+        retrieval = next(
+            row
+            for row in model["coreMetricRows"]
+            if row["metric_key"] == "retrieval_success"
+        )
+        self.assertEqual(0, retrieval["numerator"])
+        self.assertEqual(1, retrieval["denominator"])
+        self.assertIsNone(retrieval["value"])
+        self.assertEqual(0.0, retrieval["preview_value"])
 
     def test_long_json_is_split_and_reconstructable(self):
         with tempfile.TemporaryDirectory() as temp_dir:

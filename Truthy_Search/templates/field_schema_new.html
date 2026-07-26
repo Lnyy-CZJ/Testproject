@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}发布字段配置 · Truthy Search{% endblock %}
+{% block content %}
+  <div class="page-heading">
+    <div>
+      <p class="eyebrow">Publish New Version</p>
+      <h1>发布字段配置</h1>
+      <p>{% if base %}已复制 {{ base.schema_version }}，保存后会生成全新版本。{% else %}提交一份完整字段定义数组。{% endif %}</p>
+    </div>
+  </div>
+
+  {% if errors %}
+    <div class="error-list">
+      {% for error in errors %}<p>{{ error }}</p>{% endfor %}
+    </div>
+  {% endif %}
+
+  <div class="schema-editor-layout">
+    <form class="form-panel schema-editor" method="post">
+      <input type="hidden" name="base_version" value="{{ base.schema_version if base else '' }}">
+      <div class="form-pair">
+        <label>
+          <span>配置名称</span>
+          <input name="name" required value="{{ form.name if form else '' }}" placeholder="例如 检索字段配置 2026-07">
+        </label>
+        <label>
+          <span>维护人（可选）</span>
+          <input name="created_by" value="{{ form.created_by if form else '' }}" placeholder="测试人员姓名">
+        </label>
+      </div>
+      <label>
+        <span>完整字段定义 JSON</span>
+        <textarea class="code-editor" name="definitions_json" rows="34" required spellcheck="false">{{ definitions_json }}</textarea>
+      </label>
+      <div class="form-actions">
+        <button class="button primary" type="submit">校验并发布新版本</button>
+        <a class="button text" href="{{ url_for('field_schemas') }}">取消</a>
+      </div>
+    </form>
+
+    <aside class="panel schema-help">
+      <p class="eyebrow">MVP Rules</p>
+      <h2>配置规则</h2>
+      <dl class="key-values">
+        <div><dt>路径</dt><dd>点号、items[0]、profiles[*]</dd></div>
+        <div><dt>作用域</dt><dd>QUERY / CANDIDATE</dd></div>
+        <div><dt>缺失策略</dt><dd>EMPTY（记为空）/ ERROR（记为错误）</dd></div>
+        <div><dt>类型</dt><dd>string / number / boolean / object / array / url / image</dd></div>
+        <div><dt>数组</dt><dd>preserve / first / collect / join</dd></div>
+        <div><dt>转换器</dt><dd>identity / trim_text / number / percentage / social_url / string_list / profile_sections</dd></div>
+        <div><dt>对比</dt><dd>exact / normalized_text / set / url_set / manual</dd></div>
+      </dl>
+      <p class="inline-note">不支持条件过滤、函数、eval 或用户脚本。可选业务字段建议使用 missing_policy=EMPTY；已有数据结构类型错误仍会记录处理错误，Raw 始终不修改。</p>
+    </aside>
+  </div>
+{% endblock %}

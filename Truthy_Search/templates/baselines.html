@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% from "_json_value.html" import render_value %}
+{% block title %}基准数据 · Truthy Search{% endblock %}
+{% block content %}
+  <div class="page-heading">
+    <div>
+      <p class="eyebrow">Versioned Ground Truth</p>
+      <h1>基准数据</h1>
+      <p>基准人物值按版本导入；人物级可用字段允许人工维护，字段键应与 FieldSchema 的 field_key 对齐。</p>
+    </div>
+  </div>
+
+  {% if errors %}
+    <div class="error-list">
+      {% for error in errors %}<p>{{ error }}</p>{% endfor %}
+    </div>
+  {% endif %}
+
+  <section class="form-panel">
+    <div>
+      <p class="eyebrow">Import</p>
+      <h2>导入基准版本</h2>
+      <p>支持 JSONL，或包含“基准数据”Sheet 的规范化 Excel。</p>
+    </div>
+    <form method="post" enctype="multipart/form-data">
+      <div class="form-pair">
+        <label>
+          <span>baseline_version</span>
+          <input name="baseline_version" required placeholder="baseline-20260724-v1">
+        </label>
+        <label>
+          <span>基准名称</span>
+          <input name="name" required placeholder="100人正式基准">
+        </label>
+      </div>
+      <label>
+        <span>基准文件</span>
+        <input type="file" name="source_file" accept=".jsonl,.xlsx" required>
+      </label>
+      <button class="button primary" type="submit">校验并导入基准</button>
+    </form>
+  </section>
+
+  <section class="section-head">
+    <div><p class="eyebrow">Versions</p><h2>基准版本</h2></div>
+    <span class="count">{{ baseline_sets|length }} 个</span>
+  </section>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>版本</th><th>名称</th><th>来源</th><th>人物数</th><th>创建时间</th></tr></thead>
+      <tbody>
+        {% for baseline in baseline_sets %}
+          <tr>
+            <td><a class="mono" href="{{ url_for('baselines', baseline_version=baseline.baseline_version) }}">{{ baseline.baseline_version }}</a></td>
+            <td>{{ baseline.name }}</td>
+            <td>{{ baseline.source_type }}</td>
+            <td>{{ baseline.person_count }}</td>
+            <td>{{ baseline.created_at }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="5" class="empty-cell">还没有基准版本</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if selected_version %}
+    <section class="section-head">
+      <div>
+        <p class="eyebrow mono">{{ selected_version }}</p>
+        <h2>Person 基准明细</h2>
+        <p>字段可用性按人物维护；当前字段配置：{{ active_schema.schema_version if active_schema else '未发布' }}</p>
+      </div>
+      <span class="count">{{ total }} 人</span>
+    </section>
+    <div class="processed-candidate-list">
+      {% for person in people %}
+        <article class="panel processed-candidate">
+          <div class="processed-candidate-head">
+            <div>
+              <p class="eyebrow mono">{{ person.person_id }}</p>
+              <h2>{{ person.display_name or '未填写姓名' }}</h2>
+            </div>
+            <span class="status neutral">{{ person.available_fields|length }} AVAILABLE · {{ person.available_fields_source }}</span>
+          </div>
+          {% if person.unknown_available_fields %}
+            <div class="error-list">
+              <p>未知字段：{{ person.unknown_available_fields|join(', ') }}。字段仍保留，但当前字段配置没有对应定义。</p>
+            </div>
+          {% endif %}
+          <details>
+            <summary>查看并维护可用字段</summary>
+            <form method="post" action="{{ url_for('baseline_available_fields_update', baseline_version=selected_version, person_id=person.person_id) }}">
+              <div class="field-definition-grid">
+                {% for field in person.field_options %}
+                  <label>
+                    <input type="checkbox" name="available_fields" value="{{ field.field_key }}" {% if field.field_key in person.available_fields %}checked{% endif %}>
+                    <strong>{{ field.display_name }}</strong>
+                    <span class="mono">{{ field.field_key }}</span>
+                    {% if field.unknown %}<small>未知字段</small>{% endif %}
+                    <span>{{ render_value(field.value, 'baseline.' ~ field.field_key) if field.value is not none else '无基准值' }}</span>
+                  </label>
+                {% endfor %}
+              </div>
+              <button class="button primary" type="submit">保存可用字段</button>
+            </form>
+            <h3>证据</h3>
+            {{ render_value(person.evidence, 'evidence') }}
+          </details>
+        </article>
+      {% else %}
+        <div class="empty-state"><strong>该版本没有人物记录</strong></div>
+      {% endfor %}
+    </div>
+    {% set pages = ((total + per_page - 1) // per_page) %}
+    {% if pages > 1 %}
+      <nav class="pagination" aria-label="基准人物分页">
+        {% for number in range(1, pages + 1) %}
+          <a class="{% if number == page %}current{% endif %}" href="{{ url_for('baselines', baseline_version=selected_version, page=number) }}">{{ number }}</a>
+        {% endfor %}
+      </nav>
+    {% endif %}
+  {% endif %}
+{% endblock %}

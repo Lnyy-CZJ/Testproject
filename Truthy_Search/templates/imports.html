@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}数据导入 · Truthy Search{% endblock %}
+{% block content %}
+  <div class="page-heading">
+    <div>
+      <p class="eyebrow">Controlled Import</p>
+      <h1>数据导入</h1>
+      <p>上传文件会先校验，再归档到受控数据目录；相同文件不会静默重复导入。</p>
+    </div>
+  </div>
+
+  {% if errors %}
+    <div class="error-list">
+      {% for error in errors %}<p>{{ error }}</p>{% endfor %}
+    </div>
+  {% endif %}
+
+  <div class="import-grid">
+    <form class="form-panel" method="post" enctype="multipart/form-data">
+      <div><p class="eyebrow">Dataset</p><h2>Query 数据集</h2><p>JSONL 或包含固定 Queries Sheet 的 Excel。</p></div>
+      <input type="hidden" name="import_type" value="dataset">
+      <label><span>dataset_id（可选）</span><input name="dataset_id" placeholder="自动生成或手动指定"></label>
+      <label><span>数据集名称</span><input name="name" required placeholder="例如 100人 FULL_NAME + SOCIAL"></label>
+      <label><span>数据文件</span><input type="file" name="source_file" accept=".jsonl,.xlsx" required></label>
+      <button class="button primary" type="submit">校验并导入 Dataset</button>
+    </form>
+
+    <form class="form-panel" method="post" enctype="multipart/form-data">
+      <div><p class="eyebrow">Historical JSONL</p><h2>历史 JSONL 结果</h2><p>results 必填，failures 与 Query 元数据可选。</p></div>
+      <input type="hidden" name="import_type" value="results_jsonl">
+      <label><span>Evaluation</span><select name="evaluation_id" required><option value="">请选择</option>{% for evaluation in evaluations %}<option value="{{ evaluation.evaluation_id }}">{{ evaluation.name }}</option>{% endfor %}</select></label>
+      <div class="form-pair">
+        <label><span>run_label</span><input name="run_label" required placeholder="baseline / candidate"></label>
+        <label><span>system_version</span><input name="system_version" required placeholder="commit / build"></label>
+      </div>
+      <label><span>Evaluation Phase</span><select name="evaluation_phase" required>{% for phase in evaluation_phases %}<option value="{{ phase }}" {% if phase == 'UNSPECIFIED' %}selected{% endif %}>{{ phase }}</option>{% endfor %}</select></label>
+      <label><span>results.jsonl</span><input type="file" name="source_file" accept=".jsonl" required></label>
+      <label><span>failures.jsonl（可选）</span><input type="file" name="failures_file" accept=".jsonl"></label>
+      <label><span>Query 元数据 JSONL（可选）</span><input type="file" name="metadata_file" accept=".jsonl"></label>
+      <button class="button primary" type="submit">导入历史 JSONL</button>
+    </form>
+
+    <form class="form-panel" method="post" enctype="multipart/form-data">
+      <div><p class="eyebrow">Historical Excel</p><h2>规范化 Excel 结果</h2><p>仅支持本项目生成、含“候选结果”Sheet 的工作簿。</p></div>
+      <input type="hidden" name="import_type" value="results_excel">
+      <label><span>Evaluation</span><select name="evaluation_id" required><option value="">请选择</option>{% for evaluation in evaluations %}<option value="{{ evaluation.evaluation_id }}">{{ evaluation.name }}</option>{% endfor %}</select></label>
+      <div class="form-pair">
+        <label><span>run_label</span><input name="run_label" required></label>
+        <label><span>system_version</span><input name="system_version" required></label>
+      </div>
+      <label><span>Evaluation Phase</span><select name="evaluation_phase" required>{% for phase in evaluation_phases %}<option value="{{ phase }}" {% if phase == 'UNSPECIFIED' %}selected{% endif %}>{{ phase }}</option>{% endfor %}</select></label>
+      <label><span>Excel 文件</span><input type="file" name="source_file" accept=".xlsx" required></label>
+      <button class="button primary" type="submit">导入历史 Excel</button>
+    </form>
+  </div>
+
+  <section class="section-head"><div><p class="eyebrow">Available Datasets</p><h2>已导入数据集</h2></div><span class="count">{{ datasets|length }} 个</span></section>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Dataset</th><th>来源</th><th>Query 数</th><th>校验和</th><th>创建时间</th></tr></thead>
+      <tbody>
+        {% for dataset in datasets %}
+          <tr><td><strong>{{ dataset.name }}</strong><small class="mono">{{ dataset.dataset_id }}</small></td><td>{{ dataset.source_type }}</td><td>{{ dataset.query_count }}</td><td class="mono">{{ dataset.checksum[:12] }}…</td><td>{{ dataset.created_at }}</td></tr>
+        {% else %}
+          <tr><td colspan="5" class="empty-cell">还没有 Dataset</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endblock %}

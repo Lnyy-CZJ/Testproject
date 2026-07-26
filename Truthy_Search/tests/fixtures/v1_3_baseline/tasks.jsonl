@@ -1,0 +1,3 @@
+{"input_id":"baseline-full-name","person_id":"person-001","query_stage":"FULL_NAME","match_strategy":"UNION","clues":[{"type":"FULL_NAME","full_name_query":{"full_name":"Example Person"}}],"additional_details":[]}
+{"input_id":"baseline-full-name-social","person_id":"person-002","query_stage":"FULL_NAME_SOCIAL","match_strategy":"UNION","clues":[{"type":"FULL_NAME","full_name_query":{"full_name":"Sample User"}},{"type":"SOCIAL_LINK","social_link_query":{"url":"https://social.example.test/sample-user","platform_hint":"example"}}],"additional_details":[]}
+{"input_id":"baseline-failure","person_id":"person-003","query_stage":"FULL_NAME","match_strategy":"UNION","clues":[{"type":"FULL_NAME","full_name_query":{"full_name":"Failure Example"}}],"additional_details":[]}
