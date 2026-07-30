@@ -1,12 +1,390 @@
 {% macro metric_value(metric) -%}
-  {% if metric and metric.value is not none %}
-    {{ (metric.value * 100)|round(2) }}%
-  {% elif metric and metric.preview_value is not none %}
-    预览 {{ (metric.preview_value * 100)|round(2) }}%
+  {% if metric and metric.get('value') is not none %}
+    {{ (metric.get('value') * 100)|round(2) }}%
+  {% elif metric and metric.get('preview_value') is not none %}
+    预览 {{ (metric.get('preview_value') * 100)|round(2) }}%
+  {% elif metric and metric.get('status') == 'NOT_READY' %}
+    待准备
+  {% elif metric and metric.get('status') == 'NOT_CONNECTED' %}
+    接口未接入
+  {% elif metric and metric.get('status') == 'NOT_APPLICABLE' and metric.get('reasons') %}
+    {{ metric.get('reasons')[0] }}
   {% else %}
-    不适用
+    无适用分母
   {% endif %}
 {%- endmacro %}
+
+{% macro metric_fraction(metric) -%}
+  {% set numerator = metric.get('numerator') if metric else none %}
+  {% set denominator = metric.get('denominator') if metric else none %}
+  {% if numerator is not none and denominator is not none %}
+    {{ numerator|round(4) }} / {{ denominator }}
+  {% elif metric and metric.get('status') %}
+    {{ metric.get('status') }}
+  {% else %}
+    无适用分母
+  {% endif %}
+{%- endmacro %}
+
+{% macro percentage(value) -%}
+  {{ (value * 100)|round(2) ~ '%' if value is not none else '无适用分母' }}
+{%- endmacro %}
+
+{% set is_report_v5 = report.metadata.report_model_version == 'report-model-v5' %}
+{% if is_report_v5 %}
+  {# v5 只读取不可变报告快照；旧模型继续保留以下原有模板分支。 #}
+  {% set overview = report.overview %}
+  {% set explorer = report.query_explorer %}
+  <section class="report-v5-hero">
+    <div>
+      <p class="eyebrow">{{ report.metadata.data_marker }} · {{ '版本对比报告' if report.metadata.report_type == 'COMPARE' else '单次检索评测' }}</p>
+      <h1>{{ report.metadata.evaluation_name }}</h1>
+      <p class="report-v5-subtitle">{{ overview.conclusion.description }}</p>
+    </div>
+    <div class="report-v5-hero-meta">
+      <strong>{{ overview.conclusion.title }}</strong>
+      <span class="mono">{{ report.metadata.candidate_system_version }}</span>
+    </div>
+  </section>
+
+  {% if overview.blocking_alert %}
+    <section class="report-v5-alert" role="alert">
+      <strong>{{ overview.blocking_alert.code }}</strong>
+      <span>{{ overview.blocking_alert.message }}</span>
+    </section>
+  {% endif %}
+
+  <section class="report-section report-v5-core">
+    <div class="section-head"><div><p class="eyebrow">01 · Core metrics</p><h2>核心评测结果</h2></div></div>
+    <div class="report-v5-kpis">
+      {% for key, label, purpose, formula in [
+        ('candidate_return_rate', '候选人返回率', '衡量检索请求能否返回可供判断的候选人', '有返回候选人的 Query 数 ÷ 成功执行的 Query 数'),
+        ('retrieval_success', '目标人物命中率', '衡量系统能否在全部有效 Query 中找到目标人物', '命中目标人物的 Query 数 ÷ 成功执行的 Query 数'),
+        ('conditional_hit_rate', '有候选人条件下命中率', '排除无结果 Query，观察候选人召回后的身份识别能力', '命中目标人物的 Query 数 ÷ 有返回候选人的 Query 数'),
+        ('matched_accuracy', '命中信息准确度', '衡量主命中候选人的字段信息与基准人物是否一致', '主 HIT 候选人准确度的宏平均；字段级微平均仅作辅助观察'),
+        ('matched_completeness', '命中资料完整度', '衡量主命中候选人的启用字段是否实际返回', '主 HIT 实际返回字段数 ÷ 主 HIT 启用字段槽位；全部 HIT 与非主 HIT 另作辅助分析'),
+        ('nonmatched_data_completeness', '非命中资料完整度', '衡量非目标候选人自身返回了多少有效资料', '全部非命中/疑似候选人的实际返回字段数 ÷ 启用字段槽位'),
+        ('nonmatched_baseline_overlap', '非命中候选人资料相似度', '衡量非命中候选人的资料与基准人物有多相似，辅助分析同名干扰与误召回', '全部非命中/疑似候选人的资料相似得分 ÷ 可比较资料字段槽位；排除 profile_full_name，不代表身份一致')
+      ] %}
+        {% set item = overview.core_metrics.get(key, {}) %}
+        {% if static_export %}
+          <details class="report-v5-kpi report-v5-kpi-static">
+            <summary>
+              <span class="report-v5-kpi-label">{{ item.get('label', label) }}</span>
+              <small class="report-v5-kpi-purpose">{{ item.get('purpose', purpose) }}</small>
+              <strong>{{ metric_value(item) }}</strong>
+              <small>{{ metric_fraction(item) }}</small>
+            </summary>
+            <div class="report-v5-kpi-explanation">
+              <b>计算公式</b><p>{{ item.get('formula', formula) }}</p>
+              <b>本次计算</b><p>{{ item.get('numerator', 0)|round(6) }} ÷ {{ item.get('denominator', 0) }} = {{ metric_value(item) }}</p>
+              {% if item.get('calculation_expression') %}<p>{{ item.calculation_expression }}</p>{% endif %}
+              {% if item.get('auxiliary_calculation') %}{% set auxiliary = item.auxiliary_calculation %}<p>{{ auxiliary.label }}：{{ auxiliary.numerator|round(6) }} ÷ {{ auxiliary.denominator }} = {{ metric_value(auxiliary) }}</p>{% endif %}
+              {% if item.get('population_groups') %}
+                <div class="report-v5-static-populations">
+                  {% for group in item.population_groups %}
+                    <p><strong>{{ group.label }}{% if group.formal %}（正式整体指标）{% endif %}</strong>：{{ group.candidate_count }} 人 · {{ group.numerator_label }} {{ group.numerator|round(6) }} ÷ {{ group.denominator_label }} {{ group.denominator }} = {{ metric_value(group) }}{% if group.auxiliary_calculation %}{% set group_auxiliary = group.auxiliary_calculation %}<br>{{ group_auxiliary.label }}：{{ group_auxiliary.numerator|round(6) }} ÷ {{ group_auxiliary.denominator }} = {{ metric_value(group_auxiliary) }}{% endif %}</p>
+                  {% endfor %}
+                </div>
+              {% endif %}
+            </div>
+          </details>
+        {% else %}
+          <button class="report-v5-kpi" type="button"
+                  data-report-metric="{{ key }}"
+                  data-metric-label="{{ item.get('label', label) }}"
+                  data-metric-purpose="{{ item.get('purpose', purpose) }}"
+                  data-metric-formula="{{ item.get('formula', formula) }}">
+            <span class="report-v5-kpi-label">{{ item.get('label', label) }}</span>
+            <small class="report-v5-kpi-purpose">{{ item.get('purpose', purpose) }}</small>
+            <strong>{{ metric_value(item) }}</strong>
+            {% set formal_group = item.get('population_groups', [])|selectattr('formal')|list|first %}
+            <small>{% if formal_group %}{{ formal_group.label }} {{ formal_group.candidate_count }} 人 · {% endif %}{{ metric_fraction(item) }} · 点击查看计算详情</small>
+          </button>
+        {% endif %}
+      {% endfor %}
+    </div>
+    <div class="report-v5-facts">
+      <span>Query <strong>{{ overview.secondary_metrics.query_count }}</strong></span>
+      <span>候选人 <strong>{{ overview.secondary_metrics.candidate_count }}</strong></span>
+      <span>主命中 <strong>{{ overview.secondary_metrics.primary_hit_query_count }}</strong></span>
+      <span>待归类 <strong>{{ overview.secondary_metrics.pending_query_count }}</strong></span>
+      <span>详情失败 <strong>{{ overview.secondary_metrics.detail_failure_count }}</strong></span>
+    </div>
+  </section>
+
+  <section class="report-section">
+    <div class="section-head"><div><p class="eyebrow">02 · Query stage</p><h2>检索条件表现</h2></div></div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>检索条件</th><th>Query</th><th>候选人返回率</th><th>目标人物命中率</th><th>有候选人条件下命中率</th><th>命中信息准确度</th><th>命中资料完整度</th><th>非命中资料完整度</th><th>非命中候选人资料相似度</th></tr></thead>
+      <tbody>{% for stage, item in report.query_stage_metrics.items() %}<tr><td class="mono">{{ stage }}</td><td>{{ item.query_count }}</td><td>{{ metric_value(item.candidate_return_rate) }}</td><td>{{ metric_value(item.retrieval_success) }}</td><td>{{ metric_value(item.conditional_hit_rate) }}</td><td>{{ metric_value(item.matched_accuracy) }}</td><td>{{ metric_value(item.matched_completeness) }}</td><td>{{ metric_value(item.nonmatched_data_completeness) }}</td><td>{{ metric_value(item.nonmatched_baseline_overlap) }}</td></tr>{% else %}<tr><td colspan="9">没有可统计的 Query。</td></tr>{% endfor %}</tbody>
+    </table></div>
+  </section>
+
+  {% if report.processing_scope is defined and report.processing_scope.fields %}
+    <section class="report-section report-v5-processing-scope">
+      <div class="section-head"><div><p class="eyebrow">03 · Processing scope</p><h2>本次数据处理范围</h2><p class="inline-note">以本报告绑定的 FieldSchema 快照为准；“已返回”表示本次至少有一个处理对象返回该字段。</p></div></div>
+      <div class="report-v5-scope-summary">
+        <span>启用提取 <strong>{{ report.processing_scope.enabled_field_count }}</strong></span>
+        <span>实际有值 <strong>{{ report.processing_scope.actual_returned_field_count }}</strong></span>
+        <span>基准对比 <strong>{{ report.processing_scope.baseline_compare_field_count }}</strong></span>
+        <span>完整度计算 <strong>{{ report.processing_scope.completeness_field_count }}</strong></span>
+        <span>准确度计算 <strong>{{ report.processing_scope.accuracy_field_count }}</strong></span>
+        <span>身份判断 <strong>{{ report.processing_scope.identity_field_count }}</strong></span>
+      </div>
+      <p class="inline-note">字段配置：<span class="mono">{{ report.processing_scope.schema_name }} · {{ report.processing_scope.schema_version }}</span></p>
+      <div class="report-v5-scope-modules">
+        {% for module in report.processing_scope.modules %}
+          <details>
+            <summary><span>{{ module.module }}</span><small>{{ module.field_count }} 个字段 · {{ module.actual_returned_field_count }} 个实际有值</small></summary>
+            <div class="table-wrap"><table>
+              <thead><tr><th>字段</th><th>来源路径</th><th>Scope</th><th>实际返回</th><th>基准对比</th><th>完整度</th><th>准确度</th><th>身份判断</th></tr></thead>
+              <tbody>
+                {% for field in module.fields %}
+                  <tr>
+                    <td>{{ field.display_name }}<small class="mono">{{ field.field_key }}</small></td>
+                    <td class="mono report-v5-path">{{ field.source_path }}</td>
+                    <td class="mono">{{ field.value_scope }}</td>
+                    <td>{{ metric_value({'value': field.return_rate, 'status': field.status}) }}<small>{{ field.returned_count }} / {{ field.entity_count }}</small></td>
+                    <td>{{ '开' if field.baseline_compare_enabled else '关' }}</td>
+                    <td>{{ '开' if field.completeness_enabled else '关' }}</td>
+                    <td>{{ '开' if field.accuracy_enabled else '关' }}</td>
+                    <td>{{ '开' if field.identity_enabled else '关' }}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table></div>
+          </details>
+        {% endfor %}
+      </div>
+    </section>
+  {% endif %}
+
+  {% if report.module_return_overview is defined and report.module_return_overview.modules %}
+    {% set module_overview = report.module_return_overview %}
+    <section class="report-section report-v5-module-overview">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">04 · Module return overview</p>
+          <h2>五大资料模块返回概览</h2>
+          <p class="inline-note">“模块有数据率”表示候选人至少返回一个业务原子字段；“字段完整度”表示实际返回字段槽位占应有字段槽位的比例。状态、容器 JSON 和详情失败候选人不进入计算分母。</p>
+        </div>
+      </div>
+      <div class="report-v5-scope-summary">
+        {% for key in ['all', 'hit', 'nonmatched'] %}
+          {% set population = module_overview.populations[key] %}
+          <span>{{ population.label }} <strong>{{ population.detail_success_count }}</strong> 人{% if population.detail_failure_count %} · 详情失败 {{ population.detail_failure_count }}{% endif %}</span>
+        {% endfor %}
+        {% if module_overview.unclassified_success_count %}
+          <span>待身份归类 <strong>{{ module_overview.unclassified_success_count }}</strong> 人</span>
+        {% endif %}
+      </div>
+      <div class="table-wrap report-v5-module-matrix">
+        <table>
+          <thead>
+            <tr>
+              <th rowspan="2">资料模块</th>
+              <th rowspan="2">业务字段</th>
+              <th colspan="2">全部候选人</th>
+              <th colspan="2" class="report-v5-hit-head">全部 HIT</th>
+              <th colspan="2">非命中 / 疑似</th>
+              <th rowspan="2">完整度差异</th>
+            </tr>
+            <tr>
+              <th>模块有数据率</th><th>字段完整度</th>
+              <th class="report-v5-hit-head">模块有数据率</th><th class="report-v5-hit-head">字段完整度</th>
+              <th>模块有数据率</th><th>字段完整度</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for module in module_overview.modules %}
+              {% set all_group = module.populations.all %}
+              {% set hit_group = module.populations.hit %}
+              {% set nonmatched_group = module.populations.nonmatched %}
+              <tr>
+                <td><strong>{{ module.module }}</strong></td>
+                <td>{{ module.business_field_count }}</td>
+                <td>{{ percentage(all_group.module_return_rate) }}<small>{{ all_group.module_returned_candidate_count }} / {{ all_group.detail_success_count }} 人</small></td>
+                <td>{{ percentage(all_group.field_completeness) }}<small>{{ all_group.returned_field_slot_count }} / {{ all_group.field_slot_count }} 槽位</small></td>
+                <td class="report-v5-hit-cell">{{ percentage(hit_group.module_return_rate) }}<small>{{ hit_group.module_returned_candidate_count }} / {{ hit_group.detail_success_count }} 人</small></td>
+                <td class="report-v5-hit-cell">{{ percentage(hit_group.field_completeness) }}<small>{{ hit_group.returned_field_slot_count }} / {{ hit_group.field_slot_count }} 槽位</small></td>
+                <td>{{ percentage(nonmatched_group.module_return_rate) }}<small>{{ nonmatched_group.module_returned_candidate_count }} / {{ nonmatched_group.detail_success_count }} 人</small></td>
+                <td>{{ percentage(nonmatched_group.field_completeness) }}<small>{{ nonmatched_group.returned_field_slot_count }} / {{ nonmatched_group.field_slot_count }} 槽位</small></td>
+                <td class="{{ 'positive' if module.hit_nonmatched_completeness_delta is not none and module.hit_nonmatched_completeness_delta > 0 else 'negative' if module.hit_nonmatched_completeness_delta is not none and module.hit_nonmatched_completeness_delta < 0 else '' }}">{{ '+' if module.hit_nonmatched_completeness_delta is not none and module.hit_nonmatched_completeness_delta > 0 else '' }}{{ percentage(module.hit_nonmatched_completeness_delta) }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="report-v5-module-details">
+        {% for module in module_overview.modules %}
+          <details>
+            <summary>
+              <span><strong>{{ module.module }}</strong><small>{{ module.business_field_count }} 个业务原子字段</small></span>
+              <span>HIT {{ percentage(module.populations.hit.field_completeness) }} · 非命中 {{ percentage(module.populations.nonmatched.field_completeness) }}</span>
+            </summary>
+            <div class="report-v5-module-populations">
+              {% for key in ['all', 'hit', 'nonmatched'] %}
+                {% set population = module.populations[key] %}
+                <article>
+                  <span>{{ population.label }}</span>
+                  <strong>{{ percentage(population.module_return_rate) }}</strong>
+                  <small>模块有数据 {{ population.module_returned_candidate_count }} / {{ population.detail_success_count }} 人</small>
+                  <b>{{ percentage(population.field_completeness) }}</b>
+                  <small>字段完整 {{ population.returned_field_slot_count }} / {{ population.field_slot_count }} 槽位 · 全字段返回 {{ population.fully_returned_candidate_count }} 人</small>
+                </article>
+              {% endfor %}
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>业务原子字段</th><th>全部候选人</th><th>全部 HIT</th><th>非命中 / 疑似</th><th>HIT 差异</th></tr></thead>
+                <tbody>
+                  {% for field in module.fields %}
+                    {% set all_field = field.populations.all %}
+                    {% set hit_field = field.populations.hit %}
+                    {% set nonmatched_field = field.populations.nonmatched %}
+                    <tr>
+                      <td>{{ field.display_name }}<small class="mono">{{ field.field_key }}</small></td>
+                      <td>{{ percentage(all_field.return_rate) }}<small>{{ all_field.returned_count }} / {{ all_field.candidate_count }}</small></td>
+                      <td class="report-v5-hit-cell">{{ percentage(hit_field.return_rate) }}<small>{{ hit_field.returned_count }} / {{ hit_field.candidate_count }}</small></td>
+                      <td>{{ percentage(nonmatched_field.return_rate) }}<small>{{ nonmatched_field.returned_count }} / {{ nonmatched_field.candidate_count }}</small></td>
+                      <td>{{ '+' if field.hit_nonmatched_delta is not none and field.hit_nonmatched_delta > 0 else '' }}{{ percentage(field.hit_nonmatched_delta) }}</td>
+                    </tr>
+                  {% else %}
+                    <tr><td colspan="5">当前 FieldSchema 没有启用该模块的业务原子字段。</td></tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+            <div class="report-v5-status-grid">
+              {% for key in ['all', 'hit', 'nonmatched'] %}
+                {% set population = module.populations[key] %}
+                <span><strong>{{ population.label }} · 接口状态</strong>data {{ population.status_distribution.data }} · empty {{ population.status_distribution.empty }} · error {{ population.status_distribution.error }} · unknown {{ population.status_distribution.unknown }}</span>
+              {% endfor %}
+            </div>
+          </details>
+        {% endfor %}
+      </div>
+    </section>
+  {% endif %}
+
+  {% if report.confidence_metrics and report.confidence_metrics.overall %}
+    {% set confidence_total = report.confidence_metrics.overall.values()|sum %}
+    <section class="report-section report-v5-confidence">
+      <div class="section-head"><div><p class="eyebrow">05 · Confidence distribution</p><h2>候选人置信度分布</h2><p class="inline-note">Confidence 是接口返回的候选人置信等级，用于观察结果结构，不等于身份命中准确率。</p></div></div>
+      <div class="report-v5-confidence-bars">
+        {% for label, count in report.confidence_metrics.overall.items() %}
+          <div><span class="mono">{{ label }}</span><div><i style="width: {{ ((count / confidence_total) * 100)|round(2) if confidence_total else 0 }}%"></i></div><strong>{{ (((count / confidence_total) * 100)|round(2)) if confidence_total else 0 }}% · {{ count }} 人</strong></div>
+        {% endfor %}
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Confidence</th><th>全部候选人</th><th>所有 HIT</th><th>主命中</th><th>NOT_HIT</th><th>SUSPECTED</th><th>待归类</th></tr></thead>
+        <tbody>
+          {% for label, count in report.confidence_metrics.overall.items() %}
+            <tr><td class="mono">{{ label }}</td><td>{{ count }}</td><td>{{ report.confidence_metrics.get('all_hit', {}).get(label, '—') }}</td><td>{{ report.confidence_metrics.get('primary_hit', report.confidence_metrics.get('matched', {})).get(label, 0) }}</td><td>{{ report.confidence_metrics.get('not_hit', {}).get(label, 0) }}</td><td>{{ report.confidence_metrics.get('suspected', {}).get(label, 0) }}</td><td>{{ report.confidence_metrics.get('pending', {}).get(label, 0) }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table></div>
+    </section>
+  {% endif %}
+
+  {% if report.optional_sections.show_comparison %}
+    <section class="report-section report-v5-comparison">
+      <div class="section-head"><div><p class="eyebrow">06 · Comparison</p><h2>版本变化概览</h2></div></div>
+      {% set coverage = report.comparison.same_condition.coverage %}
+      <p class="inline-note">同条件成功配对 {{ coverage.paired_count }} 条 Query；具体人物与候选人变化在下方工作台中查看。</p>
+      <div class="report-v5-facts">
+        {% for label in ['持续命中', '新增命中', '退化未命中', '持续未命中'] %}<span>{{ label }} <strong>{{ report.comparison.same_condition.category_counts.get(label, 0) }}</strong></span>{% endfor %}
+      </div>
+    </section>
+  {% endif %}
+
+  <section class="report-section report-v5-explorer"{% if not static_export %} data-report-explorer data-run-id="{{ report.metadata.candidate_run_id }}" data-process-id="{{ report.metadata.candidate_process_id }}"{% endif %}>
+    <div class="section-head"><div><p class="eyebrow">07 · Query explorer</p><h2>Query 与全部候选人</h2><p class="inline-note">全部 {{ explorer.total_query_count }} 个 Query、{{ explorer.total_candidate_count }} 个候选人已写入本报告快照。Query 默认折叠，展开后查看其全部候选人；搜索和筛选覆盖全部数据。</p></div></div>
+    {% if static_export %}
+      {# 静态 HTML 不依赖 JavaScript：所有 Query 与候选人摘要直接输出。 #}
+      <div class="report-v5-static-list">
+        {% for item in explorer['items'] %}
+          {% set query_run = item.candidate_run or item.baseline_run %}
+          {% if query_run %}
+            <details class="report-v5-static-query">
+              <summary><span><strong>{{ item.display_name or item.person_id or query_run.query.query_id }}</strong><small class="mono">{{ query_run.query.query_id }} · {{ item.query_stage }} · {{ query_run.query.candidate_count }} 位候选人</small></span>{% if item.change_category %}<span class="status">{{ item.change_category }}</span>{% endif %}</summary>
+              <div class="table-wrap"><table>
+                <thead><tr><th>排名</th><th>候选人</th><th>身份结论</th><th>命中信息准确度</th><th>命中资料完整度</th><th>非命中资料完整度</th><th>非命中候选人资料相似度</th><th>详情状态</th></tr></thead>
+                <tbody>
+                  {% for candidate in query_run.candidates %}
+                    <tr><td>{{ candidate.candidate_rank if candidate.candidate_rank is not none else '—' }}</td><td>{{ candidate.display_name or candidate.candidate_id }}<small class="mono">{{ candidate.candidate_id }}</small></td><td>{{ candidate.identity.judgement }}</td><td>{{ metric_value(candidate.metrics.matched_accuracy) }}</td><td>{{ metric_value(candidate.metrics.matched_completeness) }}</td><td>{{ metric_value(candidate.metrics.nonmatched_data_completeness) }}</td><td>{{ metric_value(candidate.metrics.nonmatched_baseline_overlap) }}</td><td>{{ candidate.detail_status }}{% if candidate.detail_error %}<small>{{ candidate.detail_error }}</small>{% endif %}</td></tr>
+                  {% else %}
+                    <tr><td colspan="8">没有候选人。</td></tr>
+                  {% endfor %}
+                </tbody>
+              </table></div>
+              {% for candidate in query_run.candidates %}
+                {% set visible_modules = candidate.modules.values()|selectattr('display_field_count')|list %}
+                {% if visible_modules or candidate.field_comparisons or candidate.evidence.review_evidence %}
+                  <details class="report-v5-static-drilldown">
+                    <summary>{{ candidate.display_name or candidate.candidate_id }} · 模块、字段与证据</summary>
+                    {% if visible_modules %}
+                      <h4>模块摘要</h4><div class="metric-strip four">{% for module in visible_modules %}<div><span>{{ module.module }}</span><strong>{{ module.status or ('有数据' if module.has_real_data else '无数据') }}</strong><small>有值 {{ module.returned_field_count }} / {{ module.display_field_count }} · 完整度 {{ metric_value(module.completeness) }} · 准确度 {{ metric_value(module.accuracy) }}</small></div>{% endfor %}</div>
+                    {% endif %}
+                    {% if candidate.field_comparisons %}
+                      <h4>字段比较</h4><div class="table-wrap"><table><thead><tr><th>字段</th><th>基准人物值</th><th>检索候选值</th><th>比较结果</th><th>资料完整 / 基准覆盖 / 准确</th></tr></thead><tbody>{% for field in candidate.field_comparisons %}<tr><td>{{ field.display_name }}<small class="mono">{{ field.field_key }}</small></td><td class="report-v5-static-value">{{ field.baseline_value|tojson }}</td><td class="report-v5-static-value">{{ field.candidate_value|tojson }}</td><td>{{ field.comparison_status or ('基准无值' if not field.baseline_available else '未比较') }}</td><td>{{ field.data_completeness_score if field.data_completeness_score is not none else '—' }} / {{ field.baseline_coverage_score if field.baseline_coverage_score is not none else '—' }} / {{ field.accuracy_score if field.accuracy_score is not none else '—' }}</td></tr>{% endfor %}</tbody></table></div>
+                    {% endif %}
+                    {% if candidate.evidence.review_evidence %}<h4>Evidence</h4><p>{{ candidate.evidence.review_evidence }}</p>{% endif %}
+                    <p class="inline-note">Candidate：<span class="mono">{{ candidate.candidate_pk }}</span> · Raw 引用 {{ candidate.references.raw_ids|length }} 条（静态报告不嵌入 Raw 内容）</p>
+                  </details>
+                {% endif %}
+              {% endfor %}
+            </details>
+          {% endif %}
+        {% endfor %}
+      </div>
+    {% else %}
+    <div class="report-v5-toolbar">
+      <label>搜索<input type="search" data-report-search placeholder="人物、person_id、query_id、candidate_id"></label>
+      <label>检索条件<select data-report-stage><option value="">全部条件</option>{% for stage in report.query_stage_metrics.keys() %}<option value="{{ stage }}">{{ stage }}</option>{% endfor %}</select></label>
+      <label>身份结论<select data-report-identity><option value="">全部候选人</option><option value="HIT">命中</option><option value="NOT_HIT">非命中</option><option value="SUSPECTED">疑似</option><option value="UNCLASSIFIED">待归类</option><option value="DETAIL_FAILED">详情失败</option></select></label>
+    </div>
+    <div class="report-v5-load-state" data-report-load-state></div>
+    <div class="report-v5-query-list" data-report-query-list></div>
+    <button class="button secondary" type="button" data-report-load-more hidden>加载更多 Query</button>
+    {% endif %}
+  </section>
+
+  {% if report.optional_sections.show_threshold %}
+    <section class="report-section">
+      <div class="section-head"><div><p class="eyebrow">Reference</p><h2>参考线判断</h2></div></div>
+      <p class="inline-note">已配置 {{ report.threshold_assessment.configured_count }} 项 · PASS {{ report.threshold_assessment.pass_count }} · FAIL {{ report.threshold_assessment.fail_count }}</p>
+    </section>
+  {% endif %}
+
+  {% if report.optional_sections.show_cost %}
+    <section class="report-section">
+      <div class="section-head"><div><p class="eyebrow">Cost</p><h2>执行与成本</h2></div></div>
+      <div class="table-wrap"><table><thead><tr><th>字段</th><th>有效 / 缺失 / 错误</th><th>总值</th><th>平均</th></tr></thead><tbody>{% for field_key in ['llm_cost', 'third_party_cost', 'total_cost', 'search_duration_ms'] %}{% set item = report.cost_metrics.get(field_key, {}) %}{% if item.total is not none %}<tr><td class="mono">{{ field_key }}</td><td>{{ item.value_count }} / {{ item.missing_count }} / {{ item.invalid_count }}</td><td>{{ item.total }}</td><td>{{ item.average }}</td></tr>{% endif %}{% endfor %}</tbody></table></div>
+    </section>
+  {% endif %}
+
+  <section class="report-section report-v5-diagnostics">
+    <div class="section-head"><div><p class="eyebrow">Appendix</p><h2>风险、未就绪原因与技术信息</h2></div></div>
+    {% if report.diagnostics['items'] %}<ul class="report-v5-diagnostic-list">{% for item in report.diagnostics['items'] %}<li><strong>{{ item.code }}</strong><span>{{ item.message }}</span></li>{% endfor %}</ul>{% else %}<p class="inline-note">没有需要额外说明的风险或未就绪原因。</p>{% endif %}
+    <details><summary>技术元数据</summary><dl class="data-list report-metadata">{% for key, value in report.diagnostics.technical_metadata.items() %}<div><dt>{{ key }}</dt><dd class="mono">{{ value }}</dd></div>{% endfor %}</dl></details>
+  </section>
+
+  {% if not static_export %}
+    <dialog class="report-v5-metric-dialog" data-report-metric-dialog>
+      <div class="report-v5-dialog-head"><div><p class="eyebrow">Metric details</p><h2 data-metric-dialog-title>指标计算详情</h2></div><button type="button" aria-label="关闭" data-metric-dialog-close>×</button></div>
+      <p class="report-v5-dialog-purpose" data-metric-dialog-purpose></p>
+      <div class="report-v5-dialog-formula"><span>计算公式</span><strong data-metric-dialog-formula></strong></div>
+      <div class="report-v5-dialog-result"><span>本次计算</span><strong data-metric-dialog-result></strong><small data-metric-dialog-expression></small><small data-metric-dialog-auxiliary></small><small data-metric-dialog-status></small></div>
+      <div class="report-v5-population-groups" data-metric-dialog-populations hidden></div>
+      <h3>参与计算明细</h3>
+      <div class="table-wrap"><table><thead><tr><th>Query</th><th>候选人</th><th>结果</th><th>单项算式</th><th>贡献值 / 字段明细</th></tr></thead><tbody data-metric-dialog-breakdown></tbody></table></div>
+    </dialog>
+    <script id="report-v5-metric-snapshot" type="application/json">{{ overview.core_metrics|tojson }}</script>
+    <script id="report-v5-snapshot" type="application/json">{{ {'items': explorer['items'], 'initial_query_count': explorer.get('initial_query_count', 5), 'load_more_query_count': explorer.get('load_more_query_count', 10)}|tojson }}</script>
+  {% endif %}
+{% else %}
 
 <section class="report-section">
   <div class="page-heading split">
@@ -22,16 +400,93 @@
   </div>
   <dl class="data-list report-metadata">
     <div><dt>report_id</dt><dd class="mono">{{ report.metadata.report_id }}</dd></div>
-    <div><dt>生成时间</dt><dd>{{ report.metadata.generated_at }}</dd></div>
+    <div><dt>生成时间</dt><dd>{{ report.metadata.generated_at|format_datetime }}</dd></div>
     <div><dt>ReportModel</dt><dd class="mono">{{ report.metadata.report_model_version or 'report-model-v1' }}</dd></div>
     <div><dt>指标规则</dt><dd class="mono">{{ report.metadata.metrics_rule_version or 'metrics-v1' }}</dd></div>
     <div><dt>评估阶段</dt><dd class="mono">{{ report.metadata.evaluation_phase or 'UNSPECIFIED' }}</dd></div>
     <div><dt>字段配置</dt><dd class="mono">{{ report.metadata.schema_version }}</dd></div>
     <div><dt>基准版本</dt><dd class="mono">{{ report.metadata.baseline_version or '未关联' }}</dd></div>
+    <div><dt>参考线方案</dt><dd>{% if report.metadata.threshold_profile_id is defined %}{% if report.metadata.threshold_profile_id %}{{ report.metadata.threshold_profile_name }} v{{ report.metadata.threshold_profile_version }}{% else %}未选择参考线方案{% endif %}{% else %}历史自定义参考线{% endif %}</dd></div>
     <div><dt>规则版本</dt><dd class="mono">{{ report.metadata.rule_version }}</dd></div>
     <div><dt>数据来源</dt><dd>{{ report.metadata.source_type }}</dd></div>
   </dl>
 </section>
+
+{% if report.metadata.report_model_version in ['report-model-v3', 'report-model-v4'] %}
+  <section class="report-section">
+    <div class="section-head"><div><p class="eyebrow">{{ report.metadata.report_model_version }} · Execution</p><h2>执行、数据返回与身份结果</h2></div></div>
+    <h3>执行状态</h3>
+    <div class="metric-strip four">
+      <div><span>Query 总数</span><strong>{{ report.execution_summary.query_count }}</strong></div>
+      <div><span>有 / 无候选人</span><strong>{{ report.execution_summary.has_candidates_count }} / {{ report.execution_summary.no_candidates_count }}</strong></div>
+      <div><span>执行失败</span><strong>{{ report.execution_summary.execution_failed_count }}</strong></div>
+      <div><span>详情成功 / 失败</span><strong>{{ report.execution_summary.detail_success_count }} / {{ report.execution_summary.detail_failure_count }}</strong></div>
+    </div>
+    <h3>数据返回</h3>
+    {% set candidate_return = report.data_return_summary.candidate_field_return %}
+    <div class="metric-strip four">
+      <div><span>Candidate 字段总体返回率</span><strong>{{ metric_value(candidate_return) }}</strong><small>{{ candidate_return.numerator|default(0)|round(4) }} / {{ candidate_return.denominator|default(0) }}</small></div>
+      {% for module in ['Insights', 'Photos', 'Profile'] %}
+        {% set item = report.data_return_summary.module_metrics.get(module, {}) %}
+        <div><span>{{ module }} 有数据率</span><strong>{{ ((item.data_rate or 0) * 100)|round(2) if item.data_rate is not none else '无成功 Candidate' }}{% if item.data_rate is not none %}%{% endif %}</strong><small>data {{ item.data_count|default(0) }} · empty {{ item.empty_count|default(0) }} · unknown {{ item.unknown_count|default(0) }}</small></div>
+      {% endfor %}
+    </div>
+    <div class="metric-strip four">
+      {% for module in ['Social', 'Summary'] %}
+        {% set item = report.data_return_summary.module_metrics.get(module, {}) %}
+        <div><span>{{ module }} 有数据率</span><strong>{{ ((item.data_rate or 0) * 100)|round(2) if item.data_rate is not none else '无成功 Candidate' }}{% if item.data_rate is not none %}%{% endif %}</strong><small>data {{ item.data_count|default(0) }} · empty {{ item.empty_count|default(0) }} · unknown {{ item.unknown_count|default(0) }}</small></div>
+      {% endfor %}
+      <div><span>公共字段接入</span><strong>{{ report.data_return_summary.cost_status.status }}</strong></div>
+      <div><span>字段配置冲突</span><strong>{{ report.field_alignment_summary.severity_counts.ERROR if report.field_alignment_summary else 0 }}</strong><small>ERROR</small></div>
+    </div>
+    <h3>身份结果</h3>
+    <div class="metric-strip four">
+      <div><span>已归类 Query</span><strong>{{ report.identity_summary.classified_query_count }}</strong></div>
+      <div><span>待归类 Query</span><strong>{{ report.identity_summary.pending_query_count }}</strong></div>
+      <div><span>有主要 HIT</span><strong>{{ report.identity_summary.primary_hit_query_count }}</strong></div>
+      <div><span>已确认无 HIT</span><strong>{{ report.identity_summary.no_hit_query_count }}</strong></div>
+    </div>
+  </section>
+
+  {% if report.not_ready_reasons %}
+    <section class="report-section report-warnings">
+      <div class="section-head"><div><p class="eyebrow">Not Ready</p><h2>未就绪原因与修复入口</h2></div></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>指标</th><th>原因码</th><th>具体原因</th><th>修复入口</th></tr></thead>
+          <tbody>
+            {% for item in report.not_ready_reasons %}
+              <tr>
+                <td class="mono">{{ item.metric }}</td>
+                <td class="mono">{{ item.reason_code }}</td>
+                <td>{{ item.reason }}{% if item.details %}<small>{{ item.details|join('；') }}</small>{% endif %}</td>
+                <td>
+                  {% if static_export %}
+                    {% if item.reason_code in ['BASELINE_NOT_LINKED', 'BASELINE_PERSON_NOT_FOUND'] %}管理 Query 人物关联
+                    {% elif item.reason_code == 'IDENTITY_PENDING' %}进入候选人身份归类
+                    {% elif item.reason_code == 'NO_EFFECTIVE_FIELDS' %}查看字段对比矩阵
+                    {% elif item.reason_code == 'FIELD_NOT_CONNECTED' %}查看字段配置和接口说明
+                    {% else %}查看 Process 详情{% endif %}
+                  {% else %}
+                    {% if item.reason_code in ['BASELINE_NOT_LINKED', 'BASELINE_PERSON_NOT_FOUND'] and report.metadata.baseline_version %}
+                      <a href="{{ url_for('run_person_links', run_id=report.metadata.candidate_run_id, baseline_version=report.metadata.baseline_version) }}">管理 Query 人物关联</a>
+                    {% elif item.reason_code == 'NO_EFFECTIVE_FIELDS' and report.metadata.baseline_version %}
+                      <a href="{{ url_for('field_comparison_matrix', schema_version=report.metadata.schema_version, baseline_version=report.metadata.baseline_version, process_id=report.metadata.candidate_process_id) }}">查看字段对比矩阵</a>
+                    {% elif item.reason_code == 'FIELD_NOT_CONNECTED' %}
+                      <a href="{{ url_for('field_schemas') }}">查看字段配置</a>
+                    {% else %}
+                      <a href="{{ url_for('process_detail', process_id=report.metadata.candidate_process_id) }}">查看 Process 并修复</a>
+                    {% endif %}
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  {% endif %}
+{% endif %}
 
 {% if report.warnings %}
   <section class="report-section report-warnings">
@@ -43,22 +498,74 @@
 <section class="report-section">
   <div class="section-head"><div><p class="eyebrow">01 · Summary</p><h2>执行摘要</h2></div></div>
   {% set current = report.summary.candidate %}
+  {% set nonmatched_data = current.get('nonmatched_data_completeness', current.get('nonmatched_completeness', {})) %}
+  {% set nonmatched_overlap = current.get('nonmatched_baseline_overlap', {}) %}
   <div class="metric-strip four">
-    <div><span>检索成功率</span><strong>{{ metric_value(current.retrieval_success) }}</strong><small>{{ current.retrieval_success.numerator|round(4) }} / {{ current.retrieval_success.denominator }}</small></div>
-    <div><span>命中完整度</span><strong>{{ metric_value(current.matched_completeness) }}</strong><small>{{ current.matched_completeness.numerator|round(4) }} / {{ current.matched_completeness.denominator }}</small></div>
-    <div><span>命中准确率</span><strong>{{ metric_value(current.matched_accuracy) }}</strong><small>{{ current.matched_accuracy.numerator|round(4) }} / {{ current.matched_accuracy.denominator }}</small></div>
-    <div><span>非命中完整度</span><strong>{{ metric_value(current.nonmatched_completeness) }}</strong><small>{{ current.nonmatched_completeness.numerator|round(4) }} / {{ current.nonmatched_completeness.denominator }}</small></div>
+    <div><span>目标人物命中率</span><strong>{{ metric_value(current.retrieval_success) }}</strong><small>{{ metric_fraction(current.retrieval_success) }}</small></div>
+    <div><span>命中资料完整度</span><strong>{{ metric_value(current.matched_completeness) }}</strong><small>{{ metric_fraction(current.matched_completeness) }}</small></div>
+    <div><span>命中信息准确度</span><strong>{{ metric_value(current.matched_accuracy) }}</strong><small>{{ metric_fraction(current.matched_accuracy) }}</small></div>
+    <div><span>非命中资料完整度</span><strong>{{ metric_value(nonmatched_data) }}</strong><small>{{ metric_fraction(nonmatched_data) }}</small></div>
+    <div><span>非命中候选人资料相似度</span><strong>{{ metric_value(nonmatched_overlap) }}</strong><small>{{ metric_fraction(nonmatched_overlap) }}</small></div>
   </div>
+  {% if report.metadata.report_model_version in ['report-model-v3', 'report-model-v4'] %}
+    {% for key, label in [('retrieval_success', '目标人物命中率'), ('matched_completeness', '命中资料完整度'), ('matched_accuracy', '命中信息准确度'), ('nonmatched_data_completeness', '非命中资料完整度'), ('nonmatched_baseline_overlap', '非命中候选人资料相似度')] %}
+      {% set item = current.get(key, current.get('nonmatched_completeness', {})) if key == 'nonmatched_data_completeness' else current.get(key, {}) %}
+      {% if item.reason_codes %}
+        <div class="inline-note"><strong>{{ label }} · {{ item.status }}</strong>：{{ item.reason_codes|join(', ') }}{% if item.reasons %} · {{ item.reasons|join('；') }}{% endif %}</div>
+      {% endif %}
+    {% endfor %}
+  {% endif %}
 </section>
+
+{% if report.metadata.report_model_version == 'report-model-v4' %}
+  {% set baseline_quality = report.baseline_quality_metrics %}
+  <section class="report-section">
+    <div class="section-head"><div><p class="eyebrow">02 · Baseline Quality</p><h2>基准人物资料质量</h2></div></div>
+    <p class="inline-note">仅统计已确认主命中的候选人；Task、Candidate 等执行字段不进入本分区。五个资料模块按 Query 等权聚合，无启用评分字段时显示 N/A。</p>
+    <div class="metric-strip four">
+      <div><span>主命中人物</span><strong>{{ baseline_quality.primary_hit_query_count|default(0) }}</strong></div>
+      <div><span>人物总完整度</span><strong>{{ metric_value(baseline_quality.overall.completeness) }}</strong><small>{{ baseline_quality.overall.completeness.numerator|default(0)|round(4) }} / {{ baseline_quality.overall.completeness.denominator|default(0) }}</small></div>
+      <div><span>人物总准确度</span><strong>{{ metric_value(baseline_quality.overall.accuracy) }}</strong><small>{{ baseline_quality.overall.accuracy.numerator|default(0)|round(4) }} / {{ baseline_quality.overall.accuracy.denominator|default(0) }}</small></div>
+      <div><span>非命中资料返回率</span><strong>{{ metric_value(report.non_hit_data_return.overall) }}</strong><small>{{ report.non_hit_data_return.overall.numerator|default(0)|round(0) }} / {{ report.non_hit_data_return.overall.denominator|default(0) }}</small></div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>资料模块</th><th>完整度</th><th>准确度</th><th>非命中资料返回率</th></tr></thead>
+        <tbody>
+          {% for module in ['Insights', 'Photos', 'Profile', 'Social', 'Summary'] %}
+            {% set item = baseline_quality.modules.get(module, {}) %}
+            {% set non_hit = report.non_hit_data_return.modules.get(module, {}) %}
+            <tr>
+              <td>{{ module }}</td>
+              <td>{{ metric_value(item.completeness) }}<small>{{ item.completeness.numerator|default(0)|round(4) }} / {{ item.completeness.denominator|default(0) }} · {{ item.completeness.status|default('N/A') }}</small></td>
+              <td>{{ metric_value(item.accuracy) }}<small>{{ item.accuracy.numerator|default(0)|round(4) }} / {{ item.accuracy.denominator|default(0) }} · {{ item.accuracy.status|default('N/A') }}</small></td>
+              <td>{{ metric_value(non_hit) }}<small>{{ non_hit.numerator|default(0)|round(0) }} / {{ non_hit.denominator|default(0) }} · {{ non_hit.status|default('N/A') }}</small></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="report-section">
+    <div class="section-head"><div><p class="eyebrow">03 · Regression</p><h2>版本回归与字段变化</h2></div></div>
+    {% set regression = report.regression_metrics %}
+    {% if regression.same_condition %}
+      <p class="inline-note">正式状态：{{ regression.status }} · 成功配对 {{ regression.same_condition.coverage.paired_count }} 条 Query。字段变化仅包含开启“版本对比”的字段。</p>
+    {% else %}
+      <p class="inline-note">{{ regression.reasons|join('；') if regression.reasons else '尚未选择对比 Process' }}</p>
+    {% endif %}
+  </section>
+{% endif %}
 
 {% if report.result_status_metrics %}
   {% set result_status = report.result_status_metrics %}
   <section class="report-section">
     <div class="section-head"><div><p class="eyebrow">Result Status</p><h2>结果状态</h2></div></div>
     <div class="metric-strip four">
-      <div><span>有候选人</span><strong>{{ result_status.has_candidates_count }}</strong><small>有结果率 {{ (result_status.has_result_rate * 100)|round(2) ~ '%' if result_status.has_result_rate is not none else '不适用' }}</small></div>
-      <div><span>无候选人</span><strong>{{ result_status.no_candidates_count }}</strong><small>无结果率 {{ (result_status.no_result_rate * 100)|round(2) ~ '%' if result_status.no_result_rate is not none else '不适用' }}</small></div>
-      <div><span>执行失败</span><strong>{{ result_status.execution_failed_count }}</strong><small>失败率 {{ (result_status.execution_failed_rate * 100)|round(2) ~ '%' if result_status.execution_failed_rate is not none else '不适用' }}</small></div>
+      <div><span>有候选人</span><strong>{{ result_status.has_candidates_count }}</strong><small>有结果率 {{ (result_status.has_result_rate * 100)|round(2) ~ '%' if result_status.has_result_rate is not none else '无成功 Query' }}</small></div>
+      <div><span>无候选人</span><strong>{{ result_status.no_candidates_count }}</strong><small>无结果率 {{ (result_status.no_result_rate * 100)|round(2) ~ '%' if result_status.no_result_rate is not none else '无成功 Query' }}</small></div>
+      <div><span>执行失败</span><strong>{{ result_status.execution_failed_count }}</strong><small>失败率 {{ (result_status.execution_failed_rate * 100)|round(2) ~ '%' if result_status.execution_failed_rate is not none else '无 Query' }}</small></div>
       <div><span>正式 Query</span><strong>{{ result_status.total_formal_queries }}</strong><small>执行失败不进入有/无结果率分母</small></div>
     </div>
   </section>
@@ -68,7 +575,7 @@
   <div class="section-head"><div><p class="eyebrow">02 · Query Stage</p><h2>FULL_NAME / FULL_NAME_SOCIAL</h2></div></div>
   <div class="table-wrap">
     <table>
-      <thead><tr><th>检索条件</th><th>Query 数</th><th>成功率</th><th>命中完整度</th><th>命中准确率</th><th>非命中完整度</th><th>状态</th></tr></thead>
+      <thead><tr><th>检索条件</th><th>Query 数</th><th>目标人物命中率</th><th>命中资料完整度</th><th>命中信息准确度</th><th>非命中资料完整度</th><th>非命中候选人资料相似度</th><th>状态</th></tr></thead>
       <tbody>
         {% for query_stage, item in report.query_stage_metrics.items() %}
           <tr>
@@ -77,7 +584,8 @@
             <td>{{ metric_value(item.retrieval_success) }}</td>
             <td>{{ metric_value(item.matched_completeness) }}</td>
             <td>{{ metric_value(item.matched_accuracy) }}</td>
-            <td>{{ metric_value(item.nonmatched_completeness) }}</td>
+            <td>{{ metric_value(item.nonmatched_data_completeness) }}</td>
+            <td>{{ metric_value(item.nonmatched_baseline_overlap) }}</td>
             <td>{{ 'READY' if item.formal_ready else 'PENDING_REVIEW' }}</td>
           </tr>
         {% else %}
@@ -196,7 +704,7 @@
         <div><span>PDL true</span><strong>{{ report.pdl_metrics.true_count }}</strong></div>
         <div><span>PDL false</span><strong>{{ report.pdl_metrics.false_count }}</strong></div>
         <div><span>PDL unknown</span><strong>{{ report.pdl_metrics.unknown_count }}</strong></div>
-        <div><span>PDL 调用率</span><strong>{{ (report.pdl_metrics.call_rate * 100)|round(2) ~ '%' if report.pdl_metrics.call_rate is not none else '不适用' }}</strong></div>
+        <div><span>PDL 调用率</span><strong>{{ (report.pdl_metrics.call_rate * 100)|round(2) ~ '%' if report.pdl_metrics.call_rate is not none else '字段未接入' }}</strong></div>
       </div>
     {% endif %}
   {% else %}
@@ -252,47 +760,97 @@
 
 <section class="report-section">
   <div class="section-head"><div><p class="eyebrow">05 · Field Quality</p><h2>模块与字段</h2></div></div>
-  <h3>模块返回率</h3>
-  <div class="table-wrap">
-    <table>
-      <thead><tr><th>模块</th><th>返回候选人</th><th>候选人数</th><th>全部返回率</th><th>命中返回率</th><th>非命中返回率</th><th>Baseline</th><th>变化</th></tr></thead>
-      <tbody>
-        {% for module, item in report.module_metrics.items() %}
-          <tr>
-            <td>{{ module }}</td>
-            <td>{{ item.returned_candidate_count }}</td>
-            <td>{{ item.candidate_count }}</td>
-            <td>{{ ((item.candidate_return_rate if item.candidate_return_rate is defined else item.return_rate) * 100)|round(2) ~ '%' if (item.candidate_return_rate if item.candidate_return_rate is defined else item.return_rate) is not none else 'N/A' }}</td>
-            <td>{{ ((item.candidate_hit_return_rate if item.candidate_hit_return_rate is defined else item.hit_return_rate) * 100)|round(2) ~ '%' if (item.candidate_hit_return_rate if item.candidate_hit_return_rate is defined else item.hit_return_rate) is defined and (item.candidate_hit_return_rate if item.candidate_hit_return_rate is defined else item.hit_return_rate) is not none else 'N/A' }}</td>
-            <td>{{ ((item.candidate_nonmatched_return_rate if item.candidate_nonmatched_return_rate is defined else item.nonmatched_return_rate) * 100)|round(2) ~ '%' if (item.candidate_nonmatched_return_rate if item.candidate_nonmatched_return_rate is defined else item.nonmatched_return_rate) is defined and (item.candidate_nonmatched_return_rate if item.candidate_nonmatched_return_rate is defined else item.nonmatched_return_rate) is not none else 'N/A' }}</td>
-            <td>{{ (item.baseline_return_rate * 100)|round(2) ~ '%' if item.baseline_return_rate is defined and item.baseline_return_rate is not none else '—' }}</td>
-            <td>{{ (item.return_rate_delta * 100)|round(2) ~ 'pp' if item.return_rate_delta is defined and item.return_rate_delta is not none else '—' }}</td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  <h3>字段指标</h3>
-  <div class="table-wrap">
-    <table>
-      <thead><tr><th>字段</th><th>模块</th><th>返回 / 空值</th><th>全部返回率</th><th>命中返回率</th><th>非命中非空率</th><th>命中完整度</th><th>命中准确率</th><th>变化</th></tr></thead>
-      <tbody>
-        {% for field_key, item in report.field_metrics.items() %}
-          <tr>
-            <td>{{ item.display_name }}<small class="mono">{{ field_key }}</small></td>
-            <td>{{ item.module }}</td>
-            <td>{{ item.returned_count }} / {{ item.empty_count if item.empty_count is defined else '—' }}</td>
-            <td>{{ ((item.candidate_return_rate if item.candidate_return_rate is defined else item.return_rate) * 100)|round(2) ~ '%' if (item.candidate_return_rate if item.candidate_return_rate is defined else item.return_rate) is not none else 'N/A' }}</td>
-            <td>{{ ((item.candidate_hit_return_rate if item.candidate_hit_return_rate is defined else item.hit_return_rate) * 100)|round(2) ~ '%' if (item.candidate_hit_return_rate if item.candidate_hit_return_rate is defined else item.hit_return_rate) is defined and (item.candidate_hit_return_rate if item.candidate_hit_return_rate is defined else item.hit_return_rate) is not none else 'N/A' }}</td>
-            <td>{{ ((item.candidate_nonmatched_nonempty_rate if item.candidate_nonmatched_nonempty_rate is defined else item.nonmatched_nonempty_rate) * 100)|round(2) ~ '%' if (item.candidate_nonmatched_nonempty_rate if item.candidate_nonmatched_nonempty_rate is defined else item.nonmatched_nonempty_rate) is defined and (item.candidate_nonmatched_nonempty_rate if item.candidate_nonmatched_nonempty_rate is defined else item.nonmatched_nonempty_rate) is not none else 'N/A' }}</td>
-            <td>{{ ((item.candidate_hit_completeness if item.candidate_hit_completeness is defined else item.hit_completeness) * 100)|round(2) ~ '%' if (item.candidate_hit_completeness if item.candidate_hit_completeness is defined else item.hit_completeness) is not none else 'N/A' }}</td>
-            <td>{{ ((item.candidate_hit_accuracy if item.candidate_hit_accuracy is defined else item.hit_accuracy) * 100)|round(2) ~ '%' if (item.candidate_hit_accuracy if item.candidate_hit_accuracy is defined else item.hit_accuracy) is not none else 'N/A' }}</td>
-            <td>{{ (item.return_rate_delta * 100)|round(2) ~ 'pp' if item.return_rate_delta is defined and item.return_rate_delta is not none else '—' }}</td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
+{% if report.metadata.report_model_version in ['report-model-v3', 'report-model-v4'] %}
+    <h3>模块真实有数据率</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>模块</th><th>data</th><th>empty</th><th>unknown</th><th>成功 Candidate</th><th>有数据率</th><th>状态</th></tr></thead>
+        <tbody>
+          {% for module, item in report.module_metrics.items() %}
+            <tr>
+              <td>{{ module }}</td>
+              <td>{{ item.data_count }}</td>
+              <td>{{ item.empty_count }}</td>
+              <td>{{ item.unknown_count }}</td>
+              <td>{{ item.candidate_count }}</td>
+              <td>{{ (item.data_rate * 100)|round(2) ~ '%' if item.data_rate is not none else '无成功 Candidate' }}</td>
+              <td>{{ item.status }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <h3>字段返回明细</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>字段</th><th>模块</th><th>Scope</th><th>返回</th><th>空值</th><th>有效分母</th><th>返回率</th><th>状态</th></tr></thead>
+        <tbody>
+          {% for field_key, item in report.field_metrics.items() %}
+            <tr>
+              <td>{{ item.display_name }}<small class="mono">{{ field_key }}</small></td>
+              <td>{{ item.module }}</td>
+              <td class="mono">{{ item.value_scope }}</td>
+              <td>{{ item.returned_count }}</td>
+              <td>{{ item.empty_count }}</td>
+              <td>{{ item.entity_count }}</td>
+              <td>{{ (item.return_rate * 100)|round(2) ~ '%' if item.return_rate is not none else '无适用分母' }}</td>
+              <td>{{ item.status }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <h3>模块返回率</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>模块</th><th>返回候选人</th><th>候选人数</th><th>全部返回率</th><th>命中返回率</th><th>非命中返回率</th><th>Baseline</th><th>变化</th></tr></thead>
+        <tbody>
+          {% for module, item in report.module_metrics.items() %}
+            {% set all_return_rate = item.get('candidate_return_rate', item.get('return_rate')) %}
+            {% set hit_return_rate = item.get('candidate_hit_return_rate', item.get('hit_return_rate')) %}
+            {% set nonmatched_return_rate = item.get('candidate_nonmatched_return_rate', item.get('nonmatched_return_rate')) %}
+            <tr>
+              <td>{{ module }}</td>
+              <td>{{ item.returned_candidate_count }}</td>
+              <td>{{ item.candidate_count }}</td>
+              <td>{{ (all_return_rate * 100)|round(2) ~ '%' if all_return_rate is not none else '无适用分母' }}</td>
+              <td>{{ (hit_return_rate * 100)|round(2) ~ '%' if hit_return_rate is not none else '无适用分母' }}</td>
+              <td>{{ (nonmatched_return_rate * 100)|round(2) ~ '%' if nonmatched_return_rate is not none else '无适用分母' }}</td>
+              <td>{{ (item.baseline_return_rate * 100)|round(2) ~ '%' if item.baseline_return_rate is defined and item.baseline_return_rate is not none else '—' }}</td>
+              <td>{{ (item.return_rate_delta * 100)|round(2) ~ 'pp' if item.return_rate_delta is defined and item.return_rate_delta is not none else '—' }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <h3>字段指标</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>字段</th><th>模块 / Scope</th><th>返回 / 空值</th><th>全部返回率</th><th>命中返回率</th><th>非命中非空率</th><th>命中资料完整度</th><th>命中信息准确度</th><th>变化</th></tr></thead>
+        <tbody>
+          {% for field_key, item in report.field_metrics.items() %}
+            {% set all_return_rate = item.get('candidate_return_rate', item.get('return_rate')) %}
+            {% set hit_return_rate = item.get('candidate_hit_return_rate', item.get('hit_return_rate')) %}
+            {% set nonmatched_nonempty_rate = item.get('candidate_nonmatched_nonempty_rate', item.get('nonmatched_nonempty_rate')) %}
+            {% set hit_completeness = item.get('candidate_hit_completeness', item.get('hit_completeness')) %}
+            {% set hit_accuracy = item.get('candidate_hit_accuracy', item.get('hit_accuracy')) %}
+            <tr>
+              <td>{{ item.display_name }}<small class="mono">{{ field_key }}</small></td>
+              <td>{{ item.module }}<small class="mono">{{ item.value_scope if item.value_scope is defined else 'CANDIDATE' }}</small></td>
+              <td>{{ item.returned_count }} / {{ item.empty_count if item.empty_count is defined else '—' }}</td>
+              <td>{{ (all_return_rate * 100)|round(2) ~ '%' if all_return_rate is not none else '无适用分母' }}</td>
+              <td>{{ (hit_return_rate * 100)|round(2) ~ '%' if hit_return_rate is not none else '无适用分母' }}</td>
+              <td>{{ (nonmatched_nonempty_rate * 100)|round(2) ~ '%' if nonmatched_nonempty_rate is not none else '无适用分母' }}</td>
+              <td>{{ (hit_completeness * 100)|round(2) ~ '%' if hit_completeness is not none else '无适用分母' }}</td>
+              <td>{{ (hit_accuracy * 100)|round(2) ~ '%' if hit_accuracy is not none else '无适用分母' }}</td>
+              <td>{{ (item.return_rate_delta * 100)|round(2) ~ 'pp' if item.return_rate_delta is defined and item.return_rate_delta is not none else '—' }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
 </section>
 
 <section class="report-section">
@@ -336,3 +894,4 @@
     {% endif %}
   {% endfor %}
 </section>
+{% endif %}

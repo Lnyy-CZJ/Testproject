@@ -41,9 +41,13 @@ services:
       context: ../log_filter_tool
     environment:
       LOG_FILTER_BASE_PATH: /log-filter
-      LOG_EXPORT_DIR: /tmp/log-exports
-      LOG_EXPORT_DISPLAY_DIR: /tmp/log-exports
+      # 将导出文件保存到宿主机固定目录，避免容器重建后临时文件丢失。
+      LOG_EXPORT_DIR: /exports
+      LOG_EXPORT_DISPLAY_DIR: /Users/admin/Documents/log
       PLATFORM_HOME_URL: /
+    volumes:
+      # 页面提示使用宿主机路径，容器实际写入对应的 /exports 目录。
+      - /Users/admin/Documents/log:/exports
     expose:
       - "5001"
     healthcheck:

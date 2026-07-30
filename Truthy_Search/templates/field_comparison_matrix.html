@@ -1,0 +1,198 @@
+{% extends "base.html" %}
+{% from "_json_value.html" import render_value %}
+{% block title %}字段对比矩阵 · Truthy Search{% endblock %}
+{% block content %}
+  <div class="breadcrumbs">
+    <a href="{{ url_for('field_schemas') }}">字段配置</a>
+    <span>/</span><span>{{ schema.schema_version }}</span>
+  </div>
+  <div class="page-heading split">
+    <div>
+      <p class="eyebrow mono">{{ schema.schema_version }}</p>
+      <h1>字段对比矩阵</h1>
+      <p>统一查看 Baseline 有什么、Candidate 提取什么，以及完整度、准确率和身份证据开关。</p>
+    </div>
+    {% if matrix %}
+      <span class="status {% if matrix.severity_counts.ERROR %}danger{% elif matrix.severity_counts.WARNING %}warning{% else %}success{% endif %}">
+        ERROR {{ matrix.severity_counts.ERROR }} · WARNING {{ matrix.severity_counts.WARNING }}
+      </span>
+    {% endif %}
+  </div>
+
+  <form class="filter-bar" method="get">
+    <select name="baseline_version" required>
+      <option value="">选择 Baseline</option>
+      {% for baseline in baseline_sets %}
+        <option value="{{ baseline.baseline_version }}" {% if filters.baseline_version == baseline.baseline_version %}selected{% endif %}>
+          {{ baseline.name }} · {{ baseline.baseline_version }}
+        </option>
+      {% endfor %}
+    </select>
+    <input name="process_id" value="{{ filters.process_id or '' }}" placeholder="Process ID（可选）">
+    <input name="person_id" value="{{ filters.person_id or '' }}" placeholder="Person ID（可选）">
+    <input type="search" name="q" value="{{ filters.q or '' }}" placeholder="字段名称 / field_key">
+    <select name="module">
+      <option value="">全部 Module</option>
+      {% for module in ['Task', 'Candidate', 'Insights', 'Photos', 'Profile', 'Social', 'Summary', '未配置字段'] %}
+        <option value="{{ module }}" {% if filters.module == module %}selected{% endif %}>{{ module }}</option>
+      {% endfor %}
+    </select>
+    <select name="status">
+      <option value="">全部状态</option>
+      {% for status in ['COMPARABLE', 'COMPLETENESS_ONLY', 'MANUAL_ACCURACY', 'BASELINE_ENABLED_NOT_EXTRACTED', 'BASELINE_ENABLED_NOT_SCORED', 'STRUCTURE_MISMATCH', 'NO_BASELINE_DATA', 'NO_CANDIDATE_DATA', 'DISPLAY_ONLY'] %}
+        <option value="{{ status }}" {% if filters.status == status %}selected{% endif %}>{{ status }}</option>
+      {% endfor %}
+    </select>
+    <button class="button primary" type="submit">生成矩阵</button>
+  </form>
+
+  {% if not matrix %}
+    <div class="empty-state"><strong>请先导入并选择 Baseline Version</strong></div>
+  {% else %}
+    <div class="metric-strip four">
+      <div><span>Baseline 人物</span><strong>{{ matrix.baseline_person_count }}</strong></div>
+      <div><span>成功 Candidate</span><strong>{{ matrix.candidate_count }}</strong></div>
+      <div><span>Query</span><strong>{{ matrix.query_count }}</strong></div>
+      <div><span>当前字段行</span><strong>{{ matrix.fields|length }}</strong></div>
+    </div>
+
+    <form id="schema-workbench" method="post">
+      <input type="hidden" name="baseline_version" value="{{ matrix.baseline_version }}">
+      <input type="hidden" name="discovered_definitions_json" value='{{ discovery_json }}'>
+      <section class="form-panel">
+        <div>
+          <p class="eyebrow">Immutable Publish</p>
+          <h2>复制并发布新字段配置</h2>
+          <p>只修改下方 Schema 中已有字段；未配置的 Baseline 字段会保留为冲突提示。发布不会修改已有 Process。</p>
+        </div>
+        <div>
+          <label><span>新配置名称</span><input name="name" required placeholder="{{ schema.name }} v3"></label>
+          <label><span>维护人</span><input name="created_by"></label>
+          <button class="button primary" type="submit">复制并发布新版本</button>
+        </div>
+      </section>
+
+      <div class="module-bulk-actions" aria-label="模块批量提取开关">
+        <span>模块提取：</span>
+        {% for module in ['Task', 'Candidate', 'Insights', 'Photos', 'Profile', 'Social', 'Summary'] %}
+          <button class="button small secondary" type="button" data-toggle-module="{{ module }}">{{ module }}</button>
+        {% endfor %}
+      </div>
+
+      {% for field in matrix.fields %}
+        {% if definitions.get(field.field_key) %}<input type="hidden" name="visible_fields" value="{{ field.field_key }}">{% endif %}
+      {% endfor %}
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>字段</th><th>Baseline</th><th>Candidate</th>
+              <th>映射 / 阈值</th><th>提取</th><th>展示</th><th>基准对比</th><th>版本对比</th>
+              <th>完整度</th><th>准确率</th><th>身份</th>
+              <th>比较方式</th><th>样例</th><th>状态 / 问题</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for field in matrix.fields %}
+              {% set definition = definitions.get(field.field_key) %}
+              <tr>
+                <td>
+                  <strong>{{ field.display_name }}</strong>
+                  <small class="mono">{{ field.field_key }} · {{ field.module }} · {{ field.value_scope }}</small>
+                </td>
+                <td>
+                  {{ field.baseline_nonempty_count }} 有值 /
+                  {{ field.baseline_available_count }} 可用 /
+                  {{ field.baseline_person_count }} 人
+                </td>
+                <td>
+                  {% if field.candidate_return_rate is not none %}
+                    {{ field.candidate_nonempty_count }}/{{ field.candidate_count }}
+                    · {{ (field.candidate_return_rate * 100)|round(2) }}%
+                  {% else %}未选择 Process{% endif %}
+                </td>
+                <td>
+                  {% if definition %}
+                    <input class="field-mapping-input" name="baseline_field_key__{{ field.field_key }}" value="{{ field.baseline_field_key or '' }}" placeholder="baseline_field_key">
+                    {% if field.compare_mode == 'semantic_text_lite' %}
+                      <input class="field-threshold-input" type="number" min="0" max="1" step="0.05" name="similarity_threshold__{{ field.field_key }}" value="{{ field.similarity_threshold }}" title="相似度阈值">
+                    {% endif %}
+                  {% else %}—{% endif %}
+                </td>
+                {% for name, checked in [
+                  ('enabled_fields', field.enabled),
+                  ('display_fields', field.display_enabled),
+                  ('baseline_compare_fields', field.baseline_compare_enabled),
+                  ('run_compare_fields', field.run_compare_enabled),
+                  ('completeness_fields', field.completeness_enabled),
+                  ('accuracy_fields', field.accuracy_enabled),
+                  ('identity_fields', field.identity_enabled)
+                ] %}
+                  <td>
+                    {% if definition %}
+                      <input type="checkbox" name="{{ name }}" value="{{ field.field_key }}" data-module="{{ field.module }}" {% if checked %}checked{% endif %}>
+                    {% else %}—{% endif %}
+                  </td>
+                {% endfor %}
+                <td>
+                  {% if definition %}
+                    <select name="compare_mode__{{ field.field_key }}">
+                      {% for mode in ['presence', 'exact', 'normalized_text', 'set', 'url_set', 'semantic_text_lite', 'manual'] %}
+                        <option value="{{ mode }}" {% if field.compare_mode == mode %}selected{% endif %}>{{ mode }}</option>
+                      {% endfor %}
+                    </select>
+                    <select name="normalizer__{{ field.field_key }}">
+                      {% for normalizer in ['identity', 'trim_text', 'number', 'percentage', 'social_url', 'string_list', 'profile_sections'] %}
+                        <option value="{{ normalizer }}" {% if field.normalizer == normalizer %}selected{% endif %}>{{ normalizer }}</option>
+                      {% endfor %}
+                    </select>
+                  {% else %}—{% endif %}
+                </td>
+                <td>
+                  <details><summary>Baseline / Candidate</summary>
+                    <strong>Baseline</strong>{{ render_value(field.baseline_sample, 'baseline.' ~ field.field_key) }}
+                    <strong>Candidate</strong>{{ render_value(field.candidate_sample, 'candidate.' ~ field.field_key) }}
+                  </details>
+                </td>
+                <td>
+                  <span class="status {{ field.status|status_class }}">{{ field.status }}</span>
+                  {% for issue in field.issues %}
+                    <small>{{ issue.severity }} · {{ issue.message }}</small>
+                  {% endfor %}
+                </td>
+              </tr>
+            {% else %}
+              <tr><td colspan="14" class="empty-cell">筛选条件下没有字段。</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </form>
+    <section class="panel discovery-panel">
+      <p class="eyebrow">Field Discovery</p>
+      <h2>待配置字段</h2>
+      <p>仅从已入库数据生成建议，不会写入 Raw 或自动发布。{% if not filters.process_id %}选择 Process 后可发现 Candidate Detail 中的新字段。{% endif %}</p>
+      {% if discovery.suggestions %}
+        <div class="field-definition-grid">
+          {% for item in discovery.suggestions %}
+            <article>
+              <strong>{{ item.display_name }}</strong>
+              <span class="mono">{{ item.field_key }}</span>
+              <code>{{ item.source_type }} · {{ item.source_path }}</code>
+              {% if item.source_options %}<small>{{ item.source_options }}</small>{% endif %}
+              <small>出现于 {{ item.source_count }} 名 Candidate；复制 JSON 后可发布为新字段。</small>
+              <label class="discovery-select"><input form="schema-workbench" type="checkbox" name="discovered_field_keys" value="{{ item.field_key }}">加入本次新版本</label>
+            </article>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="muted">当前范围内没有发现新的可发布 ui_sections 字段。</p>
+      {% endif %}
+      {% if discovery.baseline_only_field_keys %}
+        <details><summary>仅 Baseline 中存在的字段（{{ discovery.baseline_only_field_keys|length }}）</summary>
+          <p class="mono">{{ discovery.baseline_only_field_keys|join(', ') }}</p>
+        </details>
+      {% endif %}
+    </section>
+  {% endif %}
+{% endblock %}

@@ -1,4 +1,4 @@
-"""SQLite Schema v2、v1迁移与事务行为测试。"""
+"""SQLite Schema v3、历史迁移与事务行为测试。"""
 
 from __future__ import annotations
 
@@ -143,8 +143,186 @@ class AnalysisStoreTests(unittest.TestCase):
         connection.commit()
         connection.close()
 
+    @staticmethod
+    def _create_legacy_v2_database(db_path: Path) -> str:
+        """创建带历史自定义参考线的最小 Schema v2 数据库。"""
+
+        thresholds_json = (
+            '{"FULL_NAME":{"min_retrieval_success":0.8},'
+            '"FULL_NAME_SOCIAL":{}}'
+        )
+        connection = sqlite3.connect(db_path)
+        connection.executescript(
+            f"""
+            CREATE TABLE schema_info(
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
+            INSERT INTO schema_info(key, value)
+            VALUES ('schema_version', '2');
+            CREATE TABLE evaluations(
+                evaluation_id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                notes TEXT NOT NULL DEFAULT '',
+                thresholds_json TEXT NOT NULL DEFAULT '{{}}',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            INSERT INTO evaluations
+            VALUES (
+                'eval-v2', 'v2历史评测', '', '{thresholds_json}',
+                'created-v2', 'updated-v2'
+            );
+            """
+        )
+        connection.commit()
+        connection.close()
+        return thresholds_json
+
+    @staticmethod
+    def _create_legacy_v3_database(db_path: Path) -> None:
+        """创建包含历史人物关联和多 HIT Review 的最小 Schema v3 数据库。
+
+        参数说明:
+            db_path: 待创建的临时 SQLite 文件。
+
+        返回值:
+            无；数据库版本固定为3，且不包含任何 v4 列。
+
+        异常说明:
+            SQLite 建表或写入失败时原样抛出。
+        """
+
+        connection = sqlite3.connect(db_path)
+        connection.executescript(
+            """
+            CREATE TABLE schema_info(
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
+            INSERT INTO schema_info(key, value)
+            VALUES ('schema_version', '3');
+
+            CREATE TABLE dataset_queries(
+                dataset_id TEXT NOT NULL,
+                query_id TEXT NOT NULL,
+                person_id TEXT,
+                query_stage TEXT NOT NULL,
+                match_strategy TEXT NOT NULL DEFAULT 'UNION',
+                clues_json TEXT NOT NULL,
+                additional_details_json TEXT NOT NULL,
+                metadata_json TEXT NOT NULL,
+                PRIMARY KEY(dataset_id, query_id)
+            );
+            INSERT INTO dataset_queries VALUES(
+                'dataset-v3', 'query-v3', 'person-dataset', 'FULL_NAME',
+                'UNION', '[]', '[]', '{}'
+            );
+
+            CREATE TABLE run_queries(
+                run_id TEXT NOT NULL,
+                query_id TEXT NOT NULL,
+                person_id TEXT,
+                query_stage TEXT,
+                task_id TEXT,
+                status TEXT NOT NULL,
+                current_stage TEXT NOT NULL DEFAULT '',
+                candidate_count_total INTEGER,
+                candidate_count_listed INTEGER NOT NULL DEFAULT 0,
+                detail_success_count INTEGER NOT NULL DEFAULT 0,
+                detail_failure_count INTEGER NOT NULL DEFAULT 0,
+                llm_cost REAL,
+                third_party_cost REAL,
+                total_cost REAL,
+                pdl_called INTEGER,
+                search_duration_ms INTEGER,
+                result_status TEXT,
+                public_fields_json TEXT NOT NULL DEFAULT '{}',
+                error TEXT NOT NULL DEFAULT '',
+                started_at TEXT,
+                finished_at TEXT,
+                PRIMARY KEY(run_id, query_id)
+            );
+            INSERT INTO run_queries(
+                run_id, query_id, person_id, query_stage, status
+            ) VALUES
+                ('run-v3', 'query-linked', 'person-run', 'FULL_NAME', 'SUCCESS'),
+                ('run-v3', 'query-empty', NULL, 'FULL_NAME', 'SUCCESS');
+
+            CREATE TABLE candidates(
+                candidate_pk TEXT PRIMARY KEY,
+                run_id TEXT NOT NULL,
+                query_id TEXT NOT NULL,
+                candidate_id TEXT NOT NULL,
+                candidate_rank INTEGER NOT NULL,
+                rank_score REAL,
+                detail_status TEXT NOT NULL,
+                detail_error TEXT NOT NULL DEFAULT '',
+                ui_sections_json TEXT,
+                detail_data_json TEXT,
+                list_item_json TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            INSERT INTO candidates VALUES
+                ('candidate-rank-2', 'run-v3', 'query-linked', 'candidate-2',
+                 2, 0.8, 'SUCCESS', '', NULL, NULL, '{}', 'now'),
+                ('candidate-rank-1', 'run-v3', 'query-linked', 'candidate-1',
+                 1, 0.9, 'SUCCESS', '', NULL, NULL, '{}', 'now'),
+                ('candidate-pending', 'run-v3', 'query-empty', 'candidate-3',
+                 1, 0.7, 'SUCCESS', '', NULL, NULL, '{}', 'now');
+
+            CREATE TABLE processed_candidates(
+                process_id TEXT NOT NULL,
+                candidate_pk TEXT NOT NULL,
+                fields_json TEXT NOT NULL,
+                empty_fields_json TEXT NOT NULL,
+                processing_errors_json TEXT NOT NULL,
+                PRIMARY KEY(process_id, candidate_pk)
+            );
+            INSERT INTO processed_candidates VALUES
+                ('process-v3', 'candidate-rank-2', '{}', '{}', '[]'),
+                ('process-v3', 'candidate-rank-1', '{}', '{}', '[]'),
+                ('process-v3', 'candidate-pending', '{}', '{}', '[]');
+
+            CREATE TABLE reviews(
+                process_id TEXT NOT NULL,
+                candidate_pk TEXT NOT NULL,
+                judgement TEXT NOT NULL,
+                reason TEXT NOT NULL,
+                evidence TEXT NOT NULL DEFAULT '',
+                field_scores_json TEXT NOT NULL,
+                reviewer TEXT,
+                review_note TEXT,
+                reviewed_at TEXT,
+                PRIMARY KEY(process_id, candidate_pk)
+            );
+            INSERT INTO reviews VALUES
+                ('process-v3', 'candidate-rank-2', 'HIT', 'MANUAL', '', '{}',
+                 'tester', '', '2026-07-28T00:00:00+00:00'),
+                ('process-v3', 'candidate-rank-1', 'HIT', 'MANUAL', '', '{}',
+                 'tester', '', '2026-07-28T00:00:00+00:00'),
+                ('process-v3', 'candidate-pending', 'PENDING_REVIEW',
+                 'NO_STRONG_FIELD', '', '{}', NULL, '', NULL);
+
+            CREATE TABLE baseline_sets(
+                baseline_version TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                source_type TEXT NOT NULL,
+                source_file TEXT NOT NULL,
+                checksum TEXT NOT NULL UNIQUE,
+                created_at TEXT NOT NULL
+            );
+            INSERT INTO baseline_sets VALUES(
+                'baseline-v3', 'v3基准', 'JSONL', 'baseline.jsonl',
+                'baseline-v3-checksum', 'now'
+            );
+            """
+        )
+        connection.commit()
+        connection.close()
+
     def test_schema_initialization_is_idempotent_and_reopenable(self):
-        """重复初始化保持 Schema v2，并能由新 Store 实例重新打开。"""
+        """重复初始化保持 Schema v4，并能由新 Store 实例重新打开。"""
 
         with tempfile.TemporaryDirectory() as temp_dir:
             db_path = Path(temp_dir) / "searchtool.db"
@@ -176,8 +354,16 @@ class AnalysisStoreTests(unittest.TestCase):
                 row["name"]
                 for row in reopened.fetch_all("PRAGMA table_info(run_queries)")
             }
+            dataset_query_columns = {
+                row["name"]
+                for row in reopened.fetch_all("PRAGMA table_info(dataset_queries)")
+            }
+            review_columns = {
+                row["name"]
+                for row in reopened.fetch_all("PRAGMA table_info(reviews)")
+            }
 
-            self.assertEqual(2, reopened.schema_version())
+            self.assertEqual(4, reopened.schema_version())
             self.assertEqual(1, foreign_keys)
             self.assertEqual("wal", journal_mode.lower())
             self.assertTrue(
@@ -193,9 +379,12 @@ class AnalysisStoreTests(unittest.TestCase):
                     "baseline_people",
                     "processed_queries",
                     "reports",
+                    "threshold_profiles",
+                    "run_query_person_history",
                 }.issubset(tables)
             )
             self.assertIn("thresholds_json", evaluation_columns)
+            self.assertIn("threshold_profile_id", evaluation_columns)
             self.assertIn("evaluation_phase", run_columns)
             self.assertTrue(
                 {
@@ -203,7 +392,14 @@ class AnalysisStoreTests(unittest.TestCase):
                     "third_party_cost",
                     "search_duration_ms",
                     "public_fields_json",
+                    "person_id_source",
                 }.issubset(query_columns)
+            )
+            self.assertIn("person_id_source", dataset_query_columns)
+            self.assertTrue(
+                {"classification_source", "is_primary_hit"}.issubset(
+                    review_columns
+                )
             )
             self.assertEqual(
                 "阶段2测试",
@@ -213,8 +409,8 @@ class AnalysisStoreTests(unittest.TestCase):
                 )["name"],
             )
 
-    def test_schema_v1_migrates_to_v2_and_preserves_legacy_meaning(self):
-        """v1数据迁移后保留记录，并生成状态和基准可用字段。"""
+    def test_schema_v1_migrates_to_v4_and_preserves_legacy_meaning(self):
+        """v1数据连续迁移到v4并保留旧状态、基准和参考线语义。"""
 
         with tempfile.TemporaryDirectory() as temp_dir:
             db_path = Path(temp_dir) / "legacy-v1.db"
@@ -224,7 +420,7 @@ class AnalysisStoreTests(unittest.TestCase):
             store.initialize()
             store.initialize()
 
-            self.assertEqual(2, store.schema_version())
+            self.assertEqual(4, store.schema_version())
             evaluation = store.fetch_one(
                 "SELECT * FROM evaluations WHERE evaluation_id = 'eval-v1'"
             )
@@ -248,6 +444,7 @@ class AnalysisStoreTests(unittest.TestCase):
             )
 
             self.assertEqual("{}", evaluation["thresholds_json"])
+            self.assertIsNone(evaluation["threshold_profile_id"])
             self.assertEqual("UNSPECIFIED", run["evaluation_phase"])
             self.assertEqual(
                 {
@@ -275,6 +472,170 @@ class AnalysisStoreTests(unittest.TestCase):
                     """
                 )
             )
+
+    def test_schema_v2_migrates_to_v4_and_keeps_threshold_snapshot(self):
+        """v2连续迁移到v4，历史参考线原值保持不变。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "legacy-v2.db"
+            original_thresholds = self._create_legacy_v2_database(db_path)
+
+            store = AnalysisStore(db_path)
+            store.initialize()
+            store.initialize()
+
+            evaluation = store.fetch_one(
+                "SELECT * FROM evaluations WHERE evaluation_id = 'eval-v2'"
+            )
+            self.assertEqual(4, store.schema_version())
+            self.assertEqual(
+                original_thresholds,
+                evaluation["thresholds_json"],
+            )
+            self.assertIsNone(evaluation["threshold_profile_id"])
+            self.assertIsNotNone(
+                store.fetch_one(
+                    """
+                    SELECT name FROM sqlite_master
+                    WHERE type = 'table' AND name = 'threshold_profiles'
+                    """
+                )
+            )
+
+    def test_schema_v3_migrates_person_sources_and_review_classification(self):
+        """v3→v4补齐来源，并把同 Query 最低排名历史 HIT 设为主要命中。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "legacy-v3.db"
+            self._create_legacy_v3_database(db_path)
+
+            store = AnalysisStore(db_path)
+            with self.assertWarns(RuntimeWarning):
+                store.initialize()
+            store.initialize()
+
+            self.assertEqual(4, store.schema_version())
+            run_sources = {
+                row["query_id"]: row["person_id_source"]
+                for row in store.fetch_all(
+                    """
+                    SELECT query_id, person_id_source FROM run_queries
+                    ORDER BY query_id
+                    """
+                )
+            }
+            self.assertEqual(
+                {
+                    "query-empty": "UNSPECIFIED",
+                    "query-linked": "DATASET",
+                },
+                run_sources,
+            )
+            self.assertEqual(
+                "INPUT",
+                store.fetch_one(
+                    """
+                    SELECT person_id_source FROM dataset_queries
+                    WHERE query_id = 'query-v3'
+                    """
+                )["person_id_source"],
+            )
+            reviews = {
+                row["candidate_pk"]: (
+                    row["classification_source"],
+                    row["is_primary_hit"],
+                )
+                for row in store.fetch_all(
+                    """
+                    SELECT candidate_pk, classification_source, is_primary_hit
+                    FROM reviews ORDER BY candidate_pk
+                    """
+                )
+            }
+            self.assertEqual(("SUGGESTED", 0), reviews["candidate-pending"])
+            self.assertEqual(("MANUAL", 1), reviews["candidate-rank-1"])
+            self.assertEqual(("MANUAL", 0), reviews["candidate-rank-2"])
+
+    def test_schema_v3_migration_failure_rolls_back_all_v4_changes(self):
+        """v3→v4任一步骤失败时不残留新列、审计表和版本号。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "broken-v3.db"
+            self._create_legacy_v3_database(db_path)
+            connection = sqlite3.connect(db_path)
+            connection.execute("DROP TABLE reviews")
+            connection.execute(
+                "CREATE VIEW reviews AS SELECT 'broken' AS process_id"
+            )
+            connection.commit()
+            connection.close()
+
+            with self.assertRaises(sqlite3.OperationalError):
+                AnalysisStore(db_path).initialize()
+
+            connection = sqlite3.connect(db_path)
+            version = connection.execute(
+                """
+                SELECT value FROM schema_info
+                WHERE key = 'schema_version'
+                """
+            ).fetchone()[0]
+            run_columns = {
+                row[1]
+                for row in connection.execute("PRAGMA table_info(run_queries)")
+            }
+            history_table = connection.execute(
+                """
+                SELECT name FROM sqlite_master
+                WHERE type = 'table' AND name = 'run_query_person_history'
+                """
+            ).fetchone()
+            connection.close()
+
+            self.assertEqual("3", version)
+            self.assertNotIn("person_id_source", run_columns)
+            self.assertIsNone(history_table)
+
+    def test_schema_v2_migration_failure_rolls_back_table_and_version(self):
+        """v2→v3中ALTER失败时方案表和版本号都不残留。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "broken-v2.db"
+            connection = sqlite3.connect(db_path)
+            connection.executescript(
+                """
+                CREATE TABLE schema_info(
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                );
+                INSERT INTO schema_info(key, value)
+                VALUES ('schema_version', '2');
+                CREATE VIEW evaluations AS SELECT 'broken' AS evaluation_id;
+                """
+            )
+            connection.commit()
+            connection.close()
+
+            with self.assertRaises(sqlite3.OperationalError):
+                AnalysisStore(db_path).initialize()
+
+            connection = sqlite3.connect(db_path)
+            version = connection.execute(
+                """
+                SELECT value FROM schema_info
+                WHERE key = 'schema_version'
+                """
+            ).fetchone()[0]
+            profile_table = connection.execute(
+                """
+                SELECT name FROM sqlite_master
+                WHERE type = 'table' AND name = 'threshold_profiles'
+                """
+            ).fetchone()
+            connection.close()
+
+            self.assertEqual("2", version)
+            self.assertIsNone(profile_table)
 
     def test_schema_v1_migration_failure_rolls_back_all_ddl(self):
         """迁移中途失败时版本号和已执行的ALTER TABLE全部回滚。"""
@@ -395,7 +756,7 @@ class AnalysisStoreTests(unittest.TestCase):
                 "CREATE TABLE schema_info(key TEXT PRIMARY KEY, value TEXT NOT NULL)"
             )
             connection.execute(
-                "INSERT INTO schema_info(key, value) VALUES ('schema_version', '3')"
+                "INSERT INTO schema_info(key, value) VALUES ('schema_version', '5')"
             )
             connection.commit()
             connection.close()
@@ -421,7 +782,7 @@ class AnalysisStoreTests(unittest.TestCase):
 
             restored = AnalysisStore(backup_path)
             restored.initialize()
-            self.assertEqual(2, restored.schema_version())
+            self.assertEqual(4, restored.schema_version())
             self.assertEqual(
                 "备份恢复验收",
                 restored.fetch_one(

@@ -1,0 +1,5 @@
+id: CompleteMediaUpload
+name: 完成媒体上传
+request:
+  service_name: tool.people_insight.MediaService
+  method_name: CompleteMediaUpload

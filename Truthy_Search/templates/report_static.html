@@ -33,8 +33,40 @@
     details { border-top: 1px solid #e2e7ea; padding: 12px 0; }
     summary { cursor: pointer; font-weight: 700; }
     .report-warnings { border-color: #e5c76b; background: #fffaf0; }
-    @media (max-width: 800px) { body { padding: 12px; } .metric-strip, .data-list { grid-template-columns: 1fr 1fr; } }
-    @media print { body { padding: 0; background: #fff; } .report-section { break-inside: avoid; box-shadow: none; } }
+    .report-v5-hero { display: flex; justify-content: space-between; gap: 24px; padding: 26px; border: 1px solid #cce3de; border-radius: 16px; background: linear-gradient(135deg, #edf8f5, #fff 62%); margin-bottom: 18px; }
+    .report-v5-hero-meta { display: grid; align-content: start; gap: 8px; min-width: 190px; color: #0c776d; }
+    .report-v5-subtitle { margin-bottom: 0; color: #65737e; }
+    .report-v5-alert { display: flex; gap: 10px; margin-bottom: 18px; padding: 14px 18px; border: 1px solid #e8ba82; border-radius: 12px; background: #fff7ec; color: #80500c; }
+    .report-v5-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+    .report-v5-kpi { padding: 16px; border: 1px solid #dce3e7; border-radius: 12px; background: #f6faf9; }
+    .report-v5-kpi span, .report-v5-kpi small { display: block; color: #65737e; }
+    .report-v5-kpi .report-v5-kpi-label { color: #17212b; font-size: 14px; font-weight: 800; }
+    .report-v5-kpi .report-v5-kpi-purpose { min-height: 34px; margin-top: 6px; line-height: 1.45; }
+    .report-v5-kpi strong { display: block; margin: 8px 0; font-size: 27px; }
+    .report-v5-kpi-explanation { margin-top: 12px; padding-top: 12px; border-top: 1px solid #dce3e7; font-size: 12px; }
+    .report-v5-scope-summary { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
+    .report-v5-scope-summary span { padding: 7px 10px; border-radius: 999px; background: #eef5f3; color: #65737e; font-size: 12px; }
+    .report-v5-scope-modules { display: grid; gap: 10px; margin-top: 16px; }
+    .report-v5-scope-modules > details { padding: 12px 14px; border: 1px solid #dce3e7; border-radius: 10px; }
+    .report-v5-scope-modules > details > summary { display: flex; justify-content: space-between; gap: 16px; }
+    .report-v5-confidence-bars { display: grid; gap: 10px; margin: 18px 0; }
+    .report-v5-confidence-bars > div { display: grid; grid-template-columns: 90px 1fr 110px; align-items: center; gap: 12px; }
+    .report-v5-confidence-bars > div > div { height: 10px; overflow: hidden; border-radius: 99px; background: #e8efed; }
+    .report-v5-confidence-bars i { display: block; height: 100%; border-radius: inherit; background: #0c776d; }
+    .report-v5-confidence-bars strong { font-size: 12px; text-align: right; }
+    .report-v5-facts { display: flex; flex-wrap: wrap; gap: 10px 20px; margin-top: 16px; color: #65737e; font-size: 13px; }
+    .report-v5-facts strong { color: #17212b; }
+    .report-v5-static-list { display: grid; gap: 16px; }
+    .report-v5-static-query { padding: 16px; border: 1px solid #dce3e7; border-radius: 12px; background: #fbfdfd; }
+    .report-v5-static-query > summary { display: flex; justify-content: space-between; gap: 16px; }
+    .report-v5-static-query h3 { margin: 0; }
+    .report-v5-static-query h4 { margin-bottom: 8px; }
+    .report-v5-static-value { max-width: 320px; white-space: pre-wrap; overflow-wrap: anywhere; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+    .report-v5-static-drilldown { margin-top: 10px; }
+    .report-v5-diagnostic-list { display: grid; gap: 8px; padding: 0; list-style: none; }
+    .report-v5-diagnostic-list li { display: grid; grid-template-columns: minmax(170px, .5fr) 2fr; gap: 12px; padding: 10px; border-radius: 8px; background: #fff8ed; }
+    @media (max-width: 800px) { body { padding: 12px; } .metric-strip, .data-list, .report-v5-kpis { grid-template-columns: 1fr 1fr; } .report-v5-hero { flex-direction: column; } .report-v5-diagnostic-list li { grid-template-columns: 1fr; } }
+    @media print { body { padding: 0; background: #fff; } .report-section, .report-v5-static-query { break-inside: avoid; box-shadow: none; } details { break-inside: avoid; } }
   </style>
 </head>
 <body>

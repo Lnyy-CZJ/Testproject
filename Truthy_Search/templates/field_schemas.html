@@ -10,6 +10,25 @@
     <a class="button primary" href="{{ url_for('field_schema_new') }}">发布新版本</a>
   </div>
 
+  <form class="filter-bar compact-filter" method="get">
+    <input type="search" name="q" value="{{ filters.q }}" placeholder="搜索展示名称或 field_key">
+    <select name="module">
+      <option value="">全部模块</option>
+      {% for module in ['Task', 'Candidate', 'Insights', 'Photos', 'Profile', 'Social', 'Summary'] %}
+        <option value="{{ module }}" {% if filters.module == module %}selected{% endif %}>{{ module }}</option>
+      {% endfor %}
+    </select>
+    <select name="role">
+      <option value="">全部职责</option>
+      <option value="enabled" {% if filters.role == 'enabled' %}selected{% endif %}>已启用提取</option>
+      <option value="baseline" {% if filters.role == 'baseline' %}selected{% endif %}>基准对比</option>
+      <option value="identity" {% if filters.role == 'identity' %}selected{% endif %}>身份判定</option>
+      <option value="completeness" {% if filters.role == 'completeness' %}selected{% endif %}>完整度</option>
+      <option value="accuracy" {% if filters.role == 'accuracy' %}selected{% endif %}>准确度</option>
+    </select>
+    <button class="button secondary" type="submit">筛选字段树</button>
+  </form>
+
   <div class="table-wrap">
     <table>
       <thead>
@@ -33,23 +52,43 @@
             </td>
             <td>{{ schema.process_count }}</td>
             <td>{{ schema.created_by or '—' }}</td>
-            <td>{{ schema.created_at }}</td>
-            <td><a class="button small secondary" href="{{ url_for('field_schema_new', base=schema.schema_version) }}">复制并编辑</a></td>
+            <td>{{ schema.created_at|format_datetime }}</td>
+            <td>
+              <a class="button small secondary" href="{{ url_for('field_comparison_matrix', schema_version=schema.schema_version) }}">字段对比矩阵</a>
+              <a class="button small secondary" href="{{ url_for('field_schema_new', base=schema.schema_version) }}">复制并编辑 JSON</a>
+            </td>
           </tr>
           <tr class="schema-definition-row">
             <td colspan="8">
               <details>
-                <summary>查看 {{ schema.definitions|length }} 个字段定义</summary>
-                <div class="field-definition-grid">
-                  {% for field in schema.definitions %}
-                    <article>
-                      <strong>{{ field.display_name }}</strong>
-                      <span class="mono">{{ field.field_key }}</span>
-                      <code>{{ field.source_path }}</code>
-                      <small>{{ field.value_scope }} · {{ field.module }} · {{ field.data_type }} · {{ field.normalizer }} · missing={{ field.missing_policy }}{% if not field.enabled %} · disabled{% endif %}</small>
-                    </article>
-                  {% endfor %}
-                </div>
+                <summary>查看 {{ schema.filtered_definitions|length }} / {{ schema.definitions|length }} 个字段定义</summary>
+                {% for module in ['Task', 'Candidate', 'Insights', 'Photos', 'Profile', 'Social', 'Summary'] %}
+                  {% set module_fields = schema.filtered_definitions|selectattr('module', 'equalto', module)|list %}
+                  {% if module_fields %}
+                    <section class="schema-module-group">
+                      <h3>{{ module }} <small>{{ module_fields|length }} fields</small></h3>
+                      <div class="field-definition-grid">
+                        {% for field in module_fields %}
+                          <article>
+                            <strong>{{ field.display_name }}</strong>
+                            <span class="mono">{{ field.field_key }}</span>
+                            <code>{{ field.source_type }} · {{ field.source_path }}</code>
+                            <small>{{ field.value_scope }} · {{ field.data_type }} · {{ field.normalizer }} · {{ field.compare_mode }}</small>
+                            <small class="field-switches">
+                              {% if field.enabled %}提取{% else %}不提取{% endif %} ·
+                              {% if field.display_enabled %}展示{% else %}隐藏{% endif %} ·
+                              {% if field.baseline_compare_enabled %}基准对比{% endif %}
+                              {% if field.run_compare_enabled %}版本对比{% endif %}
+                              {% if field.identity_enabled %}身份{% endif %}
+                              {% if field.completeness_enabled %}完整度{% endif %}
+                              {% if field.accuracy_enabled %}准确度{% endif %}
+                            </small>
+                          </article>
+                        {% endfor %}
+                      </div>
+                    </section>
+                  {% endif %}
+                {% endfor %}
               </details>
             </td>
           </tr>

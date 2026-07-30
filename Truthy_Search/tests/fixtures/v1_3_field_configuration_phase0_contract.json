@@ -1,0 +1,40 @@
+{
+  "versions": {
+    "default_field_schema_version": "field-schema-default-v2",
+    "field_processing_rule_version": "field-processing-v4",
+    "metrics_rule_version": "metrics-v3",
+    "report_model_version": "report-model-v3"
+  },
+  "default_schema": {
+    "field_count": 33,
+    "module_counts": {
+      "Task": 6,
+      "Candidate": 3,
+      "Insights": 4,
+      "Photos": 3,
+      "Profile": 3,
+      "Social": 4,
+      "Summary": 10
+    },
+    "scoring_role_field_keys": {
+      "identity": ["social_urls"],
+      "completeness": ["social_urls"],
+      "accuracy": ["social_urls"]
+    }
+  },
+  "regression_scenario": {
+    "query_count": 10,
+    "candidate_count": 45,
+    "module_data_count": {
+      "Insights": 2,
+      "Photos": 0,
+      "Profile": 45,
+      "Social": 34,
+      "Summary": 45
+    }
+  },
+  "notes": [
+    "本夹具只保存脱敏的聚合验收数据，不包含真实人物、任务、候选人或接口响应。",
+    "阶段0仅冻结现有行为；FieldSchema v3、字段目录和新的评分语义属于后续阶段。"
+  ]
+}

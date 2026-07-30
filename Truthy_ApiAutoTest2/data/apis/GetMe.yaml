@@ -1,0 +1,5 @@
+id: GetMe
+name: 获取当前用户
+request:
+  service_name: tool.identity.IdentityService
+  method_name: GetMe

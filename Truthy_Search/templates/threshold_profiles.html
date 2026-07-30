@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}参考线方案 · Truthy Search{% endblock %}
+{% block content %}
+  <section class="page-heading split">
+    <div>
+      <p class="eyebrow">Threshold Profiles</p>
+      <h1>参考线方案</h1>
+      <p>提前维护可复用、不可变的版本化参考线；归档只停止新关联，不影响历史 Evaluation 和报告。</p>
+    </div>
+    <a class="button primary" href="{{ url_for('threshold_profile_new') }}">新建方案</a>
+  </section>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>方案</th><th>版本</th><th>状态</th><th>配置项</th><th>Evaluation</th><th>创建时间</th><th>操作</th></tr></thead>
+      <tbody>
+        {% for profile in profiles %}
+          <tr>
+            <td><a href="{{ url_for('threshold_profile_detail', profile_id=profile.profile_id) }}">{{ profile.name }}</a><small class="mono">{{ profile.profile_id }}</small></td>
+            <td>v{{ profile.version }}</td>
+            <td><span class="status {{ profile.status|status_class }}">{{ profile.status }}</span></td>
+            <td>FULL_NAME {{ profile.configured_counts.FULL_NAME }} 项<small>FULL_NAME_SOCIAL {{ profile.configured_counts.FULL_NAME_SOCIAL }} 项</small></td>
+            <td>{{ profile.evaluation_count }}</td>
+            <td>{{ profile.created_at|format_datetime }}</td>
+            <td><a href="{{ url_for('threshold_profile_copy', profile_id=profile.profile_id) }}">复制为新版本</a></td>
+          </tr>
+        {% else %}
+          <tr><td class="empty-cell" colspan="7">还没有参考线方案。</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endblock %}

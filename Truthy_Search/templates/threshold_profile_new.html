@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}新建参考线方案 · Truthy Search{% endblock %}
+{% block content %}
+  <section class="page-heading">
+    <div>
+      <p class="eyebrow">New Threshold Profile</p>
+      <h1>{% if based_on_profile_id %}复制参考线新版本{% else %}新建参考线方案{% endif %}</h1>
+      <p>每次保存都会创建不可变版本；需要调整时请复制为新版本。</p>
+    </div>
+  </section>
+  {% if errors %}<div class="error-list">{% for error in errors %}<p>{{ error }}</p>{% endfor %}</div>{% endif %}
+  <form class="form-panel" method="post" action="{{ url_for('threshold_profile_create') }}">
+    <input type="hidden" name="based_on_profile_id" value="{{ based_on_profile_id }}">
+    <div class="form-pair">
+      <label><span>profile_id</span><input name="profile_id" required maxlength="128" value="{{ form.profile_id if form else '' }}" placeholder="release-standard-v1"><small>只使用字母、数字、点、下划线和连字符。</small></label>
+      <label><span>版本</span><input type="number" name="version" required min="1" step="1" value="{{ form.version if form else 1 }}"></label>
+    </div>
+    <label><span>方案名称</span><input name="name" required maxlength="200" value="{{ form.name if form else '' }}" placeholder="发布验收参考线"></label>
+    <label><span>说明</span><textarea name="description" rows="3">{{ form.description if form else '' }}</textarea></label>
+    {% if based_on_profile_id %}<p class="inline-note">来源版本：<a class="mono" href="{{ url_for('threshold_profile_detail', profile_id=based_on_profile_id) }}">{{ based_on_profile_id }}</a></p>{% endif %}
+    {% for query_stage in ['FULL_NAME', 'FULL_NAME_SOCIAL'] %}
+      <fieldset>
+        <legend class="mono">{{ query_stage }}</legend>
+        {% for field_key in threshold_fields %}
+          {% set input_name = 'threshold__' ~ query_stage ~ '__' ~ field_key %}
+          {% set value = thresholds.get(query_stage, {}).get(field_key) %}
+          <label>
+            <span>{% if field_key == 'min_retrieval_success' %}最低目标人物命中率{% elif field_key == 'min_matched_completeness' %}最低命中资料完整度{% elif field_key == 'min_matched_accuracy' %}最低命中信息准确度{% elif field_key == 'max_average_total_cost' %}最高平均总成本{% else %}最高平均检索耗时（ms）{% endif %}</span>
+            <input type="number" name="{{ input_name }}" step="any" min="0" {% if field_key.startswith('min_') %}max="1"{% endif %} value="{{ form.get(input_name, '') if form and form.get(input_name) is not none else (value if value is not none else '') }}">
+            <small class="mono">{{ field_key }}</small>
+          </label>
+        {% endfor %}
+      </fieldset>
+    {% endfor %}
+    <div class="form-actions"><button class="button primary" type="submit">创建不可变版本</button><a class="button text" href="{{ url_for('threshold_profiles') }}">取消</a></div>
+  </form>
+{% endblock %}

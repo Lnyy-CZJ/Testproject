@@ -15,6 +15,15 @@
     <span class="status large {{ query.status|status_class }}">{{ query.status }}</span>
   </div>
 
+  {% if retry_allowed %}
+    <section class="form-panel">
+      <div><p class="eyebrow">Retry</p><h2>仅重跑此人</h2><p>会重新调用检索接口并产生新的成本；新结果仍保存到当前 Run，其他人的结果不受影响。</p></div>
+      <form method="post" action="{{ url_for('query_retry', run_id=query.run_id, query_id=query.query_id) }}">
+        <button class="button primary" type="submit">仅重跑此人</button>
+      </form>
+    </section>
+  {% endif %}
+
   <div class="metric-strip">
     <div><span>GetTask 总数</span><strong>{{ query.candidate_count_total if query.candidate_count_total is not none else '—' }}</strong></div>
     <div><span>List 返回</span><strong>{{ query.candidate_count_listed }}</strong></div>
@@ -57,8 +66,8 @@
       <div class="panel-head"><p class="eyebrow">Trace</p><h2>执行信息</h2></div>
       <dl class="key-values">
         <div><dt>当前阶段</dt><dd>{{ query.current_stage or '—' }}</dd></div>
-        <div><dt>开始时间</dt><dd>{{ query.started_at or '—' }}</dd></div>
-        <div><dt>结束时间</dt><dd>{{ query.finished_at or '—' }}</dd></div>
+        <div><dt>开始时间</dt><dd>{{ query.started_at|format_datetime }}</dd></div>
+        <div><dt>结束时间</dt><dd>{{ query.finished_at|format_datetime }}</dd></div>
         <div><dt>错误</dt><dd>{{ query.error or '无' }}</dd></div>
       </dl>
     </article>
@@ -103,7 +112,7 @@
         {% for raw in raw_records %}
           <tr>
             <td>{{ raw.stage }}</td><td>{{ raw.sequence_no }}</td>
-            <td class="mono">{{ raw.candidate_pk or 'Query' }}</td><td>{{ raw.collected_at }}</td>
+            <td class="mono">{{ raw.candidate_pk or 'Query' }}</td><td>{{ raw.collected_at|format_datetime }}</td>
             <td><button class="button small secondary" type="button" data-raw-id="{{ raw.raw_id }}" data-raw-label="{{ raw.stage }} #{{ raw.sequence_no }}">查看 JSON</button></td>
           </tr>
         {% else %}
@@ -117,7 +126,7 @@
     <section class="section-head"><div><p class="eyebrow">Failures</p><h2>失败记录</h2></div></section>
     <div class="failure-list">
       {% for failure in failures %}
-        <article><strong>{{ failure.stage }}{% if failure.candidate_id %} · {{ failure.candidate_id }}{% endif %}</strong><p>{{ failure.error }}</p><span>{{ failure.scope }} · {{ failure.created_at }}</span></article>
+        <article><strong>{{ failure.stage }}{% if failure.candidate_id %} · {{ failure.candidate_id }}{% endif %}</strong><p>{{ failure.error }}</p><span>{{ failure.scope }} · {{ failure.created_at|format_datetime }}</span></article>
       {% endfor %}
     </div>
   {% endif %}

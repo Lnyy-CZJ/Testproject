@@ -5,7 +5,7 @@
     <div>
       <p class="eyebrow">Publish New Version</p>
       <h1>发布字段配置</h1>
-      <p>{% if base %}已复制 {{ base.schema_version }}，保存后会生成全新版本。{% else %}提交一份完整字段定义数组。{% endif %}</p>
+      <p>这是高级 JSON 编辑入口。常规字段开关、映射和待配置字段建议请使用“字段对比矩阵”；保存后始终生成全新版本。</p>
     </div>
   </div>
 
@@ -48,9 +48,11 @@
         <div><dt>类型</dt><dd>string / number / boolean / object / array / url / image</dd></div>
         <div><dt>数组</dt><dd>preserve / first / collect / join</dd></div>
         <div><dt>转换器</dt><dd>identity / trim_text / number / percentage / social_url / string_list / profile_sections</dd></div>
-        <div><dt>对比</dt><dd>exact / normalized_text / set / url_set / manual</dd></div>
+        <div><dt>来源类型</dt><dd>PATH / PROFILE_ITEM（section + label）</dd></div>
+        <div><dt>对比</dt><dd>presence / exact / normalized_text / set / url_set / semantic_text_lite / manual</dd></div>
+        <div><dt>字段职责</dt><dd>display、baseline/run compare、identity、completeness、accuracy</dd></div>
       </dl>
-      <p class="inline-note">不支持条件过滤、函数、eval 或用户脚本。可选业务字段建议使用 missing_policy=EMPTY；已有数据结构类型错误仍会记录处理错误，Raw 始终不修改。</p>
+      <p class="inline-note">开启 baseline_compare_enabled 时必须填写 baseline_field_key。PROFILE_ITEM 必须填写 source_options.section 和 source_options.label。不支持条件过滤、函数、eval 或用户脚本；Raw 始终不修改。</p>
     </aside>
   </div>
 {% endblock %}

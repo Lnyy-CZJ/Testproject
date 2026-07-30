@@ -19,6 +19,8 @@
       <a href="{{ url_for('imports') }}">数据导入</a>
       <a href="{{ url_for('baselines') }}">基准数据</a>
       <a href="{{ url_for('field_schemas') }}">字段配置</a>
+      <a href="{{ url_for('threshold_profiles') }}">参考线</a>
+      <a href="{{ url_for('reports') }}">报告</a>
       <a class="primary-link" href="{{ url_for('evaluation_new') }}">新建评测</a>
     </nav>
   </header>
@@ -45,9 +47,15 @@
         <span>搜索字段名或值</span>
         <input id="raw-search" type="search" placeholder="例如 ui_sections">
       </label>
+      <div class="raw-view-switch" role="group" aria-label="Raw JSON 查看方式">
+        <button type="button" class="button small secondary" data-raw-view="json">格式化 JSON</button>
+        <button type="button" class="button small secondary" data-raw-view="tree">结构树</button>
+      </div>
       <button type="button" class="button secondary" data-copy-json>复制完整 JSON</button>
     </div>
     <p id="raw-loading" class="muted">正在加载…</p>
+    <p id="raw-search-result" class="raw-search-result" hidden></p>
+    <pre id="raw-code" class="raw-code" aria-live="polite"></pre>
     <div id="raw-tree" class="json-tree" aria-live="polite"></div>
   </dialog>
 </body>

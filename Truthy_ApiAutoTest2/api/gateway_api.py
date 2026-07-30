@@ -10,15 +10,46 @@ from typing import Any
 import requests
 
 from utils.custom.assertions import assert_gateway_response
+from utils.custom.api_loader import build_execution_case
+from utils.custom.config_loader import persist_session_to_dotenv
 from utils.custom.http_client import HttpClient
 from utils.custom.logger import get_logger
-from utils.custom.config_loader import persist_session_to_dotenv
 from utils.custom.runtime_context import RuntimeContext, RuntimeContextError
 
 
 LOGGER = get_logger(__name__)
 ONE_DAY_MS = 86_400_000
 SESSION_METHODS = {"CreateAnonymousSession", "RefreshSession"}
+SESSION_EXTRACT_RULES = {
+    "access_token": "$.access_token",
+    "expires_time": "$.expires_time",
+    "refresh_token": "$.refresh_token",
+    "refresh_expires_time": "$.refresh_expires_time",
+    "user_id": "$.user_id",
+}
+SESSION_PROTOCOLS = {
+    "CreateAnonymousSession": {
+        "params": {"consent_policy_version": "{{consent_policy_version}}"},
+        "data_fields": [
+            "access_token",
+            "expires_time",
+            "is_new_user",
+            "refresh_expires_time",
+            "refresh_token",
+            "user_id",
+        ],
+    },
+    "RefreshSession": {
+        "params": {"refresh_token": "{{refresh_token}}"},
+        "data_fields": [
+            "access_token",
+            "expires_time",
+            "refresh_expires_time",
+            "refresh_token",
+            "user_id",
+        ],
+    },
+}
 
 
 def build_payload(
@@ -85,16 +116,29 @@ class GatewayApi:
         endpoint: dict[str, Any],
         http_client: HttpClient | None = None,
         runtime_context: RuntimeContext | None = None,
-        session_cases: dict[str, dict[str, Any]] | None = None,
+        api_definitions: dict[str, dict[str, Any]] | None = None,
         now_ms: Callable[[], int] | None = None,
         session_env_path: Path | None = None,
     ) -> None:
-        """保存调用所需配置；不在构造阶段发起网络请求。"""
+        """保存 Gateway 调用及自动会话所需配置。
+
+        参数说明:
+            settings: 当前环境配置。
+            endpoint: Gateway 固定 HTTP 端点配置。
+            http_client: 可选 HTTP 客户端，未提供时创建默认客户端。
+            runtime_context: 可选运行时变量上下文。
+            api_definitions: 以 API ID 索引的路由定义；自动会话只从中读取路由。
+            now_ms: 可选当前毫秒时间函数，主要用于稳定测试。
+            session_env_path: 会话成功后需要更新的可选 ``.env`` 路径。
+
+        返回值:
+            无。构造阶段不会发起网络请求。
+        """
         self.settings = settings
         self.endpoint = endpoint
         self.http_client = http_client or HttpClient()
         self.runtime_context = runtime_context
-        self.session_cases = session_cases or {}
+        self.api_definitions = api_definitions or {}
         self.now_ms = now_ms or (lambda: int(time.time() * 1000))
         self.session_env_path = session_env_path
 
@@ -170,30 +214,76 @@ class GatewayApi:
 
         if (
             self.runtime_context.refresh_token_is_valid(now_ms)
-            and "RefreshSession" in self.session_cases
+            and "RefreshSession" in self.api_definitions
         ):
             try:
-                self._execute_session_case("RefreshSession")
+                self._execute_session_api("RefreshSession")
                 return
             except (AssertionError, RuntimeContextError, requests.RequestException, ValueError) as exc:
                 # 刷新失败只记录错误类型，不输出可能包含 token 的异常内容。
                 LOGGER.warning("会话刷新失败，将重新创建匿名会话: %s", type(exc).__name__)
 
-        self._execute_session_case("CreateAnonymousSession")
+        self._execute_session_api("CreateAnonymousSession")
 
-    def _execute_session_case(self, method_name: str) -> None:
-        """执行创建或刷新会话用例并更新全部 session 字段。"""
-        case = self.session_cases.get(method_name)
-        if not case:
-            raise RuntimeContextError(f"缺少会话用例配置: {method_name}")
+    def _build_session_case(self, api_id: str) -> dict[str, Any]:
+        """用 API 路由和框架协议组装内部会话请求。
+
+        参数说明:
+            api_id: 会话 API ID，仅支持 ``CreateAnonymousSession`` 或
+                ``RefreshSession``。
+
+        返回值:
+            可直接交给 Gateway 执行层的完整临时 case。
+
+        异常说明:
+            RuntimeContextError: 会话协议或对应 API 定义不存在时抛出，错误中包含
+                API ID，便于定位迁移遗漏。
+            ApiConfigError: API 路由格式不合法时由组装器抛出。
+        """
+        protocol = SESSION_PROTOCOLS.get(api_id)
+        if not protocol:
+            raise RuntimeContextError(f"不支持的会话 API: {api_id}")
+        api_definition = self.api_definitions.get(api_id)
+        if not api_definition:
+            raise RuntimeContextError(f"缺少会话 API 定义: {api_id}")
+        assertions = {
+            "http_status": 200,
+            "gateway": {"code": 0, "message": "ok"},
+            "response": {
+                "id": "req_0",
+                "success": True,
+                "code": 0,
+                "message": "ok",
+            },
+            "data_fields": protocol["data_fields"],
+        }
+        return build_execution_case(
+            api_definition,
+            protocol["params"],
+            assertions,
+            extract=SESSION_EXTRACT_RULES,
+            name=f"框架自动会话: {api_id}",
+        )
+
+    def _execute_session_api(self, api_id: str) -> None:
+        """执行内部会话 API，并更新运行时上下文及持久化状态。
+
+        参数说明:
+            api_id: 需要执行的会话 API ID。
+
+        返回值:
+            无。成功后的 token、过期时间和 user_id 写入运行时上下文。
+
+        异常说明:
+            RuntimeContextError: API 定义缺失、上下文未初始化或提取失败时抛出。
+            AssertionError: 会话响应不符合框架成功协议时抛出。
+        """
+        case = self._build_session_case(api_id)
         response = self._post(case)
         data = assert_gateway_response(response, case.get("assert") or {})
-        extract_rules = case.get("extract") or {}
-        if not extract_rules:
-            raise RuntimeContextError(f"会话用例缺少 extract 配置: {method_name}")
         if not self.runtime_context:
             raise RuntimeContextError("会话运行时上下文未初始化")
-        self.runtime_context.extract(data, extract_rules)
+        self.runtime_context.extract(data, case["extract"])
         self._persist_session_state()
 
     @staticmethod

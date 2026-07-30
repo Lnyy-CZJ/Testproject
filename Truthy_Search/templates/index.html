@@ -10,8 +10,45 @@
     <div class="hero-actions">
       <a class="button primary" href="{{ url_for('evaluation_new') }}">创建评测</a>
       <a class="button secondary" href="{{ url_for('imports') }}">导入数据</a>
+      <a class="button secondary" href="{{ url_for('reports') }}">查看报告</a>
     </div>
   </section>
+
+  <section class="section-head">
+    <div>
+      <p class="eyebrow">Recent Reports</p>
+      <h2>最近报告</h2>
+    </div>
+    <a class="button secondary" href="{{ url_for('reports') }}">查看全部报告</a>
+  </section>
+
+  {% if recent_reports %}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>报告</th><th>Evaluation</th><th>系统版本</th><th>评估阶段</th><th>类型</th><th>状态</th><th>生成时间</th></tr>
+        </thead>
+        <tbody>
+          {% for report in recent_reports %}
+            <tr>
+              <td><a class="mono" href="{{ url_for('report_detail', report_id=report.report_id) }}">{{ report.report_id }}</a></td>
+              <td>{{ report.evaluation_name }}<small class="mono">{{ report.evaluation_id }}</small></td>
+              <td class="mono">{{ report.system_version }}</td>
+              <td class="mono">{{ report.evaluation_phase }}</td>
+              <td>{{ report.report_type }}</td>
+              <td><span class="status {{ report.status|status_class }}">{{ report.status }}</span></td>
+              <td>{{ report.created_at|format_datetime }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="empty-state compact-empty">
+      <strong>还没有报告快照</strong>
+      <p>完成字段处理和复核后，可在 Process 页面生成单次或对比报告。</p>
+    </div>
+  {% endif %}
 
   <section class="section-head">
     <div>
@@ -37,7 +74,7 @@
           <p>{{ evaluation.notes or '暂无说明' }}</p>
           <div class="card-meta">
             <span>最近运行</span>
-            <strong>{{ evaluation.latest_run_at or '尚未运行' }}</strong>
+            <strong>{{ evaluation.latest_run_at|format_datetime('尚未运行') }}</strong>
           </div>
         </a>
       {% endfor %}

@@ -47,36 +47,87 @@
     {% if run.failures_file %}<a class="button secondary" href="{{ url_for('download_run_file', file_type='failures', run_id=run.run_id) }}">下载 failures.jsonl</a>{% endif %}
   </div>
 
-  <section class="form-panel process-launcher">
+  <section class="form-panel person-link-summary">
     <div>
+      <p class="eyebrow">Query Person Links</p>
+      <h2>Query 人物关联</h2>
+      <p>
+        已关联 {{ person_link_summary.linked_count }} / {{ person_link_summary.query_count }}
+        · 未关联 {{ person_link_summary.unlinked_count }}
+        · 无效 {{ person_link_summary.invalid_count }}
+        · 唯一建议 {{ person_link_summary.unique_suggestion_count }}
+      </p>
+      <p class="muted">人物关联只用于找到目标人物 Baseline，不代表候选人已经命中。</p>
+    </div>
+    {% if person_link_baseline_version %}
+      <a class="button primary"
+         href="{{ url_for('run_person_links', run_id=run.run_id, baseline_version=person_link_baseline_version) }}">
+        管理人物关联
+      </a>
+    {% else %}
+      <button class="button secondary" type="button" disabled>请先导入 Baseline</button>
+    {% endif %}
+  </section>
+
+  <section class="form-panel process-launcher">
+    <div class="process-launcher-copy">
       <p class="eyebrow">Field Processing</p>
-      <h2>使用字段配置处理</h2>
-      <p>每次处理都会生成新的结果快照，不覆盖 Raw、Candidate 或旧处理结果。</p>
+      <h2>无成本重处理已入库数据</h2>
+      <p>每次生成独立 Process，不覆盖 Raw、Candidate 或旧结果，也不会重新请求检索接口。</p>
+      <p class="muted">先选择版本并查看预检；确认后才会基于当前已保存的数据创建新快照。</p>
     </div>
     <form method="post" action="{{ url_for('process_run', run_id=run.run_id) }}">
-      <label>
-        <span>字段配置版本</span>
-        <select name="schema_version" required>
-          {% for schema in field_schemas %}
-            <option value="{{ schema.schema_version }}">
-              {{ schema.name }} · {{ schema.schema_version }}{% if schema.is_active %}（当前）{% endif %}
-            </option>
-          {% endfor %}
-        </select>
-      </label>
-      <label>
-        <span>基准版本</span>
-        <select name="baseline_version">
-          <option value="">暂不关联（只能预览指标）</option>
-          {% for baseline in baseline_sets %}
-            <option value="{{ baseline.baseline_version }}">
-              {{ baseline.name }} · {{ baseline.baseline_version }} · {{ baseline.person_count }}人
-            </option>
-          {% endfor %}
-        </select>
-      </label>
-      <button class="button primary" type="submit"
-              {% if run.status in ['PENDING', 'RUNNING'] %}disabled{% endif %}>启动处理</button>
+      <input type="hidden" name="processing_mode" value="REPROCESS_EXISTING">
+      <div class="process-config-grid">
+        <label>
+          <span>字段配置版本</span>
+          <select name="schema_version" required>
+            {% for schema in field_schemas %}
+              <option value="{{ schema.schema_version }}">
+                {{ schema.name }} · {{ schema.schema_version }}{% if schema.is_active %}（当前）{% endif %}
+              </option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          <span>基准版本</span>
+          <select name="baseline_version">
+            <option value="">暂不关联（只能预览指标）</option>
+            {% for baseline in baseline_sets %}
+              <option value="{{ baseline.baseline_version }}">
+                {{ baseline.name }} · {{ baseline.baseline_version }} · {{ baseline.person_count }}人
+              </option>
+            {% endfor %}
+          </select>
+        </label>
+      </div>
+      {% set alignment_errors = alignment_issues|selectattr('severity', 'equalto', 'ERROR')|list %}
+      {% set alignment_warnings = alignment_issues|selectattr('severity', 'equalto', 'WARNING')|list %}
+      {% if alignment_issues %}
+        <div class="process-alignment-note {% if alignment_errors %}has-error{% else %}has-warning{% endif %}">
+          <div>
+            <strong>默认组合预检</strong>
+            <span>ERROR {{ alignment_errors|length }} · WARNING {{ alignment_warnings|length }}</span>
+            <p>预检基于当前默认 FieldSchema 与最新 Baseline；切换版本后请在字段矩阵中确认实际组合。</p>
+          </div>
+          <a class="button secondary small" href="{{ url_for('field_comparison_matrix', schema_version=field_schemas[0].schema_version, baseline_version=baseline_sets[0].baseline_version) }}">查看字段对比矩阵</a>
+        </div>
+      {% endif %}
+      <div class="process-confirmations">
+        <label class="checkbox-row">
+          <input type="checkbox" name="acknowledge_alignment_errors" value="true">
+          <span>如所选版本存在字段对齐 ERROR，我已查看矩阵并确认仍生成预览 Process</span>
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" name="confirm_existing_data" value="true" required>
+          <span>我确认只重处理已入库数据，不重新调用检索接口</span>
+        </label>
+      </div>
+      <div class="process-submit-row">
+        <span>处理完成后可进入候选人身份归类与指标报告。</span>
+        <button class="button primary" type="submit"
+                {% if run.status in ['PENDING', 'RUNNING'] %}disabled{% endif %}>启动处理</button>
+      </div>
     </form>
   </section>
 
@@ -96,7 +147,7 @@
               <td class="mono">{{ process.baseline_version or '未关联' }}</td>
               <td><span class="status {{ process.status|status_class }}">{{ process.status }}</span></td>
               <td>{{ process.error_count }}</td>
-              <td>{{ process.finished_at or '处理中' }}</td>
+              <td>{{ process.finished_at|format_datetime('处理中') }}</td>
             </tr>
           {% endfor %}
         </tbody>
@@ -179,7 +230,7 @@
     <section class="section-head"><div><p class="eyebrow">Failures</p><h2>最近失败</h2></div></section>
     <div class="failure-list">
       {% for failure in failures %}
-        <article><strong>{{ failure.query_id or 'Run' }} · {{ failure.stage }}</strong><p>{{ failure.error }}</p><span>{{ failure.scope }} · {{ failure.created_at }}</span></article>
+        <article><strong>{{ failure.query_id or 'Run' }} · {{ failure.stage }}</strong><p>{{ failure.error }}</p><span>{{ failure.scope }} · {{ failure.created_at|format_datetime }}</span></article>
       {% endfor %}
     </div>
   {% endif %}

@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% from "_json_value.html" import render_value %}
+{% block title %}候选人身份判定 · Truthy Search{% endblock %}
+{% block content %}
+  <div class="breadcrumbs">
+    <a href="{{ url_for('process_detail', process_id=context.process_id) }}">处理结果</a>
+    <span>/</span><span>{{ context.query_id }}</span>
+  </div>
+  <div class="page-heading split">
+    <div>
+      <p class="eyebrow mono">{{ context.query_id }}</p>
+      <h1>候选人身份判定</h1>
+      <p>系统已按 Social Link 与照片相似度规则自动判定。这里仅用于查看证据或覆写规则结果，不会修改接口返回数据。</p>
+    </div>
+    <span class="status large {{ context.identity_state|status_class }}">{{ context.identity_state }}</span>
+  </div>
+
+  <div class="metric-strip four">
+    <div><span>Query Stage</span><strong class="small-metric">{{ context.query_stage or '—' }}</strong></div>
+    <div><span>目标人物</span><strong class="small-metric">{{ context.baseline_display_name or context.person_id or '未关联' }}</strong></div>
+    <div><span>候选人数</span><strong>{{ context.candidates|length }}</strong></div>
+    <div><span>规则无法判定</span><strong>{{ context.pending_count }}</strong></div>
+  </div>
+
+  {% if context.baseline_fields %}
+    <details class="panel">
+      <summary>查看目标人物基准字段</summary>
+      <dl class="data-list processed-fields">
+        {% for field_key, value in context.baseline_fields.items() %}
+          <div><dt>{{ field_key }}</dt><dd>{{ render_value(value, field_key) }}</dd></div>
+        {% endfor %}
+      </dl>
+    </details>
+  {% elif context.person_id %}
+    <div class="inline-note">当前人物在所选 Baseline 中没有可展示字段。</div>
+  {% else %}
+    <div class="error-list"><p>当前 Query 尚未关联 person_id，只能查看候选人，不能进行人物基准对比。</p></div>
+  {% endif %}
+
+  <form method="post">
+    <div class="processed-candidate-list">
+      {% for candidate in context.candidates %}
+        <article class="panel processed-candidate">
+          <div class="processed-candidate-head">
+            <div>
+              <p class="eyebrow">Rank {{ candidate.candidate_rank }} · Score {{ candidate.rank_score if candidate.rank_score is not none else '—' }}</p>
+              <h2>{{ candidate.candidate_id }}</h2>
+            </div>
+            {% if candidate.is_primary_hit %}
+              <span class="status success">主命中 · rank_score 最高</span>
+            {% elif candidate.reviewed_at and candidate.judgement == 'HIT' %}
+              <span class="status neutral">命中 · 不参与整体汇总</span>
+            {% endif %}
+          </div>
+          <input type="hidden" name="expected_reviewed_at__{{ candidate.candidate_pk }}"
+                 value="{{ candidate.reviewed_at or '' }}">
+          <div class="form-grid three">
+            <label>
+              <span>身份归类</span>
+              <select name="judgement__{{ candidate.candidate_pk }}">
+                <option value="PENDING_REVIEW" {% if not candidate.reviewed_at %}selected{% endif %}>规则无法判定</option>
+                <option value="HIT" {% if candidate.reviewed_at and candidate.judgement == 'HIT' %}selected{% endif %} {% if candidate.detail_status != 'SUCCESS' %}disabled{% endif %}>命中目标人物</option>
+                <option value="NOT_HIT" {% if candidate.reviewed_at and candidate.judgement == 'NOT_HIT' %}selected{% endif %}>不是目标人物</option>
+                <option value="SUSPECTED" {% if candidate.reviewed_at and candidate.judgement == 'SUSPECTED' %}selected{% endif %}>疑似，需进一步判断</option>
+              </select>
+            </label>
+            <label>
+              <span>原因</span>
+              <select name="reason__{{ candidate.candidate_pk }}">
+                {% for value, label in [('MANUAL', '人工判断'), ('SOCIAL_MATCH', 'Social 匹配'), ('SOCIAL_CONFLICT', 'Social 冲突'), ('PHOTO_MATCH', '照片相似度命中'), ('PHOTO_BELOW_THRESHOLD', '照片相似度低于阈值'), ('NO_STRONG_FIELD', '缺少强证据')] %}
+                  <option value="{{ value }}" {% if candidate.reason == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <label>
+              <span>证据说明</span>
+              <input name="evidence__{{ candidate.candidate_pk }}" value="{{ candidate.evidence or '' }}">
+            </label>
+          </div>
+          {% if candidate.detail_status != 'SUCCESS' %}
+            <div class="error-list"><p>Candidate Detail 失败：{{ candidate.detail_error or '未知错误' }}。该候选人不能设为 HIT。</p></div>
+          {% endif %}
+          <details>
+            <summary>查看返回字段与自动完整度</summary>
+            <dl class="data-list processed-fields">
+              {% for field_key, value in candidate.fields.items() %}
+                <div>
+                  <dt>{{ field_key }}</dt>
+                  <dd>
+                    {{ render_value(value, field_key) }}
+                    {% if candidate.empty_fields.get(field_key) %}<span class="status neutral">EMPTY</span>{% endif %}
+                  </dd>
+                </div>
+              {% endfor %}
+            </dl>
+          </details>
+        </article>
+      {% else %}
+        <div class="empty-state"><strong>当前 Query 没有候选人</strong></div>
+      {% endfor %}
+    </div>
+
+    {% if context.candidates %}
+      <section class="form-panel">
+        <div>
+          <h2>保存人工覆写</h2>
+          <p>可确认多个命中候选人。系统会自动将 rank_score 最高的命中候选人作为主命中参与整体指标；其他命中仍展示自身资料评分。</p>
+        </div>
+        <div>
+          <label><span>复核人</span><input name="reviewer"></label>
+          <label><span>说明</span><input name="review_note"></label>
+          <label class="checkbox-row">
+            <input type="checkbox" name="bulk_remaining_not_hit" value="true">
+            <span>将所有规则无法判定且详情成功的候选人批量标记为 NOT_HIT</span>
+          </label>
+          <label class="checkbox-row">
+            <input type="checkbox" name="confirm_no_hit" value="true">
+            <span>确认本 Query 没有命中（所有成功候选人必须已归类）</span>
+          </label>
+          <button class="button primary" type="submit">保存人工覆写</button>
+        </div>
+      </section>
+    {% endif %}
+  </form>
+
+  <nav class="pagination" aria-label="Query 导航">
+    {% if context.previous_query_id %}
+      <a href="{{ url_for('query_classification', process_id=context.process_id, query_id=context.previous_query_id) }}">上一条 Query</a>
+    {% endif %}
+    {% if context.next_query_id %}
+      <a href="{{ url_for('query_classification', process_id=context.process_id, query_id=context.next_query_id) }}">下一条 Query</a>
+    {% endif %}
+  </nav>
+{% endblock %}

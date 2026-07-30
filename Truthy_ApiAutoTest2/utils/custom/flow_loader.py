@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import re
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
+from utils.custom.api_loader import load_api_definitions
 from utils.custom.config_loader import load_yaml
 
 
@@ -53,14 +55,31 @@ def _validate_flow(
     flow_id: str,
     flow: dict[str, Any],
     scenario: dict[str, Any],
-    cases_directory: Path,
-) -> None:
-    """校验一个 Flow 与 Scenario，确保错误发生在网络请求前。"""
+    api_definitions: dict[str, dict[str, Any]],
+) -> list[str]:
+    """校验一个 Flow 与 Scenario，并返回按步骤顺序引用的 API ID。
+
+    参数说明:
+        flow_id: Flow 文件名 stem，用于错误定位。
+        flow: Flow YAML 根对象。
+        scenario: 同名 Scenario YAML 根对象。
+        api_definitions: ApiLoader 返回的完整 API 注册表。
+
+    返回值:
+        当前 Flow 按首次出现顺序引用的去重 API ID 列表。
+
+    异常说明:
+        FlowConfigError: 步骤动作、API 引用、Scenario 数据、路径或等待参数
+        不符合 V1.3 设计时抛出，确保错误发生在网络请求前。
+    """
     steps = flow.get("steps")
     if not isinstance(steps, list) or not steps:
         raise FlowConfigError(f"Flow {flow_id} 必须配置非空 steps")
 
     step_ids: set[str] = set()
+    api_step_ids: list[str] = []
+    api_step_id_set: set[str] = set()
+    referenced_api_ids: list[str] = []
     for position, step in enumerate(steps, start=1):
         if not isinstance(step, dict):
             raise FlowConfigError(f"Flow {flow_id} 第 {position} 个步骤必须是对象")
@@ -71,27 +90,54 @@ def _validate_flow(
             raise FlowConfigError(f"Flow {flow_id} 存在重复 step id: {step_id}")
         step_ids.add(step_id)
 
-        actions = [key for key in ("call", "action", "wait") if key in step]
-        if len(actions) != 1:
-            raise FlowConfigError(f"步骤 {step_id} 必须且只能配置 call、action、wait 之一")
         if "call" in step:
-            case_name = str(step["call"])
-            case_path = cases_directory / case_name
-            if not case_path.is_file():
-                raise FlowConfigError(f"步骤 {step_id} 引用的 case 不存在: {case_name}")
-            _validate_extract(load_yaml(case_path).get("extract"), f"case {case_name}.extract")
-        if "action" in step and step["action"] != "prepared_media_upload":
-            raise FlowConfigError(f"步骤 {step_id} 包含未知 action: {step['action']}")
-        _validate_extract(step.get("extract"), f"步骤 {step_id}.extract")
-        if "wait" in step:
+            raise FlowConfigError(
+                f"步骤 {step_id} 不再支持 call，请改用 api 引用接口定义"
+            )
+        actions = [key for key in ("api", "action", "wait") if key in step]
+        if len(actions) != 1:
+            raise FlowConfigError(
+                f"步骤 {step_id} 必须且只能配置 api、action、wait 之一"
+            )
+
+        if "api" in step:
+            api_id = step["api"]
+            if not isinstance(api_id, str) or not api_id.strip():
+                raise FlowConfigError(f"步骤 {step_id}.api 必须是非空字符串")
+            api_id = api_id.strip()
+            step["api"] = api_id
+            if api_id not in api_definitions:
+                raise FlowConfigError(
+                    f"步骤 {step_id} 引用的 API 不存在: {api_id}"
+                )
+            api_step_ids.append(step_id)
+            api_step_id_set.add(step_id)
+            if api_id not in referenced_api_ids:
+                referenced_api_ids.append(api_id)
+            _validate_extract(step.get("extract"), f"步骤 {step_id}.extract")
+        elif "extract" in step:
+            raise FlowConfigError(
+                f"步骤 {step_id} 的 extract 只能用于 api 步骤"
+            )
+
+        if "until" in step and "api" not in step:
+            raise FlowConfigError(
+                f"步骤 {step_id} 的 until 只能用于 api 步骤"
+            )
+        if "action" in step:
+            if step["action"] != "prepared_media_upload":
+                raise FlowConfigError(
+                    f"步骤 {step_id} 包含未知 action: {step['action']}"
+                )
+        elif "wait" in step:
             wait = step["wait"]
             if not isinstance(wait, dict) or "seconds" not in wait:
                 raise FlowConfigError(f"步骤 {step_id} 的 wait 必须配置 seconds")
             _validate_number(wait["seconds"], f"步骤 {step_id}.wait.seconds", 0, 300)
         if "until" in step:
             until = step["until"]
-            if "call" not in step or not isinstance(until, dict):
-                raise FlowConfigError(f"步骤 {step_id} 的 until 只能用于 call")
+            if not isinstance(until, dict):
+                raise FlowConfigError(f"步骤 {step_id}.until 必须是对象")
             _validate_path(until.get("path"), f"步骤 {step_id}.until.path")
             if "equals" not in until:
                 raise FlowConfigError(f"步骤 {step_id}.until 缺少 equals")
@@ -108,24 +154,51 @@ def _validate_flow(
             if timeout < interval:
                 raise FlowConfigError(f"步骤 {step_id} 的轮询超时不得小于间隔")
 
-    step_data = scenario.get("step_data") or {}
+    step_data = scenario.get("step_data")
+    if step_data is None:
+        step_data = {}
     if not isinstance(step_data, dict):
         raise FlowConfigError(f"Scenario {flow_id}.step_data 必须是对象")
     unknown_steps = set(step_data) - step_ids
     if unknown_steps:
         names = ", ".join(sorted(unknown_steps))
         raise FlowConfigError(f"Scenario {flow_id} 引用了不存在的 step id: {names}")
-    for step_id, configured_data in step_data.items():
+
+    non_api_steps = set(step_data) - api_step_id_set
+    if non_api_steps:
+        names = ", ".join(sorted(non_api_steps))
+        raise FlowConfigError(
+            f"Scenario 步骤 {names} 配置了 step_data，"
+            "仅 API 步骤允许配置接口数据"
+        )
+
+    for step_id in api_step_ids:
+        if step_id not in step_data:
+            raise FlowConfigError(
+                f"API 步骤 {step_id} 缺少 Scenario step_data"
+            )
+        configured_data = step_data[step_id]
         if not isinstance(configured_data, dict):
             raise FlowConfigError(f"Scenario 步骤 {step_id} 数据必须是对象")
-        assertions = configured_data.get("assert") or {}
+        if "params" not in configured_data:
+            raise FlowConfigError(f"Scenario 步骤 {step_id} 缺少 params")
+        if not isinstance(configured_data["params"], dict):
+            raise FlowConfigError(
+                f"Scenario 步骤 {step_id}.params 必须是对象"
+            )
+        if "assert" not in configured_data:
+            raise FlowConfigError(f"Scenario 步骤 {step_id} 缺少 assert")
+        assertions = configured_data["assert"]
         if not isinstance(assertions, dict):
             raise FlowConfigError(f"Scenario 步骤 {step_id}.assert 必须是对象")
-        data_equals = assertions.get("data_equals") or {}
+        data_equals = assertions.get("data_equals")
+        if data_equals is None:
+            data_equals = {}
         if not isinstance(data_equals, dict):
             raise FlowConfigError(f"Scenario 步骤 {step_id}.data_equals 必须是对象")
         for path in data_equals:
             _validate_path(path, f"Scenario 步骤 {step_id}.data_equals", allow_short=True)
+    return referenced_api_ids
 
 
 def load_flow_cases(
@@ -139,14 +212,15 @@ def load_flow_cases(
         selected_flow: 可选 Flow 文件名，不含 ``.yaml``。
 
     返回值:
-        每项包含 id、name、tags、flow 和 scenario 的流程用例列表。
+        每项包含 id、name、tags、flow、scenario 和当前引用 API 子集的流程
+        用例列表。
 
     异常说明:
+        ApiConfigError: API 定义目录或具体定义不合法时由 ApiLoader 抛出。
         FlowConfigError: 配对缺失、筛选名称不存在或配置不合法时抛出。
     """
     flows_directory = project_root / "data" / "flows"
     scenarios_directory = project_root / "data" / "scenarios"
-    cases_directory = project_root / "data" / "cases"
     paths = sorted(flows_directory.glob("*.yaml"))
     available = [path.stem for path in paths]
     scenario_names = {
@@ -163,6 +237,7 @@ def load_flow_cases(
             names = ", ".join(available) or "无"
             raise FlowConfigError(f"Flow 不存在: {normalized}；可用 Flow: {names}")
 
+    api_definitions = load_api_definitions(project_root)
     flow_cases: list[dict[str, Any]] = []
     for flow_path in paths:
         scenario_path = scenarios_directory / flow_path.name
@@ -170,7 +245,12 @@ def load_flow_cases(
             raise FlowConfigError(f"Flow {flow_path.stem} 缺少同名 Scenario 文件")
         flow = load_yaml(flow_path)
         scenario = load_yaml(scenario_path)
-        _validate_flow(flow_path.stem, flow, scenario, cases_directory)
+        referenced_api_ids = _validate_flow(
+            flow_path.stem,
+            flow,
+            scenario,
+            api_definitions,
+        )
         tags = flow.get("tags") or []
         if not isinstance(tags, list):
             raise FlowConfigError(f"Flow {flow_path.stem}.tags 必须是数组")
@@ -181,6 +261,10 @@ def load_flow_cases(
                 "tags": [str(tag) for tag in tags],
                 "flow": flow,
                 "scenario": scenario,
+                "api_definitions": {
+                    api_id: deepcopy(api_definitions[api_id])
+                    for api_id in referenced_api_ids
+                },
             }
         )
     return flow_cases

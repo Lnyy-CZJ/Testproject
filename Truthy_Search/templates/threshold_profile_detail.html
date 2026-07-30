@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}{{ profile.name }} v{{ profile.version }} · Truthy Search{% endblock %}
+{% block content %}
+  <div class="breadcrumbs"><a href="{{ url_for('threshold_profiles') }}">参考线方案</a><span>/</span><span>{{ profile.name }} v{{ profile.version }}</span></div>
+  <section class="page-heading split">
+    <div><p class="eyebrow mono">{{ profile.profile_id }}</p><h1>{{ profile.name }} v{{ profile.version }}</h1><p>{{ profile.description or '暂无说明' }}</p></div>
+    <span class="status large {{ profile.status|status_class }}">{{ profile.status }}</span>
+  </section>
+  <div class="action-row">
+    <a class="button primary" href="{{ url_for('threshold_profile_copy', profile_id=profile.profile_id) }}">复制为新版本</a>
+    {% if profile.status == 'ACTIVE' %}
+      <form method="post" action="{{ url_for('threshold_profile_archive', profile_id=profile.profile_id) }}"><button class="button secondary" type="submit">归档方案</button></form>
+    {% endif %}
+  </div>
+  <dl class="data-list">
+    <div><dt>来源版本</dt><dd>{% if profile.based_on_profile_id %}<a href="{{ url_for('threshold_profile_detail', profile_id=profile.based_on_profile_id) }}">{{ profile.source_name }} v{{ profile.source_version }}</a>{% else %}初始版本{% endif %}</dd></div>
+    <div><dt>创建时间</dt><dd>{{ profile.created_at|format_datetime }}</dd></div>
+    <div><dt>引用 Evaluation</dt><dd>{{ evaluations|length }} 个</dd></div>
+  </dl>
+  {% for query_stage in ['FULL_NAME', 'FULL_NAME_SOCIAL'] %}
+    <section class="section-head"><div><p class="eyebrow">Thresholds</p><h2 class="mono">{{ query_stage }}</h2></div><span class="count">{{ profile.configured_counts[query_stage] }} 项</span></section>
+    <div class="table-wrap"><table><thead><tr><th>指标</th><th>值</th></tr></thead><tbody>
+      {% for field_key in threshold_fields %}
+        <tr><td class="mono">{{ field_key }}</td><td>{{ profile.thresholds[query_stage][field_key] if profile.thresholds[query_stage][field_key] is not none else '未配置' }}</td></tr>
+      {% endfor %}
+    </tbody></table></div>
+  {% endfor %}
+  {% if evaluations %}
+    <section class="section-head"><div><p class="eyebrow">Usage</p><h2>当前引用</h2></div></section>
+    <div class="action-row">{% for evaluation in evaluations %}<a class="button secondary" href="{{ url_for('evaluation_detail', evaluation_id=evaluation.evaluation_id) }}">{{ evaluation.name }}</a>{% endfor %}</div>
+  {% endif %}
+{% endblock %}

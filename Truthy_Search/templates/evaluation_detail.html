@@ -10,37 +10,34 @@
     <a class="button secondary" href="{{ url_for('imports') }}">导入 Dataset / 历史结果</a>
   </div>
 
-  <section class="form-panel">
+  <section class="form-panel threshold-summary">
     <div>
-      <p class="eyebrow">Thresholds</p>
-      <h2>参考线与建议</h2>
-      <p>比例填写0到1；成本和耗时填写非负数。留空表示该项不参与建议判断。</p>
+      <p class="eyebrow">Threshold Profile</p>
+      <h2>参考线方案</h2>
+      {% if evaluation.threshold_profile_id %}
+        <p><strong>{{ evaluation.threshold_profile_name }} v{{ evaluation.threshold_profile_version }}</strong> <span class="status {{ evaluation.threshold_profile_status|status_class }}">{{ evaluation.threshold_profile_status }}</span></p>
+        <p>FULL_NAME：配置 {{ configured_counts.FULL_NAME }} 项 · FULL_NAME_SOCIAL：配置 {{ configured_counts.FULL_NAME_SOCIAL }} 项</p>
+        <a class="button secondary" href="{{ url_for('threshold_profile_detail', profile_id=evaluation.threshold_profile_id) }}">查看方案</a>
+      {% elif configured_counts.FULL_NAME or configured_counts.FULL_NAME_SOCIAL %}
+        <p><strong>历史自定义参考线</strong></p>
+        <p>FULL_NAME：配置 {{ configured_counts.FULL_NAME }} 项 · FULL_NAME_SOCIAL：配置 {{ configured_counts.FULL_NAME_SOCIAL }} 项</p>
+      {% else %}
+        <p><strong>尚未选择参考线方案。</strong></p>
+        <p>不影响执行和生成报告；报告建议将显示“暂不能判断”。</p>
+      {% endif %}
     </div>
-    <form method="post" action="{{ url_for('evaluation_thresholds_update', evaluation_id=evaluation.evaluation_id) }}">
-      {% for query_stage in ['FULL_NAME', 'FULL_NAME_SOCIAL'] %}
-        <fieldset>
-          <legend class="mono">{{ query_stage }}</legend>
-          {% for field_key in threshold_fields %}
-            {% set value = thresholds.get(query_stage, {}).get(field_key) %}
-            <label>
-              <span>
-                {% if field_key == 'min_retrieval_success' %}最低检索成功率
-                {% elif field_key == 'min_matched_completeness' %}最低命中完整度
-                {% elif field_key == 'min_matched_accuracy' %}最低命中准确率
-                {% elif field_key == 'max_average_total_cost' %}最高平均总成本
-                {% else %}最高平均检索耗时（ms）{% endif %}
-              </span>
-              <input type="number"
-                     name="threshold__{{ query_stage }}__{{ field_key }}"
-                     step="any" min="0"
-                     {% if field_key.startswith('min_') %}max="1"{% endif %}
-                     value="{{ value if value is not none else '' }}">
-              <small class="mono">{{ field_key }}</small>
-            </label>
+    <form method="post" action="{{ url_for('evaluation_threshold_profile_update', evaluation_id=evaluation.evaluation_id) }}">
+      <label>
+        <span>更换参考线方案</span>
+        <select name="threshold_profile_id">
+          <option value="">不使用参考线方案</option>
+          {% for profile in threshold_profiles %}
+            <option value="{{ profile.profile_id }}" {% if evaluation.threshold_profile_id == profile.profile_id %}selected{% endif %}>{{ profile.name }} v{{ profile.version }}</option>
           {% endfor %}
-        </fieldset>
-      {% endfor %}
-      <button class="button primary" type="submit">保存参考线</button>
+        </select>
+      </label>
+      <p class="inline-note">更换只影响以后生成的新报告。既有报告继续保留原参考线和建议，不会重新计算。</p>
+      <button class="button primary" type="submit">更新方案</button>
     </form>
   </section>
 
@@ -110,7 +107,7 @@
             <td>{{ run.total_queries }}</td>
             <td>{{ run.success_queries }}</td>
             <td>{{ run.failed_queries }}</td>
-            <td>{{ run.created_at }}</td>
+            <td>{{ run.created_at|format_datetime }}</td>
           </tr>
         {% else %}
           <tr><td colspan="9" class="empty-cell">尚无 Run</td></tr>
@@ -135,7 +132,7 @@
               <td>{{ report.system_version }}</td>
               <td>{{ report.report_type }}</td>
               <td><span class="status {{ report.status|status_class }}">{{ report.status }}</span></td>
-              <td>{{ report.created_at }}</td>
+              <td>{{ report.created_at|format_datetime }}</td>
             </tr>
           {% endfor %}
         </tbody>

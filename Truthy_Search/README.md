@@ -151,8 +151,9 @@ python -m unittest discover -s tests -v
 
 ## v1.3 本地检索分析 Web
 
-v1.3 MVP 优化阶段6已经提供本地单用户 Web、原始数据中心、版本化字段处理、人工复核、
-指标 v2 和报告导出。完成 `.env` 配置后启动：
+v1.3 MVP 数据处理优化已提供本地单用户 Web、原始数据中心、版本化字段处理、
+历史 Run 无成本重处理、metrics-v4、report-model-v5 和报告导出。完成 `.env`
+配置后启动：
 
 ```bash
 python3 web_app.py --env-file .env
@@ -178,7 +179,9 @@ Web 当前支持：
 - 使用指定字段配置处理或重新处理任意已结束 Run；
 - 查看每名候选人的结构化字段、空值状态和字段级错误；
 - 导入 JSONL/Excel 基准版本并关联 Process；
-- 保存 Candidate 判定和字段完整度/准确率复核；
+- 修正历史 Run 的 Query 人物关联，不重新请求检索接口；
+- 查看 Baseline 与 Candidate 两侧字段开关、覆盖情况和对比规则；
+- 按 Social Link 与照片相似度规则自动判定身份；必要时可按 Query 人工覆写；
 - 查看单 Run 四项核心指标与 baseline/candidate 配对结果；
 - 生成不可变单 Run/对比报告，并下钻到 Query、Candidate 和 Raw；
 - 下载独立静态 HTML 和 processed Excel；
@@ -220,6 +223,7 @@ docker compose down
 ```dotenv
 SEARCH_WEB_HOST=127.0.0.1
 SEARCH_WEB_PORT=5002
+SEARCH_DISPLAY_TIMEZONE=Asia/Shanghai
 SEARCH_WEB_MAX_UPLOAD_BYTES=52428800
 SEARCH_WEB_SECRET_KEY=replace-with-a-local-random-value
 SEARCH_DATA_DIR=data
@@ -227,6 +231,11 @@ SEARCH_DB_FILE=data/searchtool_v1_3.db
 SEARCH_REPORT_DIR=output/reports
 SEARCH_REPORT_EXCEL_ENABLED=true
 ```
+
+`SEARCH_DISPLAY_TIMEZONE` 只控制 Web、静态 HTML 和 processed Excel 的可见
+时间，默认使用 `Asia/Shanghai`，统一显示为 `YYYY-MM-DD HH:mm:ss`。SQLite、
+JSONL、Raw、API 及复核并发控制仍保留原始 UTC ISO 8601 值；非法时区会回退到
+`Asia/Shanghai`。
 
 接口凭证只在真正启动执行 Run 时读取，因此即使暂未配置真实接口，也可以先启动 Web 查看和导入历史数据。
 
@@ -246,15 +255,44 @@ SEARCH_REPORT_EXCEL_ENABLED=true
 
 在 Run 详情页选择字段配置并点击“启动处理”，完成后可查看处理记录；Candidate 页面默认展示最近一次处理结果，也可以从历史 Process 进入指定快照。
 
-### 基准、复核与报告
+### 历史 Run 无成本修复、基准与报告
 
-1. 在顶部“基准数据”导入版本化 JSONL 或 Excel；
-2. 在 Run 页面选择字段配置和基准版本启动处理；
-3. 从 Process 进入 Candidate，确认系统建议、候选人判定和字段得分；
-4. 回到 Process 查看正式/预览指标，或选择 baseline Process 检查版本配对；
-5. 点击“生成报告快照”，生成 Web、静态 HTML 和 processed Excel。
+1. 在顶部“参考线”提前创建可复用的版本化参考线方案；
+2. 创建 Evaluation 时选择方案，或暂不选择；
+3. 在顶部“基准数据”导入版本化 JSONL 或 Excel；
+4. 对已有 Run，在 Run 页面进入“管理人物关联”，选择 Baseline 后检查并保存每条
+   Query 的 `person_id`；同名或没有唯一建议时必须人工选择；
+5. 从 Run 页面打开“字段对比矩阵”，确认 Baseline 和 Candidate 两侧需要参与
+   对比的字段开关与规则；
+6. 回到 Run 页面选择字段配置和基准版本启动处理；该操作只读取已保存的 Raw，
+   创建新 Process，不调用 CreateIntentTask 或任何检索接口；
+7. Process 会按 Social Link 与照片相似度自动判定主要 HIT、NOT_HIT 或
+   SUSPECTED；只有规则无法判定或需要纠正规则结论时，才进入“查看 / 覆写规则”进行
+   人工处理。这里不会补写接口中原本不存在的字段；
+8. 回到 Process 查看 metrics-v4 的身份结果、五模块基准资料质量、非命中资料返回率、正式值和不适用原因；
+9. 点击“生成报告快照”，生成 Web、静态 HTML 和 processed Excel。
+
+每次重新处理都会生成新的 `process_id`，旧 Process、人工判断和报告快照不会覆盖。
+人物关联保存和重新处理都不会启动采集，因此不会产生新的接口费用。开始前应先
+确认 Run 已结束、Baseline 版本正确；如果 Query 无法唯一匹配人物，应保留未关联，
+不要仅凭姓名相似自动绑定。
+
+参考线方案采用不可变版本：需要调整时从旧方案“复制为新版本”，不能覆盖原版本。
+归档方案仍可供历史 Evaluation 和报告查看，但不能再用于新建或更换。Evaluation
+选择方案时会复制独立的 `thresholds_json` 快照；更换方案只影响以后生成的新报告，
+既有报告不会重算或标记过期。未选择方案不影响采集和处理，报告建议会显示
+“暂不能判断”。历史 Evaluation 的手工参考线继续显示为“历史自定义参考线”。
 
 报告保存生成时的指标、字段配置、基准和规则版本。复核或重新处理变化后，旧报告标记为 `STALE`，原文件不覆盖。未完成复核时只展示预览值；成本/PDL 缺失时显示“未接入”，不会按0计算。
+
+新生成的 metrics-v4 Process 报告使用 `report-model-v5`：Web 首屏展示候选人返回率、目标人物命中率、有候选人条件下命中率、命中信息准确度、命中资料完整度，以及非命中资料完整度和非命中候选人资料相似度（排除 `profile_full_name`）。Processing Scope 后的“五大资料模块返回概览”按全部候选人、全部 HIT、非命中/疑似分别展示模块有数据率与业务原子字段完整度；状态字段、容器 JSON 和 Candidate Detail 失败不进入计算分母。下方 Query 工作台默认展示5条、每次加载10条，但搜索和筛选覆盖报告快照中的全部 Query 与候选人。单次报告展示本次候选人与基准字段比较；对比报告额外显示同条件人物配对与变化分类。未选择参考线、未接入成本或没有建议时，对应空章节不会出现。旧 `report-model-v1/v2/v3/v4` 快照继续按历史版式打开。
+
+下载的静态 HTML 不依赖网络或 JavaScript：它直接预渲染核心指标、全部 Query 与全部候选人摘要；模块、字段比较和 Evidence 默认折叠。静态 HTML 只保留 Candidate、Process 与 Raw 的引用信息，绝不嵌入 Candidate Detail 完整 Raw 响应。
+
+首页会展示最近10份报告，顶部“报告”入口可进入全局报告中心。报告中心支持按
+Evaluation、系统版本、`SINGLE`/`COMPARE` 类型和 `READY`/`STALE`/`FAILED`
+状态筛选，每页显示50份。报告列表只读取已保存的快照摘要；只有静态 HTML 或
+Excel 文件真实存在时才提供下载链接，`FAILED` 报告不提供产物下载。
 
 `SEARCH_REPORT_EXCEL_ENABLED=false` 可关闭 Web 自动 Excel 导出。Node/artifact-tool 不可用时，Web 报告和静态 HTML 仍会成功生成。
 
@@ -270,10 +308,28 @@ processed Excel 与 Web/静态 HTML 共用已保存的 ReportModel 快照，不�
 - `模块字段统计`：模块/字段在全部、命中和非命中候选人中的统计；
 - `失败记录`：执行、Candidate Detail 和字段结构错误；
 - `人工复核`：可回查的候选人及字段得分快照；
+- `Report_Summary`：report-model-v3/v4/v5 的执行、身份归类和质量摘要；
+- `Query_Person_Links`：Query 与 Baseline 人物关联、来源和匹配状态；
+- `Identity_Classification`：逐候选人的身份归类、来源和主要命中状态；
+- `Field_Matrix`：Baseline/Candidate 字段开关、覆盖、样例、规则和问题；
+- `Field_Metrics`：字段级返回率、完整度、准确率、值域和不适用原因；
+- `Module_Metrics`：模块级 data/empty/unknown 计数和返回率；
+- `Not_Ready_Reasons`：指标、质量与报告中未就绪原因的独立明细；
 - `Raw数据`：仅在完整 JSON 超过 Excel 单元格限制时生成。
 
+当报告为 `report-model-v4` 或 `report-model-v5` 时，工作簿还会增加以下固定英文 Sheet，供后续测试平台按稳定名称读取：
+
+- `Core Metrics`：身份、基准资料质量、版本回归和参考线核心指标；
+- `Module Quality`：五个资料模块的完整度、准确度及非命中资料返回率；
+- `Field Comparison`：每个主命中候选人的 Baseline 值、检索值、评分和原因；
+- `Field Returns`：所有成功 Candidate 的字段返回率；
+- `Rule Snapshot`：FieldSchema、处理规则、指标规则、报告规则和 Baseline 快照；
+- `Raw`：存在超长 JSON 时的分块引用。
+
 缺失、未接入和未就绪值保持空单元格；不会补 `0`、字符串 `"null"` 或伪造
-`False`。真实数字和布尔值仍保持 Excel 数字/布尔类型，URL 保留原文。
+`False`。真实数字和布尔值仍保持 Excel 数字/布尔类型；比率保持数值并使用百分比
+格式，完整 HTTP(S) URL 写为可点击链接。旧 report-model-v1/v2 仍按原有 Sheet
+导出，不强行补造 v3 数据。
 
 ### SQLite 与内部导入接口
 
@@ -326,7 +382,9 @@ python3 -m unittest discover -s tests -p 'test_analysis_store.py' -k backup -v
 自动测试只能证明代码和脱敏夹具行为。小批真实接口与100人真实数据必须在受控
 测试环境另行执行，并记录 Evaluation、Run、耗时、磁盘增量和失败明细。验收状态
 及现场检查表见
-`docs/searchTool_v1.3_MVP_阶段7_集成验收记录.md`。
+`docs/searchTool_v1.3_MVP_阶段7_集成验收记录.md`。数据处理优化阶段5的真实历史
+Run 副本、无成本重处理、Excel v3 和 Docker 验收见
+`docs/searchTool_v1.3_MVP_数据处理优化阶段5_Excel集成验收记录.md`。
 
 ### 备份与恢复
 

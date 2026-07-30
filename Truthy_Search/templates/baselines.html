@@ -55,7 +55,7 @@
             <td>{{ baseline.name }}</td>
             <td>{{ baseline.source_type }}</td>
             <td>{{ baseline.person_count }}</td>
-            <td>{{ baseline.created_at }}</td>
+            <td>{{ baseline.created_at|format_datetime }}</td>
           </tr>
         {% else %}
           <tr><td colspan="5" class="empty-cell">还没有基准版本</td></tr>
@@ -71,41 +71,122 @@
         <h2>Person 基准明细</h2>
         <p>字段可用性按人物维护；当前字段配置：{{ active_schema.schema_version if active_schema else '未发布' }}</p>
       </div>
-      <span class="count">{{ total }} 人</span>
+      <div>
+        {% if active_schema %}
+          <a class="button secondary" href="{{ url_for('field_comparison_matrix', schema_version=active_schema.schema_version, baseline_version=selected_version) }}">查看字段覆盖与评分配置</a>
+        {% endif %}
+        <span class="count">{{ total }} 人</span>
+      </div>
     </section>
     <div class="processed-candidate-list">
       {% for person in people %}
-        <article class="panel processed-candidate">
+        <article class="panel processed-candidate baseline-workbench" data-baseline-workbench>
           <div class="processed-candidate-head">
-            <div>
-              <p class="eyebrow mono">{{ person.person_id }}</p>
-              <h2>{{ person.display_name or '未填写姓名' }}</h2>
+            <div class="baseline-person-identity">
+              {% if person.avatar_url %}
+                <a class="baseline-avatar" href="{{ person.avatar_url }}" target="_blank" rel="noopener noreferrer">
+                  <img src="{{ person.avatar_url }}" alt="{{ person.display_name or '基准人物' }}头像" loading="lazy">
+                </a>
+              {% else %}
+                <span class="baseline-avatar baseline-avatar-placeholder" aria-hidden="true">
+                  {{ (person.display_name or '?')[:1]|upper }}
+                </span>
+              {% endif %}
+              <div>
+                <p class="eyebrow mono">{{ person.person_id }}</p>
+                <h2>{{ person.display_name or '未填写姓名' }}</h2>
+                <p class="baseline-person-summary">
+                  {{ person.valued_field_count }} 个字段有值 ·
+                  <strong data-baseline-selected-count>{{ person.available_fields|length }}</strong> 个参与评测
+                </p>
+              </div>
             </div>
-            <span class="status neutral">{{ person.available_fields|length }} AVAILABLE · {{ person.available_fields_source }}</span>
+            <span class="status neutral">{{ person.available_fields_source }} 来源</span>
           </div>
           {% if person.unknown_available_fields %}
             <div class="error-list">
               <p>未知字段：{{ person.unknown_available_fields|join(', ') }}。字段仍保留，但当前字段配置没有对应定义。</p>
             </div>
           {% endif %}
-          <details>
-            <summary>查看并维护可用字段</summary>
+          <details class="baseline-detail" {% if total == 1 %}open{% endif %}>
+            <summary>
+              <span>查看人物详情与字段可用性</span>
+              <small>基准值只读，可用性可修改</small>
+            </summary>
             <form method="post" action="{{ url_for('baseline_available_fields_update', baseline_version=selected_version, person_id=person.person_id) }}">
-              <div class="field-definition-grid">
-                {% for field in person.field_options %}
-                  <label>
-                    <input type="checkbox" name="available_fields" value="{{ field.field_key }}" {% if field.field_key in person.available_fields %}checked{% endif %}>
-                    <strong>{{ field.display_name }}</strong>
-                    <span class="mono">{{ field.field_key }}</span>
-                    {% if field.unknown %}<small>未知字段</small>{% endif %}
-                    <span>{{ render_value(field.value, 'baseline.' ~ field.field_key) if field.value is not none else '无基准值' }}</span>
-                  </label>
-                {% endfor %}
+              <div class="baseline-toolbar">
+                <label class="baseline-field-search">
+                  <span>查找字段</span>
+                  <input type="search" placeholder="字段名称或 field_key" data-baseline-field-search>
+                </label>
+                <div class="baseline-bulk-actions" aria-label="批量设置字段可用性">
+                  <button class="button small secondary" type="button" data-baseline-select-valued>选择有值字段</button>
+                  <button class="button small text" type="button" data-baseline-select-all>全选</button>
+                  <button class="button small text" type="button" data-baseline-clear>清空</button>
+                </div>
               </div>
-              <button class="button primary" type="submit">保存可用字段</button>
+              <div class="baseline-field-groups">
+                {% for group in person.field_groups %}
+                  <section class="baseline-field-group">
+                    <div class="baseline-field-group-head">
+                      <div>
+                        <h3>{{ group.module }}</h3>
+                        <p>{{ group.fields|length }} 个字段</p>
+                      </div>
+                    </div>
+                    <div class="baseline-field-list">
+                      {% for field in group.fields %}
+                        <article
+                          class="baseline-field-row"
+                          data-baseline-field
+                          data-field-search="{{ (field.display_name ~ ' ' ~ field.field_key ~ ' ' ~ group.module)|lower }}"
+                          data-has-value="{{ 'true' if field.has_value else 'false' }}"
+                        >
+                          <div class="baseline-field-meta">
+                            <label class="baseline-availability-control">
+                              <input
+                                type="checkbox"
+                                name="available_fields"
+                                value="{{ field.field_key }}"
+                                {% if field.field_key in person.available_fields %}checked{% endif %}
+                              >
+                              <span aria-hidden="true"></span>
+                              <strong>参与评测</strong>
+                            </label>
+                            <div>
+                              <h4>{{ field.display_name }}</h4>
+                              <code>{{ field.field_key }}</code>
+                              {% if field.unknown %}<small class="status active">未知字段</small>{% endif %}
+                            </div>
+                          </div>
+                          <div class="baseline-field-value">
+                            {% if not field.has_value %}
+                              <span class="empty-value">无基准值</span>
+                            {% elif field.value is mapping or (field.value is sequence and field.value is not string and field.data_type != 'array') %}
+                              <details class="baseline-complex-value">
+                                <summary>查看结构化内容</summary>
+                                {{ render_value(field.value, 'baseline.' ~ field.field_key) }}
+                              </details>
+                            {% else %}
+                              {{ render_value(field.value, 'baseline.' ~ field.field_key) }}
+                            {% endif %}
+                          </div>
+                        </article>
+                      {% endfor %}
+                    </div>
+                  </section>
+                {% endfor %}
+                <p class="baseline-no-match" data-baseline-no-match hidden>没有匹配的字段</p>
+              </div>
+              <div class="baseline-save-bar">
+                <span data-baseline-save-state>修改后请保存，基准值本身不会被改动</span>
+                <button class="button primary" type="submit">保存字段可用性</button>
+              </div>
             </form>
-            <h3>证据</h3>
-            {{ render_value(person.evidence, 'evidence') }}
+            <details class="baseline-evidence">
+              <summary>查看导入证据</summary>
+              {{ render_value(person.evidence, 'evidence') }}
+            </details>
           </details>
         </article>
       {% else %}

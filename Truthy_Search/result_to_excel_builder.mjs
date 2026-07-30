@@ -19,6 +19,45 @@ import { fileURLToPath } from "node:url";
 const RAW_TRIGGER_LENGTH = 32000;
 const RAW_CHUNK_LENGTH = 30000;
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
+const DEFAULT_DISPLAY_TIMEZONE = "Asia/Shanghai";
+const EXCEL_DATETIME_FORMAT = "yyyy-mm-dd hh:mm:ss";
+const DATETIME_HEADERS = new Set([
+  "created_at",
+  "updated_at",
+  "started_at",
+  "finished_at",
+  "collected_at",
+  "reviewed_at",
+  "generated_at",
+]);
+
+/** 校验 Excel 展示时区；非法配置回退上海时区，避免阻断报告导出。 */
+function resolveDisplayTimezone() {
+  const configured =
+    String(process.env.SEARCH_DISPLAY_TIMEZONE ?? "").trim()
+    || DEFAULT_DISPLAY_TIMEZONE;
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: configured }).format();
+    return configured;
+  } catch {
+    console.warn(
+      `SEARCH_DISPLAY_TIMEZONE=${configured} 无效，已回退为 ${DEFAULT_DISPLAY_TIMEZONE}`,
+    );
+    return DEFAULT_DISPLAY_TIMEZONE;
+  }
+}
+
+const DISPLAY_TIMEZONE = resolveDisplayTimezone();
+const DISPLAY_TIME_PARTS = new Intl.DateTimeFormat("en-CA", {
+  timeZone: DISPLAY_TIMEZONE,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hourCycle: "h23",
+});
 
 function printHelp() {
   console.log(`searchTool JSONL → Excel 导出工具
@@ -198,6 +237,8 @@ const PROCESSED_CANDIDATE_HEADERS = [
   "detail_error",
   "judgement",
   "reason",
+  "classification_source",
+  "is_primary_hit",
   "reviewer",
   "review_note",
   "reviewed_at",
@@ -210,6 +251,9 @@ const PROCESSED_QUERY_HEADERS = [
   "evaluation_phase",
   "query_id",
   "person_id",
+  "person_id_source",
+  "baseline_display_name",
+  "baseline_match_status",
   "query_stage",
   "task_id",
   "query_status",
@@ -226,6 +270,7 @@ const PROCESSED_QUERY_HEADERS = [
   "retrieval_success",
   "matched_completeness",
   "matched_accuracy",
+  "identity_state",
   "formal_ready",
 ];
 
@@ -279,6 +324,163 @@ const CORE_METRIC_HEADERS = [
   "reason",
   "unit",
 ];
+
+const REPORT_SUMMARY_HEADERS = [
+  "section",
+  "metric_key",
+  "metric_name",
+  "status",
+  "value",
+  "preview_value",
+  "numerator",
+  "denominator",
+  "count",
+  "reason_codes",
+  "reasons",
+];
+
+const QUERY_PERSON_LINK_HEADERS = [
+  "query_id",
+  "query_stage",
+  "person_id",
+  "person_id_source",
+  "baseline_display_name",
+  "baseline_match_status",
+  "result_status",
+  "identity_state",
+];
+
+const IDENTITY_CLASSIFICATION_HEADERS = [
+  "query_id",
+  "person_id",
+  "candidate_pk",
+  "candidate_id",
+  "candidate_rank",
+  "detail_status",
+  "judgement",
+  "classification_source",
+  "is_primary_hit",
+  "reason",
+  "evidence",
+  "reviewer",
+  "review_note",
+  "reviewed_at",
+];
+
+const FIELD_MATRIX_HEADERS = [
+  "field_key",
+  "display_name",
+  "module",
+  "value_scope",
+  "enabled",
+  "baseline_nonempty_count",
+  "baseline_available_count",
+  "baseline_person_count",
+  "baseline_sample",
+  "baseline_shapes",
+  "candidate_nonempty_count",
+  "candidate_count",
+  "candidate_return_rate",
+  "candidate_sample",
+  "candidate_shapes",
+  "completeness_enabled",
+  "accuracy_enabled",
+  "identity_enabled",
+  "compare_mode",
+  "normalizer",
+  "status",
+  "issue_severities",
+  "issue_codes",
+  "issue_messages",
+];
+
+const FIELD_METRIC_HEADERS = [
+  "field_key",
+  "display_name",
+  "module",
+  "value_scope",
+  "scoring_role",
+  "compare_mode",
+  "entity_count",
+  "returned_count",
+  "empty_count",
+  "return_rate",
+  "status",
+  "reason_codes",
+  "reasons",
+];
+
+const MODULE_METRIC_HEADERS = [
+  "module",
+  "data_count",
+  "empty_count",
+  "unknown_count",
+  "candidate_count",
+  "data_rate",
+  "status",
+  "reason_codes",
+  "reasons",
+];
+
+const NOT_READY_REASON_HEADERS = [
+  "metric",
+  "reason_code",
+  "reason",
+  "details",
+];
+
+// ReportModel v4 的新增审计 Sheet。字段值来自已冻结的报告快照和
+// processed_export.jsonl，导出时不重新计算任何指标。
+const V4_MODULE_QUALITY_HEADERS = [
+  "module",
+  "completeness_status",
+  "completeness_value",
+  "completeness_numerator",
+  "completeness_denominator",
+  "accuracy_status",
+  "accuracy_value",
+  "accuracy_numerator",
+  "accuracy_denominator",
+  "non_hit_return_status",
+  "non_hit_return_value",
+  "non_hit_return_numerator",
+  "non_hit_return_denominator",
+];
+
+const V4_FIELD_COMPARISON_HEADERS = [
+  "query_id",
+  "person_id",
+  "candidate_pk",
+  "candidate_id",
+  "module",
+  "field_key",
+  "baseline_field_key",
+  "baseline_value",
+  "candidate_value",
+  "baseline_available",
+  "returned_nonempty",
+  "completeness_score",
+  "accuracy_score",
+  "comparison_status",
+  "reason_code",
+  "reason",
+];
+
+const V4_FIELD_RETURN_HEADERS = [
+  "field_key",
+  "display_name",
+  "module",
+  "value_scope",
+  "returned_count",
+  "empty_count",
+  "entity_count",
+  "return_rate",
+  "status",
+  "reason_codes",
+  "reasons",
+];
+
+const V4_RULE_SNAPSHOT_HEADERS = ["category", "key", "value"];
 
 const SAME_CONDITION_HEADERS = [
   "person_id",
@@ -379,10 +581,14 @@ const METRIC_NAMES = {
   has_result_rate: "有结果率",
   no_result_rate: "无结果率",
   execution_failed_rate: "执行失败率",
-  retrieval_success: "检索成功率",
-  matched_completeness: "命中完整度",
-  matched_accuracy: "命中准确率",
-  nonmatched_completeness: "非命中完整度",
+  candidate_return_rate: "候选人返回率",
+  conditional_hit_rate: "有候选人条件下命中率",
+  retrieval_success: "目标人物命中率",
+  matched_completeness: "命中资料完整度",
+  matched_accuracy: "命中信息准确度",
+  nonmatched_completeness: "非命中资料完整度（兼容）",
+  nonmatched_data_completeness: "非命中资料完整度",
+  nonmatched_baseline_overlap: "非命中候选人资料相似度",
   llm_cost: "LLM 成本",
   third_party_cost: "第三方成本",
   total_cost: "总成本",
@@ -489,8 +695,229 @@ function appendMetricGroup(rows, metrics, queryStage = "ALL") {
   }
 }
 
-/** 将 ReportModel v2 转成 Excel 各报告 Sheet 使用的数据行。 */
-function buildReportRows(reportModel) {
+/** 将数组型状态和原因转换成稳定文本，避免 Excel 出现 JSON 噪声。 */
+function joinedText(value, separator = "\n") {
+  return Array.isArray(value)
+    ? value.map((item) => String(item)).join(separator)
+    : excelScalar(value);
+}
+
+/** 展开 ReportModel v3 专用审计 Sheet，不在 Excel 中重新计算指标。 */
+function buildV3AuditRows(reportModel, queries, candidates) {
+  const reportSummaryRows = [];
+  for (const [metricKey, value] of Object.entries(reportModel.execution_summary ?? {})) {
+    reportSummaryRows.push({
+      section: "EXECUTION",
+      metric_key: metricKey,
+      metric_name: metricKey,
+      status: "READY",
+      count: excelScalar(value),
+    });
+  }
+  for (const [metricKey, value] of Object.entries(reportModel.identity_summary ?? {})) {
+    reportSummaryRows.push({
+      section: "IDENTITY",
+      metric_key: metricKey,
+      metric_name: metricKey,
+      status: "READY",
+      count: excelScalar(value),
+    });
+  }
+  for (const [metricKey, item] of Object.entries(reportModel.quality_metrics ?? {})) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    reportSummaryRows.push({
+      section: "QUALITY",
+      metric_key: metricKey,
+      metric_name: METRIC_NAMES[metricKey] ?? metricKey,
+      status: excelScalar(item.status),
+      value: excelScalar(item.value),
+      preview_value: excelScalar(item.preview_value),
+      numerator: excelScalar(item.numerator),
+      denominator: excelScalar(item.denominator),
+      reason_codes: joinedText(item.reason_codes, ","),
+      reasons: joinedText(item.reasons),
+    });
+  }
+
+  const queryPersonLinkRows = queries.map((row) =>
+    Object.fromEntries(
+      QUERY_PERSON_LINK_HEADERS.map((header) => [
+        header,
+        excelScalar(row[header]),
+      ]),
+    ),
+  );
+  const identityClassificationRows = candidates.map((row) =>
+    Object.fromEntries(
+      IDENTITY_CLASSIFICATION_HEADERS.map((header) => [
+        header,
+        excelScalar(row[header]),
+      ]),
+    ),
+  );
+  const fieldMatrixRows = (
+    reportModel.field_alignment_matrix?.fields ?? []
+  ).map((item) => ({
+    ...Object.fromEntries(
+      FIELD_MATRIX_HEADERS
+        .filter((header) => !header.startsWith("issue_"))
+        .map((header) => [
+          header,
+          Array.isArray(item[header])
+            ? joinedText(item[header], ",")
+            : excelScalar(item[header]),
+        ]),
+    ),
+    issue_severities: joinedText(
+      (item.issues ?? []).map((issue) => issue.severity),
+      ",",
+    ),
+    issue_codes: joinedText(
+      (item.issues ?? []).map((issue) => issue.code),
+      ",",
+    ),
+    issue_messages: joinedText(
+      (item.issues ?? []).map((issue) => issue.message),
+    ),
+  }));
+  const fieldMetricRows = Object.entries(
+    reportModel.field_metrics ?? {},
+  ).map(([fieldKey, item]) => ({
+    field_key: fieldKey,
+    display_name: excelScalar(item.display_name),
+    module: excelScalar(item.module),
+    value_scope: excelScalar(item.value_scope),
+    scoring_role: joinedText(item.scoring_role, ","),
+    compare_mode: excelScalar(item.compare_mode),
+    entity_count: excelScalar(item.entity_count),
+    returned_count: excelScalar(item.returned_count),
+    empty_count: excelScalar(item.empty_count),
+    return_rate: excelScalar(item.return_rate),
+    status: excelScalar(item.status),
+    reason_codes: joinedText(item.reason_codes, ","),
+    reasons: joinedText(item.reasons),
+  }));
+  const moduleMetricRows = Object.entries(
+    reportModel.module_metrics ?? {},
+  ).map(([module, item]) => ({
+    module,
+    data_count: excelScalar(item.data_count),
+    empty_count: excelScalar(item.empty_count),
+    unknown_count: excelScalar(item.unknown_count),
+    candidate_count: excelScalar(item.candidate_count),
+    data_rate: excelScalar(item.data_rate),
+    status: excelScalar(item.status),
+    reason_codes: joinedText(item.reason_codes, ","),
+    reasons: joinedText(item.reasons),
+  }));
+  const notReadyReasonRows = (reportModel.not_ready_reasons ?? []).map(
+    (item) => ({
+      metric: excelScalar(item.metric),
+      reason_code: excelScalar(item.reason_code),
+      reason: excelScalar(item.reason),
+      details: joinedText(item.details),
+    }),
+  );
+  return {
+    reportSummaryRows,
+    queryPersonLinkRows,
+    identityClassificationRows,
+    fieldMatrixRows,
+    fieldMetricRows,
+    moduleMetricRows,
+    notReadyReasonRows,
+  };
+}
+
+/** 将 ReportModel v4 的质量、字段对比和规则快照展开为 Excel 审计行。 */
+function buildV4AuditRows(reportModel, candidates) {
+  const quality = reportModel.baseline_quality_metrics ?? {};
+  const nonHit = reportModel.non_hit_data_return ?? {};
+  const moduleQualityRows = ["Insights", "Photos", "Profile", "Social", "Summary"].map(
+    (module) => {
+      const moduleQuality = quality.modules?.[module] ?? {};
+      const completeness = moduleQuality.completeness ?? {};
+      const accuracy = moduleQuality.accuracy ?? {};
+      const nonHitReturn = nonHit.modules?.[module] ?? {};
+      return {
+        module,
+        completeness_status: excelScalar(completeness.status),
+        completeness_value: excelScalar(completeness.value),
+        completeness_numerator: excelScalar(completeness.numerator),
+        completeness_denominator: excelScalar(completeness.denominator),
+        accuracy_status: excelScalar(accuracy.status),
+        accuracy_value: excelScalar(accuracy.value),
+        accuracy_numerator: excelScalar(accuracy.numerator),
+        accuracy_denominator: excelScalar(accuracy.denominator),
+        non_hit_return_status: excelScalar(nonHitReturn.status),
+        non_hit_return_value: excelScalar(nonHitReturn.value),
+        non_hit_return_numerator: excelScalar(nonHitReturn.numerator),
+        non_hit_return_denominator: excelScalar(nonHitReturn.denominator),
+      };
+    },
+  );
+  const fieldComparisonRows = [];
+  for (const candidate of candidates) {
+    // 只有主命中进入正式基准资料质量；其余候选人仍可在“候选结果”审计。
+    if (!candidate.is_primary_hit) continue;
+    const scores = objectValue(candidate.field_scores);
+    for (const [fieldKey, score] of Object.entries(scores)) {
+      const item = objectValue(score);
+      fieldComparisonRows.push({
+        query_id: excelScalar(candidate.query_id),
+        person_id: excelScalar(candidate.person_id),
+        candidate_pk: excelScalar(candidate.candidate_pk),
+        candidate_id: excelScalar(candidate.candidate_id),
+        module: excelScalar(item.module ?? reportModel.field_metrics?.[fieldKey]?.module),
+        field_key: fieldKey,
+        baseline_field_key: excelScalar(item.baseline_field_key),
+        baseline_value: excelScalar(item.baseline_value),
+        candidate_value: excelScalar(item.returned_value),
+        baseline_available: excelScalar(item.baseline_available),
+        returned_nonempty: excelScalar(item.returned_nonempty),
+        completeness_score: excelScalar(item.completeness_score),
+        accuracy_score: excelScalar(item.accuracy_score),
+        comparison_status: excelScalar(item.comparison_status),
+        reason_code: excelScalar(item.reason_code),
+        reason: excelScalar(item.reason),
+      });
+    }
+  }
+  const fieldReturnRows = Object.entries(reportModel.field_metrics ?? {}).map(
+    ([fieldKey, item]) => ({
+      field_key: fieldKey,
+      display_name: excelScalar(item.display_name),
+      module: excelScalar(item.module),
+      value_scope: excelScalar(item.value_scope),
+      returned_count: excelScalar(item.returned_count),
+      empty_count: excelScalar(item.empty_count),
+      entity_count: excelScalar(item.entity_count),
+      return_rate: excelScalar(item.return_rate),
+      status: excelScalar(item.status),
+      reason_codes: joinedText(item.reason_codes, ","),
+      reasons: joinedText(item.reasons),
+    }),
+  );
+  const metadata = reportModel.metadata ?? {};
+  const ruleSnapshotRows = [
+    ["report", "report_model_version", metadata.report_model_version],
+    ["report", "metrics_rule_version", metadata.metrics_rule_version],
+    ["process", "field_processing_rule_version", metadata.rule_version],
+    ["field_schema", "schema_version", metadata.schema_version],
+    ["baseline", "baseline_version", metadata.baseline_version],
+    ["process", "candidate_process_id", metadata.candidate_process_id],
+    ["process", "baseline_process_id", metadata.baseline_process_id],
+    ["regression", "status", reportModel.regression_metrics?.status],
+  ].map(([category, key, value]) => ({
+    category,
+    key,
+    value: excelScalar(value),
+  }));
+  return { moduleQualityRows, fieldComparisonRows, fieldReturnRows, ruleSnapshotRows };
+}
+
+/** 将 ReportModel 转成 Excel 各报告 Sheet 使用的数据行。 */
+function buildReportRows(reportModel, queries = [], candidates = []) {
   const coreMetricRows = [];
   const legacyCandidate = reportModel.summary?.candidate;
   const overallMetrics =
@@ -500,10 +927,14 @@ function buildReportRows(reportModel) {
         ? {
           quality_metrics: Object.fromEntries(
             [
+              "candidate_return_rate",
+              "conditional_hit_rate",
               "retrieval_success",
               "matched_completeness",
               "matched_accuracy",
               "nonmatched_completeness",
+              "nonmatched_data_completeness",
+              "nonmatched_baseline_overlap",
             ]
               .filter((metricKey) => legacyCandidate[metricKey])
               .map((metricKey) => [metricKey, legacyCandidate[metricKey]]),
@@ -601,7 +1032,14 @@ function buildReportRows(reportModel) {
       ),
     });
   }
-  return { coreMetricRows, sameConditionRows, newClueRows, moduleFieldRows };
+  return {
+    coreMetricRows,
+    sameConditionRows,
+    newClueRows,
+    moduleFieldRows,
+    ...buildV3AuditRows(reportModel, queries, candidates),
+    ...buildV4AuditRows(reportModel, candidates),
+  };
 }
 
 /** Build the workbook-neutral model from AnalysisService processed records. */
@@ -693,7 +1131,7 @@ async function buildProcessedModel(inputFile, reportModelFile) {
     ),
   );
   failureRows.push(...processingFailures);
-  const reportRows = buildReportRows(reportModel);
+  const reportRows = buildReportRows(reportModel, queries, candidates);
   return {
     mode: "processed",
     reportModel,
@@ -1443,11 +1881,76 @@ function safeExcelValue(value) {
   return value === undefined ? null : value;
 }
 
+/**
+ * 将 ISO 时间转换成目标时区的 Excel 日期值。
+ *
+ * 历史无时区时间按 UTC 处理；非法值保留原文。这里构造“本地墙钟时间”的
+ * UTC 组件，确保 Excel 单元格在不同机器上都显示相同的配置时区时间。
+ */
+function excelDateTime(value) {
+  if (value === null || value === undefined || value === "") return null;
+  if (value instanceof Date) return value;
+  if (typeof value !== "string") return value;
+  const text = value.trim();
+  const hasTimezone = /(?:[zZ]|[+-]\d{2}:?\d{2})$/.test(text);
+  const instant = new Date(hasTimezone ? text : `${text}Z`);
+  if (Number.isNaN(instant.getTime())) return value;
+  const parts = Object.fromEntries(
+    DISPLAY_TIME_PARTS.formatToParts(instant)
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, Number(part.value)]),
+  );
+  return new Date(Date.UTC(
+    parts.year,
+    parts.month - 1,
+    parts.day,
+    parts.hour,
+    parts.minute,
+    parts.second,
+  ));
+}
+
+/** 仅转换明确的时间列，避免修改 Raw 和普通字符串字段。 */
+function excelCellValue(header, value) {
+  const normalized = DATETIME_HEADERS.has(header)
+    ? excelDateTime(value)
+    : value;
+  return safeExcelValue(normalized);
+}
+
+/** 将独立 HTTP(S) URL 单元格写成可点击公式，JSON 和普通文本保持原值。 */
+function applyUrlHyperlinks(sheet, headers, rows) {
+  rows.forEach((row, rowIndex) => {
+    headers.forEach((header, columnIndex) => {
+      const value = row[header];
+      if (
+        typeof value !== "string"
+        || value.length > 2048
+        || !/^https?:\/\/\S+$/i.test(value)
+      ) {
+        return;
+      }
+      const escaped = value.replaceAll('"', '""');
+      sheet.getRangeByIndexes(
+        rowIndex + 1,
+        columnIndex,
+        1,
+        1,
+      ).formulas = [[`=HYPERLINK("${escaped}","${escaped}")`]];
+    });
+  });
+}
+
 /** Write a rectangular data sheet with a consistent readable table style. */
 function writeDataSheet(workbook, name, headers, rows, tableName, options = {}) {
   const sheet = workbook.worksheets.add(name);
   sheet.showGridLines = false;
-  const matrix = [headers, ...rows.map((row) => headers.map((header) => safeExcelValue(row[header] ?? null)))];
+  const matrix = [
+    headers,
+    ...rows.map((row) =>
+      headers.map((header) => excelCellValue(header, row[header] ?? null))
+    ),
+  ];
   sheet.getRangeByIndexes(0, 0, matrix.length, headers.length).values = matrix;
   sheet.freezePanes.freezeRows(1);
 
@@ -1468,6 +1971,7 @@ function writeDataSheet(workbook, name, headers, rows, tableName, options = {}) 
     const endCell = `${columnName(headers.length - 1)}${rows.length + 1}`;
     const table = sheet.tables.add(`A1:${endCell}`, true, tableName);
     table.style = "TableStyleMedium2";
+    applyUrlHyperlinks(sheet, headers, rows);
   }
 
   headers.forEach((header, index) => {
@@ -1492,7 +1996,9 @@ function applySemanticNumberFormats(sheet, headers, rowCount) {
   if (!rowCount) return;
   headers.forEach((header, index) => {
     let format = null;
-    if (
+    if (DATETIME_HEADERS.has(header)) {
+      format = EXCEL_DATETIME_FORMAT;
+    } else if (
       /(?:rate|accuracy|completeness)(?:_delta)?$/.test(header)
       || ["value", "preview_value", "threshold"].includes(header)
     ) {
@@ -1812,9 +2318,17 @@ async function writeProcessedWorkbook(artifactTool, outputPath, model) {
     { item: "候选系统版本", value: reportMetadata.candidate_system_version ?? "" },
     { item: "基线系统版本", value: reportMetadata.baseline_system_version ?? "" },
     { item: "数据标识", value: reportMetadata.data_marker ?? "" },
-    { item: "生成时间", value: reportMetadata.generated_at ?? "" },
+    { item: "生成时间", value: excelDateTime(reportMetadata.generated_at) },
     { item: "字段配置", value: reportMetadata.schema_version ?? "" },
     { item: "基准版本", value: reportMetadata.baseline_version ?? "" },
+    {
+      item: "参考线方案",
+      value: reportMetadata.threshold_profile_id
+        ? `${reportMetadata.threshold_profile_name ?? reportMetadata.threshold_profile_id} v${reportMetadata.threshold_profile_version ?? ""}`
+        : Object.hasOwn(reportMetadata, "threshold_profile_id")
+          ? "未选择参考线方案"
+          : "历史自定义参考线",
+    },
     {
       item: "指标规则",
       value: reportMetadata.metrics_rule_version ?? reportMetadata.rule_version ?? "",
@@ -1836,7 +2350,7 @@ async function writeProcessedWorkbook(artifactTool, outputPath, model) {
     },
   ];
 
-  writeDataSheet(
+  const notesSheet = writeDataSheet(
     workbook,
     "说明",
     ["item", "value"],
@@ -1844,6 +2358,13 @@ async function writeProcessedWorkbook(artifactTool, outputPath, model) {
     "ProcessedNotesTable",
     { widths: { item: 24, value: 80 }, rowHeight: 42 },
   );
+  const generatedAtRow = notes.findIndex((item) => item.item === "生成时间") + 1;
+  notesSheet.getRangeByIndexes(
+    generatedAtRow,
+    1,
+    1,
+    1,
+  ).format.numberFormat = EXCEL_DATETIME_FORMAT;
   writeDataSheet(
     workbook,
     "核心指标",
@@ -1900,6 +2421,113 @@ async function writeProcessedWorkbook(artifactTool, outputPath, model) {
     model.reviewRows,
     "ProcessedReviewTable",
   );
+  const isReportModelV3 =
+    reportMetadata.report_model_version === "report-model-v3";
+  const isReportModelV4 =
+    reportMetadata.report_model_version === "report-model-v4" ||
+    reportMetadata.report_model_version === "report-model-v5";
+  if (isReportModelV3 || isReportModelV4) {
+    writeDataSheet(
+      workbook,
+      "Report_Summary",
+      REPORT_SUMMARY_HEADERS,
+      model.reportSummaryRows,
+      "ProcessedV3ReportSummaryTable",
+    );
+    writeDataSheet(
+      workbook,
+      "Query_Person_Links",
+      QUERY_PERSON_LINK_HEADERS,
+      model.queryPersonLinkRows,
+      "ProcessedV3QueryPersonLinksTable",
+    );
+    writeDataSheet(
+      workbook,
+      "Identity_Classification",
+      IDENTITY_CLASSIFICATION_HEADERS,
+      model.identityClassificationRows,
+      "ProcessedV3IdentityClassificationTable",
+    );
+    writeDataSheet(
+      workbook,
+      "Field_Matrix",
+      FIELD_MATRIX_HEADERS,
+      model.fieldMatrixRows,
+      "ProcessedV3FieldMatrixTable",
+    );
+    writeDataSheet(
+      workbook,
+      "Field_Metrics",
+      FIELD_METRIC_HEADERS,
+      model.fieldMetricRows,
+      "ProcessedV3FieldMetricsTable",
+    );
+    writeDataSheet(
+      workbook,
+      "Module_Metrics",
+      MODULE_METRIC_HEADERS,
+      model.moduleMetricRows,
+      "ProcessedV3ModuleMetricsTable",
+    );
+    writeDataSheet(
+      workbook,
+      "Not_Ready_Reasons",
+      NOT_READY_REASON_HEADERS,
+      model.notReadyReasonRows,
+      "ProcessedV3NotReadyReasonsTable",
+      { widths: { reason: 34, details: 70 }, rowHeight: 50 },
+    );
+  }
+  if (isReportModelV4) {
+    // v4 使用英文 Sheet 名与 PRD 一致，便于后续自动化平台按稳定名称读取。
+    writeDataSheet(
+      workbook,
+      "Core Metrics",
+      CORE_METRIC_HEADERS,
+      model.coreMetricRows,
+      "ProcessedV4CoreMetricsTable",
+    );
+    writeDataSheet(
+      workbook,
+      "Module Quality",
+      V4_MODULE_QUALITY_HEADERS,
+      model.moduleQualityRows,
+      "ProcessedV4ModuleQualityTable",
+    );
+    writeDataSheet(
+      workbook,
+      "Field Comparison",
+      V4_FIELD_COMPARISON_HEADERS,
+      model.fieldComparisonRows,
+      "ProcessedV4FieldComparisonTable",
+      { widths: { baseline_value: 42, candidate_value: 42, reason: 42 }, rowHeight: 42 },
+    );
+    writeDataSheet(
+      workbook,
+      "Field Returns",
+      V4_FIELD_RETURN_HEADERS,
+      model.fieldReturnRows,
+      "ProcessedV4FieldReturnsTable",
+    );
+    writeDataSheet(
+      workbook,
+      "Rule Snapshot",
+      V4_RULE_SNAPSHOT_HEADERS,
+      model.ruleSnapshotRows,
+      "ProcessedV4RuleSnapshotTable",
+      { widths: { category: 20, key: 34, value: 62 } },
+    );
+    if (model.rawRows.length) {
+      writeDataSheet(
+        workbook,
+        "Raw",
+        ["raw_ref", "run_label", "query_id", "candidate_id", "field_name", "chunk_index", "chunk_total", "content"],
+        model.rawRows,
+        "ProcessedV4RawTable",
+        { widths: { raw_ref: 45, content: 80 }, rowHeight: 50 },
+      );
+    }
+  }
   if (model.rawRows.length) {
     writeDataSheet(
       workbook,
@@ -1936,6 +2564,27 @@ async function writeProcessedWorkbook(artifactTool, outputPath, model) {
     "失败记录",
     "人工复核",
   ];
+  if (isReportModelV3 || isReportModelV4) {
+    requiredSheets.push(
+      "Report_Summary",
+      "Query_Person_Links",
+      "Identity_Classification",
+      "Field_Matrix",
+      "Field_Metrics",
+      "Module_Metrics",
+      "Not_Ready_Reasons",
+    );
+  }
+  if (isReportModelV4) {
+    requiredSheets.push(
+      "Core Metrics",
+      "Module Quality",
+      "Field Comparison",
+      "Field Returns",
+      "Rule Snapshot",
+    );
+    if (model.rawRows.length) requiredSheets.push("Raw");
+  }
   for (const required of requiredSheets) {
     if (!overview.ndjson.includes(required)) {
       throw new Error(`工作簿校验失败：缺少 ${required} Sheet`);
@@ -1976,13 +2625,23 @@ async function writeProcessedWorkbook(artifactTool, outputPath, model) {
       const sheet = workbook.worksheets.getItem(sheetName);
       const used = sheet.getUsedRange(true);
       const rowCount = Math.min(used?.rowCount ?? 1, 8);
-      const columnCount = Math.min(used?.columnCount ?? 1, 12);
-      const range = `A1:${columnName(columnCount - 1)}${Math.max(rowCount, 1)}`;
-      const preview = await workbook.render({ sheetName, range, scale: 1.2, format: "png" });
-      await fs.writeFile(
-        path.join(verifyDir, `processed_${sheetName}.png`),
-        new Uint8Array(await preview.arrayBuffer()),
-      );
+      const columnCount = used?.columnCount ?? 1;
+
+      // 功能说明：按 12 列分块渲染宽表，确保字段矩阵等工作表的全部列都经过可视化验收。
+      // 参数说明：startColumn 为当前分块起始列，previewColumns 为本次实际渲染列数。
+      // 返回值说明：每个分块生成一张 PNG；窄表仍只生成一张。
+      // 异常说明：渲染失败时由上层导出流程统一捕获，避免交付未验证的工作簿。
+      for (let startColumn = 0; startColumn < columnCount; startColumn += 12) {
+        const previewColumns = Math.min(12, columnCount - startColumn);
+        const startLabel = columnName(startColumn);
+        const endLabel = columnName(startColumn + previewColumns - 1);
+        const range = `${startLabel}1:${endLabel}${Math.max(rowCount, 1)}`;
+        const preview = await workbook.render({ sheetName, range, scale: 1.2, format: "png" });
+        await fs.writeFile(
+          path.join(verifyDir, `processed_${sheetName}_${startLabel}-${endLabel}.png`),
+          new Uint8Array(await preview.arrayBuffer()),
+        );
+      }
     }
     await fs.writeFile(
       path.join(verifyDir, "processed_inspect.ndjson"),

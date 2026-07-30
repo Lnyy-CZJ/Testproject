@@ -1,0 +1,501 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>searchTool v1.3 · 单次评测报告 Mock</title>
+  <style>
+    :root {
+      --ink: #15221f;
+      --muted: #687772;
+      --line: #dfe7e3;
+      --surface: #ffffff;
+      --canvas: #f4f7f5;
+      --brand: #126b5a;
+      --brand-2: #0d5749;
+      --brand-soft: #e8f4f0;
+      --good: #16794f;
+      --good-soft: #e9f6ef;
+      --warn: #9a6700;
+      --warn-soft: #fff5d9;
+      --bad: #b33a32;
+      --bad-soft: #fcecea;
+      --neutral-soft: #eef2f0;
+      --shadow: 0 12px 34px rgba(26, 58, 49, .08);
+      --radius: 18px;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--canvas);
+      font: 14px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+        "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    }
+
+    button, input { font: inherit; }
+    a { color: var(--brand); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .num { font-variant-numeric: tabular-nums; }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      height: 66px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 34px;
+      border-bottom: 1px solid rgba(18, 107, 90, .1);
+      background: rgba(255,255,255,.94);
+      backdrop-filter: blur(14px);
+    }
+
+    .brand { display: flex; align-items: center; gap: 11px; font-weight: 750; letter-spacing: -.01em; }
+    .brand-mark {
+      width: 34px; height: 34px; display: grid; place-items: center;
+      border-radius: 10px; color: #fff; background: var(--brand); font-weight: 800;
+    }
+    .top-actions { display: flex; gap: 9px; }
+    .btn {
+      border: 1px solid var(--line); border-radius: 10px; padding: 9px 13px;
+      color: var(--ink); background: #fff; cursor: pointer; font-weight: 650;
+    }
+    .btn.primary { color: #fff; border-color: var(--brand); background: var(--brand); }
+
+    .page { width: min(1440px, calc(100% - 48px)); margin: 28px auto 70px; }
+    .crumb { color: var(--muted); font-size: 13px; margin-bottom: 18px; }
+    .hero {
+      padding: 30px 32px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      background:
+        radial-gradient(circle at 92% 10%, rgba(18,107,90,.12), transparent 29%),
+        var(--surface);
+      box-shadow: var(--shadow);
+    }
+    .hero-top { display: flex; justify-content: space-between; gap: 28px; }
+    .eyebrow { color: var(--brand); font-size: 12px; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
+    h1 { margin: 7px 0 7px; font-size: clamp(28px, 3vw, 43px); line-height: 1.17; letter-spacing: -.04em; }
+    .subtitle { color: var(--muted); font-size: 15px; }
+    .report-badge {
+      align-self: flex-start; padding: 8px 11px; border-radius: 999px;
+      color: var(--brand-2); background: var(--brand-soft); font-weight: 750; white-space: nowrap;
+    }
+    .verdict {
+      display: flex; align-items: flex-start; gap: 12px;
+      margin-top: 26px; padding: 16px 18px; max-width: 930px;
+      border-left: 4px solid var(--warn); border-radius: 0 12px 12px 0; background: var(--warn-soft);
+    }
+    .verdict strong { display: block; margin-bottom: 2px; }
+    .meta-line { display: flex; flex-wrap: wrap; gap: 10px 22px; margin-top: 22px; color: var(--muted); font-size: 13px; }
+    .meta-line b { color: var(--ink); }
+
+    .section { margin-top: 28px; }
+    .section-head {
+      display: flex; justify-content: space-between; align-items: flex-end; gap: 18px; margin-bottom: 14px;
+    }
+    .section-head h2 { margin: 2px 0 0; font-size: 24px; letter-spacing: -.025em; }
+    .section-head p { margin: 3px 0 0; color: var(--muted); }
+
+    .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 24px; }
+    .kpi {
+      min-height: 154px; padding: 20px;
+      border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface);
+    }
+    .kpi .label { display: flex; align-items: center; justify-content: space-between; color: var(--muted); font-weight: 650; }
+    .kpi .value { margin-top: 19px; font-size: 34px; line-height: 1; font-weight: 790; letter-spacing: -.04em; }
+    .kpi .fraction { margin-top: 10px; color: var(--muted); }
+    .kpi .hint { margin-top: 8px; color: var(--ink); font-size: 12px; }
+    .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--brand); }
+    .dot.warn { background: var(--warn); }
+
+    .mini-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; margin-top: 12px; }
+    .mini {
+      padding: 14px 15px; border: 1px solid var(--line); border-radius: 14px; background: rgba(255,255,255,.72);
+    }
+    .mini span { display: block; color: var(--muted); font-size: 12px; }
+    .mini strong { display: block; margin-top: 3px; font-size: 20px; }
+
+    .panel { border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: 0 4px 18px rgba(20,51,43,.035); }
+    .stage-grid { display: grid; grid-template-columns: 1.05fr repeat(5, 1fr); }
+    .stage-grid > div { padding: 17px 18px; border-bottom: 1px solid var(--line); }
+    .stage-grid > div:nth-last-child(-n+6) { border-bottom: 0; }
+    .stage-grid .head { color: var(--muted); background: #f8faf9; font-size: 12px; font-weight: 750; }
+    .stage-name strong { display: block; }
+    .stage-name span { color: var(--muted); font-size: 12px; }
+    .metric-value { font-size: 18px; font-weight: 760; }
+    .metric-denom { color: var(--muted); font-size: 11px; }
+
+    .toolbar {
+      display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px;
+      padding: 14px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface);
+    }
+    .search {
+      flex: 1 1 280px; min-width: 220px; padding: 10px 13px;
+      border: 1px solid var(--line); border-radius: 10px; outline: none; background: #fbfcfb;
+    }
+    .search:focus { border-color: var(--brand); box-shadow: 0 0 0 3px rgba(18,107,90,.1); }
+    .filters { display: flex; flex-wrap: wrap; gap: 8px; }
+    .chip {
+      padding: 9px 12px; border: 1px solid var(--line); border-radius: 999px;
+      background: #fff; color: var(--muted); cursor: pointer;
+    }
+    .chip.active { color: var(--brand-2); border-color: #aad4c8; background: var(--brand-soft); font-weight: 700; }
+
+    .query-list { display: grid; gap: 12px; margin-top: 12px; }
+    details.query { border: 1px solid var(--line); border-radius: 17px; background: var(--surface); overflow: hidden; }
+    details.query[open] { box-shadow: 0 8px 24px rgba(20,51,43,.06); }
+    details.query > summary {
+      list-style: none; display: grid; grid-template-columns: minmax(260px, 1.5fr) repeat(4, minmax(105px, .6fr)) 26px;
+      align-items: center; gap: 14px; padding: 18px 20px; cursor: pointer;
+    }
+    details.query > summary::-webkit-details-marker { display: none; }
+    .query-person strong { display: block; font-size: 16px; }
+    .query-person span { color: var(--muted); font-size: 12px; }
+    .summary-stat span { display: block; color: var(--muted); font-size: 11px; }
+    .summary-stat strong { display: block; margin-top: 2px; }
+    .chev { color: var(--muted); font-size: 20px; transition: transform .2s; }
+    details[open] .chev { transform: rotate(180deg); }
+    .tag { display: inline-flex; align-items: center; gap: 5px; width: fit-content; padding: 4px 8px; border-radius: 999px; font-size: 11px; font-weight: 800; }
+    .tag.hit { color: var(--good); background: var(--good-soft); }
+    .tag.nonhit { color: #586560; background: var(--neutral-soft); }
+    .tag.suspect { color: var(--warn); background: var(--warn-soft); }
+    .tag.fail { color: var(--bad); background: var(--bad-soft); }
+
+    .query-body { padding: 0 20px 20px; border-top: 1px solid var(--line); }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; min-width: 1050px; }
+    th, td { padding: 13px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: middle; }
+    th { position: sticky; top: 65px; z-index: 2; color: var(--muted); background: #fbfcfb; font-size: 11px; letter-spacing: .02em; }
+    td small { display: block; color: var(--muted); }
+    tr:last-child td { border-bottom: 0; }
+    .best-row { background: linear-gradient(90deg, rgba(232,244,240,.9), rgba(255,255,255,0)); }
+    .score { font-weight: 750; }
+    .na { color: #9aa6a2; }
+    .link-btn { border: 0; padding: 0; color: var(--brand); background: none; cursor: pointer; font-weight: 700; }
+
+    .candidate-drill {
+      display: grid; grid-template-columns: 280px 1fr; gap: 16px;
+      margin-top: 17px; padding: 18px; border: 1px solid #cfe1db; border-radius: 15px; background: #f9fcfb;
+    }
+    .candidate-card { padding-right: 16px; border-right: 1px solid var(--line); }
+    .candidate-card h3 { margin: 8px 0 3px; font-size: 19px; }
+    .candidate-card p { margin: 0; color: var(--muted); }
+    .module-bars { margin-top: 15px; display: grid; gap: 9px; }
+    .bar-row { display: grid; grid-template-columns: 70px 1fr 48px; align-items: center; gap: 9px; font-size: 12px; }
+    .bar { height: 8px; border-radius: 999px; background: #e7ece9; overflow: hidden; }
+    .bar i { display: block; height: 100%; border-radius: inherit; background: var(--brand); }
+    .field-table table { min-width: 720px; }
+    .field-table th { top: 0; }
+    .compare-good { color: var(--good); font-weight: 750; }
+    .compare-warn { color: var(--warn); font-weight: 750; }
+    .compare-bad { color: var(--bad); font-weight: 750; }
+
+    .module-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
+    .module-card { padding: 17px; border: 1px solid var(--line); border-radius: 15px; background: var(--surface); }
+    .module-card .rate { margin-top: 12px; font-size: 24px; font-weight: 780; }
+    .module-card p { margin: 3px 0 0; color: var(--muted); font-size: 12px; }
+    .quality-note { margin-top: 12px; padding: 15px 17px; color: var(--muted); border: 1px dashed #cdd8d4; border-radius: 14px; background: rgba(255,255,255,.55); }
+
+    .appendix summary { list-style: none; padding: 18px 20px; cursor: pointer; font-weight: 750; }
+    .appendix summary::-webkit-details-marker { display: none; }
+    .appendix-body { display: grid; grid-template-columns: repeat(3, 1fr); gap: 13px; padding: 0 20px 20px; }
+    .appendix-item { padding: 14px; border-radius: 12px; background: #f7f9f8; }
+    .appendix-item span { display: block; color: var(--muted); font-size: 11px; }
+    .appendix-item strong { display: block; margin-top: 4px; overflow-wrap: anywhere; }
+    .footer { margin-top: 28px; color: var(--muted); text-align: center; font-size: 12px; }
+
+    .hidden { display: none !important; }
+    @media (max-width: 1080px) {
+      .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+      .mini-grid { grid-template-columns: repeat(3, 1fr); }
+      .stage-grid { grid-template-columns: 1.1fr repeat(5, minmax(130px, 1fr)); overflow-x: auto; }
+      details.query > summary { grid-template-columns: minmax(240px, 1.5fr) repeat(2, 1fr) 26px; }
+      .summary-stat.optional { display: none; }
+      .module-grid { grid-template-columns: repeat(3, 1fr); }
+    }
+    @media (max-width: 720px) {
+      .topbar { padding: 0 16px; }
+      .top-actions .btn:not(.primary) { display: none; }
+      .page { width: min(100% - 24px, 1440px); margin-top: 14px; }
+      .hero { padding: 23px 20px; }
+      .hero-top { display: block; }
+      .report-badge { margin-top: 15px; display: inline-flex; }
+      .kpi-grid, .mini-grid, .module-grid, .appendix-body { grid-template-columns: 1fr 1fr; }
+      details.query > summary { grid-template-columns: 1fr auto; }
+      .summary-stat { display: none; }
+      .candidate-drill { grid-template-columns: 1fr; }
+      .candidate-card { padding: 0 0 15px; border: 0; border-bottom: 1px solid var(--line); }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">TS</span><span>Truthy Search · 报告中心</span></div>
+    <div class="top-actions">
+      <button class="btn" type="button" onclick="document.getElementById('reportInfo').open=true;document.getElementById('reportInfo').scrollIntoView()">报告信息</button>
+      <button class="btn primary" type="button" onclick="window.print()">导出报告</button>
+    </div>
+  </header>
+
+  <main class="page">
+    <div class="crumb">报告中心 / 10 个知名人物测试 / 单次评测报告</div>
+
+    <section class="hero">
+      <div class="hero-top">
+        <div>
+          <div class="eyebrow">Single evaluation · Mock data</div>
+          <h1>10 个知名人物检索评测</h1>
+          <div class="subtitle">单次运行结果与基准人物资料对比 · FULL_NAME</div>
+        </div>
+        <span class="report-badge">单次评测报告 · 示例数据</span>
+      </div>
+      <div class="verdict">
+        <div>◆</div>
+        <div><strong>检索能力基本可用，人物资料质量仍需提升</strong>10 个 Query 全部返回候选人，其中 8 个命中基准人物；命中人物资料完整度为 27.27%，准确率为 49.86%。</div>
+      </div>
+      <div class="meta-line">
+        <span>当前版本 <b>test_version_20260729</b></span>
+        <span>测试数据 <b>10 人</b></span>
+        <span>Query 条件 <b>FULL_NAME</b></span>
+        <span>生成时间 <b>2026-07-29 18:30:20</b></span>
+      </div>
+    </section>
+
+    <section class="kpi-grid" aria-label="核心指标">
+      <article class="kpi">
+        <div class="label"><span>检索成功率</span><i class="dot"></i></div>
+        <div class="value num">80.00%</div>
+        <div class="fraction">8 个命中 Query / 10 个正式 Query</div>
+        <div class="hint">回答：是否找到基准人物</div>
+      </article>
+      <article class="kpi">
+        <div class="label"><span>命中准确率</span><i class="dot warn"></i></div>
+        <div class="value num">49.86%</div>
+        <div class="fraction">3.99 正确分 / 8 个命中 Query</div>
+        <div class="hint">回答：命中人物的信息是否正确</div>
+      </article>
+      <article class="kpi">
+        <div class="label"><span>命中完整度</span><i class="dot warn"></i></div>
+        <div class="value num">27.27%</div>
+        <div class="fraction">2.18 完整分 / 8 个命中 Query</div>
+        <div class="hint">回答：命中人物返回了多少资料</div>
+      </article>
+      <article class="kpi">
+        <div class="label"><span>非命中完整度</span><i class="dot"></i></div>
+        <div class="value num">32.88%</div>
+        <div class="fraction">10.19 完整分 / 31 个非命中候选人</div>
+        <div class="hint">不评价身份准确性，只评价资料丰富度</div>
+      </article>
+    </section>
+
+    <section class="mini-grid" aria-label="执行概览">
+      <div class="mini"><span>Query 总数</span><strong class="num">10</strong></div>
+      <div class="mini"><span>有 / 无候选人</span><strong class="num">10 / 0</strong></div>
+      <div class="mini"><span>候选人总数</span><strong class="num">45</strong></div>
+      <div class="mini"><span>主要 HIT</span><strong class="num">8</strong></div>
+      <div class="mini"><span>待身份归类</span><strong class="num">0</strong></div>
+      <div class="mini"><span>执行失败</span><strong class="num">0</strong></div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <div><div class="eyebrow">01 · Query stage</div><h2>按检索条件查看能力</h2><p>本次只执行 FULL_NAME，因此不展示空的 FULL_NAME_SOCIAL。</p></div>
+      </div>
+      <div class="panel stage-grid">
+        <div class="head">检索条件</div><div class="head">有结果率</div><div class="head">检索成功率</div><div class="head">命中完整度</div><div class="head">命中准确率</div><div class="head">非命中完整度</div>
+        <div class="stage-name"><strong>FULL_NAME</strong><span>10 个 Query · 45 个候选人</span></div>
+        <div><div class="metric-value num">100.00%</div><div class="metric-denom">10 / 10</div></div>
+        <div><div class="metric-value num">80.00%</div><div class="metric-denom">8 / 10</div></div>
+        <div><div class="metric-value num">27.27%</div><div class="metric-denom">2.18 / 8</div></div>
+        <div><div class="metric-value num">49.86%</div><div class="metric-denom">3.99 / 8</div></div>
+        <div><div class="metric-value num">32.88%</div><div class="metric-denom">10.19 / 31</div></div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <div><div class="eyebrow">02 · Query explorer</div><h2>Query 与全部候选人</h2><p>按 Query 归组查看所有返回人物；命中与非命中候选人使用不同指标口径。</p></div>
+        <div class="subtitle">当前展示 3 / 10 个 Query 的 Mock 结构</div>
+      </div>
+      <div class="toolbar">
+        <input id="querySearch" class="search" type="search" placeholder="搜索姓名、query_id、person_id 或 candidate_id">
+        <div class="filters">
+          <button class="chip active" data-filter="all">全部</button>
+          <button class="chip" data-filter="success">检索成功</button>
+          <button class="chip" data-filter="miss">未命中</button>
+          <button class="chip" data-filter="suspect">含疑似候选人</button>
+        </div>
+      </div>
+
+      <div class="query-list" id="queryList">
+        <details class="query" open data-status="success" data-search="case-001 person-001 stephanie mcmahon candidate-sm-01 candidate-sm-02">
+          <summary>
+            <div class="query-person"><strong>Stephanie McMahon</strong><span>case-001 · person-001 · FULL_NAME</span></div>
+            <div class="summary-stat"><span>结果</span><strong><span class="tag hit">检索成功</span></strong></div>
+            <div class="summary-stat"><span>候选人</span><strong class="num">4 人</strong></div>
+            <div class="summary-stat optional"><span>主命中</span><strong>Rank 1</strong></div>
+            <div class="summary-stat optional"><span>Detail</span><strong>4 / 4</strong></div>
+            <span class="chev">⌄</span>
+          </summary>
+          <div class="query-body">
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>排名</th><th>候选人</th><th>身份结论</th><th>Rank Score</th><th>Confidence</th><th>命中完整度</th><th>命中准确率</th><th>非命中完整度</th><th>身份依据</th><th>操作</th></tr></thead>
+                <tbody>
+                  <tr class="best-row">
+                    <td>#1</td><td><strong>Stephanie McMahon</strong><small class="mono">candidate-sm-01</small></td><td><span class="tag hit">HIT</span></td><td class="score num">0.94</td><td>HIGH</td><td class="score num">38.64%</td><td class="score num">53.10%</td><td class="na">—</td><td>LinkedIn 与基准一致</td><td><button class="link-btn" data-drill="candidateDetail">查看字段</button></td>
+                  </tr>
+                  <tr><td>#2</td><td><strong>Stephanie M. McMahon</strong><small class="mono">candidate-sm-02</small></td><td><span class="tag nonhit">NON_HIT</span></td><td class="score num">0.72</td><td>HIGH</td><td class="na">—</td><td class="na">—</td><td class="score num">47.20%</td><td>同平台 Social Link 冲突</td><td><a href="#raw">查看详情</a></td></tr>
+                  <tr><td>#3</td><td><strong>Stephanie McMahon</strong><small class="mono">candidate-sm-03</small></td><td><span class="tag suspect">SUSPECTED</span></td><td class="score num">0.58</td><td>LOW</td><td class="na">—</td><td class="na">—</td><td class="score num">31.80%</td><td>无可比较 Social，照片为空</td><td><a href="#raw">查看详情</a></td></tr>
+                  <tr><td>#4</td><td><strong>Stephanie A. McMahon</strong><small class="mono">candidate-sm-04</small></td><td><span class="tag nonhit">NON_HIT</span></td><td class="score num">0.41</td><td>LOW</td><td class="na">—</td><td class="na">—</td><td class="score num">22.40%</td><td>Facebook 账号冲突</td><td><a href="#raw">查看详情</a></td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="candidate-drill" id="candidateDetail">
+              <aside class="candidate-card">
+                <span class="tag hit">主命中候选人</span>
+                <h3>Stephanie McMahon</h3>
+                <p class="mono">candidate-sm-01</p>
+                <div class="module-bars">
+                  <div class="bar-row"><span>Insights</span><div class="bar"><i style="width:20%"></i></div><b>20%</b></div>
+                  <div class="bar-row"><span>Photos</span><div class="bar"><i style="width:0%"></i></div><b>0%</b></div>
+                  <div class="bar-row"><span>Profile</span><div class="bar"><i style="width:72%"></i></div><b>72%</b></div>
+                  <div class="bar-row"><span>Social</span><div class="bar"><i style="width:66%"></i></div><b>66%</b></div>
+                  <div class="bar-row"><span>Summary</span><div class="bar"><i style="width:48%"></i></div><b>48%</b></div>
+                </div>
+              </aside>
+              <div class="field-table table-wrap">
+                <table>
+                  <thead><tr><th>字段</th><th>基准人物值</th><th>检索候选值</th><th>比较结果</th><th>得分</th></tr></thead>
+                  <tbody>
+                    <tr><td>Profile / Full Name</td><td>Stephanie McMahon</td><td>Stephanie Marie McMahon</td><td class="compare-good">语义一致</td><td>100%</td></tr>
+                    <tr><td>Profile / Current Role</td><td>WWE Executive</td><td>Former Chairwoman, WWE</td><td class="compare-warn">部分一致</td><td>72%</td></tr>
+                    <tr><td>Social / LinkedIn</td><td>linkedin.com/in/stephanie...</td><td>linkedin.com/in/stephanie...</td><td class="compare-good">URL 一致</td><td>100%</td></tr>
+                    <tr><td>Profile / Location</td><td>Connecticut, US</td><td>Stamford, Connecticut</td><td class="compare-good">地点包含</td><td>90%</td></tr>
+                    <tr><td>Photos / Identity Match</td><td>有基准照片</td><td class="na">无返回照片</td><td class="compare-warn">无法比较</td><td class="na">不适用</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <details class="query" data-status="success" data-search="case-002 person-002 satya nadella candidate-sn-01 candidate-sn-02 candidate-sn-03">
+          <summary>
+            <div class="query-person"><strong>Satya Nadella</strong><span>case-002 · person-002 · FULL_NAME</span></div>
+            <div class="summary-stat"><span>结果</span><strong><span class="tag hit">检索成功</span></strong></div>
+            <div class="summary-stat"><span>候选人</span><strong class="num">3 人</strong></div>
+            <div class="summary-stat optional"><span>主命中</span><strong>Rank 1</strong></div>
+            <div class="summary-stat optional"><span>Detail</span><strong>3 / 3</strong></div>
+            <span class="chev">⌄</span>
+          </summary>
+          <div class="query-body">
+            <div class="table-wrap"><table>
+              <thead><tr><th>排名</th><th>候选人</th><th>身份结论</th><th>Rank Score</th><th>Confidence</th><th>命中完整度</th><th>命中准确率</th><th>非命中完整度</th><th>身份依据</th><th>操作</th></tr></thead>
+              <tbody>
+                <tr class="best-row"><td>#1</td><td><strong>Satya Nadella</strong><small class="mono">candidate-sn-01</small></td><td><span class="tag hit">HIT</span></td><td>0.97</td><td>HIGH</td><td>43.18%</td><td>88.20%</td><td class="na">—</td><td>Social URL 一致</td><td><a href="#raw">查看详情</a></td></tr>
+                <tr><td>#2</td><td><strong>Satya N.</strong><small class="mono">candidate-sn-02</small></td><td><span class="tag nonhit">NON_HIT</span></td><td>0.63</td><td>HIGH</td><td class="na">—</td><td class="na">—</td><td>29.55%</td><td>LinkedIn 冲突</td><td><a href="#raw">查看详情</a></td></tr>
+                <tr><td>#3</td><td><strong>S. Nadella</strong><small class="mono">candidate-sn-03</small></td><td><span class="tag nonhit">NON_HIT</span></td><td>0.32</td><td>LOW</td><td class="na">—</td><td class="na">—</td><td>18.18%</td><td>照片相似度 34%</td><td><a href="#raw">查看详情</a></td></tr>
+              </tbody>
+            </table></div>
+          </div>
+        </details>
+
+        <details class="query" data-status="miss suspect" data-search="case-003 person-003 jojo siwa candidate-js-01 candidate-js-02">
+          <summary>
+            <div class="query-person"><strong>JoJo Siwa</strong><span>case-003 · person-003 · FULL_NAME</span></div>
+            <div class="summary-stat"><span>结果</span><strong><span class="tag fail">未命中</span></strong></div>
+            <div class="summary-stat"><span>候选人</span><strong class="num">2 人</strong></div>
+            <div class="summary-stat optional"><span>主命中</span><strong class="na">无</strong></div>
+            <div class="summary-stat optional"><span>Detail</span><strong>2 / 2</strong></div>
+            <span class="chev">⌄</span>
+          </summary>
+          <div class="query-body">
+            <div class="table-wrap"><table>
+              <thead><tr><th>排名</th><th>候选人</th><th>身份结论</th><th>Rank Score</th><th>Confidence</th><th>命中完整度</th><th>命中准确率</th><th>非命中完整度</th><th>身份依据</th><th>操作</th></tr></thead>
+              <tbody>
+                <tr><td>#1</td><td><strong>Jojo Siwa</strong><small class="mono">candidate-js-01</small></td><td><span class="tag suspect">SUSPECTED</span></td><td>0.81</td><td>HIGH</td><td class="na">—</td><td class="na">—</td><td>54.55%</td><td>姓名一致，无 Social 与照片</td><td><a href="#raw">查看详情</a></td></tr>
+                <tr><td>#2</td><td><strong>Jo Jo Siwa</strong><small class="mono">candidate-js-02</small></td><td><span class="tag nonhit">NON_HIT</span></td><td>0.47</td><td>LOW</td><td class="na">—</td><td class="na">—</td><td>36.36%</td><td>Instagram 同平台冲突</td><td><a href="#raw">查看详情</a></td></tr>
+              </tbody>
+            </table></div>
+          </div>
+        </details>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <div><div class="eyebrow">03 · Field quality</div><h2>五个资料模块的返回情况</h2><p>模块质量放在候选人明细之后，不抢占核心结论。</p></div>
+      </div>
+      <div class="module-grid">
+        <article class="module-card"><strong>Insights</strong><div class="rate num">4.44%</div><p>2 有数据 / 45 成功 Candidate</p></article>
+        <article class="module-card"><strong>Photos</strong><div class="rate num">0.00%</div><p>0 有数据 / 45 成功 Candidate</p></article>
+        <article class="module-card"><strong>Profile</strong><div class="rate num">100.00%</div><p>45 有数据 / 45 成功 Candidate</p></article>
+        <article class="module-card"><strong>Social</strong><div class="rate num">75.56%</div><p>34 有数据 / 45 成功 Candidate</p></article>
+        <article class="module-card"><strong>Summary</strong><div class="rate num">100.00%</div><p>45 有数据 / 45 成功 Candidate</p></article>
+      </div>
+      <div class="quality-note">Photos 本次无返回数据属于真实空数据，不作为处理错误；可继续下钻查看具体 Candidate。成本、耗时与 PDL 字段尚未接入，因此本报告不展示空的成本主表。</div>
+    </section>
+
+    <section class="section" id="raw">
+      <details class="panel appendix" id="reportInfo">
+        <summary>数据质量、风险与报告信息　<span style="color:var(--muted);font-weight:500">（默认收起）</span></summary>
+        <div class="appendix-body">
+          <div class="appendix-item"><span>数据质量</span><strong>成本、耗时、PDL 字段暂未接入</strong></div>
+          <div class="appendix-item"><span>字段配置</span><strong class="mono">field-schema-mock-v3</strong></div>
+          <div class="appendix-item"><span>处理规则</span><strong class="mono">field-processing-v4</strong></div>
+          <div class="appendix-item"><span>指标规则</span><strong class="mono">metrics-v4</strong></div>
+          <div class="appendix-item"><span>报告模型</span><strong class="mono">report-model-v5-mock</strong></div>
+          <div class="appendix-item"><span>口径说明</span><strong>系统返回内容仅用于检索能力测试</strong></div>
+        </div>
+      </details>
+    </section>
+
+    <div class="footer">searchTool v1.3 报告优化 Mock · 示例数据不代表真实评测结论</div>
+  </main>
+
+  <script>
+    const search = document.getElementById('querySearch');
+    const chips = [...document.querySelectorAll('.chip')];
+    const queries = [...document.querySelectorAll('.query')];
+    let activeFilter = 'all';
+
+    function applyFilters() {
+      const text = search.value.trim().toLowerCase();
+      queries.forEach((query) => {
+        const matchesText = !text || query.dataset.search.includes(text);
+        const statuses = query.dataset.status.split(' ');
+        const matchesStatus = activeFilter === 'all' || statuses.includes(activeFilter);
+        query.classList.toggle('hidden', !(matchesText && matchesStatus));
+      });
+    }
+
+    search.addEventListener('input', applyFilters);
+    chips.forEach((chip) => chip.addEventListener('click', () => {
+      chips.forEach((item) => item.classList.remove('active'));
+      chip.classList.add('active');
+      activeFilter = chip.dataset.filter;
+      applyFilters();
+    }));
+
+    document.querySelectorAll('[data-drill]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const target = document.getElementById(button.dataset.drill);
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        target.animate(
+          [{ boxShadow: '0 0 0 0 rgba(18,107,90,0)' }, { boxShadow: '0 0 0 4px rgba(18,107,90,.18)' }, { boxShadow: '0 0 0 0 rgba(18,107,90,0)' }],
+          { duration: 900 }
+        );
+      });
+    });
+  </script>
+</body>
+</html>

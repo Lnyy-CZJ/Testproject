@@ -27,7 +27,9 @@ def build_pytest_args(
     返回值:
         可直接传给 ``pytest.main`` 的参数列表。
     """
-    args = ["test_cases", f"--env={env}"]
+    # 指定 Flow 时仅执行 Flow 测试入口，避免同时触发框架和单接口真实用例。
+    target = "test_cases/test_gateway_flow.py" if flow else "test_cases"
+    args = [target, f"--env={env}"]
     if module:
         args.extend(["-k", module])
     if tag:

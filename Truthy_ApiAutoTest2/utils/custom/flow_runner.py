@@ -10,8 +10,8 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
+from utils.custom.api_loader import build_execution_case
 from utils.custom.assertions import assert_data_equals, assert_gateway_response
-from utils.custom.config_loader import load_yaml
 from utils.custom.logger import get_logger
 from utils.custom.runtime_context import RuntimeContext, RuntimeContextError
 
@@ -25,17 +25,6 @@ class FlowExecutionError(RuntimeError):
 
 class FlowEnvironmentError(FlowExecutionError):
     """表示 Scenario 引用的环境变量或媒体文件不可用。"""
-
-
-def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
-    """递归合并字典，Scenario 数据覆盖 case 默认值。"""
-    result = deepcopy(base)
-    for key, value in override.items():
-        if isinstance(value, dict) and isinstance(result.get(key), dict):
-            result[key] = _deep_merge(result[key], value)
-        else:
-            result[key] = deepcopy(value)
-    return result
 
 
 class FlowRunner:
@@ -52,7 +41,8 @@ class FlowRunner:
         """保存执行依赖，不在初始化阶段创建运行时上下文。
 
         参数说明:
-            project_root: 项目根目录，用于读取公共 case YAML。
+            project_root: 项目根目录；保留该参数以维持现有构造接口，V1.3
+                普通 API 步骤不再通过该路径读取 case YAML。
             gateway_factory: 根据本次 Flow 上下文创建 GatewayApi 的工厂。
             sleep: 等待函数，允许单元测试注入替身。
             monotonic: 单调时钟，允许测试轮询超时而不真实等待。
@@ -79,6 +69,7 @@ class FlowRunner:
         """
         flow = flow_case.get("flow") or {}
         scenario = flow_case.get("scenario") or {}
+        api_definitions = flow_case.get("api_definitions") or {}
         initial = self._resolve_environment(scenario.get("variables") or {})
         context = RuntimeContext(initial)
         self._prepare_media_metadata(context)
@@ -99,31 +90,68 @@ class FlowRunner:
                 self.sleep(float(step["wait"]["seconds"]))
             elif "action" in step:
                 self._execute_action(str(step["action"]), gateway, context)
-            elif "call" in step:
+            elif "api" in step:
                 step_data = (scenario.get("step_data") or {}).get(step_id) or {}
-                self._execute_call(step, step_data, gateway, context)
+                self._execute_api(
+                    step,
+                    step_data,
+                    api_definitions,
+                    gateway,
+                    context,
+                )
             else:
                 raise FlowExecutionError(f"步骤 {step_id} 没有可执行动作")
             LOGGER.info("完成 Flow 步骤: step=%s", step_id)
         return context
 
-    def _execute_call(
+    def _execute_api(
         self,
         step: dict[str, Any],
         step_data: dict[str, Any],
+        api_definitions: dict[str, dict[str, Any]],
         gateway: Any,
         context: RuntimeContext,
     ) -> None:
-        """加载并合并 case，执行普通调用或条件轮询。"""
-        case_path = self.project_root / "data" / "cases" / str(step["call"])
-        case = deepcopy(load_yaml(case_path))
-        request = case.setdefault("request", {})
-        request["params"] = context.resolve(
-            _deep_merge(request.get("params") or {}, step_data.get("params") or {})
-        )
-        case["assert"] = _deep_merge(
-            case.get("assert") or {},
-            step_data.get("assert") or {},
+        """使用 API 路由和 Scenario 完整数据执行普通调用或轮询。
+
+        参数说明:
+            step: 当前 Flow API 步骤。
+            step_data: Scenario 中与 step ID 对应的完整 params 和 assert。
+            api_definitions: FlowLoader 注入的当前流程 API 定义子集。
+            gateway: 当前 Flow 独立上下文绑定的 GatewayApi。
+            context: 当前 Flow 的 RuntimeContext。
+
+        返回值:
+            无。断言和提取成功后更新 context。
+
+        异常说明:
+            FlowExecutionError: API 定义或 Scenario 步骤数据缺失时抛出。
+            RuntimeContextError: 参数、断言变量或提取路径无法解析时抛出。
+            AssertionError: Gateway 响应或 data_equals 不符合预期时抛出。
+        """
+        step_id = str(step.get("id") or "unknown")
+        api_id = str(step.get("api") or "")
+        api_definition = api_definitions.get(api_id)
+        if not isinstance(api_definition, dict):
+            raise FlowExecutionError(
+                f"步骤 {step_id} 缺少已加载的 API 定义: {api_id or 'unknown'}"
+            )
+        if not isinstance(step_data, dict):
+            raise FlowExecutionError(f"步骤 {step_id} 的 Scenario 数据必须是对象")
+        if "params" not in step_data or "assert" not in step_data:
+            raise FlowExecutionError(
+                f"步骤 {step_id} 的 Scenario 必须提供完整 params 和 assert"
+            )
+
+        # V1.3 直接使用 Scenario 的完整数据，不读取或合并单接口 case。
+        # 参数占位符由 GatewayApi.build_payload 统一解析，因为该层会先生成每次
+        # 请求独有的 client_request_id；FlowRunner 只提前解析响应断言。
+        params = deepcopy(step_data["params"])
+        assertions = context.resolve(step_data["assert"])
+        case = build_execution_case(
+            api_definition,
+            params,
+            assertions,
         )
 
         if step.get("until"):
@@ -131,7 +159,7 @@ class FlowRunner:
         else:
             response = gateway.invoke(case)
             data = assert_gateway_response(response, case["assert"])
-        self._finalize_call(step, case, data, context)
+        self._finalize_api(step, case, data, context)
 
     def _poll(
         self,
@@ -165,21 +193,16 @@ class FlowRunner:
             self.sleep(min(interval, deadline - now))
 
     @staticmethod
-    def _finalize_call(
+    def _finalize_api(
         step: dict[str, Any],
         case: dict[str, Any],
         data: dict[str, Any],
         context: RuntimeContext,
     ) -> None:
-        """执行场景值断言和合并后的响应提取。"""
-        expected_values = context.resolve(
-            (case.get("assert") or {}).get("data_equals") or {}
-        )
+        """执行已解析的场景值断言和 Flow step 响应提取。"""
+        expected_values = (case.get("assert") or {}).get("data_equals") or {}
         assert_data_equals(data, expected_values)
-        extract_rules = {
-            **(case.get("extract") or {}),
-            **(step.get("extract") or {}),
-        }
+        extract_rules = step.get("extract") or {}
         if extract_rules:
             context.extract(data, extract_rules)
 

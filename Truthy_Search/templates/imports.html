@@ -60,7 +60,7 @@
       <thead><tr><th>Dataset</th><th>来源</th><th>Query 数</th><th>校验和</th><th>创建时间</th></tr></thead>
       <tbody>
         {% for dataset in datasets %}
-          <tr><td><strong>{{ dataset.name }}</strong><small class="mono">{{ dataset.dataset_id }}</small></td><td>{{ dataset.source_type }}</td><td>{{ dataset.query_count }}</td><td class="mono">{{ dataset.checksum[:12] }}…</td><td>{{ dataset.created_at }}</td></tr>
+          <tr><td><strong>{{ dataset.name }}</strong><small class="mono">{{ dataset.dataset_id }}</small></td><td>{{ dataset.source_type }}</td><td>{{ dataset.query_count }}</td><td class="mono">{{ dataset.checksum[:12] }}…</td><td>{{ dataset.created_at|format_datetime }}</td></tr>
         {% else %}
           <tr><td colspan="5" class="empty-cell">还没有 Dataset</td></tr>
         {% endfor %}

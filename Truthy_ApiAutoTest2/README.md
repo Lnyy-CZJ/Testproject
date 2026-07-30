@@ -1,6 +1,21 @@
-# Gateway 接口自动化 MVP
+# Gateway 接口自动化 V1.3
 
-这是一个基于 Python、pytest、requests 和 PyYAML 的最小接口自动化框架。当前版本只处理固定 Gateway 地址下的单业务子请求，默认执行 `POST /gateway/invoke`。
+这是一个基于 Python、pytest、requests 和 PyYAML 的轻量接口自动化框架。
+HTTP 地址固定为 Gateway，业务接口通过 `service_name` 和 `method_name` 区分。
+
+V1.3 将接口定义与测试数据彻底拆开：
+
+```text
+接口定义 APIs
+├── 单接口 Cases
+└── 多接口 Flows + Scenarios
+```
+
+- API 只保存业务路由。
+- Case 保存单接口测试参数、标签和断言。
+- Flow 保存步骤顺序、提取、等待和轮询。
+- Scenario 保存 Flow 每个接口步骤的完整参数和断言。
+- Flow、自动会话均不读取单接口 Cases。
 
 ## 1. 安装依赖
 
@@ -14,7 +29,8 @@ python3 -m pip install -r requirements.txt
 
 ## 2. 配置环境与会话
 
-根目录 `.env` 保存本地凭证与可复用会话状态，禁止写入 YAML 或提交到仓库：
+非敏感环境配置位于 `config/env/<环境>.yaml`。本地 `.env` 保存凭证和可复用
+会话状态，禁止提交到仓库：
 
 ```bash
 AUTH_TOKEN=your_access_token
@@ -25,108 +41,280 @@ EXPIRES_TIME=milliseconds_since_epoch
 REFRESH_EXPIRES_TIME=milliseconds_since_epoch
 ```
 
-启动时会优先复用未临期的 `AUTH_TOKEN`。access token 距毫秒过期时间不足一天时会调用
-`RefreshSession`；刷新失败或 refresh token 已过期时才会调用 `CreateAnonymousSession`。
-创建或刷新成功后，`AUTH_TOKEN`、`REFRESH_TOKEN`、`USER_ID` 与两项过期时间会自动更新到
-`.env`；`DEVICE_ID` 保持由你维护。终端中显式设置的同名环境变量优先于 `.env`。
+启动时优先复用未临期的 access token。token 距过期不足配置的安全窗口时，
+框架使用 `RefreshSession` API 定义刷新；刷新失败或 refresh token 已过期时，
+使用 `CreateAnonymousSession` API 定义重建会话。
 
-## 3. 运行测试
+创建或刷新成功后，token、用户 ID 和过期时间会更新到 `.env`。终端显式设置的
+同名环境变量优先于 `.env`。
 
-统一通过根目录下的 `runtest.py` 执行：
+## 3. 目录职责
+
+| 目录 | 职责 |
+| --- | --- |
+| `config/` | 默认配置和按环境变化的 Gateway 地址 |
+| `data/api/` | Gateway 固定 HTTP 方法、路径和请求头 |
+| `data/apis/` | 业务 API ID、`service_name` 和 `method_name` |
+| `data/cases/` | 单接口多 case 的参数、标签、断言和可选提取 |
+| `data/flows/` | 多接口步骤顺序、提取、等待、轮询和特殊 action |
+| `data/scenarios/` | Flow 各接口步骤的完整参数和断言 |
+| `api/` | Gateway 请求信封构造和调用入口 |
+| `utils/custom/` | 配置、HTTP、日志、断言及 YAML 加载工具 |
+| `utils/third_party/` | Allure、Jenkins、飞书等第三方集成预留层 |
+| `test_cases/` | pytest 框架测试和真实接口测试入口 |
+| `logs/` | 每次执行产生的脱敏请求、响应和异常日志 |
+| `reports/` | 测试报告和运行产物预留目录 |
+
+## 4. 运行测试
+
+统一通过根目录 `runtest.py` 执行：
 
 ```bash
-# 运行 test 环境全部测试
-python3 runtest.py --env test
+# 收集全部测试，不发送请求
+python3 runtest.py --env test -- --collect-only
 
-# 按测试名称或模块关键字筛选
+# 按 pytest 关键字筛选
 python3 runtest.py --env test --module single_api
 
-# 按 YAML 中的 tags 筛选
+# 按 Case 或 Flow 中的 tags 筛选
 python3 runtest.py --env test --tag smoke
 
-# 透传额外 pytest 参数
+# 收集或执行指定 Flow
+python3 runtest.py --env test --flow AnonymousSessionMediaSearch -- --collect-only
+python3 runtest.py --env test --flow AnonymousSessionMediaSearch
+
+# 直接调试指定 Flow，并在终端显示请求和响应日志
+python3 test_cases/test_gateway_flow.py \
+  --env test \
+  --flow AnonymousSessionMediaSearch
+
+# 透传其他 pytest 参数
 python3 runtest.py --env test --tag smoke -- -x -vv
 ```
 
-也可直接运行框架单元测试：
+只运行不发送真实请求的框架回归：
 
 ```bash
-python3 -m pytest test_cases/test_framework.py -q
+python3 -m pytest -q -k "not gateway_flow and not single_gateway_api"
 ```
 
-调试单一接口时，可直接运行通用入口。该命令会在终端实时显示脱敏后的请求数据和响应数据：
+直接调试单接口时，请运行通用入口：
 
 ```bash
 python3 test_cases/test_single_api.py --env test
 ```
 
-请求日志中的 `auth_token` 和 `Authorization` 会显示为 `***`，不会输出完整凭证。
+该入口保留 `-s --log-cli-level=INFO`，终端会实时显示脱敏后的请求和响应。
 
-每次 pytest 执行还会在根目录 `logs/` 生成独立 UTF-8 日志文件。文件同时记录
-请求、响应、HTTP 状态和耗时；token、refresh token 与预签名 URL 查询参数会脱敏。
+### 精确调试一条 Case
 
-真实上传流程还需设置本地媒体文件路径：
+在 `test_cases/test_single_api.py` 中临时设置完整 Case ID：
 
-```bash
-export MEDIA_FILE='/absolute/path/to/image.jpg'
-python3 runtest.py --env test --flow AnonymousSessionMediaSearch
+```python
+RUN_CASE_IDS: tuple[str, ...] = ("GetMe::get_me_success",)
 ```
 
-未提供媒体文件时仅跳过真实上传流程，框架单元测试和普通单接口测试仍可执行。
+正式代码应保持为空元组：
 
-## 4. 目录职责
+```python
+RUN_CASE_IDS: tuple[str, ...] = ()
+```
 
-- `config/`：默认运行配置和按环境变化的 Gateway 地址。
-- `data/api/`：固定 HTTP 方法、路径和请求头。
-- `data/cases/`：单接口的路由、参数、标签和断言。
-- `data/flows/`：声明存在响应提取和变量传递的接口执行顺序。
-- `data/scenarios/`：保存与 Flow 同名的独立业务输入和步骤期望。
-- `data/global/`、`data/scenarios/`、`data/assertions/`：预留的数据层。
-- `api/`：Gateway 信封构造和调用入口。
-- `utils/custom/`：配置、HTTP、日志和断言工具。
-- `utils/third_party/`：未来 Allure、Jenkins、飞书等第三方集成预留层。
-- `test_cases/`：pytest 框架测试和真实接口测试。
-- `logs/`：每次测试执行生成的请求、响应和异常日志。
-- `reports/`：未来测试报告和运行产物目录。
+框架当前不增加 `--case` 参数。完整 ID 格式固定为：
 
-## 5. 新增普通单接口
+```text
+ApiId::case_id
+```
 
-复制 `data/cases/GetMe.yaml`，修改以下数据即可：
+## 5. 新增 API 定义
+
+每个业务接口在 `data/apis/` 中维护一份定义，文件名必须等于 API ID：
 
 ```yaml
-name: 用例名称
-tags: [smoke]
+# data/apis/GetTask.yaml
+id: GetTask
+name: 获取搜索任务状态
 request:
-  service_name: 业务服务名
-  method_name: 业务方法名
-  params: {}
-assert:
-  http_status: 200
-  gateway: {code: 0, message: ok}
-  response: {id: req_0, success: true, code: 0, message: ok}
-  data_fields: []
+  service_name: tool.people_insight.SearchService
+  method_name: GetTask
 ```
 
-`data_fields` 校验 `data` 下的一级字段存在且非空。需要把响应字段交给后续接口时，
-可以通过 `extract` 声明以业务 `data` 为根的路径，并在后续请求中使用
-`{{变量名}}`。COS 上传由流程使用 `PrepareMediaUpload` 返回的 `upload_url` 和
-`upload_headers` 执行二进制 PUT。
+API 定义不得包含 `params`、`assert`、`extract`、`tags` 或 `cases`。
 
-## 6. 新增标准多接口流程
+如果新接口只用于 Flow，只创建 API 定义即可，不需要创建空 Case 文件。
 
-在 `data/flows/` 和 `data/scenarios/` 中各增加一个同名 YAML：
+## 6. 新增单接口多 Case
+
+Case 文件名必须与引用的 API ID 一致。一个文件可以配置成功、缺参、多参等多条
+独立用例：
+
+```yaml
+# data/cases/GetTask.yaml
+api: GetTask
+cases:
+  - id: get_task_success
+    name: 获取任务成功
+    tags: [smoke, search, positive]
+    request:
+      params:
+        task_id: task_example
+    assert:
+      http_status: 200
+      gateway:
+        code: 0
+        message: ok
+      response:
+        id: req_0
+        success: true
+        code: 0
+        message: ok
+      data_fields:
+        - status
+        - task_id
+
+  - id: get_task_missing_task_id
+    name: 缺少 task_id
+    tags: [search, negative]
+    request:
+      params: {}
+    assert:
+      http_status: 200
+      gateway:
+        code: 0
+      response:
+        id: req_0
+        success: false
+```
+
+每条 `request.params` 和 `assert` 都是完整数据，不继承同文件其他 case，也不从
+API 定义补充默认参数。缺参用例直接省略目标参数。
+
+`data_fields` 只校验字段存在，允许空字符串、`0`、`false` 和空数组。
+需要保存响应值时，可增加以业务响应 `data` 为根的提取规则：
+
+```yaml
+extract:
+  task_id: $.task_id
+```
+
+## 7. 新增标准多接口 Flow
+
+在 `data/flows/` 和 `data/scenarios/` 中创建同名文件：
 
 ```text
 data/flows/DemoFlow.yaml
 data/scenarios/DemoFlow.yaml
 ```
 
-Flow 只保存步骤顺序、case 引用、提取、等待和轮询；Scenario 保存初始变量、
-步骤参数覆盖与 `data_equals` 场景断言。新增合法配对后不需要修改 Python：
+Flow 直接引用 API ID，只保存控制信息：
 
-```bash
-python3 runtest.py --env test --flow DemoFlow
+```yaml
+# data/flows/DemoFlow.yaml
+name: 搜索流程
+tags: [flow, search]
+steps:
+  - id: create_task
+    api: CreateIntentTask
+    extract:
+      task_id: $.task_id
+
+  - id: poll_task
+    api: GetTask
+    until:
+      path: $.status
+      equals: SUCCEEDED
+      interval_seconds: 2
+      timeout_seconds: 120
 ```
 
-固定等待使用 `wait.seconds`；异步接口使用 `call + until`，其中 `until` 支持
-响应 data 路径相等判断、轮询间隔和超时时间。不同 Flow 使用独立运行时上下文。
+Scenario 为每个 API 步骤提供完整参数和断言：
+
+```yaml
+# data/scenarios/DemoFlow.yaml
+name: 搜索成功场景
+step_data:
+  create_task:
+    params:
+      client_request_id: "{{client_request_id}}"
+      match_strategy: UNION
+      clues: []
+      additional_details: []
+    assert:
+      http_status: 200
+      gateway: {code: 0, message: ok}
+      response: {id: req_0, success: true, code: 0, message: ok}
+      data_fields: [status, task_id]
+      data_equals:
+        status: QUEUED
+
+  poll_task:
+    params:
+      task_id: "{{task_id}}"
+    assert:
+      http_status: 200
+      gateway: {code: 0, message: ok}
+      response: {id: req_0, success: true, code: 0, message: ok}
+      data_fields: [status, task_id]
+      data_equals:
+        status: SUCCEEDED
+```
+
+Flow 规则：
+
+- 前序步骤通过 `extract` 写入当前 Flow 的运行时上下文。
+- 后续步骤通过 `{{变量名}}` 引用已提取值。
+- `until.path` 和 `data_equals` 都以业务响应 `data` 为根。
+- 固定等待使用 `wait.seconds`。
+- 特殊对象存储上传使用 `action: prepared_media_upload`。
+- 不同 Flow 的运行时上下文相互隔离。
+- Flow 不读取或合并 `data/cases`。
+
+### 本地筛选多个 Flow
+
+在 `test_cases/test_gateway_flow.py` 中临时设置 Flow 文件名 stem：
+
+```python
+RUN_FLOW_IDS: tuple[str, ...] = (
+    "AnonymousSessionMediaSearch",
+    "AnotherFlow",
+)
+```
+
+正式代码应保持为空元组以收集全部 Flow。命令行 `--flow` 优先于
+`RUN_FLOW_IDS`，适合临时执行一个指定 Flow。
+
+## 8. 日志与脱敏
+
+每次 pytest 执行会在 `logs/YYYY-MM-DD/` 生成独立 UTF-8 日志文件，记录请求、
+响应、HTTP 状态和耗时。首次创建当天目录时，框架会清理超过 7 天的日期日志目录；
+非日期目录不会被删除。以下敏感信息会脱敏：
+
+- `auth_token`、refresh token 等 token 字段。
+- `Authorization` 请求头。
+- 预签名上传 URL 的查询参数。
+
+日志中的敏感值显示为 `***`。新增日志字段时应同步补充脱敏测试。
+
+## 9. 配置校验
+
+YAML 在发送请求前完成校验，常见错误会包含文件名、API ID、Case ID 或 Flow
+step ID：
+
+- API ID 重复、必填路由缺失或文件名不一致。
+- Case 引用不存在的 API、Case ID 重复或 params 类型错误。
+- Flow/Scenario 不同名、步骤 ID 重复或 API 引用不存在。
+- API 步骤缺少 Scenario 的完整 params 或 assert。
+- V1.2 的 `call`、顶层 Case 数据和 `flow_only` 不再支持。
+
+## 10. V1.2 迁移到 V1.3
+
+V1.3 已完成一次性迁移，不维护两套格式：
+
+1. 从旧 Case 提取路由，创建 `data/apis/<ApiId>.yaml`。
+2. 可独立执行的旧 Case 转为 `api + cases[]` 集合。
+3. 原 `flow_only` 模板只保留 API 定义，不生成空 Case。
+4. Flow 的 `call: Xxx.yaml` 改为 `api: Xxx`。
+5. 旧 Case 默认参数与 Scenario 覆盖计算后的最终完整数据写入 Scenario。
+6. 自动会话参数、断言和提取规则由框架内部协议维护。
+
+迁移后修改单接口 Case 不会影响 Flow；新增 Flow 接口也不要求先创建单接口 Case。

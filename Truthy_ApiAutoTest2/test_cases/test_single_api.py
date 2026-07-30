@@ -16,50 +16,53 @@ if str(PROJECT_ROOT) not in sys.path:
 import pytest
 
 from api.gateway_api import GatewayApi
-from utils.custom.config_loader import load_yaml
+from utils.custom.case_loader import load_single_cases
 
-# 指定需要执行的 YAML 用例名称；空元组表示执行 data/cases 下的全部单接口用例。
-# 名称必须与 YAML 文件中的 name 字段完全一致，例如：("获取当前用户",)。
-RUN_CASE_NAMES: tuple[str, ...] = ("获取当前用户",)
+# 指定需要调试的完整 Case ID；正式默认值为空元组，收集全部独立单接口用例。
+# 临时调试示例：("GetMe::get_me_success",)。
+RUN_CASE_IDS: tuple[str, ...] = ("GetMe::get_me_success",)
 
 
 def _load_case_params() -> list[Any]:
-    """读取已选单接口 YAML，并把 tags 转换为 pytest marks。
+    """加载已选单接口 case，并转换为 pytest 参数。
 
-    RUN_CASE_NAMES 为空时加载全部用例；不为空时只加载名称在该配置中的用例。
+    功能说明:
+        使用 CaseLoader 展开 V1.3 多 case 集合，并把当前 case 的 tags 转换为
+        pytest marks。``RUN_CASE_IDS`` 为空时收集全部独立 case。
 
     返回值:
-        pytest.param 列表，每项携带用例名称和 YAML 标签。
+        pytest.param 列表；每项携带完整 ``ApiId::case_id`` 和当前 case 标签。
 
     异常说明:
-        ConfigError: 用例 YAML 缺失或格式不合法时由 load_yaml 抛出。
+        ApiConfigError: API 定义不合法时由 ApiLoader 抛出。
+        CaseConfigError: case 集合不合法或指定 ID 不存在时由 CaseLoader 抛出。
     """
     params: list[Any] = []
-    for case_path in sorted((PROJECT_ROOT / "data" / "cases").glob("*.yaml")):
-        case = load_yaml(case_path)
-        case_name = str(case.get("name") or case_path.stem)
-        if case.get("flow_only"):
-            continue
-        if RUN_CASE_NAMES and case_name not in RUN_CASE_NAMES:
-            continue
-        marks = [getattr(pytest.mark, str(tag)) for tag in case.get("tags") or []]
+    for single_case in load_single_cases(
+        PROJECT_ROOT,
+        selected_case_ids=RUN_CASE_IDS,
+    ):
+        marks = [
+            getattr(pytest.mark, tag)
+            for tag in single_case["tags"]
+        ]
         params.append(
             pytest.param(
-                case,
-                id=case_name,
+                single_case,
+                id=single_case["id"],
                 marks=marks,
             )
         )
     return params
 
 
-@pytest.mark.parametrize("case", _load_case_params())
+@pytest.mark.parametrize("single_case", _load_case_params())
 def test_single_gateway_api(
-    case: dict[str, Any],
+    single_case: dict[str, Any],
     gateway_api: GatewayApi,
 ) -> None:
-    """执行一个 YAML 单接口用例并完成分层断言。"""
-    gateway_api.execute(case)
+    """执行一条已组装的 V1.3 单接口 case，并完成分层断言。"""
+    gateway_api.execute(single_case["execution_case"])
 
 
 def main(argv: Sequence[str] | None = None) -> int:

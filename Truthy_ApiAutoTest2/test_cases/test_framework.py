@@ -35,6 +35,32 @@ class FakeResponse:
         return self._body
 
 
+def _session_api_definitions() -> dict[str, dict]:
+    """构造自动会话测试所需的最小 API 路由注册表。
+
+    返回值:
+        仅包含创建、刷新匿名会话路由的 API 定义，不包含 params、断言或提取规则。
+    """
+    return {
+        "CreateAnonymousSession": {
+            "id": "CreateAnonymousSession",
+            "name": "创建匿名会话",
+            "request": {
+                "service_name": "tool.identity.IdentityService",
+                "method_name": "CreateAnonymousSession",
+            },
+        },
+        "RefreshSession": {
+            "id": "RefreshSession",
+            "name": "刷新匿名会话 Token",
+            "request": {
+                "service_name": "tool.identity.IdentityService",
+                "method_name": "RefreshSession",
+            },
+        },
+    }
+
+
 def test_load_settings_merges_environment_and_secrets(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -90,10 +116,16 @@ def test_load_settings_allows_runtime_session_without_startup_token(
 
 
 def test_create_anonymous_session_resolves_current_consent_policy_date() -> None:
-    """匿名会话用例应把当天日期解析为 Gateway 所需的 YYYY-MM-DD 参数。"""
-    case = load_yaml(Path("data/cases/CreateAnonymousSession.yaml"))
+    """内部会话策略应把当天日期解析为 Gateway 所需的 YYYY-MM-DD 参数。"""
     runtime = RuntimeContext({"consent_policy_version": date.today().isoformat()})
+    gateway = GatewayApi(
+        {"gateway_base_url": "http://example.test", "comm": {}},
+        {"method": "POST", "path": "/gateway/invoke"},
+        runtime_context=runtime,
+        api_definitions=_session_api_definitions(),
+    )
 
+    case = gateway._build_session_case("CreateAnonymousSession")
     resolved_params = runtime.resolve(case["request"]["params"])
 
     assert resolved_params == {"consent_policy_version": date.today().isoformat()}
@@ -403,8 +435,8 @@ def test_access_token_does_not_refresh_at_one_day_boundary() -> None:
     assert not context.access_token_needs_refresh(now_ms, 86_400_000)
 
 
-def test_gateway_api_refreshes_session_before_normal_request() -> None:
-    """access token 临期时应先刷新，再用新 token 构造普通接口 comm。"""
+def test_gateway_api_refreshes_session_before_normal_request(tmp_path: Path) -> None:
+    """临期 token 应按 API 定义刷新，并更新上下文及持久化会话数据。"""
     now_ms = 1_800_000_000_000
     context = RuntimeContext(
         {
@@ -466,25 +498,6 @@ def test_gateway_api_refreshes_session_before_normal_request() -> None:
             self.payloads.append(kwargs["payload"])  # type: ignore[arg-type]
             return self.responses.pop(0)
 
-    refresh_case = {
-        "request": {
-            "service_name": "tool.identity.IdentityService",
-            "method_name": "RefreshSession",
-            "params": {"refresh_token": "{{refresh_token}}"},
-        },
-        "assert": {
-            "http_status": 200,
-            "gateway": {"code": 0},
-            "response": {"id": "req_0", "success": True, "code": 0},
-        },
-        "extract": {
-            "access_token": "$.access_token",
-            "expires_time": "$.expires_time",
-            "refresh_token": "$.refresh_token",
-            "refresh_expires_time": "$.refresh_expires_time",
-            "user_id": "$.user_id",
-        },
-    }
     target_case = {
         "request": {
             "service_name": "tool.identity.IdentityService",
@@ -503,14 +516,20 @@ def test_gateway_api_refreshes_session_before_normal_request() -> None:
         {"method": "POST", "path": "/gateway/invoke"},
         http_client=client,  # type: ignore[arg-type]
         runtime_context=context,
-        session_cases={"RefreshSession": refresh_case},
+        api_definitions=_session_api_definitions(),
         now_ms=lambda: now_ms,
+        session_env_path=tmp_path / ".env",
     )
 
     gateway.execute(target_case)
 
     assert client.payloads[0]["requests"][0]["method_name"] == "RefreshSession"
+    assert client.payloads[0]["requests"][0]["params"] == {
+        "refresh_token": "refresh-old"
+    }
     assert client.payloads[1]["comm"]["auth_token"] == "access-new"
+    assert context.get("refresh_token") == "refresh-new"
+    assert "AUTH_TOKEN=access-new" in (tmp_path / ".env").read_text(encoding="utf-8")
 
 
 def test_gateway_api_recreates_session_when_refresh_fails() -> None:
@@ -533,15 +552,13 @@ def test_gateway_api_recreates_session_when_refresh_fails() -> None:
                 {"gateway_base_url": "http://example.test", "comm": {}},
                 {"method": "POST", "path": "/gateway/invoke"},
                 runtime_context=context,
-                session_cases={
-                    "RefreshSession": {"request": {}},
-                    "CreateAnonymousSession": {"request": {}},
-                },
+                api_definitions=_session_api_definitions(),
                 now_ms=lambda: now_ms,
             )
             self.session_calls: list[str] = []
 
-        def _execute_session_case(self, method_name: str) -> None:
+        def _execute_session_api(self, method_name: str) -> None:
+            """记录会话 API ID，刷新失败时模拟框架的创建会话回退。"""
             self.session_calls.append(method_name)
             if method_name == "RefreshSession":
                 raise AssertionError("refresh failed")
@@ -561,6 +578,23 @@ def test_gateway_api_recreates_session_when_refresh_fails() -> None:
 
     assert gateway.session_calls == ["RefreshSession", "CreateAnonymousSession"]
     assert context.get("access_token") == "access-created"
+
+
+@pytest.mark.parametrize(
+    "api_id",
+    ["CreateAnonymousSession", "RefreshSession"],
+)
+def test_gateway_api_reports_missing_session_api_id(api_id: str) -> None:
+    """内部会话缺少任一路由定义时，错误必须包含对应 API ID。"""
+    gateway = GatewayApi(
+        {"gateway_base_url": "http://example.test", "comm": {}},
+        {"method": "POST", "path": "/gateway/invoke"},
+        runtime_context=RuntimeContext(),
+        api_definitions={},
+    )
+
+    with pytest.raises(RuntimeContextError, match=api_id):
+        gateway._build_session_case(api_id)
 
 
 def test_http_client_put_bytes_uses_extracted_upload_headers() -> None:

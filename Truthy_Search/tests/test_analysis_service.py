@@ -14,11 +14,24 @@ from openpyxl import Workbook, load_workbook
 from analysis_service import (
     ActiveRunError,
     AnalysisService,
+    _candidate_identity_rule,
+    _field_comparison_scores_v3,
+    DEFAULT_FIELD_DEFINITIONS_V3,
+    DEFAULT_FIELD_DEFINITIONS,
+    DEFAULT_FIELD_SCHEMA_VERSION,
+    DEFAULT_FIELD_SCHEMA_V3_VERSION,
     DuplicateImportError,
+    FIELD_PROCESSING_RULE_VERSION,
     FieldSchemaValidationError,
     ImportValidationError,
+    METRICS_RULE_VERSION,
+    PersonLinkValidationError,
+    REPORT_MODEL_VERSION,
     ReviewValidationError,
+    V5_REPORT_MODEL_VERSION,
+    V5_FIELD_PROCESSING_RULE_VERSION,
     extract_source_path,
+    extract_profile_item,
     normalize_field_value,
     validate_field_definitions,
 )
@@ -31,6 +44,44 @@ IMPORT_WORKBOOK = (
     PROJECT_ROOT / "tests" / "fixtures" / "v1_3_import" / "import_sources.xlsx"
 )
 E2E_FIXTURE = PROJECT_ROOT / "tests" / "fixtures" / "v1_3_e2e"
+DATA_PROCESSING_PHASE0_FIXTURE = (
+    PROJECT_ROOT
+    / "tests"
+    / "fixtures"
+    / "v1_3_data_processing_phase0"
+    / "problem_contract.json"
+)
+FIELD_CONFIGURATION_PHASE0_FIXTURE = (
+    PROJECT_ROOT
+    / "tests"
+    / "fixtures"
+    / "v1_3_field_configuration_phase0_contract.json"
+)
+
+# 报告优化阶段 0 冻结的最小 v5 契约。阶段 1 必须产出这些数据，但不能
+# 通过在模板中临时查询 Process/Candidate 来绕过不可变报告快照。
+REPORT_MODEL_V5_REQUIRED_TOP_LEVEL_KEYS = frozenset({
+    "metadata",
+    "summary",
+    "overview",
+    "processing_scope",
+    "query_stage_metrics",
+    "query_explorer",
+    "diagnostics",
+})
+REPORT_MODEL_V5_REQUIRED_QUERY_KEYS = frozenset({
+    "person_id",
+    "query_stage",
+    "candidate_run",
+})
+REPORT_MODEL_V5_REQUIRED_CANDIDATE_KEYS = frozenset({
+    "candidate_pk",
+    "candidate_id",
+    "candidate_rank",
+    "detail_status",
+    "identity",
+    "metrics",
+})
 
 
 def write_jsonl(path: Path, records: list[dict]) -> None:
@@ -106,6 +157,1651 @@ class AnalysisServiceTests(unittest.TestCase):
         """清理当前测试创建的临时数据库和归档。"""
 
         self.temp_dir.cleanup()
+
+    def test_identity_rule_uses_social_priority_then_photo_fallback(self):
+        """Social 冲突优先，照片仅在 Social 无结论时作为自动终判兜底。"""
+
+        judgement, reason, _ = _candidate_identity_rule(
+            ["https://linkedin.com/in/target"],
+            [
+                "https://linkedin.com/in/target",
+                "https://linkedin.com/in/another-person",
+            ],
+            99,
+        )
+        self.assertEqual(("NOT_HIT", "SOCIAL_CONFLICT"), (judgement, reason))
+
+        judgement, reason, _ = _candidate_identity_rule(
+            ["https://twitter.com/Target/"],
+            ["https://x.com/target?utm_source=test"],
+            None,
+        )
+        self.assertEqual(("HIT", "SOCIAL_MATCH"), (judgement, reason))
+
+        # Summary Social Links 的接口值是对象数组，也必须取其中 url 参与强绑定。
+        judgement, reason, _ = _candidate_identity_rule(
+            ["https://linkedin.com/in/target"],
+            [{"platform": "linkedin", "url": "https://www.linkedin.com/in/target/"}],
+            None,
+        )
+        self.assertEqual(("HIT", "SOCIAL_MATCH"), (judgement, reason))
+
+        judgement, reason, _ = _candidate_identity_rule(
+            ["https://linkedin.com/in/target"],
+            [],
+            0.8,
+        )
+        self.assertEqual(("HIT", "PHOTO_MATCH"), (judgement, reason))
+
+        judgement, reason, _ = _candidate_identity_rule([], [], None)
+        self.assertEqual(("SUSPECTED", "NO_STRONG_FIELD"), (judgement, reason))
+
+        judgement, reason, _ = _candidate_identity_rule(
+            ["https://linkedin.com/in/target"],
+            [],
+            79.9,
+        )
+        self.assertEqual(
+            ("NOT_HIT", "PHOTO_BELOW_THRESHOLD"),
+            (judgement, reason),
+        )
+
+    def _build_data_processing_phase0_scenario(
+        self,
+        force_rule_version: str | None = None,
+    ) -> dict:
+        """构造数据处理优化阶段0的脱敏问题场景。
+
+        功能说明:
+            根据冻结契约生成10条未关联人物的 Query、45名候选人和10名
+            Baseline Person，用于稳定复现 v2 的作用域、模块判空和指标状态
+            问题。全部数据只写入当前测试临时目录，不访问外部接口。
+
+        返回值:
+            dict: 包含冻结契约、Process 指标和数据库计数的测试上下文。
+
+        异常说明:
+            夹具损坏、导入失败或处理失败时直接让测试失败，避免预期失败
+            装饰器掩盖测试前置条件错误。
+        """
+
+        contract = json.loads(
+            DATA_PROCESSING_PHASE0_FIXTURE.read_text(encoding="utf-8")
+        )
+        schema_version = self.service.ensure_default_field_schema()
+        available_fields = contract["baseline_available_fields"]
+        baseline_path = self.root / "phase0-baseline.jsonl"
+        write_jsonl(
+            baseline_path,
+            [
+                {
+                    "person_id": f"person-phase0-{index:02d}",
+                    "display_name": f"Phase0 Person {index:02d}",
+                    "fields": {
+                        "social_urls": [
+                            f"https://social.example.test/phase0-{index:02d}"
+                        ]
+                    },
+                    "baseline_available_fields": available_fields,
+                }
+                for index in range(1, 11)
+            ],
+        )
+        self.service.import_baseline_jsonl(
+            baseline_path,
+            name="数据处理阶段0脱敏基准",
+            baseline_version="baseline-data-processing-phase0",
+        )
+
+        candidate_index = 0
+        result_records = []
+        for query_index, candidate_count in enumerate(
+            contract["candidate_count_by_query"],
+            start=1,
+        ):
+            query_id = f"phase0-query-{query_index:02d}"
+            candidates = []
+            for candidate_rank in range(1, candidate_count + 1):
+                candidate_index += 1
+                has_insights = candidate_index <= 2
+                has_social = candidate_index <= 34
+                ui_sections = {
+                    "insights": {
+                        "status": "data" if has_insights else "empty",
+                        "data": {
+                            "count": 1 if has_insights else 0,
+                            "items": (
+                                [
+                                    {
+                                        "description": (
+                                            f"Phase0 insight {candidate_index}"
+                                        ),
+                                        "links": [
+                                            "https://example.test/insight"
+                                        ],
+                                    }
+                                ]
+                                if has_insights
+                                else []
+                            ),
+                        },
+                    },
+                    "photos": {
+                        "status": "empty",
+                        "data": {"count": 0, "image_urls": []},
+                    },
+                    "profile": {
+                        "status": "data",
+                        "data": {
+                            "sections": {
+                                "person_biography": (
+                                    f"Phase0 biography {candidate_index}"
+                                )
+                            }
+                        },
+                    },
+                    "social": {
+                        "status": "data" if has_social else "empty",
+                        "data": {
+                            "profiles": (
+                                [
+                                    {
+                                        "display_handle": (
+                                            f"phase0-{candidate_index}"
+                                        ),
+                                        "platform": "example",
+                                        "url": (
+                                            "https://social.example.test/"
+                                            f"candidate-{candidate_index}"
+                                        ),
+                                    }
+                                ]
+                                if has_social
+                                else []
+                            )
+                        },
+                    },
+                    "summary": {
+                        "status": "data",
+                        "data": {
+                            "display_name": (
+                                f"Phase0 Candidate {candidate_index}"
+                            ),
+                            "confidence_level": "HIGH",
+                        },
+                    },
+                }
+                candidate_id = f"phase0-candidate-{candidate_index:02d}"
+                candidates.append(
+                    {
+                        "candidate_rank": candidate_rank,
+                        "candidate_id": candidate_id,
+                        "rank_score": 1 - candidate_rank / 100,
+                        "detail_status": "SUCCESS",
+                        "detail_error": "",
+                        "list_item_raw": {"candidate_id": candidate_id},
+                        "detail_data_raw": {"ui_sections": ui_sections},
+                        "ui_sections": ui_sections,
+                    }
+                )
+            result_records.append(
+                {
+                    "result_schema_version": "1.3.1",
+                    "input_id": query_id,
+                    "person_id": None,
+                    "query_stage": "FULL_NAME",
+                    "task_id": f"phase0-task-{query_index:02d}",
+                    "query_status": "SUCCESS",
+                    "result_status": "HAS_CANDIDATES",
+                    "candidate_count_total": candidate_count,
+                    "results": candidates,
+                }
+            )
+
+        results_path = self.root / "phase0-results.jsonl"
+        write_jsonl(results_path, result_records)
+        imported = self.service.import_results_jsonl(
+            results_path,
+            evaluation_id="eval-import",
+            run_label="数据处理阶段0问题复现",
+            system_version="phase0-v2",
+            run_id="run-data-processing-phase0",
+        )
+        process = self.service.process_run(
+            run_id=imported.object_id,
+            schema_version=schema_version,
+            baseline_version="baseline-data-processing-phase0",
+            process_id="process-data-processing-phase0",
+        )
+        if force_rule_version:
+            with self.store.transaction() as connection:
+                connection.execute(
+                    """
+                    UPDATE process_runs SET rule_version = ?
+                    WHERE process_id = ?
+                    """,
+                    (force_rule_version, process.process_id),
+                )
+        metrics = self.service.calculate_process_metrics(process.process_id)
+        counts = {
+            "query_count": self.store.fetch_one(
+                """
+                SELECT COUNT(*) AS count FROM run_queries
+                WHERE run_id = ?
+                """,
+                (imported.object_id,),
+            )["count"],
+            "missing_person_id_count": self.store.fetch_one(
+                """
+                SELECT COUNT(*) AS count FROM run_queries
+                WHERE run_id = ?
+                  AND (person_id IS NULL OR person_id = '')
+                """,
+                (imported.object_id,),
+            )["count"],
+            "candidate_count": self.store.fetch_one(
+                """
+                SELECT COUNT(*) AS count FROM candidates
+                WHERE run_id = ?
+                """,
+                (imported.object_id,),
+            )["count"],
+            "pending_review_count": self.store.fetch_one(
+                """
+                SELECT COUNT(*) AS count FROM reviews
+                WHERE process_id = ? AND judgement = 'PENDING_REVIEW'
+                """,
+                (process.process_id,),
+            )["count"],
+            "query_task_id_count": self.store.fetch_one(
+                """
+                SELECT COUNT(*) AS count FROM processed_queries
+                WHERE process_id = ?
+                  AND json_extract(fields_json, '$.task_id') IS NOT NULL
+                """,
+                (process.process_id,),
+            )["count"],
+        }
+        return {
+            "contract": contract,
+            "process_id": process.process_id,
+            "metrics": metrics,
+            "counts": counts,
+        }
+
+    def test_data_processing_phase0_v2_problem_snapshot_is_reproducible(self):
+        """v2 的六类真实问题可在脱敏数据中稳定复现。"""
+
+        scenario = self._build_data_processing_phase0_scenario(
+            "field-processing-v2"
+        )
+        contract = scenario["contract"]
+        metrics = scenario["metrics"]
+        counts = scenario["counts"]
+
+        self.assertEqual(contract["query_count"], counts["query_count"])
+        self.assertEqual(
+            contract["missing_person_id_count"],
+            counts["missing_person_id_count"],
+        )
+        self.assertEqual(contract["candidate_count"], counts["candidate_count"])
+        self.assertEqual(
+            contract["pending_review_count"],
+            counts["pending_review_count"],
+        )
+        self.assertEqual(
+            contract["query_task_id_count"],
+            counts["query_task_id_count"],
+        )
+        self.assertEqual("metrics-v2", metrics["metrics_rule_version"])
+        self.assertEqual(
+            contract["v2_snapshot"]["task_id"],
+            {
+                "returned_count": metrics["field_metrics"]["task_id"][
+                    "returned_count"
+                ],
+                "candidate_count": metrics["field_metrics"]["task_id"][
+                    "candidate_count"
+                ],
+            },
+        )
+        self.assertEqual(
+            contract["v2_snapshot"]["insights_return_rate"],
+            metrics["module_metrics"]["Insights"]["return_rate"],
+        )
+        self.assertEqual(
+            contract["v2_snapshot"]["photos_return_rate"],
+            metrics["module_metrics"]["Photos"]["return_rate"],
+        )
+        self.assertEqual(
+            "NOT_APPLICABLE",
+            metrics["matched_completeness"]["status"],
+        )
+        self.assertEqual(
+            contract["baseline_available_field_count"],
+            len(contract["baseline_available_fields"]),
+        )
+        self.assertEqual(
+            contract["v2_snapshot"]["completeness_field_keys"],
+            [
+                definition["field_key"]
+                for definition in DEFAULT_FIELD_DEFINITIONS
+                if "completeness" in definition["scoring_role"]
+            ],
+        )
+
+    def test_data_processing_phase0_v3_query_scope_contract(self):
+        """v3 应按10条 Query 统计 task_id，而不是按45名候选人统计。"""
+
+        metrics = self._build_data_processing_phase0_scenario()["metrics"]
+        self.assertEqual(
+            {
+                "value_scope": "QUERY",
+                "entity_count": 10,
+                "returned_count": 10,
+                "return_rate": 1.0,
+            },
+            {
+                key: metrics["field_metrics"]["task_id"][key]
+                for key in (
+                    "value_scope",
+                    "entity_count",
+                    "returned_count",
+                    "return_rate",
+                )
+            },
+        )
+
+    def test_data_processing_phase0_v3_module_empty_contract(self):
+        """v3 应按模块语义判空，空容器不能算作有数据。"""
+
+        metrics = self._build_data_processing_phase0_scenario()["metrics"]
+        self.assertEqual(
+            {
+                "data_count": 2,
+                "empty_count": 43,
+                "unknown_count": 0,
+                "candidate_count": 45,
+                "data_rate": 2 / 45,
+            },
+            {
+                key: metrics["module_metrics"]["Insights"][key]
+                for key in (
+                    "data_count",
+                    "empty_count",
+                    "unknown_count",
+                    "candidate_count",
+                    "data_rate",
+                )
+            },
+        )
+        self.assertEqual(
+            0,
+            metrics["module_metrics"]["Photos"]["data_count"],
+        )
+        self.assertEqual(
+            45,
+            metrics["module_metrics"]["Profile"]["data_count"],
+        )
+        self.assertEqual(
+            34,
+            metrics["module_metrics"]["Social"]["data_count"],
+        )
+
+    def test_data_processing_phase0_v3_identity_pending_reason_contract(self):
+        """v3 应把未关联和待归类识别为 NOT_READY 并返回原因码。"""
+
+        metrics = self._build_data_processing_phase0_scenario()["metrics"]
+        self.assertEqual(
+            "NOT_READY",
+            metrics["matched_completeness"]["status"],
+        )
+        self.assertEqual(
+            {"BASELINE_NOT_LINKED", "IDENTITY_PENDING"},
+            set(metrics["matched_completeness"]["reason_codes"]),
+        )
+
+    def test_data_processing_phase0_v3_candidate_return_rate_contract(self):
+        """v3 候选人字段返回率不依赖身份归类，应在全 PENDING 时就绪。"""
+
+        metrics = self._build_data_processing_phase0_scenario()["metrics"]
+        social_urls = metrics["field_metrics"]["social_urls"]
+        self.assertEqual("READY", social_urls["status"])
+        self.assertEqual("CANDIDATE", social_urls["value_scope"])
+        self.assertEqual(45, social_urls["entity_count"])
+        self.assertEqual(34, social_urls["returned_count"])
+        self.assertEqual(34 / 45, social_urls["return_rate"])
+
+    def test_data_processing_phase0_v3_field_matrix_conflict_contract(self):
+        """v3 字段矩阵应明确暴露15个基准字段与1个评分字段的冲突。"""
+
+        scenario = self._build_data_processing_phase0_scenario()
+        matrix = self.service.get_field_comparison_matrix(
+            schema_version=DEFAULT_FIELD_SCHEMA_VERSION,
+            baseline_version="baseline-data-processing-phase0",
+            process_id=scenario["process_id"],
+        )
+        self.assertEqual(15, matrix["baseline_available_field_count"])
+        self.assertEqual(1, matrix["completeness_field_count"])
+        self.assertEqual(14, matrix["baseline_only_conflict_count"])
+
+    def test_stage4_metrics_v3_and_report_model_v3_explain_not_ready(self):
+        """v3 字段返回率保持可用，质量指标和报告给出明确未就绪原因。"""
+
+        scenario = self._build_data_processing_phase0_scenario()
+        metrics = scenario["metrics"]
+        self.assertEqual("metrics-v3", metrics["metrics_rule_version"])
+        self.assertEqual(
+            {
+                "value_scope": "QUERY",
+                "entity_count": 10,
+                "returned_count": 10,
+                "return_rate": 1.0,
+                "status": "READY",
+            },
+            {
+                key: metrics["field_metrics"]["task_id"][key]
+                for key in (
+                    "value_scope",
+                    "entity_count",
+                    "returned_count",
+                    "return_rate",
+                    "status",
+                )
+            },
+        )
+        self.assertEqual(
+            {"BASELINE_NOT_LINKED", "IDENTITY_PENDING"},
+            set(metrics["matched_completeness"]["reason_codes"]),
+        )
+        model = self.service.build_report_model(
+            report_id="report-stage4-not-ready",
+            candidate_process_id=scenario["process_id"],
+        )
+        self.assertEqual(
+            "report-model-v3",
+            model["metadata"]["report_model_version"],
+        )
+        self.assertEqual(
+            "metrics-v3",
+            model["metadata"]["metrics_rule_version"],
+        )
+        self.assertTrue(model["not_ready_reasons"])
+        self.assertIn(
+            "IDENTITY_PENDING",
+            {
+                item["reason_code"]
+                for item in model["not_ready_reasons"]
+            },
+        )
+        self.assertIn(
+            "FIELD_NOT_CONNECTED",
+            {
+                item["reason_code"]
+                for item in model["not_ready_reasons"]
+            },
+        )
+
+    def test_field_configuration_phase0_default_schema_contract_is_frozen(self):
+        """阶段0冻结默认 FieldSchema 的数量、模块与评分职责。
+
+        功能说明：验证后续 FieldSchema v3 开发前，默认 v2 配置仍可发布、
+        读取，并保持当前 33 个字段与既有评分职责不变。
+        返回值：无；断言失败表示旧配置兼容性被破坏。
+        异常说明：夹具缺失或字段定义变化时由测试框架直接报告差异。
+        """
+
+        contract = json.loads(
+            FIELD_CONFIGURATION_PHASE0_FIXTURE.read_text(encoding="utf-8")
+        )
+        schema_version = self.service.ensure_default_field_schema()
+        schema = self.store.fetch_one(
+            "SELECT definitions_json FROM field_schemas WHERE schema_version = ?",
+            (schema_version,),
+        )
+        self.assertIsNotNone(schema)
+        definitions = validate_field_definitions(
+            json.loads(schema["definitions_json"])
+        )
+
+        self.assertEqual(
+            contract["versions"]["default_field_schema_version"],
+            schema_version,
+        )
+        self.assertEqual(contract["default_schema"]["field_count"], len(definitions))
+        self.assertEqual(
+            contract["default_schema"]["module_counts"],
+            {
+                module: sum(
+                    1 for definition in definitions
+                    if definition["module"] == module
+                )
+                for module in contract["default_schema"]["module_counts"]
+            },
+        )
+        for role, expected_keys in contract["default_schema"][
+            "scoring_role_field_keys"
+        ].items():
+            self.assertEqual(
+                expected_keys,
+                [
+                    definition["field_key"]
+                    for definition in definitions
+                    if role in definition["scoring_role"]
+                ],
+            )
+
+    def test_field_configuration_phase0_v4_v3_routing_contract_is_frozen(self):
+        """阶段0冻结 v4 处理对 metrics-v3/report-model-v3 的兼容路由。
+
+        功能说明：使用既有脱敏 10 Query、45 Candidate 场景，确保最新 v4
+        Process 不会误路由到新 metrics，且报告继续使用 v3 模型。
+        返回值：无；断言通过代表版本路由和核心统计口径可重复。
+        异常说明：未知规则或报告构建失败会由服务层或测试框架直接抛出。
+        """
+
+        contract = json.loads(
+            FIELD_CONFIGURATION_PHASE0_FIXTURE.read_text(encoding="utf-8")
+        )
+        scenario = self._build_data_processing_phase0_scenario()
+        metrics = scenario["metrics"]
+        model = self.service.build_report_model(
+            report_id="report-field-configuration-phase0",
+            candidate_process_id=scenario["process_id"],
+        )
+
+        self.assertEqual(
+            contract["versions"]["field_processing_rule_version"],
+            FIELD_PROCESSING_RULE_VERSION,
+        )
+        self.assertEqual("metrics-v3", contract["versions"]["metrics_rule_version"])
+        self.assertEqual("report-model-v3", contract["versions"]["report_model_version"])
+        self.assertEqual("metrics-v3", metrics["metrics_rule_version"])
+        self.assertEqual(
+            contract["regression_scenario"]["query_count"],
+            scenario["counts"]["query_count"],
+        )
+        self.assertEqual(
+            contract["regression_scenario"]["candidate_count"],
+            scenario["counts"]["candidate_count"],
+        )
+        self.assertEqual(
+            contract["regression_scenario"]["module_data_count"],
+            {
+                module: metrics["module_metrics"][module]["data_count"]
+                for module in contract["regression_scenario"]["module_data_count"]
+            },
+        )
+        self.assertEqual(
+            "report-model-v3",
+            model["metadata"]["report_model_version"],
+        )
+        self.assertEqual(
+            "metrics-v3",
+            model["metadata"]["metrics_rule_version"],
+        )
+
+    def test_report_optimization_phase0_v4_gap_is_reproducible(self):
+        """冻结当前报告缺少完整 Query/Candidate 快照的基线事实。
+
+        功能说明：使用现有脱敏 10 Query、45 Candidate 场景构建当前报告，
+        确认 v4 只保存聚合指标和案例分组，尚未具备 v5 Query Explorer。
+        返回值：无；断言通过说明阶段 1 的目标缺口仍可稳定复现。
+        异常说明：场景无法构建或报告结构意外变化时直接失败。
+        """
+
+        scenario = self._build_data_processing_phase0_scenario()
+        model = self.service.build_report_model(
+            report_id="report-optimization-phase0-gap",
+            candidate_process_id=scenario["process_id"],
+        )
+
+        self.assertEqual(10, scenario["counts"]["query_count"])
+        self.assertEqual(45, scenario["counts"]["candidate_count"])
+        self.assertNotEqual(
+            V5_REPORT_MODEL_VERSION,
+            model["metadata"]["report_model_version"],
+        )
+        self.assertFalse(
+            REPORT_MODEL_V5_REQUIRED_TOP_LEVEL_KEYS.issubset(model)
+        )
+        self.assertIn("case_groups", model)
+        self.assertNotIn("query_explorer", model)
+
+    def test_report_optimization_phase0_v5_version_contract_is_frozen(self):
+        """冻结 v5 标识与最小快照键，供阶段 1 路由和结构测试复用。
+
+        功能说明：验证阶段 0 只登记目标版本和不可变快照的最小契约，
+        不提前把尚未完成的 v4 模型伪装为 v5。
+        返回值：无；断言通过表示版本常量和测试契约可被后续阶段使用。
+        异常说明：常量或契约被意外改动时直接失败。
+        """
+
+        self.assertEqual("report-model-v5", V5_REPORT_MODEL_VERSION)
+        self.assertEqual(
+            {
+                "metadata",
+                "summary",
+                "overview",
+                "processing_scope",
+                "query_stage_metrics",
+                "query_explorer",
+                "diagnostics",
+            },
+            set(REPORT_MODEL_V5_REQUIRED_TOP_LEVEL_KEYS),
+        )
+
+    def test_field_schema_v3_catalog_and_legacy_definition_are_compatible(self):
+        """v3 目录完整发布，旧 v2 定义仅在内存中补齐新属性。"""
+
+        self.service.ensure_default_field_schema()
+        schema_version = self.service.ensure_default_field_schema_v3()
+        schema = self.store.fetch_one(
+            "SELECT definitions_json FROM field_schemas WHERE schema_version = ?",
+            (schema_version,),
+        )
+        definitions = validate_field_definitions(
+            json.loads(schema["definitions_json"])
+        )
+        by_key = {item["field_key"]: item for item in definitions}
+        legacy = validate_field_definitions([DEFAULT_FIELD_DEFINITIONS[0]])[0]
+
+        self.assertEqual(DEFAULT_FIELD_SCHEMA_V3_VERSION, schema_version)
+        self.assertEqual(61, len(definitions))
+        self.assertTrue(by_key["summary_web_links"]["display_enabled"])
+        self.assertFalse(by_key["llm_cost"]["enabled"])
+        self.assertTrue(by_key["social_urls"]["identity_enabled"])
+        self.assertTrue(by_key["social_urls"]["baseline_compare_enabled"])
+        self.assertEqual("PATH", legacy["source_type"])
+        self.assertEqual({}, legacy["source_options"])
+        self.assertTrue(legacy["display_enabled"])
+
+    def test_field_schema_v3_profile_item_selector_and_validation(self):
+        """PROFILE_ITEM 只按 section + label 提取，并拒绝缺少选择器的配置。"""
+
+        source = {
+            "ui_sections": {
+                "profile": {
+                    "data": {
+                        "sections": [
+                            {
+                                "title": "Identity",
+                                "items": [
+                                    {"label": "Full Name", "value": "Alice"},
+                                    {"label": "Full Name", "value": "A. Example"},
+                                ],
+                            }
+                        ]
+                    }
+                }
+            }
+        }
+        value, duplicated = extract_profile_item(
+            source,
+            "ui_sections.profile.data.sections",
+            {"section": " identity ", "label": "full name"},
+        )
+        profile_definition = next(
+            dict(item)
+            for item in DEFAULT_FIELD_DEFINITIONS_V3
+            if item["field_key"] == "profile_sections"
+        )
+        profile_definition.update(
+            {
+                "field_key": "profile_identity_full_name",
+                "display_name": "Identity / Full Name",
+                "data_type": "array",
+                "array_mode": "preserve",
+                "normalizer": "string_list",
+                "source_type": "PROFILE_ITEM",
+                "source_options": {
+                    "section": "Identity", "label": "Full Name",
+                },
+            }
+        )
+        invalid_definition = dict(profile_definition)
+        invalid_definition["source_options"] = {"section": "Identity"}
+
+        self.assertEqual(["Alice", "A. Example"], value)
+        self.assertTrue(duplicated)
+        self.assertEqual(
+            "PROFILE_ITEM",
+            validate_field_definitions([profile_definition])[0]["source_type"],
+        )
+        profile_full_name = next(
+            item
+            for item in DEFAULT_FIELD_DEFINITIONS_V3
+            if item["field_key"] == "profile_full_name"
+        )
+        self.assertEqual(
+            ["Alice", "A. Example"],
+            extract_profile_item(
+                source,
+                profile_full_name["source_path"],
+                profile_full_name["source_options"],
+            )[0],
+        )
+        self.assertTrue(profile_full_name["baseline_compare_enabled"])
+        self.assertTrue(profile_full_name["completeness_enabled"])
+        profile_age = next(
+            item
+            for item in DEFAULT_FIELD_DEFINITIONS_V3
+            if item["field_key"] == "profile_age"
+        )
+        self.assertEqual(
+            38.0,
+            normalize_field_value("38", profile_age["normalizer"]),
+        )
+        current_and_other_roles, duplicated_roles = extract_profile_item(
+            {
+                "ui_sections": {
+                    "profile": {
+                        "data": {
+                            "sections": [{
+                                "title": "Career",
+                                "items": [
+                                    {"label": "Current Role", "value": "Engineer"},
+                                    {"label": "Other Roles", "value": ["Founder"]},
+                                ],
+                            }],
+                        },
+                    },
+                },
+            },
+            "ui_sections.profile.data.sections",
+            {"section": "Career", "labels": ["Current Role", "Other Roles"]},
+        )
+        self.assertEqual(["Engineer", ["Founder"]], current_and_other_roles)
+        self.assertFalse(duplicated_roles)
+        with self.assertRaises(FieldSchemaValidationError):
+            validate_field_definitions([invalid_definition])
+
+    def test_stage2_v5_field_comparison_and_cost_free_reprocess(self):
+        """v3 Schema 按映射生成字段对比，重处理只读取已入库数据。"""
+
+        definitions = []
+        for field_key in ("social_urls", "summary_location"):
+            definition = next(
+                dict(item)
+                for item in DEFAULT_FIELD_DEFINITIONS_V3
+                if item["field_key"] == field_key
+            )
+            definition.update(
+                {
+                    "baseline_field_key": field_key,
+                    "baseline_compare_enabled": True,
+                    "completeness_enabled": True,
+                    "accuracy_enabled": True,
+                    "scoring_role": ["completeness", "accuracy"],
+                }
+            )
+            if field_key == "social_urls":
+                definition["identity_enabled"] = True
+                definition["scoring_role"] = [
+                    "identity", "completeness", "accuracy",
+                ]
+            definitions.append(definition)
+        profile_name = next(
+            dict(item)
+            for item in DEFAULT_FIELD_DEFINITIONS_V3
+            if item["field_key"] == "profile_full_name"
+        )
+        profile_name.update({
+            "baseline_field_key": "profile_full_name",
+            "baseline_compare_enabled": True,
+            "completeness_enabled": True,
+            # 姓名参与资料完整度，但不得进入非命中资料相似度或准确度。
+            "accuracy_enabled": False,
+            "scoring_role": ["completeness"],
+        })
+        definitions.append(profile_name)
+        schema_version = self.service.publish_field_schema(
+            name="阶段2字段对比配置",
+            definitions=definitions,
+            schema_version="field-schema-stage2-v3",
+        )
+        baseline_path = self.root / "stage2-v3-baseline.jsonl"
+        write_jsonl(
+            baseline_path,
+            [{
+                "person_id": "person-stage2-v3",
+                "display_name": "Stage2 V3 Person",
+                "fields": {
+                    "social_urls": ["https://linkedin.com/in/stage2"],
+                    "summary_location": "Redmond, Washington, USA",
+                    "profile_full_name": "Stage2 V3 Person",
+                },
+                "baseline_available_fields": [
+                    "social_urls", "summary_location", "profile_full_name",
+                ],
+            }],
+        )
+        self.service.import_baseline_jsonl(
+            baseline_path,
+            name="阶段2 V3 基准",
+            baseline_version="baseline-stage2-v3",
+        )
+        results_path = self.root / "stage2-v3-results.jsonl"
+        ui_sections = {
+            "social": {
+                "status": "data",
+                "data": {"profiles": [{
+                    "url": "https://www.linkedin.com/in/stage2/",
+                }]},
+            },
+            "summary": {
+                "status": "data",
+                "data": {
+                    "location": "Redmond, Washington, United States",
+                },
+            },
+            "profile": {
+                "status": "data",
+                "data": {
+                    "sections": [{
+                        "title": "Identity",
+                        "items": [{
+                            "label": "Full Name",
+                            "value": "Stage2 V3 Person",
+                        }],
+                    }],
+                },
+            },
+        }
+        write_jsonl(
+            results_path,
+            [{
+                "result_schema_version": "1.3",
+                "input_id": "query-stage2-v3",
+                "person_id": "person-stage2-v3",
+                "query_stage": "FULL_NAME_SOCIAL",
+                "task_id": "task-stage2-v3",
+                "query_status": "SUCCESS",
+                "results": [
+                    {
+                        "candidate_rank": 1,
+                        "rank_score": 0.9,
+                        "candidate_id": "candidate-stage2-v3",
+                        "detail_status": "SUCCESS",
+                        "detail_error": "",
+                        "list_item_raw": {
+                            "candidate_id": "candidate-stage2-v3",
+                            "rank_score": 0.9,
+                        },
+                        "detail_data_raw": {"ui_sections": ui_sections},
+                        "ui_sections": ui_sections,
+                    },
+                    {
+                        # Social 同平台 URL 不一致：自动归类为 NOT_HIT。
+                        "candidate_rank": 2,
+                        "rank_score": 0.3,
+                        "candidate_id": "candidate-stage2-v3-non-hit",
+                        "detail_status": "SUCCESS",
+                        "detail_error": "",
+                        "list_item_raw": {
+                            "candidate_id": "candidate-stage2-v3-non-hit",
+                            "rank_score": 0.3,
+                        },
+                        "detail_data_raw": {"ui_sections": {
+                            **ui_sections,
+                            "social": {"status": "data", "data": {
+                                "profiles": [{"url": "https://linkedin.com/in/other"}],
+                            }},
+                        }},
+                        "ui_sections": {
+                            **ui_sections,
+                            "social": {"status": "data", "data": {
+                                "profiles": [{"url": "https://linkedin.com/in/other"}],
+                            }},
+                        },
+                    },
+                ],
+            }],
+        )
+        imported = self.service.import_results_jsonl(
+            results_path,
+            evaluation_id="eval-import",
+            run_label="stage2-v3",
+            system_version="v3",
+            run_id="run-stage2-v3",
+        )
+        raw_count_before = self.store.fetch_one(
+            "SELECT COUNT(*) AS count FROM raw_records WHERE run_id = ?",
+            (imported.object_id,),
+        )["count"]
+        process = self.service.process_run(
+            run_id=imported.object_id,
+            schema_version=schema_version,
+            baseline_version="baseline-stage2-v3",
+            process_id="process-stage2-v3",
+        )
+        review = self.store.fetch_one(
+            "SELECT field_scores_json FROM reviews WHERE process_id = ?",
+            (process.process_id,),
+        )
+        scores = json.loads(review["field_scores_json"])
+        location = scores["summary_location"]
+
+        self.assertEqual(
+            V5_FIELD_PROCESSING_RULE_VERSION,
+            self.store.fetch_one(
+                "SELECT rule_version FROM process_runs WHERE process_id = ?",
+                (process.process_id,),
+            )["rule_version"],
+        )
+        self.assertEqual(1.0, scores["social_urls"]["completeness_score"])
+        self.assertEqual(1.0, scores["social_urls"]["data_completeness_score"])
+        self.assertEqual(1.0, scores["social_urls"]["baseline_coverage_score"])
+        self.assertEqual(1.0, scores["social_urls"]["accuracy_score"])
+        self.assertEqual("summary_location", location["baseline_field_key"])
+        self.assertEqual(1.0, location["completeness_score"])
+        # 地点返回了真实资料，即使语义准确度未达阈值，资料完整度也必须为 1。
+        self.assertEqual(1.0, location["data_completeness_score"])
+        self.assertEqual("WARNING", location["comparison_status"])
+        self.assertEqual("BELOW_SIMILARITY_THRESHOLD", location["reason_code"])
+
+        metrics_v4 = self.service.calculate_process_metrics(process.process_id)
+        report_v4 = self.service.build_report_model(
+            report_id="report-stage4-v4",
+            candidate_process_id=process.process_id,
+        )
+        self.assertEqual("metrics-v4", metrics_v4["metrics_rule_version"])
+        self.assertEqual(
+            1,
+            metrics_v4["baseline_quality_metrics"]["primary_hit_query_count"],
+        )
+        self.assertEqual(
+            1.0,
+            metrics_v4["baseline_quality_metrics"]["modules"]["Social"]
+            ["completeness"]["value"],
+        )
+        self.assertEqual(
+            "NOT_APPLICABLE",
+            metrics_v4["baseline_quality_metrics"]["modules"]["Insights"]
+            ["accuracy"]["status"],
+        )
+        self.assertEqual(
+            "report-model-v5",
+            report_v4["metadata"]["report_model_version"],
+        )
+        self.assertIn("non_hit_data_return", report_v4)
+        self.assertIn("regression_metrics", report_v4)
+        self.assertTrue(
+            REPORT_MODEL_V5_REQUIRED_TOP_LEVEL_KEYS.issubset(report_v4)
+        )
+        explorer = report_v4["query_explorer"]
+        self.assertEqual(1, explorer["total_query_count"])
+        self.assertEqual(2, explorer["total_candidate_count"])
+        self.assertEqual(5, explorer["initial_query_count"])
+        self.assertEqual(10, explorer["load_more_query_count"])
+        self.assertEqual(
+            "衡量系统能否在全部有效 Query 中找到目标人物",
+            report_v4["overview"]["core_metrics"]["retrieval_success"][
+                "purpose"
+            ],
+        )
+        self.assertEqual(
+            1,
+            report_v4["overview"]["core_metrics"]["retrieval_success"][
+                "breakdown_count"
+            ],
+        )
+        processing_fields = {
+            item["field_key"] for item in report_v4["processing_scope"]["fields"]
+        }
+        self.assertIn("social_urls", processing_fields)
+        self.assertIn("summary_location", processing_fields)
+        self.assertIn("profile_full_name", processing_fields)
+        module_overview = report_v4["module_return_overview"]
+        modules_by_name = {
+            item["module"]: item for item in module_overview["modules"]
+        }
+        self.assertEqual(
+            ["Insights", "Photos", "Profile", "Social", "Summary"],
+            module_overview["module_order"],
+        )
+        self.assertEqual(
+            1,
+            module_overview["populations"]["hit"]["detail_success_count"],
+        )
+        self.assertEqual(
+            1,
+            module_overview["populations"]["nonmatched"][
+                "detail_success_count"
+            ],
+        )
+        self.assertEqual(
+            ["profile_full_name"],
+            modules_by_name["Profile"]["field_keys"],
+        )
+        self.assertEqual(
+            1.0,
+            modules_by_name["Profile"]["populations"]["hit"][
+                "module_return_rate"
+            ],
+        )
+        self.assertEqual(
+            1.0,
+            modules_by_name["Social"]["populations"]["nonmatched"][
+                "field_completeness"
+            ],
+        )
+        query_item = explorer["items"][0]
+        self.assertTrue(
+            REPORT_MODEL_V5_REQUIRED_QUERY_KEYS.issubset(query_item)
+        )
+        candidate_item = query_item["candidate_run"]["candidates"][0]
+        self.assertTrue(
+            REPORT_MODEL_V5_REQUIRED_CANDIDATE_KEYS.issubset(
+                candidate_item
+            )
+        )
+        self.assertEqual(
+            "candidate-stage2-v3",
+            candidate_item["candidate_id"],
+        )
+        # Social 完全一致、地点为语义近似，详情快照必须复用既有 0.7 准确度，
+        # 不能在报告层重新计算为 1.0。
+        self.assertEqual(0.7, candidate_item["metrics"]["matched_accuracy"]["value"])
+        self.assertEqual(
+            1.0,
+            candidate_item["metrics"]["matched_completeness"]["value"],
+        )
+        quality = report_v4["quality_metrics"]
+        self.assertEqual(1.0, quality["candidate_return_rate"]["value"])
+        self.assertEqual(1.0, quality["retrieval_success"]["value"])
+        self.assertEqual(1.0, quality["conditional_hit_rate"]["value"])
+        self.assertEqual(3.0, quality["matched_completeness"]["numerator"])
+        self.assertEqual(3, quality["matched_completeness"]["denominator"])
+        completeness_detail = report_v4["overview"]["core_metrics"][
+            "matched_completeness"
+        ]["breakdown"][0]
+        self.assertEqual(3.0, completeness_detail["numerator"])
+        self.assertEqual(3, completeness_detail["denominator"])
+        completeness_groups = report_v4["overview"]["core_metrics"][
+            "matched_completeness"
+        ]["population_groups"]
+        self.assertEqual(
+            ["all_hit", "primary_hit", "secondary_hit"],
+            [item["key"] for item in completeness_groups],
+        )
+        self.assertEqual(1, completeness_groups[0]["candidate_count"])
+        self.assertTrue(completeness_groups[1]["formal"])
+        self.assertEqual(0, completeness_groups[2]["candidate_count"])
+        accuracy_detail = report_v4["overview"]["core_metrics"][
+            "matched_accuracy"
+        ]
+        self.assertIn("70.0000%", accuracy_detail["calculation_expression"])
+        self.assertAlmostEqual(
+            0.7,
+            accuracy_detail["auxiliary_calculation"]["value"],
+        )
+        accuracy_primary_group = next(
+            item
+            for item in accuracy_detail["population_groups"]
+            if item["key"] == "primary_hit"
+        )
+        self.assertEqual("候选人宏平均", accuracy_primary_group["calculation_label"])
+        self.assertAlmostEqual(
+            0.7,
+            accuracy_primary_group["auxiliary_calculation"]["value"],
+        )
+        self.assertEqual(
+            1,
+            report_v4["confidence_metrics"]["all_hit"]["UNKNOWN"],
+        )
+        non_hit_candidate = next(
+            item for item in query_item["candidate_run"]["candidates"]
+            if item["identity"]["judgement"] == "NOT_HIT"
+        )
+        # 非命中资料完整度仍统计姓名是否返回；候选人资料相似度排除
+        # profile_full_name，只保留 Social 冲突 0 分与地点字段 1 分。
+        self.assertEqual(
+            1.0,
+            non_hit_candidate["metrics"]["nonmatched_data_completeness"]["value"],
+        )
+        self.assertEqual(
+            3.0,
+            report_v4["quality_metrics"]["nonmatched_data_completeness"][
+                "numerator"
+            ],
+        )
+        self.assertEqual(
+            3,
+            report_v4["quality_metrics"]["nonmatched_data_completeness"][
+                "denominator"
+            ],
+        )
+        self.assertEqual(
+            0.5,
+            non_hit_candidate["metrics"]["nonmatched_baseline_overlap"]["value"],
+        )
+        self.assertEqual(
+            1.0,
+            report_v4["quality_metrics"]["nonmatched_baseline_overlap"][
+                "numerator"
+            ],
+        )
+        self.assertEqual(
+            2,
+            report_v4["quality_metrics"]["nonmatched_baseline_overlap"][
+                "denominator"
+            ],
+        )
+        similarity_components = report_v4["overview"]["core_metrics"][
+            "nonmatched_baseline_overlap"
+        ]["breakdown"][0]["field_components"]
+        self.assertNotIn(
+            "profile_full_name",
+            {item["field_key"] for item in similarity_components},
+        )
+        self.assertIsNone(report_v4["threshold_assessment"])
+
+        original_execute = self.service.execute_run
+        self.service.execute_run = lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("无成本重处理不得调用检索接口")
+        )
+        try:
+            reprocessed = self.service.reprocess_existing_run(
+                run_id=imported.object_id,
+                schema_version=schema_version,
+                baseline_version="baseline-stage2-v3",
+                process_id="process-stage2-v3-reprocessed",
+            )
+        finally:
+            self.service.execute_run = original_execute
+        self.assertEqual(2, reprocessed.candidate_count)
+        self.assertEqual(
+            raw_count_before,
+            self.store.fetch_one(
+                "SELECT COUNT(*) AS count FROM raw_records WHERE run_id = ?",
+                (imported.object_id,),
+            )["count"],
+        )
+        # 报告创建后，完整明细必须直接固化到 reports.metrics_json；不依赖
+        # 后续页面查询，也不能把原始接口 payload 写入报告快照。
+        single_report = self.service.create_report(
+            candidate_process_id=process.process_id,
+            data_marker="MOCK",
+            report_id="report-stage2-v5-single",
+        )
+        stored_row = self.store.fetch_one(
+            "SELECT metrics_json FROM reports WHERE report_id = ?",
+            (single_report.report_id,),
+        )
+        stored_model = json.loads(stored_row["metrics_json"])
+        stored_candidate = stored_model["query_explorer"]["items"][0][
+            "candidate_run"
+        ]["candidates"][0]
+        self.assertEqual(
+            V5_REPORT_MODEL_VERSION,
+            stored_model["metadata"]["report_model_version"],
+        )
+        self.assertTrue(stored_candidate["references"]["raw_ids"])
+        self.assertNotIn("detail_data_raw", stored_candidate)
+
+    def test_v5_completeness_does_not_require_baseline_compare(self):
+        """完整度开关独立于基准对比，避免字段出现“完整度未生成”。
+
+        功能说明：复现 Summary Web Links 已提取、完整度开启、基准对比关闭
+        的配置组合。候选人有值时完整度为 1，空值时为 0；准确度保持不适用，
+        不会因为没有 Baseline 对比而遗漏整个字段评分。
+
+        返回值：无；断言通过表示两个配置开关的职责被明确隔离。
+        异常说明：字段定义无法通过 v3 校验或评分结构变化时测试失败。
+        """
+
+        definition = next(
+            dict(item)
+            for item in DEFAULT_FIELD_DEFINITIONS_V3
+            if item["field_key"] == "summary_web_links"
+        )
+        definition.update({
+            "baseline_compare_enabled": False,
+            "completeness_enabled": True,
+            "accuracy_enabled": True,
+            "scoring_role": ["completeness", "accuracy"],
+        })
+        definitions = validate_field_definitions([definition])
+        present = _field_comparison_scores_v3(
+            definitions,
+            {"summary_web_links": ["https://example.test/profile"]},
+            {"summary_web_links": False},
+            {"summary_web_links": ["https://baseline.test/profile"]},
+            {"summary_web_links"},
+        )["summary_web_links"]
+        empty = _field_comparison_scores_v3(
+            definitions,
+            {"summary_web_links": []},
+            {"summary_web_links": True},
+            {"summary_web_links": ["https://baseline.test/profile"]},
+            {"summary_web_links"},
+        )["summary_web_links"]
+
+        self.assertEqual(1.0, present["completeness_score"])
+        self.assertIsNone(present["accuracy_score"])
+        self.assertEqual(
+            "BASELINE_COMPARISON_DISABLED", present["reason_code"]
+        )
+        self.assertEqual(0.0, empty["completeness_score"])
+
+
+    def test_stage4_confirmed_no_hit_has_zero_retrieval_and_nonmatched_quality(self):
+        """确认无 HIT 后检索成功率为0，非命中完整度仍正常计算。"""
+
+        scenario = self._build_data_processing_phase0_scenario()
+        process_id = scenario["process_id"]
+        with self.store.transaction() as connection:
+            for index in range(1, 11):
+                connection.execute(
+                    """
+                    UPDATE run_queries SET person_id = ?,
+                        person_id_source = 'MANUAL'
+                    WHERE run_id = 'run-data-processing-phase0'
+                      AND query_id = ?
+                    """,
+                    (
+                        f"person-phase0-{index:02d}",
+                        f"phase0-query-{index:02d}",
+                    ),
+                )
+        for index in range(1, 11):
+            query_id = f"phase0-query-{index:02d}"
+            context = self.service.get_query_classification_context(
+                process_id,
+                query_id,
+            )
+            classifications = [
+                {
+                    "candidate_pk": candidate["candidate_pk"],
+                    "judgement": "NOT_HIT",
+                    "reason": "MANUAL",
+                    "evidence": "阶段4确认非目标人物",
+                }
+                for candidate in context["candidates"]
+                if candidate["detail_status"] == "SUCCESS"
+            ]
+            self.service.save_query_classification(
+                process_id,
+                query_id,
+                classifications,
+                primary_hit_candidate_pk=None,
+                confirm_no_hit=True,
+                reviewer="stage4",
+                review_note="批量确认无命中",
+                expected_versions={
+                    candidate["candidate_pk"]: (
+                        candidate["reviewed_at"] or ""
+                    )
+                    for candidate in context["candidates"]
+                },
+            )
+        metrics = self.service.calculate_process_metrics(process_id)
+        self.assertEqual("READY", metrics["retrieval_success"]["status"])
+        self.assertEqual(0.0, metrics["retrieval_success"]["value"])
+        self.assertEqual(
+            "NOT_APPLICABLE",
+            metrics["matched_completeness"]["status"],
+        )
+        self.assertIn(
+            "NO_HIT_CONFIRMED",
+            metrics["matched_completeness"]["reason_codes"],
+        )
+        self.assertEqual(
+            "READY",
+            metrics["nonmatched_completeness"]["status"],
+        )
+        self.assertEqual(
+            45,
+            metrics["nonmatched_completeness"]["denominator"],
+        )
+
+    def _build_person_link_phase1_scenario(self) -> dict:
+        """创建阶段1人物关联、同名建议、审计和报告过期测试场景。"""
+
+        dataset_path = self.root / "phase1-tasks.jsonl"
+        write_jsonl(
+            dataset_path,
+            [
+                {
+                    "input_id": "query-alice",
+                    "query_stage": "FULL_NAME",
+                    "clues": [
+                        {
+                            "type": "FULL_NAME",
+                            "full_name_query": {
+                                "full_name": " Alice  Example "
+                            },
+                        }
+                    ],
+                    "additional_details": [],
+                },
+                {
+                    "input_id": "query-bob",
+                    "query_stage": "FULL_NAME_SOCIAL",
+                    "clues": [
+                        {"type": "FULL_NAME", "value": "Bob Example"},
+                        {
+                            "type": "SOCIAL_LINK",
+                            "value": "https://social.example.test/bob",
+                        },
+                    ],
+                    "additional_details": [],
+                },
+                {
+                    "input_id": "query-charlie",
+                    "query_stage": "FULL_NAME",
+                    "clues": [
+                        {"type": "FULL_NAME", "value": "Charlie Missing"}
+                    ],
+                    "additional_details": [],
+                },
+            ],
+        )
+        dataset = self.service.import_dataset_jsonl(
+            dataset_path,
+            name="阶段1人物关联 Dataset",
+            dataset_id="dataset-person-links",
+        )
+        baseline_path = self.root / "phase1-baseline.jsonl"
+        write_jsonl(
+            baseline_path,
+            [
+                {
+                    "person_id": "person-alice",
+                    "display_name": "Alice Example",
+                    "fields": {"summary_display_name": "Alice Example"},
+                    "baseline_available_fields": ["summary_display_name"],
+                },
+                {
+                    "person_id": "person-bob-1",
+                    "display_name": "Bob Example",
+                    "fields": {"summary_display_name": "Bob Example"},
+                    "baseline_available_fields": ["summary_display_name"],
+                },
+                {
+                    "person_id": "person-bob-2",
+                    "display_name": "Bob Example",
+                    "fields": {"summary_display_name": "Bob Example"},
+                    "baseline_available_fields": ["summary_display_name"],
+                },
+            ],
+        )
+        baseline = self.service.import_baseline_jsonl(
+            baseline_path,
+            name="阶段1人物关联 Baseline",
+            baseline_version="baseline-person-links",
+        )
+        run_id = self.service.create_execution_run(
+            evaluation_id="eval-import",
+            dataset_id=dataset.object_id,
+            run_label="阶段1人物关联 Run",
+            system_version="phase1",
+            evaluation_phase="PHASE_1_BASELINE",
+            run_id="run-person-links",
+        )
+        with self.store.transaction() as connection:
+            connection.execute(
+                """
+                UPDATE runs SET status = 'COMPLETED'
+                WHERE run_id = ?
+                """,
+                (run_id,),
+            )
+            connection.execute(
+                """
+                INSERT INTO raw_records(
+                    raw_id, run_id, query_id, candidate_pk, stage,
+                    sequence_no, payload_json, collected_at
+                ) VALUES (
+                    'raw-person-link', ?, 'query-alice', NULL,
+                    'Input', 1, '{"frozen":true}', 'now'
+                )
+                """,
+                (run_id,),
+            )
+        schema_version = self.service.ensure_default_field_schema()
+        process = self.service.process_run(
+            run_id=run_id,
+            schema_version=schema_version,
+            baseline_version=baseline.object_id,
+            process_id="process-person-links",
+        )
+        with self.store.transaction() as connection:
+            connection.execute(
+                """
+                INSERT INTO reports(
+                    report_id, evaluation_id, baseline_process_id,
+                    candidate_process_id, report_type, status, metrics_json,
+                    html_file, excel_file, created_at
+                ) VALUES (
+                    'report-person-links', 'eval-import', NULL, ?,
+                    'SINGLE', 'READY', '{}', 'phase1/report.html', NULL, 'now'
+                )
+                """,
+                (process.process_id,),
+            )
+        return {
+            "dataset_id": dataset.object_id,
+            "baseline_version": baseline.object_id,
+            "run_id": run_id,
+            "process_id": process.process_id,
+        }
+
+    def test_stage1_person_link_context_only_suggests_unique_exact_names(self):
+        """唯一规范化姓名可建议；同名和无匹配不自动选中。"""
+
+        scenario = self._build_person_link_phase1_scenario()
+        context = self.service.get_run_person_link_context(
+            scenario["run_id"],
+            scenario["baseline_version"],
+        )
+        queries = {item["query_id"]: item for item in context["queries"]}
+
+        self.assertEqual(
+            {
+                "query_count": 3,
+                "linked_count": 0,
+                "unlinked_count": 3,
+                "invalid_count": 0,
+                "unique_suggestion_count": 1,
+            },
+            context["summary"],
+        )
+        self.assertEqual("Alice Example", queries["query-alice"]["query_name"])
+        self.assertEqual(
+            ["person-alice"],
+            [
+                item["person_id"]
+                for item in queries["query-alice"]["suggestions"]
+            ],
+        )
+        self.assertTrue(queries["query-alice"]["has_unique_suggestion"])
+        self.assertEqual(
+            ["person-bob-1", "person-bob-2"],
+            [
+                item["person_id"]
+                for item in queries["query-bob"]["suggestions"]
+            ],
+        )
+        self.assertFalse(queries["query-bob"]["has_unique_suggestion"])
+        self.assertEqual([], queries["query-charlie"]["suggestions"])
+        self.assertIsNone(queries["query-alice"]["current_person_id"])
+
+    def test_stage1_person_link_update_is_atomic_audited_and_stales_report(self):
+        """批量修改与 Dataset 同步同事务完成，Raw 不变且报告过期。"""
+
+        scenario = self._build_person_link_phase1_scenario()
+        result = self.service.update_run_query_person_links(
+            scenario["run_id"],
+            scenario["baseline_version"],
+            [
+                {
+                    "query_id": "query-alice",
+                    "expected_person_id": None,
+                    "person_id": "person-alice",
+                },
+                {
+                    "query_id": "query-bob",
+                    "expected_person_id": None,
+                    "person_id": "person-bob-1",
+                },
+            ],
+            sync_dataset=True,
+            note="阶段1批量关联",
+        )
+
+        self.assertEqual(2, result["updated_count"])
+        self.assertEqual(2, result["dataset_synced_count"])
+        run_links = {
+            row["query_id"]: (row["person_id"], row["person_id_source"])
+            for row in self.store.fetch_all(
+                """
+                SELECT query_id, person_id, person_id_source
+                FROM run_queries WHERE run_id = ?
+                ORDER BY query_id
+                """,
+                (scenario["run_id"],),
+            )
+        }
+        self.assertEqual(
+            ("person-alice", "MANUAL_RUN"),
+            run_links["query-alice"],
+        )
+        self.assertEqual(
+            ("person-bob-1", "MANUAL_RUN"),
+            run_links["query-bob"],
+        )
+        dataset_link = self.store.fetch_one(
+            """
+            SELECT person_id, person_id_source FROM dataset_queries
+            WHERE dataset_id = ? AND query_id = 'query-alice'
+            """,
+            (scenario["dataset_id"],),
+        )
+        self.assertEqual("person-alice", dataset_link["person_id"])
+        self.assertEqual("MANUAL_DATASET", dataset_link["person_id_source"])
+        history = self.store.fetch_all(
+            """
+            SELECT * FROM run_query_person_history
+            WHERE run_id = ? ORDER BY query_id
+            """,
+            (scenario["run_id"],),
+        )
+        self.assertEqual(2, len(history))
+        self.assertTrue(
+            all(row["change_source"] == "MANUAL_BULK" for row in history)
+        )
+        self.assertTrue(all(row["sync_dataset"] == 1 for row in history))
+        self.assertTrue(all(row["note"] == "阶段1批量关联" for row in history))
+        self.assertEqual(
+            "STALE",
+            self.store.fetch_one(
+                """
+                SELECT status FROM reports
+                WHERE report_id = 'report-person-links'
+                """
+            )["status"],
+        )
+        self.assertEqual(
+            '{"frozen":true}',
+            self.store.fetch_one(
+                """
+                SELECT payload_json FROM raw_records
+                WHERE raw_id = 'raw-person-link'
+                """
+            )["payload_json"],
+        )
+
+    def test_stage1_person_link_clear_conflict_and_batch_failure_are_safe(self):
+        """清除写审计；旧页面冲突和非法批次均不会发生部分更新。"""
+
+        scenario = self._build_person_link_phase1_scenario()
+        self.service.update_run_query_person_links(
+            scenario["run_id"],
+            scenario["baseline_version"],
+            [
+                {
+                    "query_id": "query-alice",
+                    "expected_person_id": None,
+                    "person_id": "person-alice",
+                }
+            ],
+        )
+        self.service.update_run_query_person_links(
+            scenario["run_id"],
+            scenario["baseline_version"],
+            [
+                {
+                    "query_id": "query-alice",
+                    "expected_person_id": "person-alice",
+                    "person_id": "",
+                }
+            ],
+            note="清除错误关联",
+        )
+        cleared = self.store.fetch_one(
+            """
+            SELECT person_id, person_id_source FROM run_queries
+            WHERE run_id = ? AND query_id = 'query-alice'
+            """,
+            (scenario["run_id"],),
+        )
+        self.assertIsNone(cleared["person_id"])
+        self.assertEqual("UNSPECIFIED", cleared["person_id_source"])
+        self.assertEqual(
+            "CLEAR_LINK",
+            self.store.fetch_one(
+                """
+                SELECT change_source FROM run_query_person_history
+                WHERE run_id = ? AND query_id = 'query-alice'
+                ORDER BY changed_at DESC, rowid DESC LIMIT 1
+                """,
+                (scenario["run_id"],),
+            )["change_source"],
+        )
+
+        with self.assertRaisesRegex(
+            PersonLinkValidationError,
+            "query-alice.*已被其他页面修改",
+        ):
+            self.service.update_run_query_person_links(
+                scenario["run_id"],
+                scenario["baseline_version"],
+                [
+                    {
+                        "query_id": "query-alice",
+                        "expected_person_id": "person-alice",
+                        "person_id": "person-bob-1",
+                    }
+                ],
+            )
+        with self.assertRaises(PersonLinkValidationError):
+            self.service.update_run_query_person_links(
+                scenario["run_id"],
+                scenario["baseline_version"],
+                [
+                    {
+                        "query_id": "query-alice",
+                        "expected_person_id": None,
+                        "person_id": "person-alice",
+                    },
+                    {
+                        "query_id": "query-bob",
+                        "expected_person_id": None,
+                        "person_id": "missing-person",
+                    },
+                ],
+            )
+        self.assertIsNone(
+            self.store.fetch_one(
+                """
+                SELECT person_id FROM run_queries
+                WHERE run_id = ? AND query_id = 'query-alice'
+                """,
+                (scenario["run_id"],),
+            )["person_id"]
+        )
 
     def test_dataset_jsonl_import_preview_duplicate_and_atomic_failure(self):
         """Dataset 导入支持预览、SHA 去重，坏记录不会污染事务。"""
@@ -256,6 +1952,12 @@ class AnalysisServiceTests(unittest.TestCase):
             normalize_field_value(urls, "social_url"),
         )
         self.assertEqual(75.0, normalize_field_value(0.75, "percentage"))
+        # Summary 时间字段可能以 Unix 毫秒数返回；trim_text 应保留该标量，
+        # 不能将真实接口响应记录为字段处理错误。
+        self.assertEqual(
+            "1785210772179",
+            normalize_field_value(1785210772179, "trim_text"),
+        )
         self.assertEqual(
             {
                 "Identity": {
@@ -923,8 +2625,7 @@ class AnalysisServiceTests(unittest.TestCase):
             [
                 FlowError("CreateIntentTask", "first query failed"),
                 api_body({"task_id": "task-success"}),
-                api_body({"status": "SUCCEEDED", "candidate_count": 0}),
-                api_body({"items": []}),
+                api_body({"status": "NO_RESULT"}),
             ]
         )
 
@@ -955,6 +2656,75 @@ class AnalysisServiceTests(unittest.TestCase):
                 "SELECT COUNT(*) AS count FROM failures WHERE run_id = ?",
                 (run_id,),
             )["count"],
+        )
+
+    def test_failed_query_can_retry_in_same_run(self):
+        """失败 Query 重跑后仍归属原 Run，且不影响已完成的其他 Query。"""
+
+        source = self.root / "retry-execution-tasks.jsonl"
+        write_jsonl(
+            source,
+            [
+                {
+                    "input_id": "query-retry",
+                    "query_stage": "FULL_NAME",
+                    "clues": [{"type": "FULL_NAME", "value": "Retry"}],
+                },
+                {
+                    "input_id": "query-kept",
+                    "query_stage": "FULL_NAME",
+                    "clues": [{"type": "FULL_NAME", "value": "Kept"}],
+                },
+            ],
+        )
+        self.service.import_dataset_jsonl(
+            source, name="重跑数据集", dataset_id="dataset-retry-execution"
+        )
+        run_id = self.service.create_execution_run(
+            evaluation_id="eval-import",
+            dataset_id="dataset-retry-execution",
+            run_label="candidate",
+            system_version="web-v1",
+            evaluation_phase="PHASE_1_BASELINE",
+            run_id="run-retry-execution",
+        )
+        self.service.execute_run(
+            run_id,
+            FakeExecutionClient(
+                [
+                    FlowError("CreateIntentTask", "first query failed"),
+                    api_body({"task_id": "task-kept"}),
+                    api_body({"status": "NO_RESULT"}),
+                ]
+            ),
+            sleep_fn=lambda _: None,
+        )
+
+        self.service.execute_query_retry(
+            run_id,
+            "query-retry",
+            FakeExecutionClient(
+                [
+                    api_body({"task_id": "task-retry"}),
+                    api_body({"status": "NO_RESULT"}),
+                ]
+            ),
+            sleep_fn=lambda _: None,
+        )
+
+        run = self.store.fetch_one("SELECT * FROM runs WHERE run_id = ?", (run_id,))
+        queries = self.store.fetch_all(
+            "SELECT query_id, status, result_status FROM run_queries WHERE run_id = ? ORDER BY query_id",
+            (run_id,),
+        )
+        self.assertEqual("COMPLETED", run["status"])
+        self.assertEqual((2, 0), (run["success_queries"], run["failed_queries"]))
+        self.assertEqual(
+            [
+                ("query-kept", "NO_CANDIDATE", "NO_CANDIDATES"),
+                ("query-retry", "NO_CANDIDATE", "NO_CANDIDATES"),
+            ],
+            [(row["query_id"], row["status"], row["result_status"]) for row in queries],
         )
 
     def test_only_one_active_execution_and_startup_recovery(self):
@@ -1781,6 +3551,14 @@ class AnalysisServiceTests(unittest.TestCase):
             baseline_version="baseline-metrics-v2",
             process_id="process-metrics-v2",
         )
+        with self.store.transaction() as connection:
+            connection.execute(
+                """
+                UPDATE process_runs SET rule_version = 'field-processing-v2'
+                WHERE process_id = ?
+                """,
+                (process.process_id,),
+            )
         candidate = self.store.fetch_one(
             "SELECT candidate_pk FROM candidates WHERE run_id = ?",
             (imported.object_id,),
@@ -1798,7 +3576,7 @@ class AnalysisServiceTests(unittest.TestCase):
             reviewer="metrics-tester",
             review_note="阶段4可手算测试",
             field_scores=context["field_scores"],
-            expected_reviewed_at="",
+            expected_reviewed_at=context["reviewed_at"],
         )
 
         metrics = self.service.calculate_process_metrics(process.process_id)
@@ -2044,7 +3822,8 @@ class AnalysisServiceTests(unittest.TestCase):
         )
         review_rows = self.store.fetch_all(
             """
-            SELECT c.candidate_id, r.judgement, r.reviewed_at
+            SELECT c.candidate_id, r.judgement, r.reviewed_at,
+                   r.classification_source, r.is_primary_hit
             FROM reviews AS r
             JOIN candidates AS c ON c.candidate_pk = r.candidate_pk
             WHERE r.process_id = ?
@@ -2053,10 +3832,17 @@ class AnalysisServiceTests(unittest.TestCase):
             (process.process_id,),
         )
         self.assertEqual(
-            ["HIT", "NOT_HIT", "PENDING_REVIEW", "SUSPECTED"],
+            ["HIT", "NOT_HIT", "NOT_HIT", "SUSPECTED"],
             [row["judgement"] for row in review_rows],
         )
-        self.assertTrue(all(row["reviewed_at"] is None for row in review_rows))
+        self.assertTrue(all(row["reviewed_at"] is not None for row in review_rows))
+        self.assertTrue(
+            all(row["classification_source"] == "RULE" for row in review_rows)
+        )
+        self.assertEqual(1, review_rows[0]["is_primary_hit"])
+        self.assertTrue(
+            all(not row["is_primary_hit"] for row in review_rows[1:])
+        )
 
         contexts = {}
         for row in self.store.fetch_all(
@@ -2087,7 +3873,7 @@ class AnalysisServiceTests(unittest.TestCase):
             reviewer="tester",
             review_note="人工确认 biography 得分",
             field_scores=match_scores,
-            expected_reviewed_at="",
+            expected_reviewed_at=match_context["reviewed_at"],
         )
         for candidate_id, judgement in (
             ("candidate-conflict", "NOT_HIT"),
@@ -2104,16 +3890,25 @@ class AnalysisServiceTests(unittest.TestCase):
                 reviewer="tester",
                 review_note="阶段5测试复核",
                 field_scores=context["field_scores"],
-                expected_reviewed_at="",
+                expected_reviewed_at=context["reviewed_at"],
             )
 
         metrics = self.service.calculate_process_metrics(process.process_id)
         self.assertTrue(metrics["formal_ready"])
         self.assertEqual(1, metrics["retrieval_success"]["numerator"])
         self.assertEqual(1, metrics["retrieval_success"]["denominator"])
-        self.assertAlmostEqual(2.5 / 3, metrics["matched_completeness"]["value"])
+        # 命中资料完整度仅判断资料是否真实返回，不再受人工填写的
+        # 基准覆盖分影响；三个启用字段均有返回，故为 1.0。
+        self.assertAlmostEqual(1.0, metrics["matched_completeness"]["value"])
         self.assertAlmostEqual(1.0, metrics["matched_accuracy"]["value"])
-        self.assertAlmostEqual(5 / 9, metrics["nonmatched_completeness"]["value"])
+        self.assertAlmostEqual(
+            5 / 9,
+            metrics["nonmatched_data_completeness"]["value"],
+        )
+        self.assertAlmostEqual(
+            1 / 2,
+            metrics["nonmatched_baseline_overlap"]["value"],
+        )
         self.assertEqual("NOT_CONNECTED", metrics["cost_status"]["status"])
         self.assertIsNone(metrics["cost_status"]["llm_cost_total"])
         self.assertIsNone(metrics["cost_status"]["total_cost_total"])
@@ -2258,6 +4053,104 @@ class AnalysisServiceTests(unittest.TestCase):
         self.assertEqual("继续优化", failed["recommendation"])
         self.assertEqual("建议上线", passed["recommendation"])
 
+    def test_stage3_threshold_profiles_are_versioned_reusable_and_archivable(self):
+        """参考线方案不可覆盖、可复用，归档后不可再关联新 Evaluation。"""
+
+        thresholds_v1 = {
+            "FULL_NAME": {
+                "min_retrieval_success": 0.7,
+                "max_average_total_cost": 5,
+            },
+            "FULL_NAME_SOCIAL": {},
+        }
+        profile_v1 = self.service.create_threshold_profile(
+            profile_id="release-standard-v1",
+            name="发布验收参考线",
+            description="首版",
+            version=1,
+            thresholds=thresholds_v1,
+        )
+        profile_v2 = self.service.create_threshold_profile(
+            profile_id="release-standard-v2",
+            name="发布验收参考线",
+            description="第二版",
+            version=2,
+            thresholds={
+                "FULL_NAME": {
+                    "min_retrieval_success": 0.8,
+                },
+                "FULL_NAME_SOCIAL": {
+                    "min_matched_accuracy": 0.9,
+                },
+            },
+            based_on_profile_id=profile_v1["profile_id"],
+        )
+        with self.assertRaises(ReviewValidationError):
+            self.service.create_threshold_profile(
+                profile_id="release-standard-v2-copy",
+                name="发布验收参考线",
+                description="重复版本",
+                version=2,
+                thresholds=thresholds_v1,
+            )
+
+        self.service.assign_evaluation_threshold_profile(
+            "eval-import",
+            profile_v1["profile_id"],
+        )
+        self.service.create_evaluation(
+            evaluation_id="eval-reuse",
+            name="复用评测",
+            notes="",
+            threshold_profile_id=profile_v1["profile_id"],
+        )
+        first = self.store.fetch_one(
+            """
+            SELECT threshold_profile_id, thresholds_json
+            FROM evaluations WHERE evaluation_id = 'eval-import'
+            """
+        )
+        reused = self.store.fetch_one(
+            """
+            SELECT threshold_profile_id, thresholds_json
+            FROM evaluations WHERE evaluation_id = 'eval-reuse'
+            """
+        )
+        self.assertEqual(profile_v1["profile_id"], first["threshold_profile_id"])
+        self.assertEqual(first["thresholds_json"], reused["thresholds_json"])
+
+        self.service.archive_threshold_profile(profile_v2["profile_id"])
+        with self.assertRaises(ReviewValidationError):
+            self.service.assign_evaluation_threshold_profile(
+                "eval-import",
+                profile_v2["profile_id"],
+            )
+        archived = self.store.fetch_one(
+            """
+            SELECT status FROM threshold_profiles WHERE profile_id = ?
+            """,
+            (profile_v2["profile_id"],),
+        )
+        self.assertEqual("ARCHIVED", archived["status"])
+
+        self.service.update_evaluation_thresholds(
+            "eval-import",
+            {"FULL_NAME": {"min_retrieval_success": 0.6}},
+        )
+        custom = self.store.fetch_one(
+            """
+            SELECT threshold_profile_id, thresholds_json
+            FROM evaluations WHERE evaluation_id = 'eval-import'
+            """
+        )
+        self.assertIsNone(custom["threshold_profile_id"])
+        self.assertEqual(
+            0.6,
+            json.loads(custom["thresholds_json"])["FULL_NAME"][
+                "min_retrieval_success"
+            ],
+        )
+
     def test_stage5_process_pairing_uses_person_and_query_stage(self):
         """版本配对要求处理配置一致，并按 person_id + query_stage 分类。"""
 
@@ -2373,7 +4266,7 @@ class AnalysisServiceTests(unittest.TestCase):
                 reviewer="tester",
                 review_note="配对测试",
                 field_scores=context["field_scores"],
-                expected_reviewed_at="",
+                expected_reviewed_at=context["reviewed_at"],
             )
             process_ids.append(process.process_id)
 
@@ -2673,13 +4566,16 @@ class AnalysisServiceTests(unittest.TestCase):
                     reviewer="report-tester",
                     review_note="报告测试",
                     field_scores=context["field_scores"],
-                    expected_reviewed_at="",
+                    expected_reviewed_at=context["reviewed_at"],
                 )
             process_ids.append(process.process_id)
 
-        self.service.update_evaluation_thresholds(
-            "eval-import",
-            {
+        self.service.create_threshold_profile(
+            profile_id="report-threshold-v1",
+            name="报告参考线",
+            description="阶段6报告测试",
+            version=1,
+            thresholds={
                 "FULL_NAME": {
                     "min_retrieval_success": 0.5,
                     "max_average_total_cost": 1,
@@ -2689,6 +4585,10 @@ class AnalysisServiceTests(unittest.TestCase):
                 },
             },
         )
+        self.service.assign_evaluation_threshold_profile(
+            "eval-import",
+            "report-threshold-v1",
+        )
         report = self.service.create_report(
             candidate_process_id=process_ids[1],
             baseline_process_id=process_ids[0],
@@ -2697,8 +4597,20 @@ class AnalysisServiceTests(unittest.TestCase):
         )
         self.assertEqual("COMPARE", report.model["metadata"]["report_type"])
         self.assertEqual(
-            "report-model-v2",
+            "report-model-v3",
             report.model["metadata"]["report_model_version"],
+        )
+        self.assertEqual(
+            "report-threshold-v1",
+            report.model["metadata"]["threshold_profile_id"],
+        )
+        self.assertEqual(
+            "报告参考线",
+            report.model["metadata"]["threshold_profile_name"],
+        )
+        self.assertEqual(
+            1,
+            report.model["metadata"]["threshold_profile_version"],
         )
         self.assertTrue(report.model["summary"]["formal_ready"])
         self.assertEqual(
@@ -2710,6 +4622,12 @@ class AnalysisServiceTests(unittest.TestCase):
             report.model["comparison"]["new_clue"]["query_stage_metrics"][
                 "FULL_NAME_SOCIAL"
             ]["query_count"],
+        )
+        self.assertIn(
+            "reason_codes",
+            report.model["comparison"]["new_clue"]["query_stage_metrics"][
+                "FULL_NAME_SOCIAL"
+            ]["quality_metrics"]["retrieval_success"],
         )
         self.assertEqual(
             1,
@@ -2748,6 +4666,35 @@ class AnalysisServiceTests(unittest.TestCase):
         self.assertEqual(
             report.model,
             json.loads(stored["metrics_json"]),
+        )
+        self.service.create_threshold_profile(
+            profile_id="report-threshold-v2",
+            name="报告参考线",
+            description="后续新报告使用",
+            version=2,
+            thresholds={
+                "FULL_NAME": {
+                    "min_retrieval_success": 0.95,
+                }
+            },
+            based_on_profile_id="report-threshold-v1",
+        )
+        self.service.assign_evaluation_threshold_profile(
+            "eval-import",
+            "report-threshold-v2",
+        )
+        unchanged_report = self.store.fetch_one(
+            """
+            SELECT status, metrics_json FROM reports
+            WHERE report_id = 'report-stage6'
+            """
+        )
+        self.assertEqual("READY", unchanged_report["status"])
+        self.assertEqual(
+            "report-threshold-v1",
+            json.loads(unchanged_report["metrics_json"])["metadata"][
+                "threshold_profile_id"
+            ],
         )
         self.service.update_evaluation_thresholds(
             "eval-import",
@@ -3049,7 +4996,7 @@ class AnalysisServiceTests(unittest.TestCase):
                     reviewer="stage7-tester",
                     review_note="端到端验收",
                     field_scores=context["field_scores"],
-                    expected_reviewed_at="",
+                    expected_reviewed_at=context["reviewed_at"],
                 )
 
         comparison = self.service.compare_processes(
@@ -3086,6 +5033,35 @@ class AnalysisServiceTests(unittest.TestCase):
             data_marker="MOCK",
             report_id="report-stage7-e2e",
         )
+        self.assertTrue(
+            report.model["field_alignment_matrix"]["fields"]
+        )
+        export_records = [
+            json.loads(line)
+            for line in (
+                self.root
+                / "data"
+                / "reports"
+                / "eval-import"
+                / report.report_id
+                / "processed_export.jsonl"
+            ).read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        query_export = next(
+            item for item in export_records
+            if item["record_type"] == "query"
+        )
+        candidate_export = next(
+            item for item in export_records
+            if item["record_type"] == "candidate"
+            and item["detail_status"] == "SUCCESS"
+        )
+        self.assertEqual("MATCHED", query_export["baseline_match_status"])
+        self.assertIn(
+            candidate_export["classification_source"],
+            {"MANUAL", "RULE"},
+        )
         html_path = self.service.save_report_html(
             report.report_id,
             "<!doctype html><meta charset=\"utf-8\">"
@@ -3112,6 +5088,17 @@ class AnalysisServiceTests(unittest.TestCase):
             self.assertIn("同条件对比", workbook.sheetnames)
             self.assertIn("新增线索", workbook.sheetnames)
             self.assertIn("模块字段统计", workbook.sheetnames)
+            self.assertTrue(
+                {
+                    "Report_Summary",
+                    "Query_Person_Links",
+                    "Identity_Classification",
+                    "Field_Matrix",
+                    "Field_Metrics",
+                    "Module_Metrics",
+                    "Not_Ready_Reasons",
+                }.issubset(workbook.sheetnames)
+            )
             self.assertIn("future_label", next(
                 workbook["候选结果"].iter_rows(
                     min_row=1,
@@ -3220,6 +5207,476 @@ class AnalysisServiceTests(unittest.TestCase):
             self.store.db_path.stat().st_size,
             25 * 1024 * 1024,
         )
+
+
+    def test_stage2_reprocess_and_query_classification_without_http(self):
+        """重处理不调用接口，并支持 Query 级主命中、待判定和并发保护。"""
+
+        schema_version = self.service.ensure_default_field_schema()
+        baseline_path = self.root / "stage2-baseline.jsonl"
+        write_jsonl(
+            baseline_path,
+            [{
+                "person_id": "person-stage2",
+                "display_name": "Stage2 Person",
+                "fields": {"social_urls": ["https://example.test/stage2"]},
+                "baseline_available_fields": ["social_urls"],
+            }],
+        )
+        self.service.import_baseline_jsonl(
+            baseline_path,
+            name="阶段2基准",
+            baseline_version="baseline-stage2",
+        )
+        results_path = self.root / "stage2-results.jsonl"
+        records = []
+        for rank, candidate_id, rank_score, detail_status in (
+            (1, "candidate-primary", 0.2, "SUCCESS"),
+            (2, "candidate-secondary", 0.9, "SUCCESS"),
+            (3, "candidate-failed", 0.1, "FAILED"),
+        ):
+            ui_sections = {
+                "social": {
+                    "data": {
+                        "profiles": [
+                            {"url": f"https://example.test/{candidate_id}"}
+                        ]
+                    }
+                }
+            }
+            records.append({
+                "candidate_rank": rank,
+                "candidate_id": candidate_id,
+                "detail_status": detail_status,
+                "detail_error": "" if detail_status == "SUCCESS" else "failed",
+                "rank_score": rank_score,
+                "list_item_raw": {
+                    "candidate_id": candidate_id,
+                    "rank_score": rank_score,
+                },
+                "detail_data_raw": (
+                    {"ui_sections": ui_sections}
+                    if detail_status == "SUCCESS" else {}
+                ),
+                "ui_sections": ui_sections if detail_status == "SUCCESS" else {},
+            })
+        write_jsonl(
+            results_path,
+            [{
+                "result_schema_version": "1.3",
+                "input_id": "query-stage2",
+                "person_id": "person-stage2",
+                "query_stage": "FULL_NAME_SOCIAL",
+                "task_id": "task-stage2",
+                "query_status": "SUCCESS",
+                "results": records,
+            }],
+        )
+        imported = self.service.import_results_jsonl(
+            results_path,
+            evaluation_id="eval-import",
+            run_label="stage2",
+            system_version="v1",
+            run_id="run-stage2",
+        )
+        original = self.service.process_run(
+            run_id=imported.object_id,
+            schema_version=schema_version,
+            baseline_version="baseline-stage2",
+            process_id="process-stage2-original",
+        )
+
+        original_execute_run = self.service.execute_run
+        self.service.execute_run = lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("重处理不允许调用 execute_run")
+        )
+        try:
+            reprocessed = self.service.reprocess_existing_run(
+                run_id=imported.object_id,
+                schema_version=schema_version,
+                baseline_version="baseline-stage2",
+                process_id="process-stage2-new",
+            )
+        finally:
+            self.service.execute_run = original_execute_run
+        self.assertNotEqual(original.process_id, reprocessed.process_id)
+        self.assertEqual(3, reprocessed.candidate_count)
+        automatic_rows = self.store.fetch_all(
+            """
+            SELECT c.candidate_id, rv.classification_source, rv.reviewed_at,
+                   rv.judgement, rv.is_primary_hit
+            FROM reviews AS rv
+            JOIN candidates AS c ON c.candidate_pk = rv.candidate_pk
+            WHERE rv.process_id = ? ORDER BY c.candidate_rank
+            """,
+            (reprocessed.process_id,),
+        )
+        by_candidate_id = {
+            row["candidate_id"]: row for row in automatic_rows
+        }
+        self.assertEqual("RULE", by_candidate_id["candidate-primary"]["classification_source"])
+        self.assertEqual("NOT_HIT", by_candidate_id["candidate-primary"]["judgement"])
+        self.assertIsNotNone(by_candidate_id["candidate-primary"]["reviewed_at"])
+        self.assertEqual("RULE", by_candidate_id["candidate-secondary"]["classification_source"])
+        self.assertIsNone(by_candidate_id["candidate-failed"]["reviewed_at"])
+        self.assertEqual("SUGGESTED", by_candidate_id["candidate-failed"]["classification_source"])
+
+        context = self.service.get_query_classification_context(
+            reprocessed.process_id,
+            "query-stage2",
+        )
+        by_id = {item["candidate_id"]: item for item in context["candidates"]}
+        failed = by_id["candidate-failed"]
+        with self.assertRaises(ReviewValidationError):
+            self.service.save_query_classification(
+                reprocessed.process_id,
+                "query-stage2",
+                classifications=[{
+                    "candidate_pk": failed["candidate_pk"],
+                    "judgement": "HIT",
+                    "reason": "MANUAL",
+                }],
+                primary_hit_candidate_pk=failed["candidate_pk"],
+                confirm_no_hit=False,
+                expected_versions={
+                    item["candidate_pk"]: item["reviewed_at"] or ""
+                    for item in context["candidates"]
+                },
+            )
+
+        primary = by_id["candidate-primary"]
+        secondary = by_id["candidate-secondary"]
+        with self.store.transaction() as connection:
+            connection.execute(
+                """
+                INSERT INTO reports(
+                    report_id, evaluation_id, baseline_process_id,
+                    candidate_process_id, report_type, status, metrics_json,
+                    html_file, excel_file, created_at
+                ) VALUES (
+                    'report-stage2', 'eval-import', NULL, ?,
+                    'SINGLE', 'READY', '{}', 'report.html', NULL, ?
+                )
+                """,
+                (reprocessed.process_id, "2026-07-28T00:00:00+00:00"),
+            )
+        saved = self.service.save_query_classification(
+            reprocessed.process_id,
+            "query-stage2",
+            classifications=[
+                {
+                    "candidate_pk": primary["candidate_pk"],
+                    "judgement": "HIT",
+                    "reason": "MANUAL",
+                    "evidence": "人工确认",
+                },
+                {
+                    "candidate_pk": secondary["candidate_pk"],
+                    "judgement": "HIT",
+                    "reason": "MANUAL",
+                    "evidence": "重复命中",
+                },
+            ],
+            primary_hit_candidate_pk=primary["candidate_pk"],
+            confirm_no_hit=False,
+            reviewer="stage2",
+            review_note="仅确认主命中",
+            expected_versions={
+                item["candidate_pk"]: item["reviewed_at"] or ""
+                for item in context["candidates"]
+            },
+        )
+        self.assertEqual("HIT_CONFIRMED", saved["identity_state"])
+        self.assertEqual(0, saved["pending_count"])
+        primary_flags = self.store.fetch_all(
+            """
+            SELECT c.candidate_id, rv.is_primary_hit
+            FROM reviews AS rv
+            JOIN candidates AS c ON c.candidate_pk = rv.candidate_pk
+            WHERE rv.process_id = ?
+              AND c.candidate_id IN ('candidate-primary', 'candidate-secondary')
+            ORDER BY c.candidate_id
+            """,
+            (reprocessed.process_id,),
+        )
+        self.assertEqual(
+            {"candidate-primary": 0, "candidate-secondary": 1},
+            {row["candidate_id"]: row["is_primary_hit"] for row in primary_flags},
+        )
+        self.assertEqual(
+            "STALE",
+            self.store.fetch_one(
+                "SELECT status FROM reports WHERE report_id = 'report-stage2'"
+            )["status"],
+        )
+        with self.assertRaises(ReviewValidationError):
+            self.service.save_query_classification(
+                reprocessed.process_id,
+                "query-stage2",
+                classifications=[{
+                    "candidate_pk": secondary["candidate_pk"],
+                    "judgement": "NOT_HIT",
+                    "reason": "MANUAL",
+                }],
+                primary_hit_candidate_pk=primary["candidate_pk"],
+                confirm_no_hit=False,
+                expected_versions={primary["candidate_pk"]: ""},
+            )
+
+        refreshed = self.service.get_query_classification_context(
+            reprocessed.process_id,
+            "query-stage2",
+        )
+        versions = {
+            item["candidate_pk"]: item["reviewed_at"] or ""
+            for item in refreshed["candidates"]
+        }
+        no_hit = self.service.save_query_classification(
+            reprocessed.process_id,
+            "query-stage2",
+            classifications=[
+                {
+                    "candidate_pk": primary["candidate_pk"],
+                    "judgement": "NOT_HIT",
+                    "reason": "MANUAL",
+                },
+                {
+                    "candidate_pk": secondary["candidate_pk"],
+                    "judgement": "NOT_HIT",
+                    "reason": "MANUAL",
+                },
+            ],
+            primary_hit_candidate_pk=None,
+            confirm_no_hit=True,
+            expected_versions=versions,
+        )
+        self.assertEqual("NO_HIT_CONFIRMED", no_hit["identity_state"])
+        self.assertEqual(0, no_hit["pending_count"])
+
+    def test_stage3_field_matrix_and_processing_v3_module_semantics(self):
+        """字段矩阵发现冲突，processing-v3 统一 URL 并按模块语义判空。"""
+
+        definitions = [
+            dict(item)
+            for item in DEFAULT_FIELD_DEFINITIONS
+            if item["field_key"] in {
+                "task_id",
+                "photos_status",
+                "photos_data",
+                "social_status",
+                "social_urls",
+                "summary_social_links",
+            }
+        ]
+        for definition in definitions:
+            if definition["field_key"] == "summary_social_links":
+                definition["source_path"] = (
+                    "ui_sections.summary.data.social_links[*].url"
+                )
+                definition["normalizer"] = "social_url"
+                definition["compare_mode"] = "url_set"
+                definition["scoring_role"] = ["completeness", "accuracy"]
+            if definition["field_key"] == "photos_data":
+                definition["scoring_role"] = ["completeness"]
+                definition["compare_mode"] = "manual"
+        schema_version = self.service.publish_field_schema(
+            name="阶段3字段配置",
+            definitions=definitions,
+            schema_version="field-schema-stage3",
+        )
+        baseline_path = self.root / "stage3-baseline.jsonl"
+        write_jsonl(
+            baseline_path,
+            [{
+                "person_id": "person-stage3",
+                "display_name": "Stage3 Person",
+                "fields": {
+                    "social_urls": ["https://x.com/stage3"],
+                    "summary_social_links": ["https://x.com/stage3"],
+                    "baseline_only_field": "prepared",
+                },
+                "baseline_available_fields": [
+                    "social_urls",
+                    "summary_social_links",
+                    "baseline_only_field",
+                ],
+            }],
+        )
+        self.service.import_baseline_jsonl(
+            baseline_path,
+            name="阶段3基准",
+            baseline_version="baseline-stage3",
+        )
+        before = self.service.build_field_comparison_matrix(
+            schema_version,
+            "baseline-stage3",
+        )
+        before_by_key = {
+            item["field_key"]: item for item in before["fields"]
+        }
+        self.assertEqual(
+            "BASELINE_ENABLED_NOT_EXTRACTED",
+            before_by_key["baseline_only_field"]["status"],
+        )
+        self.assertTrue(
+            any(
+                issue["field_key"] == "baseline_only_field"
+                and issue["severity"] == "ERROR"
+                for issue in self.service.validate_process_field_alignment(
+                    schema_version,
+                    "baseline-stage3",
+                )
+            )
+        )
+
+        results_path = self.root / "stage3-results.jsonl"
+        ui_sections = {
+            "photos": {
+                "status": "empty",
+                "data": {"count": 0, "image_urls": []},
+            },
+            "social": {
+                "status": "data",
+                "data": {
+                    "profiles": [{
+                        "url": "https://x.com/stage3/",
+                        "platform": "x",
+                    }]
+                },
+            },
+            "summary": {
+                "data": {
+                    "social_links": [{
+                        "platform": "x",
+                        "url": "https://x.com/stage3/",
+                    }]
+                }
+            },
+        }
+        write_jsonl(
+            results_path,
+            [{
+                "result_schema_version": "1.3",
+                "input_id": "query-stage3",
+                "person_id": "person-stage3",
+                "query_stage": "FULL_NAME_SOCIAL",
+                "task_id": "task-stage3",
+                "query_status": "SUCCESS",
+                "results": [{
+                    "candidate_rank": 1,
+                    "candidate_id": "candidate-stage3",
+                    "detail_status": "SUCCESS",
+                    "detail_error": "",
+                    "list_item_raw": {"candidate_id": "candidate-stage3"},
+                    "detail_data_raw": {"ui_sections": ui_sections},
+                    "ui_sections": ui_sections,
+                }],
+            }],
+        )
+        imported = self.service.import_results_jsonl(
+            results_path,
+            evaluation_id="eval-import",
+            run_label="stage3",
+            system_version="v3",
+            run_id="run-stage3",
+        )
+        process = self.service.process_run(
+            run_id=imported.object_id,
+            schema_version=schema_version,
+            baseline_version="baseline-stage3",
+            process_id="process-stage3",
+        )
+        self.assertEqual(
+            "field-processing-v4",
+            self.store.fetch_one(
+                "SELECT rule_version FROM process_runs WHERE process_id = ?",
+                (process.process_id,),
+            )["rule_version"],
+        )
+        candidate = self.store.fetch_one(
+            """
+            SELECT pc.* FROM processed_candidates AS pc
+            WHERE pc.process_id = ?
+            """,
+            (process.process_id,),
+        )
+        fields = json.loads(candidate["fields_json"])
+        empty_fields = json.loads(candidate["empty_fields_json"])
+        self.assertEqual(
+            ["https://twitter.com/stage3"],
+            fields["summary_social_links"],
+        )
+        self.assertTrue(empty_fields["photos_data"])
+        after = self.service.build_field_comparison_matrix(
+            schema_version,
+            "baseline-stage3",
+            process_id=process.process_id,
+        )
+        after_by_key = {item["field_key"]: item for item in after["fields"]}
+        self.assertEqual(
+            1.0,
+            after_by_key["summary_social_links"]["candidate_return_rate"],
+        )
+        self.assertEqual(
+            "COMPARABLE",
+            after_by_key["summary_social_links"]["status"],
+        )
+
+    def test_stage3_field_matrix_handles_500_fields_without_n_plus_one(self):
+        """500字段矩阵在固定查询次数下完成，验证首版规模基础。"""
+
+        definitions = [
+            {
+                "field_key": f"field_{index:03d}",
+                "display_name": f"Field {index:03d}",
+                "module": "Summary",
+                "source_stage": "GetTaskCandidateDetail",
+                "source_path": f"ui_sections.summary.data.field_{index:03d}",
+                "data_type": "string",
+                "array_mode": "preserve",
+                "empty_rule": "default",
+                "normalizer": "trim_text",
+                "scoring_role": ["completeness"],
+                "compare_mode": "normalized_text",
+                "enabled": True,
+                "sort_order": index,
+                "value_scope": "CANDIDATE",
+                "missing_policy": "EMPTY",
+            }
+            for index in range(500)
+        ]
+        self.service.publish_field_schema(
+            name="阶段3 500字段配置",
+            definitions=definitions,
+            schema_version="field-schema-stage3-500",
+        )
+        baseline_path = self.root / "stage3-500-baseline.jsonl"
+        write_jsonl(
+            baseline_path,
+            [{
+                "person_id": "person-stage3-500",
+                "display_name": "Scale Person",
+                "fields": {
+                    f"field_{index:03d}": f"value-{index}"
+                    for index in range(500)
+                },
+                "baseline_available_fields": [
+                    f"field_{index:03d}" for index in range(500)
+                ],
+            }],
+        )
+        self.service.import_baseline_jsonl(
+            baseline_path,
+            name="阶段3 500字段基准",
+            baseline_version="baseline-stage3-500",
+        )
+        started_at = time.monotonic()
+        matrix = self.service.build_field_comparison_matrix(
+            "field-schema-stage3-500",
+            "baseline-stage3-500",
+        )
+        self.assertEqual(500, len(matrix["fields"]))
+        self.assertLess(time.monotonic() - started_at, 2)
 
 
 if __name__ == "__main__":

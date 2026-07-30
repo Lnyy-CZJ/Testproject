@@ -13,6 +13,7 @@ import sys
 import tempfile
 import unittest
 import zipfile
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -576,6 +577,7 @@ class ResultToExcelTests(unittest.TestCase):
                         "scope": "CANDIDATE",
                         "stage": "GetTaskCandidateDetail",
                         "error": "timeout",
+                        "created_at": "2026-07-24T00:00:00Z",
                     },
                 ],
             )
@@ -590,6 +592,7 @@ class ResultToExcelTests(unittest.TestCase):
                             "metrics_rule_version": "metrics-v2",
                             "evaluation_phase": "PHASE_2_POST_OPTIMIZATION",
                             "candidate_system_version": "v-next",
+                            "generated_at": "2026-07-24T00:00:00+00:00",
                         },
                         "summary": {"formal_ready": True},
                         "result_status_metrics": {
@@ -850,6 +853,52 @@ class ResultToExcelTests(unittest.TestCase):
                 self.assertIs(query_record["pdl_called"], False)
                 self.assertEqual(1250, query_record["search_duration_ms"])
 
+                candidate_rows = list(
+                    workbook["候选结果"].iter_rows(values_only=False)
+                )
+                candidate_headers = [cell.value for cell in candidate_rows[0]]
+                reviewed_at_index = candidate_headers.index("reviewed_at")
+                reviewed_at_cell = candidate_rows[1][reviewed_at_index]
+                self.assertEqual(
+                    datetime(2026, 7, 24, 8, 0, 0),
+                    reviewed_at_cell.value,
+                )
+                self.assertEqual(
+                    "yyyy-mm-dd hh:mm:ss",
+                    reviewed_at_cell.number_format,
+                )
+
+                failure_rows = list(
+                    workbook["失败记录"].iter_rows(values_only=False)
+                )
+                failure_headers = [cell.value for cell in failure_rows[0]]
+                failure_created_at = failure_rows[1][
+                    failure_headers.index("created_at")
+                ]
+                self.assertEqual(
+                    datetime(2026, 7, 24, 8, 0, 0),
+                    failure_created_at.value,
+                )
+                self.assertEqual(
+                    "yyyy-mm-dd hh:mm:ss",
+                    failure_created_at.number_format,
+                )
+
+                note_rows = list(workbook["说明"].iter_rows(values_only=False))
+                generated_at_cell = next(
+                    row[1]
+                    for row in note_rows[1:]
+                    if row[0].value == "生成时间"
+                )
+                self.assertEqual(
+                    datetime(2026, 7, 24, 8, 0, 0),
+                    generated_at_cell.value,
+                )
+                self.assertEqual(
+                    "yyyy-mm-dd hh:mm:ss",
+                    generated_at_cell.number_format,
+                )
+
                 core_rows = list(
                     workbook["核心指标"].iter_rows(values_only=True)
                 )
@@ -949,6 +998,223 @@ class ResultToExcelTests(unittest.TestCase):
         self.assertIsNone(retrieval["value"])
         self.assertEqual(0.0, retrieval["preview_value"])
 
+    def test_processed_mode_exports_report_model_v3_audit_sheets(self):
+        """ReportModel v3 导出人物关联、身份归类、字段矩阵和原因 Sheet。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            processed_path = root / "processed_export.jsonl"
+            report_model_path = root / "report_model.json"
+            output_path = root / "report-v3.xlsx"
+            model_path = root / "model.json"
+            write_jsonl(
+                processed_path,
+                [
+                    {
+                        "record_type": "query",
+                        "run_id": "run-v3",
+                        "query_id": "query-v3",
+                        "person_id": "person-v3",
+                        "person_id_source": "MANUAL",
+                        "baseline_display_name": "Example Person",
+                        "baseline_match_status": "MATCHED",
+                        "query_stage": "FULL_NAME",
+                        "result_status": "HAS_CANDIDATES",
+                        "identity_state": "PENDING",
+                        "formal_ready": False,
+                    },
+                    {
+                        "record_type": "candidate",
+                        "process_id": "process-v3",
+                        "run_id": "run-v3",
+                        "query_id": "query-v3",
+                        "person_id": "person-v3",
+                        "candidate_pk": "candidate-pk-v3",
+                        "candidate_id": "candidate-v3",
+                        "candidate_rank": 1,
+                        "detail_status": "SUCCESS",
+                        "judgement": "PENDING_REVIEW",
+                        "classification_source": "SUGGESTED",
+                        "is_primary_hit": False,
+                        "fields": {"summary_name": "Example Person"},
+                        "empty_fields": {"summary_name": False},
+                        "field_scores": {},
+                        "processing_errors": [],
+                    },
+                ],
+            )
+            report_model_path.write_text(
+                json.dumps(
+                    {
+                        "metadata": {
+                            "report_id": "report-v3",
+                            "evaluation_id": "eval-v3",
+                            "report_type": "SINGLE",
+                            "report_model_version": "report-model-v3",
+                            "metrics_rule_version": "metrics-v3",
+                            "generated_at": "2026-07-28T00:00:00+00:00",
+                        },
+                        "summary": {"formal_ready": False},
+                        "execution_summary": {
+                            "query_count": 1,
+                            "has_candidates_count": 1,
+                            "no_candidates_count": 0,
+                            "execution_failed_count": 0,
+                            "detail_success_count": 1,
+                            "detail_failure_count": 0,
+                        },
+                        "identity_summary": {
+                            "query_count": 1,
+                            "classified_query_count": 0,
+                            "pending_query_count": 1,
+                            "primary_hit_query_count": 0,
+                            "no_hit_query_count": 0,
+                        },
+                        "quality_metrics": {
+                            "retrieval_success": {
+                                "status": "NOT_READY",
+                                "value": None,
+                                "preview_value": None,
+                                "numerator": 0,
+                                "denominator": 0,
+                                "reason_codes": ["IDENTITY_PENDING"],
+                                "reasons": ["query-v3 有1个候选人待身份归类"],
+                            }
+                        },
+                        "field_alignment_matrix": {
+                            "schema_version": "schema-v3",
+                            "baseline_version": "baseline-v3",
+                            "fields": [
+                                {
+                                    "field_key": "summary_name",
+                                    "display_name": "Summary Name",
+                                    "module": "Summary",
+                                    "value_scope": "CANDIDATE",
+                                    "enabled": True,
+                                    "baseline_available_count": 1,
+                                    "baseline_person_count": 1,
+                                    "candidate_nonempty_count": 1,
+                                    "candidate_count": 1,
+                                    "candidate_return_rate": 1.0,
+                                    "completeness_enabled": True,
+                                    "accuracy_enabled": True,
+                                    "identity_enabled": True,
+                                    "compare_mode": "exact",
+                                    "normalizer": "trim_text",
+                                    "status": "COMPARABLE",
+                                    "issues": [],
+                                }
+                            ],
+                        },
+                        "field_metrics": {
+                            "task_id": {
+                                "field_key": "task_id",
+                                "display_name": "Task ID",
+                                "module": "Task",
+                                "value_scope": "QUERY",
+                                "returned_count": 1,
+                                "empty_count": 0,
+                                "entity_count": 1,
+                                "return_rate": 1.0,
+                                "status": "READY",
+                                "reason_codes": [],
+                                "reasons": [],
+                            },
+                            "summary_name": {
+                                "field_key": "summary_name",
+                                "display_name": "Summary Name",
+                                "module": "Summary",
+                                "value_scope": "CANDIDATE",
+                                "returned_count": 1,
+                                "empty_count": 0,
+                                "entity_count": 1,
+                                "return_rate": 1.0,
+                                "status": "READY",
+                                "reason_codes": [],
+                                "reasons": [],
+                            },
+                        },
+                        "module_metrics": {
+                            "Summary": {
+                                "module": "Summary",
+                                "data_count": 1,
+                                "empty_count": 0,
+                                "unknown_count": 0,
+                                "candidate_count": 1,
+                                "data_rate": 1.0,
+                                "status": "READY",
+                                "reason_codes": [],
+                                "reasons": [],
+                            }
+                        },
+                        "not_ready_reasons": [
+                            {
+                                "metric": "retrieval_success",
+                                "reason_code": "IDENTITY_PENDING",
+                                "reason": "候选人身份归类尚未完成",
+                                "details": ["query-v3 有1个候选人待身份归类"],
+                            }
+                        ],
+                        "comparison": {},
+                        "warnings": [],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            self.run_exporter(
+                [
+                    "processed",
+                    "--input-file",
+                    str(processed_path),
+                    "--report-model",
+                    str(report_model_path),
+                    "--output",
+                    str(output_path),
+                ],
+                model_path,
+                create_workbook=True,
+            )
+
+            model = json.loads(model_path.read_text(encoding="utf-8"))
+            self.assertEqual("QUERY", model["fieldMetricRows"][0]["value_scope"])
+            self.assertEqual(
+                "IDENTITY_PENDING",
+                model["notReadyReasonRows"][0]["reason_code"],
+            )
+            workbook = load_workbook(output_path, read_only=True, data_only=True)
+            try:
+                self.assertTrue(
+                    {
+                        "Report_Summary",
+                        "Query_Person_Links",
+                        "Identity_Classification",
+                        "Field_Matrix",
+                        "Field_Metrics",
+                        "Module_Metrics",
+                        "Not_Ready_Reasons",
+                        "候选结果",
+                    }.issubset(workbook.sheetnames)
+                )
+                field_rows = list(
+                    workbook["Field_Metrics"].iter_rows(values_only=True)
+                )
+                field_headers = field_rows[0]
+                task_row = dict(zip(field_headers, field_rows[1]))
+                self.assertEqual("QUERY", task_row["value_scope"])
+                self.assertEqual(1.0, task_row["return_rate"])
+                reason_rows = list(
+                    workbook["Not_Ready_Reasons"].iter_rows(
+                        values_only=True
+                    )
+                )
+                self.assertEqual(
+                    "IDENTITY_PENDING",
+                    reason_rows[1][reason_rows[0].index("reason_code")],
+                )
+            finally:
+                workbook.close()
+
     def test_long_json_is_split_and_reconstructable(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -1006,6 +1272,94 @@ class ResultToExcelTests(unittest.TestCase):
                     "[超长内容见 Raw数据] RAW:"
                 )
             )
+
+    def test_report_model_v5_exports_quality_comparison_and_rule_sheets(self):
+        """v5 Excel 兼容导出质量、字段对比和规则快照审计 Sheet。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            processed_path = root / "processed.jsonl"
+            report_model_path = root / "report-model.json"
+            output_path = root / "report.xlsx"
+            model_path = root / "model.json"
+            write_jsonl(processed_path, [{
+                "record_type": "candidate",
+                "query_id": "query-v4",
+                "person_id": "person-v4",
+                "candidate_pk": "candidate-pk-v4",
+                "candidate_id": "candidate-v4",
+                "is_primary_hit": True,
+                "fields": {"summary_display_name": "Example Person"},
+                "field_scores": {
+                    "summary_display_name": {
+                        "baseline_field_key": "summary_display_name",
+                        "baseline_value": "Example Person",
+                        "returned_value": "Example Person",
+                        "baseline_available": True,
+                        "returned_nonempty": True,
+                        "completeness_score": 1.0,
+                        "accuracy_score": 1.0,
+                        "comparison_status": "READY",
+                        "reason_code": "EXACT_MATCH",
+                    }
+                },
+                "processing_errors": [],
+            }])
+            report_model_path.write_text(json.dumps({
+                "metadata": {
+                    "report_model_version": "report-model-v5",
+                    "metrics_rule_version": "metrics-v4",
+                    "rule_version": "field-processing-v5",
+                    "schema_version": "field-schema-v3",
+                    "baseline_version": "baseline-v4",
+                    "candidate_process_id": "process-v4",
+                },
+                "baseline_quality_metrics": {
+                    "modules": {
+                        module: {
+                            "completeness": {"status": "READY", "value": 1.0, "numerator": 1.0, "denominator": 1},
+                            "accuracy": {"status": "NOT_APPLICABLE", "numerator": 0, "denominator": 0},
+                        }
+                        for module in ["Insights", "Photos", "Profile", "Social", "Summary"]
+                    },
+                },
+                "non_hit_data_return": {"modules": {}},
+                "regression_metrics": {"status": "NOT_APPLICABLE"},
+                "field_metrics": {
+                    "summary_display_name": {
+                        "display_name": "Summary Display Name",
+                        "module": "Summary",
+                        "value_scope": "CANDIDATE",
+                        "returned_count": 1,
+                        "empty_count": 0,
+                        "entity_count": 1,
+                        "return_rate": 1.0,
+                        "status": "READY",
+                    }
+                },
+                "module_metrics": {}, "quality_metrics": {},
+                "result_status_metrics": {}, "grouped_metrics": [],
+                "warnings": [],
+            }, ensure_ascii=False), encoding="utf-8")
+            self.run_exporter([
+                "processed", "--input-file", str(processed_path),
+                "--report-model", str(report_model_path),
+                "--output", str(output_path),
+            ], model_path, create_workbook=True)
+            workbook = load_workbook(output_path, read_only=True, data_only=True)
+            try:
+                self.assertTrue({
+                    "Core Metrics", "Module Quality", "Field Comparison",
+                    "Field Returns", "Rule Snapshot",
+                }.issubset(workbook.sheetnames))
+                comparison_rows = list(workbook["Field Comparison"].iter_rows(values_only=True))
+                row = dict(zip(comparison_rows[0], comparison_rows[1]))
+                self.assertEqual("summary_display_name", row["field_key"])
+                self.assertEqual(1, row["accuracy_score"])
+                rule_rows = list(workbook["Rule Snapshot"].iter_rows(values_only=True))
+                self.assertIn(("report", "metrics_rule_version", "metrics-v4"), rule_rows)
+            finally:
+                workbook.close()
 
 
 if __name__ == "__main__":

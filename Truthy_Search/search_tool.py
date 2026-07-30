@@ -679,6 +679,7 @@ def process_one(
 
         get_task_history: list[dict[str, Any]] = []
         task_data: dict[str, Any] = {}
+        no_result = False
         for poll_sequence in range(1, client.config.max_poll_count + 1):
             sleep_fn(client.config.poll_interval_seconds)
             task_body, task_raw = call_and_record(
@@ -699,7 +700,7 @@ def process_one(
                     else "任务未完成，继续轮询"
                 ),
             )
-            if status == "SUCCEEDED":
+            if status in {"SUCCEEDED", "NO_RESULT"}:
                 total_value = task_data.get("candidate_count")
                 if (
                     isinstance(total_value, int)
@@ -707,12 +708,59 @@ def process_one(
                     and total_value >= 0
                 ):
                     candidate_count_total = total_value
+                if status == "NO_RESULT":
+                    # NO_RESULT 是接口定义的终态：无需再请求候选列表或详情。
+                    no_result = True
+                    candidate_count_total = 0
                 break
             # QUEUED 和 SEARCHING 都表示任务尚未完成，继续下一轮 GetTask 轮询。
             if status not in {"QUEUED", "SEARCHING"}:
                 raise FlowError("GetTask", f"未知任务状态: {status!r}", task_id)
         else:
             raise FlowError("GetTask", "任务轮询超时", task_id)
+
+        # 仅 GetTask 的 NO_RESULT 终态明确表示没有候选人；SUCCEEDED 即使
+        # candidate_count 为 0，仍需通过 ListTaskCandidates 取得实际结果。
+        # NO_RESULT 时 List 与详情请求不会产生新信息，
+        # 因此直接结束本 Query，避免为批量运行产生无意义的接口成本。
+        if no_result:
+            result = {
+                "result_schema_version": RESULT_SCHEMA_VERSION,
+                "run_id": effective_run_id,
+                "input_id": input_id,
+                "task_id": task_id,
+                "query_stage": query_stage,
+                "query_status": "NO_CANDIDATE",
+                "result_status": "NO_CANDIDATES",
+                "candidate_count_total": 0,
+                "candidate_count_listed": 0,
+                "detail_success_count": 0,
+                "detail_failure_count": 0,
+                "task_fields": {
+                    "llm_cost": sanitize_raw(task_data.get("llm_cost")),
+                    "third_party_cost": sanitize_raw(task_data.get("third_party_cost")),
+                    "total_cost": sanitize_raw(task_data.get("total_cost")),
+                    "pdl_called": sanitize_raw(task_data.get("pdl_called")),
+                    "search_duration_ms": sanitize_raw(
+                        task_data.get("search_duration_ms")
+                    ),
+                },
+                "raw": {
+                    "create_intent_task": raw_payload(create_raw),
+                    "get_task_history": get_task_history,
+                },
+                "results": [],
+            }
+            emit_progress(
+                "query_succeeded",
+                stage="Completed",
+                status="NO_CANDIDATE",
+                candidate_count=0,
+                detail_success_count=0,
+                detail_failure_count=0,
+                message="GetTask 确认无候选人，未请求候选列表和详情",
+            )
+            return result
 
         # 分页字段当前仅为接口预留；固定放大 page_size，接收全部候选人。
         list_params = {

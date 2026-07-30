@@ -9,10 +9,11 @@
     <span>/</span><span>#{{ candidate.candidate_rank }}</span>
   </div>
   <div class="page-heading split">
-    <div>
+    <div class="candidate-title">
       <p class="eyebrow">Candidate #{{ candidate.candidate_rank }}</p>
-      <h1>{{ candidate.candidate_id or '缺失 candidate_id' }}</h1>
-      <p>rank_score {{ candidate.rank_score if candidate.rank_score is not none else '未返回' }} · {{ candidate.system_version }}</p>
+      <h1>{{ candidate_view.display_name }}</h1>
+      <p>{{ candidate_view.headline }} · {{ candidate_view.location }}</p>
+      <small class="mono">{{ candidate.candidate_id or '缺失 candidate_id' }}</small>
     </div>
     <span class="status large {{ candidate.detail_status|status_class }}">{{ candidate.detail_status }}</span>
   </div>
@@ -21,17 +22,56 @@
     <div class="error-list"><p>{{ candidate.detail_error }}</p></div>
   {% endif %}
 
+  <section class="candidate-overview">
+    <article class="panel candidate-score-card">
+      <p class="eyebrow">Retrieval snapshot</p>
+      <dl class="candidate-score-list">
+        <div><dt>候选排名</dt><dd>#{{ candidate.candidate_rank }}</dd></div>
+        <div><dt>Rank score</dt><dd>{{ candidate.rank_score if candidate.rank_score is not none else '—' }}</dd></div>
+        <div><dt>Confidence</dt><dd>{{ candidate_view.confidence }}</dd></div>
+        <div><dt>Match score</dt><dd>{{ candidate_view.match_score if candidate_view.match_score is not none else '—' }}</dd></div>
+      </dl>
+      {% if candidate_view.match_reasons %}
+        <div class="tag-row">
+          {% for reason in candidate_view.match_reasons %}<span class="tag">{{ reason }}</span>{% endfor %}
+        </div>
+      {% endif %}
+      {% if candidate_view.profile_url %}
+        <a class="button secondary small" href="{{ candidate_view.profile_url }}" target="_blank" rel="noopener noreferrer">打开主资料页</a>
+      {% endif %}
+    </article>
+    {% set social_profiles = ui_sections.get('social', {}).get('data', {}).get('profiles', []) if ui_sections.get('social') is mapping else [] %}
+    <article class="panel candidate-social-card">
+      <p class="eyebrow">Social profiles</p>
+      <h2>社交账号</h2>
+      {% if social_profiles %}
+        <div class="social-profile-list">
+          {% for profile in social_profiles %}
+            {% if profile is mapping and profile.get('url') %}
+              <a href="{{ profile.url }}" target="_blank" rel="noopener noreferrer">
+                <strong>{{ profile.get('platform', 'social') }}</strong><span>{{ profile.get('display_handle') or profile.get('username') or profile.url }}</span>
+              </a>
+            {% endif %}
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="empty-value">当前响应未返回社交账号</p>
+      {% endif %}
+    </article>
+  </section>
+
   {% if processed %}
     <section class="section-head">
       <div>
         <p class="eyebrow">Processed Fields</p>
-        <h2>结构化字段</h2>
+        <h2>结构化字段与评分</h2>
       </div>
       <a class="count mono" href="{{ url_for('process_detail', process_id=processed.process_id) }}">
         {{ processed.schema_name }} · {{ processed.schema_version }}
       </a>
     </section>
-    <article class="panel">
+    <details class="panel candidate-disclosure" open>
+      <summary>查看结构化字段（{{ processed.fields|length }} 项）</summary>
       {% if processed.fields %}
         <dl class="data-list processed-fields">
           {% for field_key, value in processed.fields.items() %}
@@ -42,7 +82,29 @@
                 <small class="mono">{{ field_key }}</small>
               </dt>
               <dd>
-                {{ render_value(value, field_key) }}
+                {% if field_key == 'profile_sections' and value is mapping %}
+                  <div class="profile-section-grid processed-profile-sections">
+                    {% for section_name, section_fields in value.items() %}
+                      <section class="profile-section-card">
+                        <h3>{{ section_name }}</h3>
+                        {% if section_fields is mapping and section_fields %}
+                          <dl>
+                            {% for label, profile_value in section_fields.items() %}
+                              <div>
+                                <dt>{{ label }}</dt>
+                                <dd>{{ render_value(profile_value, field_key ~ '.' ~ section_name ~ '.' ~ label) }}</dd>
+                              </div>
+                            {% endfor %}
+                          </dl>
+                        {% else %}
+                          <p class="empty-value">该分组未返回资料</p>
+                        {% endif %}
+                      </section>
+                    {% endfor %}
+                  </div>
+                {% else %}
+                  {{ render_value(value, field_key) }}
+                {% endif %}
                 {% if processed.empty_fields.get(field_key) %}
                   <span class="status neutral">EMPTY</span>
                 {% endif %}
@@ -61,7 +123,7 @@
           {% endfor %}
         </div>
       {% endif %}
-    </article>
+    </details>
   {% else %}
     <div class="inline-note processing-note">当前候选人还没有字段处理结果，可从 Run 页面选择字段配置启动处理。</div>
   {% endif %}
@@ -97,7 +159,7 @@
           <label>
             <span>判定原因</span>
             <select name="reason" required>
-              {% for value in ['SOCIAL_MATCH', 'SOCIAL_CONFLICT', 'NO_STRONG_FIELD', 'MANUAL'] %}
+              {% for value in ['SOCIAL_MATCH', 'SOCIAL_CONFLICT', 'PHOTO_MATCH', 'PHOTO_BELOW_THRESHOLD', 'NO_STRONG_FIELD', 'MANUAL'] %}
                 <option value="{{ value }}" {% if review.reason == value %}selected{% endif %}>{{ value }}</option>
               {% endfor %}
             </select>
@@ -109,18 +171,35 @@
         </div>
 
         {% if review.field_scores %}
+          <section class="baseline-comparison {% if review.is_primary_hit %}primary-hit-comparison{% endif %}">
+            <div class="section-head compact">
+              <div><p class="eyebrow">Baseline Comparison</p><h3>基准人物资料对比</h3></div>
+              {% if review.is_primary_hit %}
+                <span class="status success">PRIMARY HIT</span>
+              {% else %}
+                <span class="status neutral">REFERENCE ONLY</span>
+              {% endif %}
+            </div>
+            {% if not review.is_primary_hit %}
+              <p class="inline-note">该候选人不是当前 Query 的主命中，字段值可查看和复核，但不会进入正式基准资料指标。</p>
+            {% endif %}
           <div class="table-wrap">
             <table>
               <thead>
-                <tr><th>字段</th><th>基准值</th><th>返回值</th><th>完整度</th><th>准确率</th><th>字段说明</th></tr>
+                <tr><th>字段</th><th>基准值</th><th>候选值</th><th>完整度</th><th>准确率</th><th>状态 / 说明</th></tr>
               </thead>
               <tbody>
                 {% for field_key, score in review.field_scores.items() %}
+                  {# Profile Data 与 Profile Sections 都是容器字段：前者是原始
+                     响应，后者用于页面分组展示和发现原子字段。它们不应作为
+                     基准人物资料的整块对比项，否则结构差异会挤压表格并污染
+                     完整度/准确度；正式对比使用其下的原子 Profile 字段。 #}
+                  {% if field_key not in ['profile_data', 'profile_sections'] %}
                   {% set definition = review.definitions.get(field_key, {}) %}
                   <tr>
-                    <td>{{ definition.get('display_name', field_key) }}<small class="mono">{{ field_key }} · {{ score.compare_mode }}</small></td>
-                    <td>{{ render_value(review.baseline_fields.get(field_key), 'baseline.' ~ field_key) }}</td>
-                    <td>{{ render_value(review.fields.get(field_key), 'returned.' ~ field_key) }}</td>
+                    <td>{{ definition.get('display_name', field_key) }}<small class="mono">{{ field_key }} · {{ score.baseline_field_key or field_key }} · {{ score.compare_mode }}</small></td>
+                    <td>{{ render_value(score.baseline_value if score.baseline_value is defined else review.baseline_fields.get(score.baseline_field_key or field_key), 'baseline.' ~ (score.baseline_field_key or field_key)) }}</td>
+                    <td>{{ render_value(score.returned_value if score.returned_value is defined else review.fields.get(field_key), 'returned.' ~ field_key) }}</td>
                     <td>
                       <input type="number" min="0" max="1" step="0.01"
                              name="completeness__{{ field_key }}"
@@ -133,12 +212,14 @@
                              value="{{ score.accuracy_score if score.accuracy_score is not none else '' }}"
                              placeholder="N/A">
                     </td>
-                    <td><input name="field_note__{{ field_key }}" value="{{ score.review_note }}" placeholder="{{ score.comparison_error or '可选' }}"></td>
+                    <td><span class="status {{ (score.comparison_status or 'READY')|status_class }}">{% if score.reason_code == 'BASELINE_COMPARISON_DISABLED' %}未启用基准对比{% else %}{{ score.reason_code or score.comparison_status or 'READY' }}{% endif %}</span><input name="field_note__{{ field_key }}" value="{{ score.review_note }}" placeholder="{{ score.comparison_error or '可选' }}"></td>
                   </tr>
+                  {% endif %}
                 {% endfor %}
               </tbody>
             </table>
           </div>
+          </section>
         {% endif %}
         <label>
           <span>复核说明{% if review.is_final %}（修改已有复核时建议说明原因）{% endif %}</span>
@@ -147,24 +228,50 @@
         <button class="button primary" type="submit">保存最终复核</button>
       </form>
       {% if review.reviewed_at %}
-        <p class="muted">最后复核：{{ review.reviewer or '未填写复核人' }} · {{ review.reviewed_at }}</p>
+        <p class="muted">最后复核：{{ review.reviewer or '未填写复核人' }} · {{ review.reviewed_at|format_datetime }}</p>
       {% endif %}
     </article>
   {% endif %}
 
-  <div class="module-grid">
+  <section class="section-head"><div><p class="eyebrow">Response modules</p><h2>接口返回资料</h2></div></section>
+  <div class="module-grid candidate-module-grid">
     {% for module_name in ['summary', 'profile', 'social', 'photos', 'insights'] %}
-      <article class="panel module-panel">
-        <div class="panel-head">
-          <p class="eyebrow">{{ module_name }}</p>
-          <h2>{{ module_name|capitalize }}</h2>
-        </div>
+      <details class="panel module-panel candidate-module" {% if module_name in ['summary', 'profile', 'social'] %}open{% endif %}>
+        <summary><span><span class="eyebrow">{{ module_name }}</span><strong>{{ module_name|capitalize }}</strong></span><span class="status neutral">{{ ui_sections.get(module_name, {}).get('status', '未返回') if ui_sections.get(module_name) is mapping else '未返回' }}</span></summary>
         {% if module_name in ui_sections %}
-          {{ render_value(ui_sections[module_name], 'ui_sections.' ~ module_name) }}
+          {% if module_name == 'profile' and ui_sections[module_name] is mapping %}
+            {% set profile_sections = ui_sections[module_name].get('data', {}).get('sections', []) if ui_sections[module_name].get('data') is mapping else [] %}
+            {% if profile_sections %}
+              <div class="profile-section-grid">
+                {% for section in profile_sections if section is mapping %}
+                  <section class="profile-section-card">
+                    <h3>{{ section.get('title') or '未命名分组' }}</h3>
+                    {% set profile_items = section.get('items', []) %}
+                    {% if profile_items %}
+                      <dl>
+                        {% for item in profile_items if item is mapping %}
+                          <div>
+                            <dt>{{ item.get('label') or '未命名字段' }}</dt>
+                            <dd>{{ render_value(item.get('value'), 'ui_sections.profile.' ~ loop.index0) }}</dd>
+                          </div>
+                        {% endfor %}
+                      </dl>
+                    {% else %}
+                      <p class="empty-value">该分组未返回资料</p>
+                    {% endif %}
+                  </section>
+                {% endfor %}
+              </div>
+            {% else %}
+              <p class="empty-value">当前响应未返回 Profile 分组资料</p>
+            {% endif %}
+          {% else %}
+            {{ render_value(ui_sections[module_name], 'ui_sections.' ~ module_name) }}
+          {% endif %}
         {% else %}
           <p class="empty-value">当前响应未返回该模块</p>
         {% endif %}
-      </article>
+      </details>
     {% endfor %}
   </div>
 

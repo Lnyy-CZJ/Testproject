@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+{% block title %}Query 人物关联 · {{ run.run_label }}{% endblock %}
+{% block content %}
+  <div class="breadcrumbs">
+    <a href="{{ url_for('run_detail', run_id=run.run_id) }}">{{ run.run_label }}</a>
+    <span>/</span><span>Query 人物关联</span>
+  </div>
+
+  <div class="page-heading split">
+    <div>
+      <p class="eyebrow mono">{{ run.run_id }}</p>
+      <h1>Query 人物关联</h1>
+      <p>将每条 Query 关联到目标 Baseline Person；这里不判断候选人是否命中。</p>
+    </div>
+    <span class="status large {{ run.status|status_class }}">{{ run.status }}</span>
+  </div>
+
+  <form class="filter-bar" method="get">
+    <select name="baseline_version" required>
+      {% for baseline in baseline_sets %}
+        <option value="{{ baseline.baseline_version }}"
+                {% if context and context.baseline.baseline_version == baseline.baseline_version %}selected{% endif %}>
+          {{ baseline.name }} · {{ baseline.baseline_version }} · {{ baseline.person_count }}人
+        </option>
+      {% endfor %}
+    </select>
+    <input type="search" name="q" value="{{ filters.q }}" placeholder="搜索 Query、姓名或 person_id">
+    <select name="status">
+      <option value="">全部关联状态</option>
+      {% for value, label in [
+        ('unlinked', '未关联'),
+        ('linked', '已关联'),
+        ('invalid', '无效关联'),
+        ('unique', '唯一建议'),
+        ('multiple', '同名多匹配')
+      ] %}
+        <option value="{{ value }}" {% if filters.status == value %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <button class="button primary" type="submit">查看</button>
+  </form>
+
+  {% if not context %}
+    <section class="empty-state">
+      <h2>还没有可用 Baseline</h2>
+      <p>请先导入 Baseline，再管理 Query 人物关联。</p>
+      <a class="button primary" href="{{ url_for('baselines') }}">前往基准数据</a>
+    </section>
+  {% else %}
+    <div class="metric-strip five">
+      <div><span>Query 总数</span><strong>{{ context.summary.query_count }}</strong></div>
+      <div><span>已关联</span><strong>{{ context.summary.linked_count }}</strong></div>
+      <div><span>未关联</span><strong>{{ context.summary.unlinked_count }}</strong></div>
+      <div><span>无效关联</span><strong>{{ context.summary.invalid_count }}</strong></div>
+      <div><span>唯一建议</span><strong>{{ context.summary.unique_suggestion_count }}</strong></div>
+    </div>
+
+    {% if not context.editable %}
+      <div class="notice warning">
+        Run 正在等待或执行，当前只能查看关联，执行结束后才能保存。
+      </div>
+    {% endif %}
+
+    <form class="person-link-workbench"
+          method="post"
+          action="{{ url_for('run_person_links', run_id=run.run_id) }}"
+          data-person-link-workbench>
+      <input type="hidden" name="baseline_version" value="{{ context.baseline.baseline_version }}">
+      <div class="person-link-toolbar">
+        <div>
+          <strong>{{ context.baseline.name }}</strong>
+          <span class="mono">{{ context.baseline.baseline_version }}</span>
+        </div>
+        <button class="button secondary" type="button" data-adopt-unique>
+          采用当前列表中的唯一建议
+        </button>
+      </div>
+
+      <div class="table-wrap">
+        <table class="person-link-table">
+          <thead>
+            <tr>
+              <th>Query / 目标姓名</th>
+              <th>当前关联</th>
+              <th>精确建议</th>
+              <th>选择 Baseline Person</th>
+              <th>来源 / 历史</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for query in context.queries %}
+              <tr data-person-link-row
+                  data-unique-person-id="{% if query.has_unique_suggestion %}{{ query.suggestions[0].person_id }}{% endif %}">
+                <td>
+                  <a class="mono"
+                     href="{{ url_for('query_detail', run_id=run.run_id, query_id=query.query_id) }}">
+                    {{ query.query_id }}
+                  </a>
+                  <strong>{{ query.query_name or '无法从输入提取姓名' }}</strong>
+                  <small>{{ query.query_stage or '—' }}{% if query.social_link %} · {{ query.social_link }}{% endif %}</small>
+                </td>
+                <td>
+                  {% if query.current_person_id and query.current_baseline_exists %}
+                    <span class="status success">已关联</span>
+                    <span class="mono">{{ query.current_person_id }}</span>
+                  {% elif query.current_person_id %}
+                    <span class="status danger">关联对象不存在</span>
+                    <span class="mono">{{ query.current_person_id }}</span>
+                  {% else %}
+                    <span class="status neutral">未关联</span>
+                  {% endif %}
+                </td>
+                <td>
+                  {% if query.has_unique_suggestion %}
+                    <span class="status success">唯一精确建议</span>
+                    <strong>{{ query.suggestions[0].display_name }}</strong>
+                    <small class="mono">{{ query.suggestions[0].person_id }}</small>
+                  {% elif query.suggestions %}
+                    <span class="status active">同名 {{ query.suggestions|length }} 人</span>
+                    <ul class="compact-list">
+                      {% for suggestion in query.suggestions %}
+                        <li>{{ suggestion.display_name }} <span class="mono">{{ suggestion.person_id }}</span></li>
+                      {% endfor %}
+                    </ul>
+                  {% else %}
+                    <span class="muted">无精确建议，请手动选择</span>
+                  {% endif %}
+                </td>
+                <td>
+                  <input type="hidden"
+                         name="expected_person_id__{{ query.query_id }}"
+                         value="{{ query.current_person_id or '' }}">
+                  <select name="person_id__{{ query.query_id }}"
+                          {% if not context.editable %}disabled{% endif %}>
+                    <option value="">保持未关联 / 清除关联</option>
+                    {% for person in context.baseline_people %}
+                      <option value="{{ person.person_id }}"
+                              {% if query.current_person_id == person.person_id %}selected{% endif %}>
+                        {{ person.display_name }} · {{ person.person_id }}
+                      </option>
+                    {% endfor %}
+                  </select>
+                </td>
+                <td>
+                  <span>{{ query.current_source }}</span>
+                  <small>{{ query.history_count }}次修改</small>
+                </td>
+              </tr>
+            {% else %}
+              <tr><td colspan="5" class="empty-cell">当前筛选没有匹配的 Query</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="person-link-savebar">
+        <label>
+          <span>修改说明</span>
+          <input name="note" maxlength="1000" placeholder="例如：按测试基准逐条确认">
+        </label>
+        <label class="checkbox-label">
+          <input type="checkbox" name="sync_dataset" value="1"
+                 {% if not run.dataset_id %}disabled{% endif %}>
+          <span>同步到 Dataset，供后续 Run 继承</span>
+        </label>
+        <button class="button primary" type="submit"
+                {% if not context.editable or not context.queries %}disabled{% endif %}>
+          保存人物关联
+        </button>
+      </div>
+    </form>
+  {% endif %}
+{% endblock %}

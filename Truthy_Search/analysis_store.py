@@ -1,16 +1,17 @@
-"""searchTool v1.3 SQLite Schema v2、版本迁移、连接和事务管理。"""
+"""searchTool v1.3 SQLite Schema v4、版本迁移、连接和事务管理。"""
 
 from __future__ import annotations
 
 import json
 import sqlite3
+import warnings
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator, Sequence
 
 
-DB_SCHEMA_VERSION = 2
+DB_SCHEMA_VERSION = 4
 
 
 class UnsupportedSchemaError(RuntimeError):
@@ -18,11 +19,26 @@ class UnsupportedSchemaError(RuntimeError):
 
 
 SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS threshold_profiles (
+    profile_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    version INTEGER NOT NULL,
+    thresholds_json TEXT NOT NULL,
+    based_on_profile_id TEXT,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE(name, version),
+    FOREIGN KEY (based_on_profile_id)
+        REFERENCES threshold_profiles(profile_id)
+);
+
 CREATE TABLE IF NOT EXISTS evaluations (
     evaluation_id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     notes TEXT NOT NULL DEFAULT '',
     thresholds_json TEXT NOT NULL DEFAULT '{}',
+    threshold_profile_id TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -41,6 +57,7 @@ CREATE TABLE IF NOT EXISTS dataset_queries (
     dataset_id TEXT NOT NULL,
     query_id TEXT NOT NULL,
     person_id TEXT,
+    person_id_source TEXT NOT NULL DEFAULT 'UNSPECIFIED',
     query_stage TEXT NOT NULL,
     match_strategy TEXT NOT NULL DEFAULT 'UNION',
     clues_json TEXT NOT NULL,
@@ -78,6 +95,7 @@ CREATE TABLE IF NOT EXISTS run_queries (
     run_id TEXT NOT NULL,
     query_id TEXT NOT NULL,
     person_id TEXT,
+    person_id_source TEXT NOT NULL DEFAULT 'UNSPECIFIED',
     query_stage TEXT,
     task_id TEXT,
     status TEXT NOT NULL,
@@ -174,6 +192,23 @@ CREATE TABLE IF NOT EXISTS baseline_people (
         REFERENCES baseline_sets(baseline_version) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS run_query_person_history (
+    history_id TEXT PRIMARY KEY,
+    run_id TEXT NOT NULL,
+    query_id TEXT NOT NULL,
+    baseline_version TEXT NOT NULL,
+    old_person_id TEXT,
+    new_person_id TEXT,
+    change_source TEXT NOT NULL,
+    sync_dataset INTEGER NOT NULL DEFAULT 0,
+    note TEXT NOT NULL DEFAULT '',
+    changed_at TEXT NOT NULL,
+    FOREIGN KEY (run_id, query_id)
+        REFERENCES run_queries(run_id, query_id) ON DELETE CASCADE,
+    FOREIGN KEY (baseline_version)
+        REFERENCES baseline_sets(baseline_version)
+);
+
 CREATE TABLE IF NOT EXISTS process_runs (
     process_id TEXT PRIMARY KEY,
     run_id TEXT NOT NULL,
@@ -225,6 +260,8 @@ CREATE TABLE IF NOT EXISTS reviews (
     reviewer TEXT,
     review_note TEXT,
     reviewed_at TEXT,
+    classification_source TEXT NOT NULL DEFAULT 'SUGGESTED',
+    is_primary_hit INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (process_id, candidate_pk),
     FOREIGN KEY (process_id, candidate_pk)
         REFERENCES processed_candidates(process_id, candidate_pk) ON DELETE CASCADE
@@ -262,6 +299,8 @@ CREATE INDEX IF NOT EXISTS idx_processed_queries_process_status
     ON processed_queries(process_id, result_status);
 CREATE INDEX IF NOT EXISTS idx_reviews_process_judgement
     ON reviews(process_id, judgement);
+CREATE INDEX IF NOT EXISTS idx_person_history_run_query
+    ON run_query_person_history(run_id, query_id, changed_at);
 """
 
 
@@ -275,8 +314,8 @@ class AnalysisStore:
     """管理单个 searchTool SQLite 数据库。
 
     功能说明:
-        统一设置外键、WAL 和 busy timeout，提供幂等 Schema v2 初始化、
-        v1到v2事务迁移、显式事务以及少量通用只读查询。
+        统一设置外键、WAL 和 busy timeout，提供幂等 Schema v4 初始化、
+        v1到v4连续事务迁移、显式事务以及少量通用只读查询。
         业务导入逻辑不放在本类中。
     """
 
@@ -536,14 +575,184 @@ class AnalysisStore:
             UPDATE schema_info SET value = ?
             WHERE key = 'schema_version'
             """,
+            ("2",),
+        )
+
+    @classmethod
+    def _migrate_v2_to_v3(cls, connection: sqlite3.Connection) -> None:
+        """在同一事务内增加版本化参考线方案和 Evaluation 方案标识。
+
+        历史 ``thresholds_json`` 不做解析或重写；新增关联列默认为空，
+        因而旧 Evaluation 明确保持“历史自定义参考线”语义。
+        """
+
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS threshold_profiles (
+                profile_id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                version INTEGER NOT NULL,
+                thresholds_json TEXT NOT NULL,
+                based_on_profile_id TEXT,
+                status TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                UNIQUE(name, version),
+                FOREIGN KEY (based_on_profile_id)
+                    REFERENCES threshold_profiles(profile_id)
+            )
+            """
+        )
+        cls._add_column_if_missing(
+            connection,
+            "evaluations",
+            "threshold_profile_id",
+            "threshold_profile_id TEXT",
+        )
+        cls._execute_schema_sql(connection)
+        connection.execute(
+            """
+            UPDATE schema_info SET value = ?
+            WHERE key = 'schema_version'
+            """,
+            ("3",),
+        )
+
+    @classmethod
+    def _migrate_v3_to_v4(cls, connection: sqlite3.Connection) -> None:
+        """在单个事务内升级人物关联和身份归类结构。
+
+        功能说明:
+            为 Dataset/Run Query 增加人物来源，为 Review 增加最终分类来源
+            和主要命中标记，并建立人物关联审计表。历史已复核 HIT 按同一
+            Process、Query 的最小候选排名选出唯一主要命中。
+
+        参数说明:
+            connection: 已开启写事务且 schema_version 为3的连接。
+
+        返回值:
+            无；成功后把 schema_info 更新为4。
+
+        异常说明:
+            任一 DDL 或历史数据迁移失败时原样抛出，由外层事务回滚全部
+            v4 变更。历史同 Query 多个最终 HIT 会发出 RuntimeWarning，
+            但仍按排名最小者完成兼容迁移。
+        """
+
+        cls._add_column_if_missing(
+            connection,
+            "dataset_queries",
+            "person_id_source",
+            "person_id_source TEXT NOT NULL DEFAULT 'UNSPECIFIED'",
+        )
+        cls._add_column_if_missing(
+            connection,
+            "run_queries",
+            "person_id_source",
+            "person_id_source TEXT NOT NULL DEFAULT 'UNSPECIFIED'",
+        )
+        cls._add_column_if_missing(
+            connection,
+            "reviews",
+            "classification_source",
+            "classification_source TEXT NOT NULL DEFAULT 'SUGGESTED'",
+        )
+        cls._add_column_if_missing(
+            connection,
+            "reviews",
+            "is_primary_hit",
+            "is_primary_hit INTEGER NOT NULL DEFAULT 0",
+        )
+        cls._execute_schema_sql(connection)
+
+        connection.execute(
+            """
+            UPDATE dataset_queries
+            SET person_id_source = CASE
+                WHEN person_id IS NULL OR TRIM(person_id) = ''
+                    THEN 'UNSPECIFIED'
+                ELSE 'INPUT'
+            END
+            """
+        )
+        connection.execute(
+            """
+            UPDATE run_queries
+            SET person_id_source = CASE
+                WHEN person_id IS NULL OR TRIM(person_id) = ''
+                    THEN 'UNSPECIFIED'
+                ELSE 'DATASET'
+            END
+            """
+        )
+        connection.execute(
+            """
+            UPDATE reviews
+            SET classification_source = CASE
+                    WHEN reviewed_at IS NULL THEN 'SUGGESTED'
+                    ELSE 'MANUAL'
+                END,
+                is_primary_hit = 0
+            """
+        )
+        duplicate_hit_queries = connection.execute(
+            """
+            SELECT r.process_id, c.run_id, c.query_id, COUNT(*) AS hit_count
+            FROM reviews AS r
+            JOIN candidates AS c ON c.candidate_pk = r.candidate_pk
+            WHERE r.reviewed_at IS NOT NULL AND r.judgement = 'HIT'
+            GROUP BY r.process_id, c.run_id, c.query_id
+            HAVING COUNT(*) > 1
+            ORDER BY r.process_id, c.run_id, c.query_id
+            """
+        ).fetchall()
+        if duplicate_hit_queries:
+            examples = ", ".join(
+                f"{row['process_id']}/{row['query_id']}={row['hit_count']}"
+                for row in duplicate_hit_queries[:5]
+            )
+            warnings.warn(
+                "Schema v4 迁移发现同一 Query 存在多个历史最终 HIT，"
+                f"已按 candidate_rank 最小者设为主要命中: {examples}",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+        primary_hits = connection.execute(
+            """
+            SELECT r.process_id, r.candidate_pk, c.run_id, c.query_id
+            FROM reviews AS r
+            JOIN candidates AS c ON c.candidate_pk = r.candidate_pk
+            WHERE r.reviewed_at IS NOT NULL AND r.judgement = 'HIT'
+            ORDER BY r.process_id, c.run_id, c.query_id,
+                     c.candidate_rank, c.candidate_pk
+            """
+        ).fetchall()
+        seen_queries: set[tuple[str, str, str]] = set()
+        for row in primary_hits:
+            key = (row["process_id"], row["run_id"], row["query_id"])
+            if key in seen_queries:
+                continue
+            seen_queries.add(key)
+            connection.execute(
+                """
+                UPDATE reviews SET is_primary_hit = 1
+                WHERE process_id = ? AND candidate_pk = ?
+                """,
+                (row["process_id"], row["candidate_pk"]),
+            )
+        connection.execute(
+            """
+            UPDATE schema_info SET value = ?
+            WHERE key = 'schema_version'
+            """,
             (str(DB_SCHEMA_VERSION),),
         )
 
     def initialize(self) -> None:
-        """幂等初始化 Schema v2，并事务迁移 Schema v1。
+        """幂等初始化 Schema v4，并在单事务内连续迁移旧版本。
 
         异常说明:
-            UnsupportedSchemaError: 数据库版本无效、高于2或低于1。
+            UnsupportedSchemaError: 数据库版本无效、高于4或低于1。
             sqlite3.Error: 建表或迁移失败，且迁移事务已经回滚。
         """
 
@@ -580,6 +789,12 @@ class AnalysisStore:
                 )
             if current_version == 1:
                 self._migrate_v1_to_v2(connection)
+                current_version = 2
+            if current_version == 2:
+                self._migrate_v2_to_v3(connection)
+                current_version = 3
+            if current_version == 3:
+                self._migrate_v3_to_v4(connection)
                 return
             self._execute_schema_sql(connection)
 
@@ -619,6 +834,7 @@ class AnalysisStore:
         name: str,
         notes: str = "",
         thresholds: dict[str, object] | None = None,
+        threshold_profile_id: str | None = None,
     ) -> None:
         """创建一个评测容器，供后续 Run 导入引用。
 
@@ -627,6 +843,7 @@ class AnalysisStore:
             name: 非空评测名称。
             notes: 可选说明。
             thresholds: 已由业务层校验的可选参考线对象。
+            threshold_profile_id: 可选的版本化参考线方案标识。
 
         异常说明:
             ValueError: 标识或名称为空。
@@ -641,8 +858,8 @@ class AnalysisStore:
                 """
                 INSERT INTO evaluations(
                     evaluation_id, name, notes, thresholds_json,
-                    created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?)
+                    threshold_profile_id, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     evaluation_id,
@@ -653,6 +870,7 @@ class AnalysisStore:
                         ensure_ascii=False,
                         separators=(",", ":"),
                     ),
+                    threshold_profile_id,
                     now,
                     now,
                 ),

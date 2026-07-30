@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}报告中心 · Truthy Search{% endblock %}
+{% block content %}
+  <section class="page-heading split">
+    <div>
+      <p class="eyebrow">Report Center</p>
+      <h1>报告中心</h1>
+      <p>集中查看每次评测生成的不可变报告快照。筛选和列表只读取报告摘要，不重新计算历史指标。</p>
+    </div>
+    <a class="button primary" href="{{ url_for('index') }}">返回评测中心</a>
+  </section>
+
+  <form class="filter-bar report-filter" method="get">
+    <label>
+      <span>Evaluation</span>
+      <select name="evaluation_id">
+        <option value="">全部 Evaluation</option>
+        {% for evaluation in evaluations %}
+          <option value="{{ evaluation.evaluation_id }}" {% if filters.evaluation_id == evaluation.evaluation_id %}selected{% endif %}>{{ evaluation.name }} · {{ evaluation.evaluation_id }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      <span>系统版本</span>
+      <input name="system_version" value="{{ filters.system_version }}" placeholder="输入版本关键词">
+    </label>
+    <label>
+      <span>报告类型</span>
+      <select name="report_type">
+        <option value="">全部类型</option>
+        {% for report_type in report_types %}
+          <option value="{{ report_type }}" {% if filters.report_type == report_type %}selected{% endif %}>{{ report_type }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      <span>状态</span>
+      <select name="status">
+        <option value="">全部状态</option>
+        {% for status in report_statuses %}
+          <option value="{{ status }}" {% if filters.status == status %}selected{% endif %}>{{ status }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <div class="filter-actions">
+      <button class="button primary" type="submit">筛选</button>
+      <a class="button secondary" href="{{ url_for('reports') }}">重置</a>
+    </div>
+  </form>
+
+  <section class="section-head">
+    <div>
+      <p class="eyebrow">Snapshots</p>
+      <h2>全部报告</h2>
+    </div>
+    <span class="count">{{ total }} 份</span>
+  </section>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>报告</th><th>Evaluation</th><th>系统版本 / 阶段</th><th>类型</th><th>状态</th><th>生成时间</th><th>产物</th></tr>
+      </thead>
+      <tbody>
+        {% for report in reports %}
+          <tr class="report-row">
+            <td><a class="mono" href="{{ url_for('report_detail', report_id=report.report_id) }}">{{ report.report_id }}</a></td>
+            <td><a href="{{ url_for('evaluation_detail', evaluation_id=report.evaluation_id) }}">{{ report.evaluation_name }}</a><small class="mono">{{ report.evaluation_id }}</small></td>
+            <td class="mono">{{ report.system_version }}<small>{{ report.evaluation_phase }}</small></td>
+            <td>{{ report.report_type }}</td>
+            <td>
+              <span class="status {{ report.status|status_class }}">{{ report.status }}</span>
+              {% if report.status == 'STALE' %}
+                <small>数据或复核已变化，历史快照仍可查看</small>
+              {% elif report.status == 'FAILED' %}
+                <small>报告文件生成失败</small>
+              {% endif %}
+            </td>
+            <td>{{ report.created_at|format_datetime }}</td>
+            <td>
+              <a href="{{ url_for('report_detail', report_id=report.report_id) }}">查看</a>
+              {% if report.html_available %}
+                · <a href="{{ url_for('download_run_file', file_type='report-html', run_id=report.report_id) }}">HTML</a>
+              {% endif %}
+              {% if report.excel_available %}
+                · <a href="{{ url_for('download_run_file', file_type='report-excel', run_id=report.report_id) }}">Excel</a>
+              {% endif %}
+              {% if not report.html_available and not report.excel_available %}
+                <small>暂无可下载文件</small>
+              {% endif %}
+            </td>
+          </tr>
+        {% else %}
+          <tr><td class="empty-cell" colspan="7">没有符合当前筛选条件的报告。</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% set pages = ((total + per_page - 1) // per_page) %}
+  {% if pages > 1 %}
+    <nav class="pagination" aria-label="报告分页">
+      {% for number in range(1, pages + 1) %}
+        <a class="{% if number == page %}current{% endif %}" href="{{ url_for('reports', evaluation_id=filters.evaluation_id, system_version=filters.system_version, report_type=filters.report_type, status=filters.status, page=number) }}">{{ number }}</a>
+      {% endfor %}
+    </nav>
+  {% endif %}
+{% endblock %}

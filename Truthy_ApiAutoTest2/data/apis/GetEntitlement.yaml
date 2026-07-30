@@ -1,0 +1,5 @@
+id: GetEntitlement
+name: 获取当前订阅权益
+request:
+  service_name: tool.subscription.SubscriptionService
+  method_name: GetEntitlement

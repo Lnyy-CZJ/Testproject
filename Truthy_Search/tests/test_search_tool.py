@@ -441,14 +441,15 @@ class SearchToolTests(unittest.TestCase):
         self.assertEqual({"page_size": 100, "page_token": ""}, list_params["page"])
 
     def test_process_one_searching_continues_polling_until_succeeded(self):
-        """验证 SEARCHING 状态继续轮询，成功后再请求候选人列表。"""
+        """验证 SEARCHING 后转为 SUCCEEDED 会继续获取候选列表和详情。"""
 
         session = FakeSession(
             [
                 api_body({"task_id": "task-searching"}),
                 api_body({"status": "SEARCHING"}),
-                api_body({"status": "SUCCEEDED", "candidate_count": 0}),
-                api_body({"items": []}),
+                api_body({"status": "SUCCEEDED", "candidate_count": 1}),
+                api_body({"items": [{"candidate_id": "candidate-searching"}]}),
+                api_body({"ui_sections": {}}),
             ]
         )
         client = SearchClient(config(), session)
@@ -466,15 +467,48 @@ class SearchToolTests(unittest.TestCase):
         )
 
         self.assertEqual([5, 5], sleeps)
+        self.assertEqual("SUCCESS", result["query_status"])
+        self.assertEqual("HAS_CANDIDATES", result["result_status"])
+        self.assertEqual(1, result["candidate_count_total"])
+        self.assertEqual(1, result["candidate_count_listed"])
+        methods = [call[1]["json"]["requests"][0]["method_name"] for call in session.calls]
+        self.assertEqual(
+            [
+                "CreateIntentTask",
+                "GetTask",
+                "GetTask",
+                "ListTaskCandidates",
+                "GetTaskCandidateDetail",
+            ],
+            methods,
+        )
+
+    def test_process_one_no_result_skips_list_and_detail_requests(self):
+        """验证 GetTask 的 NO_RESULT 是唯一跳过后续接口的无候选人终态。"""
+
+        session = FakeSession(
+            [
+                api_body({"task_id": "task-no-result"}),
+                api_body({"status": "NO_RESULT", "candidate_count": 9}),
+            ]
+        )
+        result = process_one(
+            {
+                "input_id": "case-no-result",
+                "match_strategy": "UNION",
+                "clues": [{"type": "FULL_NAME"}],
+                "additional_details": [],
+            },
+            SearchClient(config(), session),
+            sleep_fn=lambda _: None,
+        )
+
         self.assertEqual("NO_CANDIDATE", result["query_status"])
         self.assertEqual("NO_CANDIDATES", result["result_status"])
         self.assertEqual(0, result["candidate_count_total"])
         self.assertEqual(0, result["candidate_count_listed"])
         methods = [call[1]["json"]["requests"][0]["method_name"] for call in session.calls]
-        self.assertEqual(
-            ["CreateIntentTask", "GetTask", "GetTask", "ListTaskCandidates"],
-            methods,
-        )
+        self.assertEqual(["CreateIntentTask", "GetTask"], methods)
 
     def test_requests_details_for_every_listed_candidate(self):
         """验证 List 返回多少名候选人，就请求多少次候选人详情。"""

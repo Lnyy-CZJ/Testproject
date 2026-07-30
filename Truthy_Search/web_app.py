@@ -11,9 +11,11 @@ import tempfile
 import threading
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlparse
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from dotenv import dotenv_values
 from flask import (
@@ -39,6 +41,7 @@ from analysis_service import (
     EVALUATION_THRESHOLD_FIELDS,
     FieldSchemaValidationError,
     ImportValidationError,
+    PersonLinkValidationError,
     RESULT_STATUSES,
     ReviewValidationError,
     SUPPORTED_QUERY_STAGES,
@@ -67,6 +70,10 @@ QUERY_STATUSES = {
 }
 QUERY_STAGES = {"FULL_NAME", "FULL_NAME_SOCIAL"}
 ALLOWED_UPLOAD_SUFFIXES = {".jsonl", ".json", ".xlsx"}
+REPORT_TYPES = {"SINGLE", "COMPARE"}
+REPORT_STATUSES = {"READY", "STALE", "FAILED"}
+DEFAULT_DISPLAY_TIMEZONE = "Asia/Shanghai"
+DISPLAY_TIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 
 def _project_path(value: str | Path) -> Path:
@@ -114,6 +121,44 @@ def _boolean_value(value: Any, default: bool = False) -> bool:
     if normalized in {"0", "false", "no", "off"}:
         return False
     return default
+
+
+def _format_datetime(
+    value: Any,
+    display_timezone: ZoneInfo,
+    empty_text: str = "—",
+) -> str:
+    """把存储时间转换为统一的用户可见时间。
+
+    功能说明:
+        支持 ISO 8601、结尾 ``Z`` 和历史无时区值；无时区值按 UTC 解释，
+        再转换到配置的展示时区并移除微秒。
+
+    参数说明:
+        value: 数据库或报告快照中的时间；空值使用 ``empty_text``。
+        display_timezone: 已校验的 IANA 展示时区。
+        empty_text: 页面针对空时间使用的提示文案。
+
+    返回值:
+        格式为 ``YYYY-MM-DD HH:mm:ss`` 的字符串。非法历史值保留原文，
+        避免单条脏数据导致整个页面返回 500。
+    """
+
+    if value in (None, ""):
+        return empty_text
+    if isinstance(value, datetime):
+        parsed = value
+    else:
+        text = str(value)
+        try:
+            parsed = datetime.fromisoformat(
+                text[:-1] + "+00:00" if text.endswith(("Z", "z")) else text
+            )
+        except ValueError:
+            return text
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(display_timezone).strftime(DISPLAY_TIME_FORMAT)
 
 
 class RunCoordinator:
@@ -165,6 +210,27 @@ class RunCoordinator:
             with self._lock:
                 self._futures.pop(run_id, None)
 
+    def _execute_query_retry(self, run_id: str, query_id: str) -> None:
+        """后台重跑单条 Query；异常只标记该 Query，不波及同一 Run 的其他结果。"""
+
+        future_id = f"{run_id}:{query_id}"
+        try:
+            self.service.execute_query_retry(
+                run_id,
+                query_id,
+                self.client_factory(),
+                sleep_fn=time.sleep,
+            )
+        except Exception as exc:
+            self.service.mark_query_retry_failed(
+                run_id,
+                query_id,
+                f"单条重跑失败（{type(exc).__name__}）: {exc}",
+            )
+        finally:
+            with self._lock:
+                self._futures.pop(future_id, None)
+
     def submit(self, run_id: str) -> None:
         """提交一个已创建的 PENDING Run，重复提交同一 ID 时拒绝。"""
 
@@ -172,6 +238,19 @@ class RunCoordinator:
             if run_id in self._futures:
                 raise ActiveRunError(f"Run {run_id} 已提交")
             self._futures[run_id] = self.executor.submit(self._execute, run_id)
+
+    def submit_query_retry(self, run_id: str, query_id: str) -> None:
+        """把已校验的单条重跑加入既有单线程执行队列。"""
+
+        future_id = f"{run_id}:{query_id}"
+        with self._lock:
+            if future_id in self._futures:
+                raise ActiveRunError(f"Query {query_id} 已提交重跑")
+            self._futures[future_id] = self.executor.submit(
+                self._execute_query_retry,
+                run_id,
+                query_id,
+            )
 
     def shutdown(self, *, wait: bool = True) -> None:
         """关闭后台执行器；命令行退出和测试清理时调用。"""
@@ -223,6 +302,19 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
         setting("SEARCH_REPORT_DIR", "output/reports")
     )
     app = Flask(__name__)
+    configured_timezone = str(
+        setting("SEARCH_DISPLAY_TIMEZONE", DEFAULT_DISPLAY_TIMEZONE)
+    ).strip()
+    try:
+        display_timezone = ZoneInfo(configured_timezone)
+    except (ZoneInfoNotFoundError, ValueError):
+        app.logger.warning(
+            "SEARCH_DISPLAY_TIMEZONE=%r 无效，已回退为 %s",
+            configured_timezone,
+            DEFAULT_DISPLAY_TIMEZONE,
+        )
+        configured_timezone = DEFAULT_DISPLAY_TIMEZONE
+        display_timezone = ZoneInfo(DEFAULT_DISPLAY_TIMEZONE)
     app.config.update(
         SECRET_KEY=str(setting("SEARCH_WEB_SECRET_KEY", "local-searchtool-v1.3")),
         SEARCH_DATA_DIR=str(data_dir),
@@ -234,6 +326,7 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
             setting("SEARCH_REPORT_EXCEL_ENABLED", True),
             True,
         ),
+        SEARCH_DISPLAY_TIMEZONE=configured_timezone,
         SEARCH_ENV_FILE=str(env_file),
         SEARCH_WEB_HOST=str(setting("SEARCH_WEB_HOST", "127.0.0.1")),
         SEARCH_WEB_PORT=_positive_int(setting("SEARCH_WEB_PORT", 5002), 5002),
@@ -244,6 +337,8 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
         RECOVER_INTERRUPTED_RUNS=True,
     )
     app.config.update(overrides)
+    # 测试/嵌入覆盖同样必须经过 IANA 时区校验，不能把非法原值写回配置。
+    app.config["SEARCH_DISPLAY_TIMEZONE"] = configured_timezone
 
     store = AnalysisStore(app.config["SEARCH_DB_FILE"])
     store.initialize()
@@ -254,7 +349,9 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
         raw_dir=app.config["SEARCH_RAW_DIR"],
         report_dir=app.config["SEARCH_REPORT_DIR"],
     )
+    # 先保留历史 v2 默认快照，再按兼容规则创建新的 v3 字段目录。
     service.ensure_default_field_schema()
+    service.ensure_default_field_schema_v3()
     if app.config.get("RECOVER_INTERRUPTED_RUNS", True):
         service.recover_interrupted_runs()
     coordinator = RunCoordinator(service, Path(app.config["SEARCH_ENV_FILE"]))
@@ -277,6 +374,105 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
             return json.loads(value)
         except (TypeError, json.JSONDecodeError):
             return default
+
+    def report_artifact_available(
+        report_id: str,
+        artifact: str,
+        status: str,
+    ) -> bool:
+        """检查报告产物是否真实存在，FAILED 报告不提供下载入口。"""
+
+        if status == "FAILED":
+            return False
+        try:
+            service.resolve_report_artifact(report_id, artifact)
+        except ReviewValidationError:
+            return False
+        return True
+
+    def report_summary_rows(
+        where: list[str] | None = None,
+        parameters: list[Any] | None = None,
+        *,
+        limit: int,
+        offset: int = 0,
+        with_artifacts: bool = False,
+    ) -> list[dict[str, Any]]:
+        """读取报告列表摘要，不加载 metrics_json 或重新计算指标。"""
+
+        where_sql = (
+            f"WHERE {' AND '.join(where)}"
+            if where
+            else ""
+        )
+        rows = store.fetch_all(
+            f"""
+            SELECT rp.report_id, rp.evaluation_id, rp.report_type,
+                   rp.status, rp.html_file, rp.excel_file, rp.created_at,
+                   e.name AS evaluation_name,
+                   candidate_run.system_version,
+                   candidate_run.evaluation_phase
+            FROM reports AS rp
+            JOIN evaluations AS e
+              ON e.evaluation_id = rp.evaluation_id
+            JOIN process_runs AS candidate_process
+              ON candidate_process.process_id = rp.candidate_process_id
+            JOIN runs AS candidate_run
+              ON candidate_run.run_id = candidate_process.run_id
+            {where_sql}
+            ORDER BY rp.created_at DESC, rp.report_id DESC
+            LIMIT ? OFFSET ?
+            """,
+            [*(parameters or []), limit, offset],
+        )
+        summaries = [dict(row) for row in rows]
+        if with_artifacts:
+            for item in summaries:
+                item["html_available"] = report_artifact_available(
+                    item["report_id"],
+                    "html",
+                    item["status"],
+                )
+                item["excel_available"] = report_artifact_available(
+                    item["report_id"],
+                    "excel",
+                    item["status"],
+                )
+        return summaries
+
+    def threshold_profile_view(row: Any) -> dict[str, Any]:
+        """解析参考线方案快照并计算两个 Query Stage 的配置项数量。"""
+
+        item = dict(row)
+        try:
+            thresholds = normalize_evaluation_thresholds(
+                parse_json(row["thresholds_json"], {})
+            )
+        except ReviewValidationError:
+            thresholds = normalize_evaluation_thresholds({})
+        item["thresholds"] = thresholds
+        item["configured_counts"] = {
+            query_stage: sum(
+                value is not None
+                for value in thresholds[query_stage].values()
+            )
+            for query_stage in sorted(SUPPORTED_QUERY_STAGES)
+        }
+        return item
+
+    def active_threshold_profiles() -> list[dict[str, Any]]:
+        """返回 Evaluation 创建和更换表单可选择的 ACTIVE 方案。"""
+
+        return [
+            threshold_profile_view(row)
+            for row in store.fetch_all(
+                """
+                SELECT * FROM threshold_profiles
+                WHERE status = 'ACTIVE'
+                ORDER BY name, version DESC
+                """
+            )
+        ]
 
     def render_imports(
         *,
@@ -365,6 +561,12 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
             return "active"
         return "neutral"
 
+    @app.template_filter("format_datetime")
+    def format_datetime(value: Any, empty_text: str = "—") -> str:
+        """使用服务端统一时区格式化页面和静态报告中的可见时间。"""
+
+        return _format_datetime(value, display_timezone, empty_text)
+
     @app.template_filter("is_http_url")
     def is_http_url(value: Any) -> bool:
         """仅允许 http/https 字符串显示为可点击 URL。"""
@@ -390,7 +592,7 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
 
     @app.get("/")
     def index() -> str:
-        """展示 Evaluation 列表和 Run 汇总。"""
+        """展示 Evaluation 汇总和最近10份报告快捷入口。"""
 
         evaluations = store.fetch_all(
             """
@@ -405,30 +607,285 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
             ORDER BY e.updated_at DESC
             """
         )
-        return render_template("index.html", evaluations=evaluations)
+        recent_reports = report_summary_rows(limit=10)
+        return render_template(
+            "index.html",
+            evaluations=evaluations,
+            recent_reports=recent_reports,
+        )
+
+    @app.get("/reports")
+    def reports() -> str:
+        """按固定条件筛选报告摘要，并提供每页50条服务端分页。"""
+
+        page = page_number()
+        per_page = 50
+        filters = {
+            "evaluation_id": request.args.get(
+                "evaluation_id",
+                "",
+            ).strip(),
+            "system_version": request.args.get(
+                "system_version",
+                "",
+            ).strip(),
+            "report_type": request.args.get(
+                "report_type",
+                "",
+            ).strip().upper(),
+            "status": request.args.get("status", "").strip().upper(),
+        }
+        if filters["report_type"] not in REPORT_TYPES:
+            filters["report_type"] = ""
+        if filters["status"] not in REPORT_STATUSES:
+            filters["status"] = ""
+
+        where: list[str] = []
+        parameters: list[Any] = []
+        if filters["evaluation_id"]:
+            where.append("rp.evaluation_id = ?")
+            parameters.append(filters["evaluation_id"])
+        if filters["system_version"]:
+            escaped_keyword = (
+                filters["system_version"]
+                .replace("\\", "\\\\")
+                .replace("%", "\\%")
+                .replace("_", "\\_")
+            )
+            where.append(
+                "candidate_run.system_version LIKE ? ESCAPE '\\'"
+            )
+            parameters.append(f"%{escaped_keyword}%")
+        if filters["report_type"]:
+            where.append("rp.report_type = ?")
+            parameters.append(filters["report_type"])
+        if filters["status"]:
+            where.append("rp.status = ?")
+            parameters.append(filters["status"])
+
+        where_sql = (
+            f"WHERE {' AND '.join(where)}"
+            if where
+            else ""
+        )
+        total = store.fetch_one(
+            f"""
+            SELECT COUNT(*) AS count
+            FROM reports AS rp
+            JOIN process_runs AS candidate_process
+              ON candidate_process.process_id = rp.candidate_process_id
+            JOIN runs AS candidate_run
+              ON candidate_run.run_id = candidate_process.run_id
+            {where_sql}
+            """,
+            parameters,
+        )["count"]
+        rows = report_summary_rows(
+            where,
+            parameters,
+            limit=per_page,
+            offset=(page - 1) * per_page,
+            with_artifacts=True,
+        )
+        evaluations = store.fetch_all(
+            """
+            SELECT evaluation_id, name
+            FROM evaluations
+            ORDER BY updated_at DESC
+            """
+        )
+        return render_template(
+            "reports.html",
+            reports=rows,
+            evaluations=evaluations,
+            filters=filters,
+            report_types=sorted(REPORT_TYPES),
+            report_statuses=sorted(REPORT_STATUSES),
+            page=page,
+            per_page=per_page,
+            total=total,
+        )
+
+    @app.get("/threshold-profiles")
+    def threshold_profiles() -> str:
+        """展示全部参考线方案版本，包括已归档的历史版本。"""
+
+        profiles = [
+            threshold_profile_view(row)
+            for row in store.fetch_all(
+                """
+                SELECT tp.*,
+                       COUNT(e.evaluation_id) AS evaluation_count
+                FROM threshold_profiles AS tp
+                LEFT JOIN evaluations AS e
+                  ON e.threshold_profile_id = tp.profile_id
+                GROUP BY tp.profile_id
+                ORDER BY tp.created_at DESC
+                """
+            )
+        ]
+        return render_template(
+            "threshold_profiles.html",
+            profiles=profiles,
+        )
+
+    @app.get("/threshold-profiles/new")
+    def threshold_profile_new() -> str:
+        """显示独立参考线方案创建表单。"""
+
+        return render_template(
+            "threshold_profile_new.html",
+            thresholds=normalize_evaluation_thresholds({}),
+            threshold_fields=EVALUATION_THRESHOLD_FIELDS,
+            form=None,
+            based_on_profile_id="",
+        )
+
+    @app.post("/threshold-profiles")
+    def threshold_profile_create() -> Response | tuple[str, int]:
+        """校验并创建一个不可变参考线方案版本。"""
+
+        try:
+            version = int(request.form.get("version", ""))
+            profile = service.create_threshold_profile(
+                profile_id=request.form.get("profile_id", "").strip(),
+                name=request.form.get("name", "").strip(),
+                description=request.form.get("description", "").strip(),
+                version=version,
+                thresholds=_threshold_form_payload(request.form),
+                based_on_profile_id=request.form.get(
+                    "based_on_profile_id",
+                    "",
+                ).strip()
+                or None,
+            )
+        except (ValueError, ReviewValidationError) as exc:
+            return (
+                render_template(
+                    "threshold_profile_new.html",
+                    errors=[f"创建参考线方案失败: {exc}"],
+                    form=request.form,
+                    thresholds=_threshold_form_payload(request.form),
+                    threshold_fields=EVALUATION_THRESHOLD_FIELDS,
+                    based_on_profile_id=request.form.get(
+                        "based_on_profile_id",
+                        "",
+                    ),
+                ),
+                400,
+            )
+        flash(
+            f"参考线方案 {profile['name']} v{profile['version']} 已创建",
+            "success",
+        )
+        return redirect(
+            url_for(
+                "threshold_profile_detail",
+                profile_id=profile["profile_id"],
+            )
+        )
+
+    @app.get("/threshold-profiles/<profile_id>")
+    def threshold_profile_detail(profile_id: str) -> str:
+        """展示不可变方案内容、来源版本和当前 Evaluation 引用。"""
+
+        row = store.fetch_one(
+            """
+            SELECT tp.*, source.name AS source_name,
+                   source.version AS source_version
+            FROM threshold_profiles AS tp
+            LEFT JOIN threshold_profiles AS source
+              ON source.profile_id = tp.based_on_profile_id
+            WHERE tp.profile_id = ?
+            """,
+            (profile_id,),
+        )
+        if row is None:
+            abort(404)
+        evaluations = store.fetch_all(
+            """
+            SELECT evaluation_id, name
+            FROM evaluations WHERE threshold_profile_id = ?
+            ORDER BY updated_at DESC
+            """,
+            (profile_id,),
+        )
+        return render_template(
+            "threshold_profile_detail.html",
+            profile=threshold_profile_view(row),
+            evaluations=evaluations,
+            threshold_fields=EVALUATION_THRESHOLD_FIELDS,
+        )
+
+    @app.get("/threshold-profiles/<profile_id>/copy")
+    def threshold_profile_copy(profile_id: str) -> str:
+        """基于任一历史版本预填新版本表单，不修改来源记录。"""
+
+        row = store.fetch_one(
+            "SELECT * FROM threshold_profiles WHERE profile_id = ?",
+            (profile_id,),
+        )
+        if row is None:
+            abort(404)
+        source = threshold_profile_view(row)
+        next_version = store.fetch_one(
+            """
+            SELECT COALESCE(MAX(version), 0) + 1 AS version
+            FROM threshold_profiles WHERE name = ?
+            """,
+            (row["name"],),
+        )["version"]
+        form = {
+            "profile_id": "",
+            "name": row["name"],
+            "description": row["description"],
+            "version": next_version,
+        }
+        return render_template(
+            "threshold_profile_new.html",
+            form=form,
+            thresholds=source["thresholds"],
+            threshold_fields=EVALUATION_THRESHOLD_FIELDS,
+            based_on_profile_id=profile_id,
+        )
+
+    @app.post("/threshold-profiles/<profile_id>/archive")
+    def threshold_profile_archive(profile_id: str) -> Response:
+        """归档方案但保留所有历史引用和详情。"""
+
+        try:
+            service.archive_threshold_profile(profile_id)
+        except ReviewValidationError as exc:
+            abort(404, str(exc))
+        flash("参考线方案已归档，历史 Evaluation 仍可查看", "success")
+        return redirect(
+            url_for(
+                "threshold_profile_detail",
+                profile_id=profile_id,
+            )
+        )
 
     @app.route("/evaluations/new", methods=["GET", "POST"])
     def evaluation_new() -> Response | str | tuple[str, int]:
         """创建评测；重复或非法标识返回可行动错误。"""
 
-        empty_thresholds = normalize_evaluation_thresholds({})
+        profiles = active_threshold_profiles()
         if request.method == "GET":
             return render_template(
                 "evaluation_new.html",
-                thresholds=empty_thresholds,
-                threshold_fields=EVALUATION_THRESHOLD_FIELDS,
+                threshold_profiles=profiles,
             )
         try:
             evaluation_id = request.form.get("evaluation_id", "").strip()
-            validate_storage_id(evaluation_id, "evaluation_id")
-            thresholds = normalize_evaluation_thresholds(
-                _threshold_form_payload(request.form)
-            )
-            store.create_evaluation(
-                evaluation_id,
-                request.form.get("name", "").strip(),
-                request.form.get("notes", "").strip(),
-                thresholds,
+            service.create_evaluation(
+                evaluation_id=evaluation_id,
+                name=request.form.get("name", "").strip(),
+                notes=request.form.get("notes", "").strip(),
+                threshold_profile_id=request.form.get(
+                    "threshold_profile_id",
+                    "",
+                ).strip()
+                or None,
             )
         except Exception as exc:
             return (
@@ -436,8 +893,7 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
                     "evaluation_new.html",
                     errors=[f"创建评测失败: {exc}"],
                     form=request.form,
-                    thresholds=_threshold_form_payload(request.form),
-                    threshold_fields=EVALUATION_THRESHOLD_FIELDS,
+                    threshold_profiles=profiles,
                 ),
                 400,
             )
@@ -454,7 +910,15 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
         """展示一个 Evaluation 下的 Run 和可执行 Dataset。"""
 
         evaluation = store.fetch_one(
-            "SELECT * FROM evaluations WHERE evaluation_id = ?",
+            """
+            SELECT e.*, tp.name AS threshold_profile_name,
+                   tp.version AS threshold_profile_version,
+                   tp.status AS threshold_profile_status
+            FROM evaluations AS e
+            LEFT JOIN threshold_profiles AS tp
+              ON tp.profile_id = e.threshold_profile_id
+            WHERE e.evaluation_id = ?
+            """,
             (evaluation_id,),
         )
         if evaluation is None:
@@ -495,12 +959,49 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
             datasets=datasets,
             reports=reports,
             thresholds=thresholds,
-            threshold_fields=EVALUATION_THRESHOLD_FIELDS,
+            configured_counts={
+                query_stage: sum(
+                    value is not None
+                    for value in thresholds[query_stage].values()
+                )
+                for query_stage in sorted(SUPPORTED_QUERY_STAGES)
+            },
+            threshold_profiles=active_threshold_profiles(),
             evaluation_phases=sorted(
                 phase
                 for phase in EVALUATION_PHASES
                 if phase != "UNSPECIFIED"
             ),
+        )
+
+    @app.post("/evaluations/<evaluation_id>/threshold-profile")
+    def evaluation_threshold_profile_update(
+        evaluation_id: str,
+    ) -> Response | tuple[str, int]:
+        """更换 Evaluation 方案快照，只影响以后生成的新报告。"""
+
+        try:
+            service.assign_evaluation_threshold_profile(
+                evaluation_id,
+                request.form.get("threshold_profile_id", "").strip()
+                or None,
+            )
+        except ReviewValidationError as exc:
+            return (
+                render_template(
+                    "error.html",
+                    title="无法更换参考线方案",
+                    message=str(exc),
+                    status_code=400,
+                ),
+                400,
+            )
+        flash("参考线方案已更新；既有报告保持原快照和建议", "success")
+        return redirect(
+            url_for(
+                "evaluation_detail",
+                evaluation_id=evaluation_id,
+            )
         )
 
     @app.post("/evaluations/<evaluation_id>/thresholds")
@@ -674,6 +1175,33 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
             ORDER BY bs.created_at DESC
             """
         )
+        if baseline_sets:
+            person_link_context = service.get_run_person_link_context(
+                run_id,
+                baseline_sets[0]["baseline_version"],
+            )
+            person_link_summary = person_link_context["summary"]
+            person_link_baseline_version = baseline_sets[0][
+                "baseline_version"
+            ]
+        else:
+            person_link_summary = {
+                "query_count": run["total_queries"],
+                "linked_count": 0,
+                "unlinked_count": run["total_queries"],
+                "invalid_count": 0,
+                "unique_suggestion_count": 0,
+            }
+            person_link_baseline_version = ""
+        alignment_issues: list[dict[str, Any]] = []
+        if field_schemas and baseline_sets:
+            try:
+                alignment_issues = service.validate_process_field_alignment(
+                    field_schemas[0]["schema_version"],
+                    baseline_sets[0]["baseline_version"],
+                )
+            except FieldSchemaValidationError:
+                alignment_issues = []
         result_status_counts = {
             row["result_status"]: row["count"]
             for row in store.fetch_all(
@@ -708,6 +1236,9 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
             terminal_statuses=TERMINAL_RUN_STATUSES,
             result_status_counts=result_status_counts,
             evaluation_phases=sorted(EVALUATION_PHASES),
+            person_link_summary=person_link_summary,
+            person_link_baseline_version=person_link_baseline_version,
+            alignment_issues=alignment_issues,
         )
 
     @app.post("/runs/<run_id>/evaluation-phase")
@@ -732,6 +1263,168 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
         flash("Evaluation Phase 已更新", "success")
         return redirect(url_for("run_detail", run_id=run_id))
 
+    @app.route("/runs/<run_id>/person-links", methods=["GET", "POST"])
+    def run_person_links(run_id: str) -> Response | str | tuple[str, int]:
+        """查看并原子保存历史 Run Query 的人物关联。
+
+        GET 只生成精确姓名建议，不自动写入；POST 支持 JSON 批量提交和
+        无 JavaScript 的逐行表单提交。乐观锁冲突返回409，其余校验错误
+        返回400。
+        """
+
+        baseline_sets = store.fetch_all(
+            """
+            SELECT bs.baseline_version, bs.name,
+                   COUNT(bp.person_id) AS person_count
+            FROM baseline_sets AS bs
+            LEFT JOIN baseline_people AS bp
+              ON bp.baseline_version = bs.baseline_version
+            GROUP BY bs.baseline_version
+            ORDER BY bs.created_at DESC
+            """
+        )
+        baseline_version = (
+            request.values.get("baseline_version", "").strip()
+        )
+        if not baseline_version and baseline_sets:
+            baseline_version = baseline_sets[0]["baseline_version"]
+        if request.method == "POST":
+            raw_changes = request.form.get("changes_json", "").strip()
+            if raw_changes:
+                try:
+                    changes = json.loads(raw_changes)
+                except json.JSONDecodeError:
+                    return (
+                        render_template(
+                            "error.html",
+                            title="人物关联保存失败",
+                            message="changes_json 必须是合法 JSON 数组",
+                            status_code=400,
+                        ),
+                        400,
+                    )
+            else:
+                changes = []
+                for key, value in request.form.items():
+                    if not key.startswith("person_id__"):
+                        continue
+                    query_id = key.removeprefix("person_id__")
+                    changes.append(
+                        {
+                            "query_id": query_id,
+                            "expected_person_id": request.form.get(
+                                f"expected_person_id__{query_id}",
+                                "",
+                            )
+                            or None,
+                            "person_id": value or None,
+                        }
+                    )
+            try:
+                result = service.update_run_query_person_links(
+                    run_id,
+                    baseline_version,
+                    changes,
+                    sync_dataset=_boolean_value(
+                        request.form.get("sync_dataset"),
+                    ),
+                    note=request.form.get("note", ""),
+                )
+            except PersonLinkValidationError as exc:
+                status_code = (
+                    409 if "已被其他页面修改" in str(exc) else 400
+                )
+                return (
+                    render_template(
+                        "error.html",
+                        title="人物关联保存失败",
+                        message=str(exc),
+                        status_code=status_code,
+                    ),
+                    status_code,
+                )
+            flash(
+                "人物关联已保存："
+                f"Run 更新 {result['updated_count']} 条，"
+                f"Dataset 同步 {result['dataset_synced_count']} 条，"
+                f"过期报告 {result['stale_report_count']} 份",
+                "success",
+            )
+            return redirect(
+                url_for(
+                    "run_person_links",
+                    run_id=run_id,
+                    baseline_version=baseline_version,
+                )
+            )
+
+        if not baseline_version:
+            run = store.fetch_one(
+                "SELECT * FROM runs WHERE run_id = ?",
+                (run_id,),
+            )
+            if run is None:
+                abort(404)
+            return render_template(
+                "run_person_links.html",
+                run=run,
+                baseline_sets=baseline_sets,
+                context=None,
+                filters={"q": "", "status": ""},
+            )
+        try:
+            context = service.get_run_person_link_context(
+                run_id,
+                baseline_version,
+            )
+        except PersonLinkValidationError as exc:
+            return (
+                render_template(
+                    "error.html",
+                    title="人物关联加载失败",
+                    message=str(exc),
+                    status_code=400,
+                ),
+                400,
+            )
+        keyword = request.args.get("q", "").strip()
+        link_status = request.args.get("status", "").strip()
+        filtered_queries = []
+        normalized_keyword = keyword.casefold()
+        for item in context["queries"]:
+            if normalized_keyword and normalized_keyword not in " ".join(
+                [
+                    item["query_id"],
+                    item["query_name"],
+                    item["current_person_id"] or "",
+                ]
+            ).casefold():
+                continue
+            if link_status == "linked" and not (
+                item["current_person_id"] and item["current_baseline_exists"]
+            ):
+                continue
+            if link_status == "unlinked" and item["current_person_id"]:
+                continue
+            if link_status == "invalid" and not (
+                item["current_person_id"]
+                and not item["current_baseline_exists"]
+            ):
+                continue
+            if link_status == "unique" and not item["has_unique_suggestion"]:
+                continue
+            if link_status == "multiple" and len(item["suggestions"]) <= 1:
+                continue
+            filtered_queries.append(item)
+        context["queries"] = filtered_queries
+        return render_template(
+            "run_person_links.html",
+            run=context["run"],
+            baseline_sets=baseline_sets,
+            context=context,
+            filters={"q": keyword, "status": link_status},
+        )
+
     @app.get("/runs/<run_id>/queries/<query_id>")
     def query_detail(run_id: str, query_id: str) -> str:
         """展示 Query 输入、Task、候选人、失败和 Raw 索引。"""
@@ -739,7 +1432,8 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
         query = store.fetch_one(
             """
             SELECT rq.*, r.evaluation_id, r.dataset_id, r.run_label,
-                   r.system_version, r.evaluation_phase, dq.clues_json,
+                   r.system_version, r.evaluation_phase, r.source_type,
+                   r.status AS run_status, dq.clues_json,
                    dq.additional_details_json, dq.metadata_json,
                    dq.match_strategy
             FROM run_queries AS rq
@@ -837,9 +1531,28 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
             input_payload=input_payload,
             task_field_states=task_field_states,
             public_fields=parse_json(query["public_fields_json"], {}),
+            retry_allowed=(
+                query["status"] in {"FAILED", "PENDING"}
+                and query["source_type"] == "EXECUTION"
+                and query["run_status"] not in {"PENDING", "RUNNING"}
+            ),
             page=page,
             per_page=per_page,
         )
+
+    @app.post("/runs/<run_id>/queries/<query_id>/retry")
+    def query_retry(run_id: str, query_id: str) -> Response | tuple[str, int]:
+        """校验后在原 Run 中排队重跑单条失败或中断 Query。"""
+
+        try:
+            service.validate_query_retry(run_id, query_id)
+            app.extensions["run_coordinator"].submit_query_retry(run_id, query_id)
+        except ActiveRunError as exc:
+            return render_template("error.html", message=str(exc)), 409
+        except (ImportValidationError, ValueError) as exc:
+            return render_template("error.html", message=str(exc)), 400
+        flash("该 Query 已进入重跑队列；会产生新的检索成本，结果仍归入当前 Run", "success")
+        return redirect(url_for("query_detail", run_id=run_id, query_id=query_id))
 
     @app.get("/candidates/<candidate_pk>")
     def candidate_detail(candidate_pk: str) -> str:
@@ -866,6 +1579,25 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
             (candidate_pk,),
         )
         ui_sections = parse_json(candidate["ui_sections_json"], {})
+        # 候选人详情优先展示 Summary 的稳定识别信息；模块原始字段仍完整保留在页面中。
+        summary_section = ui_sections.get("summary", {})
+        summary_data = (
+            summary_section.get("data", {})
+            if isinstance(summary_section, dict)
+            else {}
+        )
+        if not isinstance(summary_data, dict):
+            summary_data = {}
+        candidate_view = {
+            "display_name": summary_data.get("display_name") or candidate["candidate_id"],
+            "headline": summary_data.get("headline") or "未返回职业或简介",
+            "location": summary_data.get("location") or "未返回地点",
+            "confidence": summary_data.get("confidence_level") or "未返回",
+            "match_score": summary_data.get("match_score"),
+            "avatar_url": summary_data.get("avatar_url") or "",
+            "profile_url": summary_data.get("profile_url") or "",
+            "match_reasons": summary_data.get("match_reasons") or [],
+        }
         requested_process_id = request.args.get("process_id", "").strip()
         if requested_process_id:
             processed = store.fetch_one(
@@ -898,11 +1630,33 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
         review_context = None
         if processed is not None:
             definitions = parse_json(processed["definitions_json"], [])
+            definitions_by_key = {
+                item.get("field_key"): item
+                for item in definitions
+                if isinstance(item, dict) and item.get("field_key")
+            }
+            all_processed_fields = parse_json(processed["fields_json"], {})
+            # 字段配置中的“展示”开关仅影响候选人详情的阅读视图，不影响
+            # 已入库的处理结果、指标或报告快照。这样像 Profile Data 这类
+            # 容器字段可保留在历史数据中，却不会和其原子化内容重复出现。
+            visible_processed_fields = {
+                field_key: value
+                for field_key, value in all_processed_fields.items()
+                if definitions_by_key.get(field_key, {}).get(
+                    "display_enabled", True
+                )
+                # Profile Data 只是 Profile Sections 的原始容器；两者同时
+                # 存在时仅展示已归一化的 Sections，避免旧 Process 页面重复。
+                and not (
+                    field_key == "profile_data"
+                    and "profile_sections" in all_processed_fields
+                )
+            }
             processed_view = {
                 "process_id": processed["process_id"],
                 "schema_version": processed["schema_version"],
                 "schema_name": processed["schema_name"],
-                "fields": parse_json(processed["fields_json"], {}),
+                "fields": visible_processed_fields,
                 "empty_fields": parse_json(
                     processed["empty_fields_json"],
                     {},
@@ -911,11 +1665,7 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
                     processed["processing_errors_json"],
                     [],
                 ),
-                "definitions": {
-                    item.get("field_key"): item
-                    for item in definitions
-                    if isinstance(item, dict) and item.get("field_key")
-                },
+                "definitions": definitions_by_key,
             }
             try:
                 review_context = service.get_review_context(
@@ -928,6 +1678,7 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
         return render_template(
             "candidate_detail.html",
             candidate=candidate,
+            candidate_view=candidate_view,
             ui_sections=ui_sections,
             detail_data=parse_json(candidate["detail_data_json"], {}),
             list_item=parse_json(candidate["list_item_json"], {}),
@@ -1212,18 +1963,81 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
                 ]:
                     if field_key not in field_keys:
                         field_keys.append(field_key)
-                item["field_options"] = [
+                field_options = []
+                for field_key in field_keys:
+                    definition = candidate_definitions.get(field_key, {})
+                    value = item["fields"].get(field_key)
+                    field_options.append(
+                        {
+                            "field_key": field_key,
+                            "display_name": definition.get(
+                                "display_name",
+                                field_key,
+                            ),
+                            "module": definition.get(
+                                "module",
+                                "未配置字段",
+                            ),
+                            "sort_order": definition.get(
+                                "sort_order",
+                                9999,
+                            ),
+                            "data_type": definition.get(
+                                "data_type",
+                                "unknown",
+                            ),
+                            "value": value,
+                            "has_value": value not in (None, "", [], {}),
+                            "unknown": field_key not in candidate_definitions,
+                        }
+                    )
+                # 按用户阅读路径组织字段；未知字段保留在独立分组中，
+                # 避免字段配置扩展时丢失已导入的基准数据。
+                module_order = (
+                    "Candidate",
+                    "Summary",
+                    "Insights",
+                    "Photos",
+                    "Profile",
+                    "Social",
+                    "未配置字段",
+                )
+                item["field_groups"] = [
                     {
-                        "field_key": field_key,
-                        "display_name": candidate_definitions.get(
-                            field_key,
-                            {},
-                        ).get("display_name", field_key),
-                        "value": item["fields"].get(field_key),
-                        "unknown": field_key not in candidate_definitions,
+                        "module": module,
+                        "fields": sorted(
+                            (
+                                field
+                                for field in field_options
+                                if field["module"] == module
+                            ),
+                            key=lambda field: (
+                                field["sort_order"],
+                                field["field_key"],
+                            ),
+                        ),
                     }
-                    for field_key in field_keys
+                    for module in module_order
+                    if any(
+                        field["module"] == module
+                        for field in field_options
+                    )
                 ]
+                item["valued_field_count"] = sum(
+                    field["has_value"] for field in field_options
+                )
+                # 头像只用于人物识别，优先复用已导入的 Summary 图片。
+                item["avatar_url"] = next(
+                    (
+                        item["fields"].get(field_key)
+                        for field_key in (
+                            "summary_avatar_url",
+                            "summary_primary_image_url",
+                        )
+                        if item["fields"].get(field_key)
+                    ),
+                    None,
+                )
                 people.append(item)
         status = 400 if errors else 200
         return (
@@ -1278,6 +2092,10 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
     def field_schemas() -> str:
         """展示不可变字段配置版本、活跃状态和处理引用次数。"""
 
+        keyword = request.args.get("q", "").strip().casefold()
+        module_filter = request.args.get("module", "").strip()
+        role_filter = request.args.get("role", "").strip()
+
         rows = store.fetch_all(
             """
             SELECT fs.*, COUNT(pr.process_id) AS process_count
@@ -1291,26 +2109,50 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
         schemas = []
         for row in rows:
             item = dict(row)
-            definitions = parse_json(row["definitions_json"], [])
-            display_definitions = []
-            for definition in definitions:
-                if not isinstance(definition, dict):
-                    continue
-                field = dict(definition)
-                field.setdefault(
-                    "value_scope",
-                    "QUERY"
-                    if field.get("module") == "Task"
-                    else "CANDIDATE",
+            try:
+                display_definitions = validate_field_definitions(
+                    parse_json(row["definitions_json"], [])
                 )
-                field.setdefault(
-                    "missing_policy",
-                    "ERROR"
-                    if field.get("field_key") in {"task_id", "candidate_id"}
-                    else "EMPTY",
-                )
-                display_definitions.append(field)
+            except FieldSchemaValidationError:
+                # 历史损坏快照仍可在版本列表中看到，由后续处理页给出错误。
+                display_definitions = []
             item["definitions"] = display_definitions
+            item["filtered_definitions"] = [
+                field
+                for field in display_definitions
+                if (
+                    not module_filter or field["module"] == module_filter
+                )
+                and (
+                    not role_filter
+                    or (
+                        role_filter == "enabled"
+                        and field["enabled"]
+                    )
+                    or (
+                        role_filter == "baseline"
+                        and field["baseline_compare_enabled"]
+                    )
+                    or (
+                        role_filter == "identity"
+                        and field["identity_enabled"]
+                    )
+                    or (
+                        role_filter == "completeness"
+                        and field["completeness_enabled"]
+                    )
+                    or (
+                        role_filter == "accuracy"
+                        and field["accuracy_enabled"]
+                    )
+                )
+                and (
+                    not keyword
+                    or keyword in (
+                        field["field_key"] + " " + field["display_name"]
+                    ).casefold()
+                )
+            ]
             item["query_field_count"] = sum(
                 field["value_scope"] == "QUERY"
                 for field in display_definitions
@@ -1320,7 +2162,15 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
                 for field in display_definitions
             )
             schemas.append(item)
-        return render_template("field_schemas.html", schemas=schemas)
+        return render_template(
+            "field_schemas.html",
+            schemas=schemas,
+            filters={
+                "q": request.args.get("q", "").strip(),
+                "module": module_filter,
+                "role": role_filter,
+            },
+        )
 
     @app.route("/field-schemas/new", methods=["GET", "POST"])
     def field_schema_new() -> Response | str | tuple[str, int]:
@@ -1389,22 +2239,323 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
         flash(f"字段配置已发布为新版本 {schema_version}", "success")
         return redirect(url_for("field_schemas"))
 
+    @app.route(
+        "/field-schemas/<schema_version>/comparison-matrix",
+        methods=["GET", "POST"],
+    )
+    def field_comparison_matrix(
+        schema_version: str,
+    ) -> str | Response | tuple[str, int]:
+        """展示字段矩阵，并从当前不可变 Schema 复制发布新版本。"""
+
+        schema = store.fetch_one(
+            "SELECT * FROM field_schemas WHERE schema_version = ?",
+            (schema_version,),
+        )
+        if schema is None:
+            abort(404)
+        baseline_version = (
+            request.values.get("baseline_version", "").strip()
+        )
+        if not baseline_version:
+            latest_baseline = store.fetch_one(
+                """
+                SELECT baseline_version FROM baseline_sets
+                ORDER BY created_at DESC LIMIT 1
+                """
+            )
+            baseline_version = (
+                latest_baseline["baseline_version"]
+                if latest_baseline is not None
+                else ""
+            )
+        if request.method == "POST":
+            try:
+                definitions = validate_field_definitions(
+                    parse_json(schema["definitions_json"], [])
+                )
+                enabled_fields = set(
+                    request.form.getlist("enabled_fields")
+                )
+                completeness_fields = set(
+                    request.form.getlist("completeness_fields")
+                )
+                accuracy_fields = set(
+                    request.form.getlist("accuracy_fields")
+                )
+                identity_fields = set(
+                    request.form.getlist("identity_fields")
+                )
+                visible_fields = set(
+                    request.form.getlist("visible_fields")
+                )
+                display_fields = set(request.form.getlist("display_fields"))
+                baseline_compare_fields = set(
+                    request.form.getlist("baseline_compare_fields")
+                )
+                run_compare_fields = set(
+                    request.form.getlist("run_compare_fields")
+                )
+                selected_discovered_fields = set(
+                    request.form.getlist("discovered_field_keys")
+                )
+                if not visible_fields:
+                    visible_fields = {
+                        definition["field_key"] for definition in definitions
+                    }
+                updated_definitions = []
+                for definition in definitions:
+                    item = dict(definition)
+                    field_key = item["field_key"]
+                    if field_key not in visible_fields:
+                        updated_definitions.append(item)
+                        continue
+                    item["enabled"] = field_key in enabled_fields
+                    if "display_fields" in request.form:
+                        item["display_enabled"] = field_key in display_fields
+                    if "baseline_compare_fields" in request.form:
+                        item["baseline_compare_enabled"] = (
+                            field_key in baseline_compare_fields
+                        )
+                    if "run_compare_fields" in request.form:
+                        item["run_compare_enabled"] = (
+                            field_key in run_compare_fields
+                        )
+                    roles = []
+                    if field_key in completeness_fields:
+                        roles.append("completeness")
+                    if field_key in accuracy_fields:
+                        roles.append("accuracy")
+                    if field_key in identity_fields:
+                        roles.append("identity")
+                    item["scoring_role"] = roles or ["display"]
+                    item["identity_enabled"] = field_key in identity_fields
+                    item["completeness_enabled"] = (
+                        field_key in completeness_fields
+                    )
+                    item["accuracy_enabled"] = field_key in accuracy_fields
+                    compare_mode = request.form.get(
+                        f"compare_mode__{field_key}",
+                        "",
+                    ).strip()
+                    normalizer = request.form.get(
+                        f"normalizer__{field_key}",
+                        "",
+                    ).strip()
+                    if compare_mode:
+                        item["compare_mode"] = compare_mode
+                    if normalizer:
+                        item["normalizer"] = normalizer
+                    baseline_field_key = request.form.get(
+                        f"baseline_field_key__{field_key}",
+                        "",
+                    ).strip()
+                    if baseline_field_key:
+                        item["baseline_field_key"] = baseline_field_key
+                    similarity_threshold = request.form.get(
+                        f"similarity_threshold__{field_key}",
+                        "",
+                    ).strip()
+                    if similarity_threshold:
+                        try:
+                            item["similarity_threshold"] = float(
+                                similarity_threshold
+                            )
+                        except ValueError as exc:
+                            raise FieldSchemaValidationError(
+                                f"{field_key} 的相似度阈值必须是数值"
+                            ) from exc
+                    updated_definitions.append(item)
+                raw_discovered = request.form.get(
+                    "discovered_definitions_json", "[]"
+                )
+                try:
+                    discovered = json.loads(raw_discovered)
+                except json.JSONDecodeError as exc:
+                    raise FieldSchemaValidationError(
+                        "待配置字段数据已失效，请刷新页面后重试"
+                    ) from exc
+                known_keys = {
+                    item["field_key"] for item in updated_definitions
+                }
+                for suggestion in discovered:
+                    if not isinstance(suggestion, dict):
+                        continue
+                    definition = suggestion.get("definition")
+                    field_key = suggestion.get("field_key")
+                    if (
+                        field_key not in selected_discovered_fields
+                        or not isinstance(definition, dict)
+                    ):
+                        continue
+                    if definition.get("field_key") in known_keys:
+                        raise FieldSchemaValidationError(
+                            f"待配置字段已存在: {definition.get('field_key')}"
+                        )
+                    updated_definitions.append(definition)
+                    known_keys.add(definition["field_key"])
+                new_version = service.publish_field_schema(
+                    name=request.form.get("name", "").strip(),
+                    definitions=updated_definitions,
+                    created_by=request.form.get("created_by", "").strip(),
+                )
+            except FieldSchemaValidationError as exc:
+                return (
+                    render_template(
+                        "error.html",
+                        title="无法发布字段配置",
+                        message=str(exc),
+                        status_code=400,
+                    ),
+                    400,
+                )
+            flash(
+                f"已从 {schema_version} 复制发布新版本 {new_version}，"
+                "已有 Process 未被修改",
+                "success",
+            )
+            return redirect(
+                url_for(
+                    "field_comparison_matrix",
+                    schema_version=new_version,
+                    baseline_version=baseline_version,
+                )
+            )
+        if not baseline_version:
+            return render_template(
+                "field_comparison_matrix.html",
+                schema=schema,
+                matrix=None,
+                baseline_sets=[],
+                filters={},
+                definitions={},
+            )
+        try:
+            matrix = service.build_field_comparison_matrix(
+                schema_version,
+                baseline_version,
+                process_id=request.args.get("process_id", "").strip() or None,
+                person_id=request.args.get("person_id", "").strip() or None,
+            )
+        except FieldSchemaValidationError as exc:
+            return (
+                render_template(
+                    "error.html",
+                    title="无法生成字段矩阵",
+                    message=str(exc),
+                    status_code=400,
+                ),
+                400,
+            )
+        module_filter = request.args.get("module", "").strip()
+        status_filter = request.args.get("status", "").strip()
+        keyword = request.args.get("q", "").strip().casefold()
+        if module_filter:
+            matrix["fields"] = [
+                item for item in matrix["fields"]
+                if item["module"] == module_filter
+            ]
+        if status_filter:
+            matrix["fields"] = [
+                item for item in matrix["fields"]
+                if item["status"] == status_filter
+            ]
+        if keyword:
+            matrix["fields"] = [
+                item for item in matrix["fields"]
+                if keyword in (
+                    item["field_key"] + " " + item["display_name"]
+                ).casefold()
+            ]
+        baseline_sets = store.fetch_all(
+            """
+            SELECT baseline_version, name FROM baseline_sets
+            ORDER BY created_at DESC
+            """
+        )
+        definitions = {
+            item["field_key"]: item
+            for item in validate_field_definitions(
+                parse_json(schema["definitions_json"], [])
+            )
+        }
+        discovery = service.discover_field_candidates(
+            schema_version=schema_version,
+            process_id=request.args.get("process_id", "").strip() or None,
+            baseline_version=baseline_version,
+        )
+        return render_template(
+            "field_comparison_matrix.html",
+            schema=schema,
+            matrix=matrix,
+            baseline_sets=baseline_sets,
+            definitions=definitions,
+            discovery=discovery,
+            discovery_json=json.dumps(
+                discovery["suggestions"], ensure_ascii=False
+            ),
+            filters={
+                "baseline_version": baseline_version,
+                "process_id": request.args.get("process_id", "").strip(),
+                "person_id": request.args.get("person_id", "").strip(),
+                "module": module_filter,
+                "status": status_filter,
+                "q": request.args.get("q", "").strip(),
+            },
+        )
+
     @app.post("/runs/<run_id>/process")
     def process_run(run_id: str) -> Response | tuple[str, int]:
-        """同步启动字段处理，每次提交都生成新的 ProcessResult。"""
+        """同步启动字段处理；历史重处理只读取已入库数据。"""
 
         try:
-            result = service.process_run(
-                run_id=run_id,
-                schema_version=request.form.get(
+            processing_mode = request.form.get(
+                "processing_mode",
+                "PROCESS_EXISTING",
+            ).strip()
+            arguments = {
+                "run_id": run_id,
+                "schema_version": request.form.get(
                     "schema_version",
                     "",
                 ).strip(),
-                baseline_version=request.form.get(
+                "baseline_version": request.form.get(
                     "baseline_version",
                     "",
                 ).strip() or None,
-            )
+            }
+            if processing_mode == "REPROCESS_EXISTING":
+                if request.form.get("confirm_existing_data") != "true":
+                    raise FieldSchemaValidationError(
+                        "请确认本次仅重处理已入库数据，不会重新请求检索接口"
+                    )
+                if arguments["baseline_version"]:
+                    alignment_issues = (
+                        service.validate_process_field_alignment(
+                            arguments["schema_version"],
+                            arguments["baseline_version"],
+                        )
+                    )
+                    blocking = [
+                        issue for issue in alignment_issues
+                        if issue["severity"] == "ERROR"
+                    ]
+                    if (
+                        blocking
+                        and request.form.get(
+                            "acknowledge_alignment_errors"
+                        ) != "true"
+                    ):
+                        field_keys = ", ".join(
+                            issue["field_key"] for issue in blocking[:10]
+                        )
+                        raise FieldSchemaValidationError(
+                            "字段对齐预检发现阻断问题，请先查看矩阵或明确"
+                            f"确认风险。字段: {field_keys}"
+                        )
+                result = service.reprocess_existing_run(**arguments)
+            else:
+                result = service.process_run(**arguments)
         except FieldSchemaValidationError as exc:
             return (
                 render_template(
@@ -1420,6 +2571,8 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
             f"字段错误 {result.error_count}",
             "success",
         )
+        for warning in result.warnings:
+            flash(warning, "warning")
         return redirect(
             url_for("process_detail", process_id=result.process_id)
         )
@@ -1587,6 +2740,19 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
             )
             detail_failure_count += detail_failures
             candidate_error_count += len(errors) - detail_failures
+        classification_progress = (
+            service.get_process_classification_progress(process_id)
+        )
+        field_matrix = None
+        if process["baseline_version"]:
+            try:
+                field_matrix = service.build_field_comparison_matrix(
+                    process["schema_version"],
+                    process["baseline_version"],
+                    process_id=process_id,
+                )
+            except FieldSchemaValidationError:
+                field_matrix = None
         return render_template(
             "process_detail.html",
             process=process,
@@ -1608,6 +2774,103 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
             query_error_count=query_error_count,
             candidate_error_count=candidate_error_count,
             detail_failure_count=detail_failure_count,
+            classification_progress=classification_progress,
+            field_matrix=field_matrix,
+        )
+
+    @app.route(
+        "/processes/<process_id>/queries/<query_id>/classification",
+        methods=["GET", "POST"],
+    )
+    def query_classification(
+        process_id: str,
+        query_id: str,
+    ) -> str | Response | tuple[str, int]:
+        """展示并保存一个 Query 的候选人身份归类。"""
+
+        try:
+            context = service.get_query_classification_context(
+                process_id,
+                query_id,
+            )
+            if request.method == "POST":
+                classifications: list[dict[str, str]] = []
+                expected_versions: dict[str, str] = {}
+                bulk_remaining = (
+                    request.form.get("bulk_remaining_not_hit") == "true"
+                )
+                for candidate in context["candidates"]:
+                    candidate_pk = candidate["candidate_pk"]
+                    judgement = request.form.get(
+                        f"judgement__{candidate_pk}",
+                        "PENDING_REVIEW",
+                    ).strip()
+                    if (
+                        bulk_remaining
+                        and judgement == "PENDING_REVIEW"
+                        and candidate["detail_status"] == "SUCCESS"
+                    ):
+                        judgement = "NOT_HIT"
+                    if judgement != "PENDING_REVIEW":
+                        classifications.append({
+                            "candidate_pk": candidate_pk,
+                            "judgement": judgement,
+                            "reason": request.form.get(
+                                f"reason__{candidate_pk}",
+                                "MANUAL",
+                            ).strip(),
+                            "evidence": request.form.get(
+                                f"evidence__{candidate_pk}",
+                                "",
+                            ),
+                        })
+                    expected_versions[candidate_pk] = request.form.get(
+                        f"expected_reviewed_at__{candidate_pk}",
+                        "",
+                    )
+                service.save_query_classification(
+                    process_id,
+                    query_id,
+                    classifications,
+                    primary_hit_candidate_pk=request.form.get(
+                        "primary_hit_candidate_pk",
+                        "",
+                    ).strip() or None,
+                    confirm_no_hit=(
+                        request.form.get("confirm_no_hit") == "true"
+                    ),
+                    reviewer=request.form.get("reviewer", ""),
+                    review_note=request.form.get("review_note", ""),
+                    expected_versions=expected_versions,
+                )
+                flash(
+                    "候选人身份归类已保存，关联 READY 报告已标记过期",
+                    "success",
+                )
+                return redirect(
+                    url_for(
+                        "query_classification",
+                        process_id=process_id,
+                        query_id=query_id,
+                    )
+                )
+        except ReviewValidationError as exc:
+            if request.method == "POST":
+                return (
+                    render_template(
+                        "error.html",
+                        title="无法保存身份归类",
+                        message=str(exc),
+                        status_code=(
+                            409 if "其他页面" in str(exc) else 400
+                        ),
+                    ),
+                    409 if "其他页面" in str(exc) else 400,
+                )
+            abort(404)
+        return render_template(
+            "query_classification.html",
+            context=context,
         )
 
     @app.post(
@@ -1773,10 +3036,22 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
         if row is None:
             abort(404)
         model = parse_json(row["metrics_json"], {})
+        html_available = report_artifact_available(
+            report_id,
+            "html",
+            row["status"],
+        )
+        excel_available = report_artifact_available(
+            report_id,
+            "excel",
+            row["status"],
+        )
         return render_template(
             "report_detail.html",
             report=model,
             report_row=row,
+            html_available=html_available,
+            excel_available=excel_available,
             static_export=False,
         )
 
@@ -1835,6 +3110,27 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
                 "definitions": definitions,
             }
         )
+
+    @app.get("/api/field-schemas/<schema_version>/comparison-matrix")
+    def field_comparison_matrix_api(schema_version: str) -> Response:
+        """返回字段矩阵 JSON，供 Process 预检和后续平台集成。"""
+
+        baseline_version = request.args.get(
+            "baseline_version",
+            "",
+        ).strip()
+        if not baseline_version:
+            return jsonify({"error": "baseline_version 不能为空"}), 400
+        try:
+            matrix = service.build_field_comparison_matrix(
+                schema_version,
+                baseline_version,
+                process_id=request.args.get("process_id", "").strip() or None,
+                person_id=request.args.get("person_id", "").strip() or None,
+            )
+        except FieldSchemaValidationError as exc:
+            return jsonify({"error": str(exc)}), 400
+        return jsonify(matrix)
 
     @app.get("/api/processes/<process_id>/status")
     def process_status(process_id: str) -> Response:

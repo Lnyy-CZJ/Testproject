@@ -9,6 +9,8 @@ from typing import Any
 import pytest
 
 from api.gateway_api import GatewayApi
+from utils.custom.api_loader import load_api_definitions
+from utils.custom.case_loader import load_single_cases
 from utils.custom.config_loader import ConfigError, load_settings, load_yaml
 from utils.custom.logger import configure_logging
 from utils.custom.runtime_context import RuntimeContext
@@ -56,10 +58,14 @@ def pytest_configure(config: pytest.Config) -> None:
         console=bool(logging_config.get("console", True)),
         file=bool(logging_config.get("file", True)),
     )
-    for case_path in sorted((PROJECT_ROOT / "data" / "cases").glob("*.yaml")):
-        case = load_yaml(case_path)
-        for tag in case.get("tags") or []:
-            config.addinivalue_line("markers", f"{tag}: YAML 用例标签")
+    # CaseLoader 负责解析 V1.3 嵌套 cases；集合去重避免相同标签重复注册。
+    case_tags = {
+        tag
+        for single_case in load_single_cases(PROJECT_ROOT)
+        for tag in single_case["tags"]
+    }
+    for tag in sorted(case_tags):
+        config.addinivalue_line("markers", f"{tag}: YAML 用例标签")
     for flow_path in sorted((PROJECT_ROOT / "data" / "flows").glob("*.yaml")):
         flow = load_yaml(flow_path)
         for tag in flow.get("tags") or []:
@@ -104,18 +110,15 @@ def gateway_api(
     gateway_endpoint: dict[str, Any],
     gateway_runtime: RuntimeContext,
 ) -> GatewayApi:
-    """返回具备自动创建/刷新匿名会话能力的 Gateway 调用对象。"""
-    session_cases = {
-        method_name: load_yaml(PROJECT_ROOT / "data" / "cases" / file_name)
-        for method_name, file_name in {
-            "CreateAnonymousSession": "CreateAnonymousSession.yaml",
-            "RefreshSession": "RefreshSession.yaml",
-        }.items()
-    }
+    """返回具备自动创建/刷新匿名会话能力的 Gateway 调用对象。
+
+    自动会话只使用 API 定义中的路由；请求参数、断言和提取规则由
+    ``GatewayApi`` 的内部会话协议统一管理，不依赖单接口 Cases。
+    """
     return GatewayApi(
         gateway_settings,
         gateway_endpoint,
         runtime_context=gateway_runtime,
-        session_cases=session_cases,
+        api_definitions=load_api_definitions(PROJECT_ROOT),
         session_env_path=PROJECT_ROOT / ".env",
     )

@@ -6,112 +6,332 @@
     <a href="{{ url_for('run_detail', run_id=process.run_id) }}">{{ process.run_label }}</a>
     <span>/</span><span>{{ process.process_id }}</span>
   </div>
-  <div class="page-heading split">
+  <header class="process-result-hero">
     <div>
-      <p class="eyebrow mono">{{ process.process_id }}</p>
+      <p class="eyebrow">Field Processing Result</p>
       <h1>字段处理结果</h1>
-      <p>{{ process.schema_name }} · {{ process.schema_version }} · {{ process.rule_version }}</p>
+      <p class="process-result-subtitle">
+        {{ process.run_label }} · {{ process.schema_name }} · {{ process.rule_version }}
+      </p>
+      <div class="process-result-facts">
+        <span>字段配置 <strong>{{ process.schema_version }}</strong></span>
+        <span>开始 <strong>{{ process.created_at|format_datetime }}</strong></span>
+        <span>完成 <strong>{{ process.finished_at|format_datetime('处理中') }}</strong></span>
+      </div>
     </div>
-    <span class="status large {{ process.status|status_class }}">{{ process.status }}</span>
+    <div class="process-result-hero-meta">
+      <span class="status large {{ process.status|status_class }}">{{ process.status }}</span>
+      <span class="mono">{{ process.process_id }}</span>
+    </div>
+  </header>
+
+  <div class="process-result-summary-grid">
+    <article><span>Query</span><strong>{{ processed_queries|length }}</strong><small>本次进入处理的查询</small></article>
+    <article><span>候选人</span><strong>{{ total }}</strong><small>已处理候选人结果</small></article>
+    <article><span>身份已归类</span><strong>{{ classification_progress.hit_confirmed_count + classification_progress.no_hit_confirmed_count }}</strong><small>共 {{ classification_progress.total_count }} 条 Query</small></article>
+    <article class="{% if query_error_count + candidate_error_count %}has-warning{% endif %}">
+      <span>真实处理错误</span><strong>{{ query_error_count + candidate_error_count }}</strong><small>详情失败 {{ detail_failure_count }}</small>
+    </article>
   </div>
 
-  <div class="metric-strip four">
-    <div><span>候选人数</span><strong>{{ total }}</strong></div>
-    <div><span>Query 数</span><strong>{{ processed_queries|length }}</strong></div>
-    <div><span>开始时间</span><strong class="small-metric">{{ process.created_at }}</strong></div>
-    <div><span>完成时间</span><strong class="small-metric">{{ process.finished_at or '处理中' }}</strong></div>
+  {% if metrics %}
+    <section class="process-result-section process-result-core">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">Core Metrics</p>
+          <h2>核心评测结果</h2>
+          <p>先看本次处理的结果结论；完整计算明细可在生成的报告中查看。</p>
+        </div>
+        <span class="status {{ metrics.review_status|status_class }}">{{ metrics.review_status }}</span>
+      </div>
+      <div class="process-result-kpis">
+        {% for key, label, purpose in [
+          ('candidate_return_rate', '候选人返回率', '衡量 Query 是否成功获得候选人'),
+          ('retrieval_success', '目标人物命中率', '衡量全部 Query 对目标人物的召回能力'),
+          ('conditional_hit_rate', '有候选人条件下命中率', '排除无候选人后观察身份命中能力'),
+          ('matched_completeness', '命中资料完整度', '衡量命中人物返回资料是否充分'),
+          ('matched_accuracy', '命中信息准确度', '衡量命中人物信息与基准的一致性'),
+          ('nonmatched_data_completeness', '非命中资料完整度', '观察非命中候选人自身资料丰富程度'),
+          ('nonmatched_baseline_overlap', '非命中候选人资料相似度', '识别同名干扰与误召回的资料相似情况')
+        ] %}
+          {% set metric = metrics.get(key, {}) %}
+          <article>
+            <span>{{ label }}</span>
+            <small class="purpose">{{ purpose }}</small>
+            <strong>
+              {% if metric.value is not none %}
+                {{ (metric.value * 100)|round(2) }}%
+              {% elif metric.preview_value is not none %}
+                预览 {{ (metric.preview_value * 100)|round(2) }}%
+              {% elif metric.status == 'NOT_READY' %}
+                待准备
+              {% elif metric.status == 'NOT_APPLICABLE' and metric.reasons %}
+                {{ metric.reasons[0] }}
+              {% else %}
+                无适用分母
+              {% endif %}
+            </strong>
+            <small>{{ metric.numerator|round(4) }} / {{ metric.denominator }}</small>
+          </article>
+        {% endfor %}
+      </div>
+      <div class="process-result-meta-line">
+        基准：<span class="mono">{{ metrics.baseline_version or '未关联' }}</span>
+        · 规则：<span class="mono">{{ metrics.rule_version }}</span>
+        · 指标：<span class="mono">{{ metrics.metrics_rule_version }}</span>
+        · 成本/PDL：{{ metrics.cost_status.status }}
+      </div>
+    </section>
+  {% endif %}
+
+  <div class="process-result-priority-grid">
+    <section class="process-result-section">
+      <div class="section-head">
+        <div><p class="eyebrow">Grouped Metrics</p><h2>阶段分组</h2><p>按评测阶段、系统版本和 Query 类型查看本次结果。</p></div>
+      </div>
+      {% if metrics and metrics.grouped_metrics %}
+        <div class="process-stage-list">
+          {% for group in metrics.grouped_metrics %}
+            <article>
+              <div>
+                <strong>{{ group.evaluation_phase }}</strong>
+                <span>{{ group.system_version }} · {{ group.query_stage }}</span>
+              </div>
+              <dl>
+                <div><dt>Query</dt><dd>{{ group.query_count }}</dd></div>
+                <div><dt>目标人物命中率</dt><dd>{{ ((group.quality_metrics.retrieval_success.value or 0) * 100)|round(2) if group.quality_metrics.retrieval_success.value is not none else '未就绪' }}{% if group.quality_metrics.retrieval_success.value is not none %}%{% endif %}</dd></div>
+                <div><dt>平均总成本</dt><dd>{{ group.cost_metrics.total_cost.average|round(4) if group.cost_metrics.total_cost.average is not none else '—' }}</dd></div>
+                <div><dt>平均耗时</dt><dd>{{ group.cost_metrics.search_duration_ms.average|round(2) if group.cost_metrics.search_duration_ms.average is not none else '—' }}</dd></div>
+              </dl>
+            </article>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="empty-state compact-empty"><strong>暂无阶段分组数据</strong></div>
+      {% endif %}
+    </section>
+
+    <section class="process-result-section process-report-hub">
+      <div class="section-head">
+        <div><p class="eyebrow">Reports</p><h2>报告记录</h2><p>查看已有快照，或基于当前处理结果生成新报告。</p></div>
+        <span class="count">{{ reports|length }} 份</span>
+      </div>
+      {% if reports %}
+        <div class="process-report-list">
+          {% for item in reports %}
+            <article>
+              <div>
+                <a class="mono" href="{{ url_for('report_detail', report_id=item.report_id) }}">{{ item.report_id }}</a>
+                <span>{{ item.report_type }} · {{ item.created_at|format_datetime }}</span>
+              </div>
+              <div class="process-report-actions">
+                <span class="status {{ item.status|status_class }}">{{ item.status }}</span>
+                <a href="{{ url_for('download_run_file', file_type='report-html', run_id=item.report_id) }}">HTML</a>
+                {% if item.excel_file %}<a href="{{ url_for('download_run_file', file_type='report-excel', run_id=item.report_id) }}">Excel</a>{% endif %}
+              </div>
+            </article>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="empty-state compact-empty"><strong>尚未生成报告</strong></div>
+      {% endif %}
+      <details class="process-report-create">
+        <summary>生成新的报告快照</summary>
+        <form method="post" action="{{ url_for('report_create') }}">
+          <input type="hidden" name="candidate_process_id" value="{{ process.process_id }}">
+          <label>
+            <span>baseline Process（可选）</span>
+            <select name="baseline_process_id">
+              <option value="">单 Run 报告</option>
+              {% for other in compatible_processes %}
+                <option value="{{ other.process_id }}">{{ other.run_label }} · {{ other.system_version }} · {{ other.process_id }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label>
+            <span>数据标识</span>
+            <select name="data_marker">
+              <option value="REAL_TEST_DATA">真实测试数据</option>
+              <option value="MOCK">Mock 数据</option>
+            </select>
+          </label>
+          <button class="button primary" type="submit">生成报告快照</button>
+        </form>
+      </details>
+    </section>
   </div>
-  <div class="metric-strip four">
+
+  <section class="section-head process-result-detail-heading">
+    <div>
+      <p class="eyebrow">Processing Diagnostics</p>
+      <h2>数据质量与处理明细</h2>
+      <p>以下内容用于排查字段对齐、身份判定、数据返回和成本接入问题。</p>
+    </div>
+  </section>
+
+  <div class="metric-strip four process-result-quality-strip">
     <div><span>Query 字段空值</span><strong>{{ query_empty_count }}</strong></div>
     <div><span>Candidate 字段空值</span><strong>{{ candidate_empty_count }}</strong></div>
-    <div><span>真实处理错误</span><strong>{{ query_error_count + candidate_error_count }}</strong></div>
     <div><span>详情请求失败</span><strong>{{ detail_failure_count }}</strong></div>
+    <div><span>待身份归类</span><strong>{{ classification_progress.pending_count }}</strong></div>
   </div>
 
-  {% if processed_queries %}
+  {% if field_matrix %}
     <section class="section-head">
       <div>
-        <p class="eyebrow">Query Fields</p>
-        <h2>Query 公共字段快照</h2>
+        <p class="eyebrow">Field Alignment Snapshot</p>
+        <h2>本次字段配置对齐</h2>
+        <p>矩阵按本 Process 固定的 FieldSchema、Baseline 和处理结果生成，不影响历史快照。</p>
       </div>
-      <span class="count">{{ processed_queries|length }} 条</span>
+      <a class="button secondary" href="{{ url_for('field_comparison_matrix', schema_version=process.schema_version, baseline_version=process.baseline_version, process_id=process.process_id) }}">打开完整字段矩阵</a>
     </section>
-    <div class="processed-candidate-list">
-      {% for query in processed_queries %}
-        <article class="panel processed-candidate">
-          <div class="processed-candidate-head">
-            <div>
-              <p class="eyebrow mono">{{ query.query_id }}</p>
-              <h2>{{ query.result_status }}</h2>
-            </div>
-            {% if query.errors %}
-              <span class="status danger">{{ query.errors|length }} ERRORS</span>
-            {% else %}
-              <span class="status success">PROCESSED</span>
-            {% endif %}
-          </div>
-          {% if query.fields %}
-            <dl class="data-list processed-fields">
-              {% for field_key, value in query.fields.items() %}
-                {% set definition = definitions.get(field_key, {}) %}
-                <div>
-                  <dt>{{ definition.get('display_name', field_key) }}<small class="mono">{{ field_key }}</small></dt>
-                  <dd>{{ render_value(value, field_key) }}{% if query.empty_fields.get(field_key) %}<span class="status neutral">EMPTY</span>{% endif %}</dd>
-                </div>
-              {% endfor %}
-            </dl>
-          {% endif %}
-          {% if query.errors %}
-            <div class="processing-errors">
-              {% for error in query.errors %}
-                <p><strong>{{ error.field_key or error.code }}</strong><code>{{ error.source_path }}</code>{{ error.error }}</p>
-              {% endfor %}
-            </div>
-          {% endif %}
-        </article>
-      {% endfor %}
+    <div class="metric-strip four">
+      <div><span>ERROR</span><strong>{{ field_matrix.severity_counts.ERROR }}</strong></div>
+      <div><span>WARNING</span><strong>{{ field_matrix.severity_counts.WARNING }}</strong></div>
+      <div><span>成功 Candidate</span><strong>{{ field_matrix.candidate_count }}</strong></div>
+      <div><span>字段数</span><strong>{{ field_matrix.fields|length }}</strong></div>
     </div>
   {% endif %}
 
-  {% if metrics %}
-    <section class="section-head">
-      <div>
-        <p class="eyebrow">Quality Metrics</p>
-        <h2>复核与核心指标</h2>
+  <section class="section-head">
+    <div>
+      <p class="eyebrow">Identity Classification</p>
+      <h2>候选人身份自动判定</h2>
+      <p>系统按 Social Link 与照片相似度规则自动判定；仅在需要覆写规则结果时进入人工处理。</p>
+    </div>
+    <span class="count">{{ classification_progress.total_count }} 条 Query</span>
+  </section>
+  <div class="metric-strip four">
+    <div><span>自动 / 人工命中</span><strong>{{ classification_progress.hit_confirmed_count }}</strong></div>
+    <div><span>自动 / 人工无命中</span><strong>{{ classification_progress.no_hit_confirmed_count }}</strong></div>
+    <div><span>规则无法判定</span><strong>{{ classification_progress.pending_count }}</strong></div>
+    <div><span>无候选人</span><strong>{{ classification_progress.no_candidates_count }}</strong></div>
+  </div>
+  {% if classification_progress['items'] %}
+    <details class="process-result-disclosure">
+      <summary>查看 {{ classification_progress['items']|length }} 条 Query 的身份归类明细</summary>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Query</th><th>人物</th><th>候选人</th><th>身份状态</th><th>操作</th></tr></thead>
+          <tbody>
+            {% for item in classification_progress['items'] %}
+              <tr>
+                <td class="mono">{{ item.query_id }}</td>
+                <td>{{ item.baseline_display_name or item.person_id or '未关联' }}</td>
+                <td>{{ item.candidates|length }}</td>
+                <td><span class="status {{ item.identity_state|status_class }}">{{ item.identity_state }}</span></td>
+                <td><a href="{{ url_for('query_classification', process_id=process.process_id, query_id=item.query_id) }}">查看 / 覆写规则</a></td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
       </div>
-      <span class="status {{ metrics.review_status|status_class }}">{{ metrics.review_status }}</span>
-    </section>
-    <div class="metric-strip four">
-      {% for key, label in [
-        ('retrieval_success', '检索成功率'),
-        ('matched_completeness', '命中候选人完整度'),
-        ('matched_accuracy', '命中候选人准确率'),
-        ('nonmatched_completeness', '非命中候选人完整度')
-      ] %}
-        {% set metric = metrics[key] %}
-        <div>
-          <span>{{ label }}</span>
-          <strong>
-            {% if metric.value is not none %}
-              {{ (metric.value * 100)|round(2) }}%
-            {% else %}
-              不适用 / 待复核
+    </details>
+  {% endif %}
+
+  {% if processed_queries %}
+    <details class="process-result-disclosure process-query-snapshots">
+      <summary>查看 {{ processed_queries|length }} 条 Query 的公共字段快照</summary>
+      <div class="processed-candidate-list">
+        {% for query in processed_queries %}
+          <article class="panel processed-candidate">
+            <div class="processed-candidate-head">
+              <div>
+                <p class="eyebrow mono">{{ query.query_id }}</p>
+                <h2>{{ query.result_status }}</h2>
+              </div>
+              {% if query.errors %}
+                <span class="status danger">{{ query.errors|length }} ERRORS</span>
+              {% else %}
+                <span class="status success">PROCESSED</span>
+              {% endif %}
+            </div>
+            {% if query.fields %}
+              <dl class="data-list processed-fields">
+                {% for field_key, value in query.fields.items() %}
+                  {% set definition = definitions.get(field_key, {}) %}
+                  <div>
+                    <dt>{{ definition.get('display_name', field_key) }}<small class="mono">{{ field_key }}</small></dt>
+                    <dd>{{ render_value(value, field_key) }}{% if query.empty_fields.get(field_key) %}<span class="status neutral">EMPTY</span>{% endif %}</dd>
+                  </div>
+                {% endfor %}
+              </dl>
             {% endif %}
-          </strong>
-          <small>{{ metric.numerator|round(4) }} / {{ metric.denominator }}</small>
-        </div>
-      {% endfor %}
-    </div>
-    <div class="inline-note">
-      基准：<span class="mono">{{ metrics.baseline_version or '未关联' }}</span>
-      · 规则：<span class="mono">{{ metrics.rule_version }}</span>
-      · 指标：<span class="mono">{{ metrics.metrics_rule_version }}</span>
-      · 成本/PDL：{{ metrics.cost_status.status }}
-      {% if not metrics.formal_ready %}· 系统建议不会进入正式 value{% endif %}
-    </div>
+            {% if query.errors %}
+              <div class="processing-errors">
+                {% for error in query.errors %}
+                  <p><strong>{{ error.field_key or error.code }}</strong><code>{{ error.source_path }}</code>{{ error.error }}</p>
+                {% endfor %}
+              </div>
+            {% endif %}
+          </article>
+        {% endfor %}
+      </div>
+    </details>
+  {% endif %}
+
+  {% if metrics %}
     {% if metrics.warnings %}
       <div class="error-list">
         {% for warning in metrics.warnings %}<p>{{ warning }}</p>{% endfor %}
+      </div>
+    {% endif %}
+
+    {% if metrics.metrics_rule_version == 'metrics-v3' %}
+      {% for key, label in [('candidate_return_rate', '候选人返回率'), ('retrieval_success', '目标人物命中率'), ('conditional_hit_rate', '有候选人条件下命中率'), ('matched_completeness', '命中资料完整度'), ('matched_accuracy', '命中信息准确度'), ('nonmatched_data_completeness', '非命中资料完整度'), ('nonmatched_baseline_overlap', '非命中候选人资料相似度')] %}
+        {% set item = metrics.get(key, {}) %}
+        {% if item.reason_codes %}
+          <div class="inline-note">
+            <strong>{{ label }} · {{ item.status }}</strong>：
+            {{ item.reason_codes|join(', ') }}
+            {% if item.reasons %}· {{ item.reasons|join('；') }}{% endif %}
+          </div>
+        {% endif %}
+      {% endfor %}
+
+      <section class="section-head">
+        <div><p class="eyebrow">Data Return v3</p><h2>Query / Candidate 字段返回率</h2></div>
+        <span class="status {{ metrics.candidate_field_return.status|status_class }}">{{ metrics.candidate_field_return.status }}</span>
+      </section>
+      <div class="metric-strip four">
+        <div><span>Candidate 字段总体返回率</span><strong>{{ ((metrics.candidate_field_return.value or metrics.candidate_field_return.preview_value or 0) * 100)|round(2) }}%</strong><small>{{ metrics.candidate_field_return.numerator|round(2) }} / {{ metrics.candidate_field_return.denominator }}</small></div>
+        <div><span>已归类 Query</span><strong>{{ metrics.identity_summary.classified_query_count }}</strong></div>
+        <div><span>待归类 Query</span><strong>{{ metrics.identity_summary.pending_query_count }}</strong></div>
+        <div><span>主要 HIT / 无 HIT</span><strong>{{ metrics.identity_summary.primary_hit_query_count }} / {{ metrics.identity_summary.no_hit_query_count }}</strong></div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>字段</th><th>Scope</th><th>Module</th><th>返回 / 分母</th><th>返回率</th><th>状态</th></tr></thead>
+          <tbody>
+            {% for field_key, item in metrics.field_metrics.items() %}
+              <tr>
+                <td>{{ item.display_name }}<small class="mono">{{ field_key }}</small></td>
+                <td class="mono">{{ item.value_scope }}</td>
+                <td>{{ item.module }}</td>
+                <td>{{ item.returned_count }} / {{ item.entity_count }}</td>
+                <td>{{ (item.return_rate * 100)|round(2) ~ '%' if item.return_rate is not none else '无适用分母' }}</td>
+                <td>{{ item.status }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <section class="section-head">
+        <div><p class="eyebrow">Module Semantics</p><h2>模块真实有数据率</h2></div>
+      </section>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>模块</th><th>data</th><th>empty</th><th>unknown</th><th>成功 Candidate</th><th>有数据率</th><th>状态</th></tr></thead>
+          <tbody>
+            {% for module, item in metrics.module_metrics.items() %}
+              <tr>
+                <td>{{ module }}</td><td>{{ item.data_count }}</td><td>{{ item.empty_count }}</td><td>{{ item.unknown_count }}</td><td>{{ item.candidate_count }}</td>
+                <td>{{ (item.data_rate * 100)|round(2) ~ '%' if item.data_rate is not none else '无适用分母' }}</td>
+                <td>{{ item.status }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
       </div>
     {% endif %}
 
@@ -125,17 +345,17 @@
         <div>
           <span>有候选人</span>
           <strong>{{ result_metrics.has_candidates_count }}</strong>
-          <small>有结果率：{{ ((result_metrics.has_result_rate or 0) * 100)|round(2) if result_metrics.has_result_rate is not none else '不适用' }}{% if result_metrics.has_result_rate is not none %}%{% endif %}</small>
+          <small>有结果率：{{ ((result_metrics.has_result_rate or 0) * 100)|round(2) if result_metrics.has_result_rate is not none else '无成功 Query' }}{% if result_metrics.has_result_rate is not none %}%{% endif %}</small>
         </div>
         <div>
           <span>无候选人</span>
           <strong>{{ result_metrics.no_candidates_count }}</strong>
-          <small>无结果率：{{ ((result_metrics.no_result_rate or 0) * 100)|round(2) if result_metrics.no_result_rate is not none else '不适用' }}{% if result_metrics.no_result_rate is not none %}%{% endif %}</small>
+          <small>无结果率：{{ ((result_metrics.no_result_rate or 0) * 100)|round(2) if result_metrics.no_result_rate is not none else '无成功 Query' }}{% if result_metrics.no_result_rate is not none %}%{% endif %}</small>
         </div>
         <div>
           <span>执行失败</span>
           <strong>{{ result_metrics.execution_failed_count }}</strong>
-          <small>失败率：{{ ((result_metrics.execution_failed_rate or 0) * 100)|round(2) if result_metrics.execution_failed_rate is not none else '不适用' }}{% if result_metrics.execution_failed_rate is not none %}%{% endif %}</small>
+          <small>失败率：{{ ((result_metrics.execution_failed_rate or 0) * 100)|round(2) if result_metrics.execution_failed_rate is not none else '无 Query' }}{% if result_metrics.execution_failed_rate is not none %}%{% endif %}</small>
         </div>
         <div>
           <span>总 Query</span>
@@ -181,7 +401,7 @@
         <div><span>PDL unknown</span><strong>{{ metrics.pdl_metrics.unknown_count }}</strong></div>
         <div>
           <span>PDL 调用率</span>
-          <strong>{{ ((metrics.pdl_metrics.call_rate or 0) * 100)|round(2) if metrics.pdl_metrics.call_rate is not none else '不适用' }}{% if metrics.pdl_metrics.call_rate is not none %}%{% endif %}</strong>
+          <strong>{{ ((metrics.pdl_metrics.call_rate or 0) * 100)|round(2) if metrics.pdl_metrics.call_rate is not none else '字段未接入' }}{% if metrics.pdl_metrics.call_rate is not none %}%{% endif %}</strong>
         </div>
       </div>
     {% endif %}
@@ -203,30 +423,6 @@
               </tr>
             {% else %}
               <tr><td colspan="4">本次 Process 没有候选人。</td></tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    {% endif %}
-
-    {% if metrics.grouped_metrics %}
-      <section class="section-head">
-        <div><p class="eyebrow">Grouped Metrics</p><h2>阶段分组</h2></div>
-      </section>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Evaluation Phase</th><th>系统版本</th><th>Query Stage</th><th>Query</th><th>检索成功率</th><th>平均总成本</th><th>平均耗时</th></tr></thead>
-          <tbody>
-            {% for group in metrics.grouped_metrics %}
-              <tr>
-                <td class="mono">{{ group.evaluation_phase }}</td>
-                <td>{{ group.system_version }}</td>
-                <td class="mono">{{ group.query_stage }}</td>
-                <td>{{ group.query_count }}</td>
-                <td>{{ ((group.quality_metrics.retrieval_success.value or 0) * 100)|round(2) if group.quality_metrics.retrieval_success.value is not none else '未就绪' }}{% if group.quality_metrics.retrieval_success.value is not none %}%{% endif %}</td>
-                <td>{{ group.cost_metrics.total_cost.average|round(4) if group.cost_metrics.total_cost.average is not none else '—' }}</td>
-                <td>{{ group.cost_metrics.search_duration_ms.average|round(2) if group.cost_metrics.search_duration_ms.average is not none else '—' }}</td>
-              </tr>
             {% endfor %}
           </tbody>
         </table>
@@ -289,60 +485,14 @@
     {% endif %}
   {% endif %}
 
-  <section class="form-panel">
+  <section class="section-head process-result-candidate-heading">
     <div>
-      <p class="eyebrow">Report Snapshot</p>
-      <h2>生成报告与导出</h2>
-      <p>报告固定当前字段、基准、规则和复核快照；后续修改只会令旧报告变为 STALE，不会覆盖文件。</p>
+      <p class="eyebrow">Candidate Field Results</p>
+      <h2>候选人字段处理结果</h2>
+      <p>按 Query 或 Candidate ID 搜索，并进入候选人详情查看结构化字段。</p>
     </div>
-    <form method="post" action="{{ url_for('report_create') }}">
-      <input type="hidden" name="candidate_process_id" value="{{ process.process_id }}">
-      <label>
-        <span>baseline Process（可选）</span>
-        <select name="baseline_process_id">
-          <option value="">单 Run 报告</option>
-          {% for other in compatible_processes %}
-            <option value="{{ other.process_id }}">
-              {{ other.run_label }} · {{ other.system_version }} · {{ other.process_id }}
-            </option>
-          {% endfor %}
-        </select>
-      </label>
-      <label>
-        <span>数据标识</span>
-        <select name="data_marker">
-          <option value="REAL_TEST_DATA">真实测试数据</option>
-          <option value="MOCK">Mock 数据</option>
-        </select>
-      </label>
-      <button class="button primary" type="submit">生成报告快照</button>
-    </form>
+    <span class="count">{{ total }} 人</span>
   </section>
-
-  {% if reports %}
-    <section class="section-head">
-      <div><p class="eyebrow">Reports</p><h2>报告记录</h2></div>
-      <span class="count">{{ reports|length }} 份</span>
-    </section>
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>报告</th><th>类型</th><th>状态</th><th>HTML</th><th>Excel</th><th>生成时间</th></tr></thead>
-        <tbody>
-          {% for item in reports %}
-            <tr>
-              <td><a class="mono" href="{{ url_for('report_detail', report_id=item.report_id) }}">{{ item.report_id }}</a></td>
-              <td>{{ item.report_type }}</td>
-              <td><span class="status {{ item.status|status_class }}">{{ item.status }}</span></td>
-              <td><a href="{{ url_for('download_run_file', file_type='report-html', run_id=item.report_id) }}">下载</a></td>
-              <td>{% if item.excel_file %}<a href="{{ url_for('download_run_file', file_type='report-excel', run_id=item.report_id) }}">下载</a>{% else %}不可用{% endif %}</td>
-              <td>{{ item.created_at }}</td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  {% endif %}
-
   <form class="filter-bar compact-filter" method="get">
     <input type="search" name="q" value="{{ keyword }}" placeholder="搜索 query_id / candidate_id">
     <button class="button primary" type="submit">搜索</button>

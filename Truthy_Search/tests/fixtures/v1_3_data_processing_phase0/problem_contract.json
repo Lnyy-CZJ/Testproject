@@ -1,0 +1,71 @@
+{
+  "source_report_id": "report_5a680512bbbc4048ae860ca42330b162",
+  "source_process_id": "process_9c490abfc00f47a1a2f06d594f8819a7",
+  "source_run_id": "run_2be5fe30b86f49bcba447296205911bb",
+  "source_baseline_version": "test20260728",
+  "query_count": 10,
+  "missing_person_id_count": 10,
+  "candidate_count": 45,
+  "pending_review_count": 45,
+  "query_task_id_count": 10,
+  "candidate_count_by_query": [5, 6, 1, 7, 4, 6, 3, 6, 1, 6],
+  "baseline_available_field_count": 15,
+  "baseline_available_fields": [
+    "insights_description",
+    "insights_links",
+    "insights_data",
+    "photos_data",
+    "profile_data",
+    "profile_sections",
+    "social_display_handles",
+    "social_platforms",
+    "social_urls",
+    "summary_avatar_url",
+    "summary_primary_image_url",
+    "summary_social_links",
+    "summary_web_links",
+    "summary_display_name",
+    "summary_location"
+  ],
+  "v2_snapshot": {
+    "metrics_rule_version": "metrics-v2",
+    "task_id": {
+      "returned_count": 0,
+      "candidate_count": 45
+    },
+    "insights_return_rate": 1.0,
+    "photos_return_rate": 1.0,
+    "matched_completeness_status": "NOT_APPLICABLE",
+    "completeness_field_keys": ["social_urls"]
+  },
+  "v3_contract": {
+    "task_id": {
+      "value_scope": "QUERY",
+      "entity_count": 10,
+      "returned_count": 10,
+      "return_rate": 1.0
+    },
+    "profile": {
+      "data_count": 45,
+      "candidate_count": 45
+    },
+    "social": {
+      "data_count": 34,
+      "candidate_count": 45
+    },
+    "insights": {
+      "data_count": 2,
+      "candidate_count": 45
+    },
+    "photos": {
+      "data_count": 0,
+      "candidate_count": 45
+    },
+    "identity_status": "NOT_READY",
+    "identity_reason_codes": [
+      "BASELINE_NOT_LINKED",
+      "IDENTITY_PENDING"
+    ],
+    "baseline_only_conflict_count": 14
+  }
+}
