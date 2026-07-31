@@ -1532,6 +1532,14 @@ def test_single_api_entry_filters_exact_case_ids_and_rejects_unknown(
         test_single_api._load_case_params()
 
 
+def test_ci_entry_defaults_collect_all_cases_and_flows() -> None:
+    """CI 默认入口不得固化本地调试筛选，确保定时任务收集全部用例。"""
+    from test_cases import test_gateway_flow, test_single_api
+
+    assert test_single_api.RUN_CASE_IDS == ()
+    assert test_gateway_flow.RUN_FLOW_IDS == ()
+
+
 def test_pytest_configure_registers_nested_case_tags(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -11,3 +11,5 @@ __pycache__/
 reports/*
 !reports/.gitkeep
 logs/*
+allure-results/
+allure-report/

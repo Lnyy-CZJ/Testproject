@@ -342,6 +342,55 @@ def test_http_client_logs_masked_request_and_response(
     assert "response-refresh-secret" not in caplog.text
 
 
+def test_http_client_allure_attachments_reuse_masked_objects(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Gateway 报告附件必须复用 HttpClient 的脱敏请求和响应对象。"""
+    from utils.custom import http_client
+
+    class SuccessfulSession:
+        """返回含敏感字段和签名地址的 Gateway 响应。"""
+
+        def post(self, *args: object, **kwargs: object) -> FakeResponse:
+            return FakeResponse(
+                200,
+                {
+                    "access_token": "response-access-secret",
+                    "upload_url": "https://cos.example/file?secret=signed-secret",
+                },
+            )
+
+    attachments: list[tuple[str, object]] = []
+    monkeypatch.setattr(
+        http_client,
+        "attach_json",
+        lambda name, data: attachments.append((name, data)),
+    )
+
+    http_client.HttpClient(SuccessfulSession()).post_json(
+        "https://gateway.example/invoke",
+        {"Authorization": "header-secret"},
+        {"comm": {"auth_token": "request-token-secret"}},
+        10,
+    )
+
+    assert attachments[0] == (
+        "Gateway 请求",
+        {
+            "url": "https://gateway.example/invoke",
+            "headers": {"Authorization": "***"},
+            "payload": {"comm": {"auth_token": "***"}},
+        },
+    )
+    response_attachment = attachments[1][1]
+    assert isinstance(response_attachment, dict)
+    assert response_attachment["status_code"] == 200
+    assert response_attachment["body"] == {
+        "access_token": "***",
+        "upload_url": "https://cos.example/file?***",
+    }
+
+
 def test_build_pytest_args_supports_filters() -> None:
     """统一入口应把环境、模块、标签及透传参数转换为 pytest 参数。"""
     args = build_pytest_args(

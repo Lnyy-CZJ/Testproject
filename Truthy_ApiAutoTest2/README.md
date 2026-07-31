@@ -318,3 +318,46 @@ V1.3 已完成一次性迁移，不维护两套格式：
 6. 自动会话参数、断言和提取规则由框架内部协议维护。
 
 迁移后修改单接口 Case 不会影响 Flow；新增 Flow 接口也不要求先创建单接口 Case。
+
+## 11. 生成 Allure 3 报告
+
+Python 依赖已包含 `allure-pytest`。Allure 3 CLI 使用 npm 用户级目录安装，
+不修改项目的 `package.json`：
+
+```bash
+npm install -g \
+  --prefix /Users/admin/.local/allure-npm \
+  allure@3.14.3
+
+export PATH="/Users/admin/.local/allure-npm/bin:$PATH"
+allure --version
+```
+
+执行全部测试并生成原始结果：
+
+```bash
+.venv/bin/python runtest.py \
+  --env test \
+  -- \
+  --alluredir=allure-results \
+  --clean-alluredir \
+  --allure-no-capture
+```
+
+仅执行指定 Flow 时，在 `--env test` 后增加
+`--flow AnonymousSessionMediaSearch`。`--allure-no-capture` 用于避免重复附加
+stdout、stderr 和日志。
+
+使用 Allure 3 内置 Awesome 报告生成并打开 HTML：
+
+```bash
+allure awesome allure-results \
+  --output allure-report \
+  --group-by parentSuite,suite,feature,story
+allure open allure-report
+```
+
+`allure-results/` 和 `allure-report/` 都是本地运行产物，不提交到仓库。首次或
+希望清空旧结果时使用 `--clean-alluredir`；需要合并多批结果时，后续执行不要
+使用该参数。报告附件会脱敏 token 和签名 URL，不保存非 JSON 响应正文或媒体
+二进制，但仍不应将结果目录对外公开。

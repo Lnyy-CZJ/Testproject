@@ -17,10 +17,11 @@ import pytest
 
 from api.gateway_api import GatewayApi
 from utils.custom.case_loader import load_single_cases
+from utils.third_party.allure_reporter import set_single_case_metadata, step
 
 # 指定需要调试的完整 Case ID；正式默认值为空元组，收集全部独立单接口用例。
 # 临时调试示例：("GetMe::get_me_success",)。
-RUN_CASE_IDS: tuple[str, ...] = ("GetMe::get_me_success",)
+RUN_CASE_IDS: tuple[str, ...] = ()
 
 
 def _load_case_params() -> list[Any]:
@@ -62,7 +63,9 @@ def test_single_gateway_api(
     gateway_api: GatewayApi,
 ) -> None:
     """执行一条已组装的 V1.3 单接口 case，并完成分层断言。"""
-    gateway_api.execute(single_case["execution_case"])
+    set_single_case_metadata(single_case)
+    with step(f"执行接口：{single_case['api_id']}"):
+        gateway_api.execute(single_case["execution_case"])
 
 
 def main(argv: Sequence[str] | None = None) -> int:

@@ -19,10 +19,11 @@ from api.gateway_api import GatewayApi
 from utils.custom.flow_loader import FlowConfigError, load_flow_cases
 from utils.custom.flow_runner import FlowEnvironmentError, FlowRunner
 from utils.custom.runtime_context import RuntimeContext
+from utils.third_party.allure_reporter import set_flow_metadata
 
 # 本地调试 Flow 的完整文件名 stem；空元组表示收集全部 Flow。
 # 临时调试示例：("AnonymousSessionMediaSearch",)。
-RUN_FLOW_IDS: tuple[str, ...] = ("AnonymousSessionMediaSearch",)
+RUN_FLOW_IDS: tuple[str, ...] = ()
 # 仅复制会话生命周期需要的框架变量；Flow 业务变量始终保持独立。
 _FRAMEWORK_SESSION_KEYS = (
     "access_token",
@@ -128,6 +129,7 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
 
 def test_gateway_flow(flow_case: dict[str, Any], gateway_api: GatewayApi) -> None:
     """使用通用 FlowRunner 执行一条独立 Flow/Scenario 用例。"""
+    set_flow_metadata(flow_case)
 
     def gateway_factory(runtime_context: RuntimeContext) -> GatewayApi:
         """为当前 Flow 创建绑定独立业务和会话上下文的 GatewayApi。"""

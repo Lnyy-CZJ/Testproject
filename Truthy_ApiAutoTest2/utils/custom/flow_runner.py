@@ -14,6 +14,7 @@ from utils.custom.api_loader import build_execution_case
 from utils.custom.assertions import assert_data_equals, assert_gateway_response
 from utils.custom.logger import get_logger
 from utils.custom.runtime_context import RuntimeContext, RuntimeContextError
+from utils.third_party.allure_reporter import attach_json, step as report_step
 
 LOGGER = get_logger(__name__)
 _ENV_PATTERN = re.compile(r"^\$\{([A-Za-z_][A-Za-z0-9_]*)}$")
@@ -78,6 +79,12 @@ class FlowRunner:
 
         for position, step in enumerate(steps, start=1):
             step_id = str(step.get("id") or f"step_{position}")
+            step_title = self._build_step_title(
+                step,
+                step_id,
+                position,
+                len(steps),
+            )
             LOGGER.info(
                 "开始 Flow 步骤: flow=%s scenario=%s step=%s (%s/%s)",
                 flow_case.get("name") or flow_case.get("id"),
@@ -86,23 +93,54 @@ class FlowRunner:
                 position,
                 len(steps),
             )
-            if "wait" in step:
-                self.sleep(float(step["wait"]["seconds"]))
-            elif "action" in step:
-                self._execute_action(str(step["action"]), gateway, context)
-            elif "api" in step:
-                step_data = (scenario.get("step_data") or {}).get(step_id) or {}
-                self._execute_api(
-                    step,
-                    step_data,
-                    api_definitions,
-                    gateway,
-                    context,
-                )
-            else:
-                raise FlowExecutionError(f"步骤 {step_id} 没有可执行动作")
+            with report_step(step_title):
+                if "wait" in step:
+                    self.sleep(float(step["wait"]["seconds"]))
+                elif "action" in step:
+                    self._execute_action(str(step["action"]), gateway, context)
+                elif "api" in step:
+                    step_data = (scenario.get("step_data") or {}).get(step_id) or {}
+                    self._execute_api(
+                        step,
+                        step_data,
+                        api_definitions,
+                        gateway,
+                        context,
+                    )
+                else:
+                    raise FlowExecutionError(f"步骤 {step_id} 没有可执行动作")
             LOGGER.info("完成 Flow 步骤: step=%s", step_id)
         return context
+
+    @staticmethod
+    def _build_step_title(
+        step: dict[str, Any],
+        step_id: str,
+        position: int,
+        total: int,
+    ) -> str:
+        """构造 Flow 顶层步骤的稳定报告标题。
+
+        参数说明:
+            step: 当前 Flow 步骤。
+            step_id: 当前步骤 ID。
+            position: 当前步骤从 1 开始的位置。
+            total: Flow 顶层步骤总数。
+
+        返回值:
+            包含位置、步骤 ID 和动作信息的中文标题。
+
+        异常说明:
+            无。未知步骤返回缺少动作的诊断标题，随后由执行逻辑抛出原异常。
+        """
+        prefix = f"{position}/{total} {step_id}："
+        if "api" in step:
+            return f"{prefix}{step['api']}"
+        if "wait" in step:
+            return f"{prefix}等待 {step['wait']['seconds']}s"
+        if "action" in step:
+            return f"{prefix}{step['action']}"
+        return f"{prefix}未知动作"
 
     def _execute_api(
         self,
@@ -179,10 +217,21 @@ class FlowRunner:
 
         while True:
             attempts += 1
-            response = gateway.invoke(case)
-            data = assert_gateway_response(response, case["assert"])
-            last_value = RuntimeContext.read_path(data, path)
-            if last_value == expected:
+            with report_step(f"第 {attempts} 次轮询"):
+                response = gateway.invoke(case)
+                data = assert_gateway_response(response, case["assert"])
+                last_value = RuntimeContext.read_path(data, path)
+                matched = last_value == expected
+                attach_json(
+                    "轮询结果",
+                    {
+                        "path": path,
+                        "actual": last_value,
+                        "expected": expected,
+                        "matched": matched,
+                    },
+                )
+            if matched:
                 return data
             now = self.monotonic()
             if now >= deadline:

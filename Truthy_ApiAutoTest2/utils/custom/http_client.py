@@ -11,6 +11,7 @@ from urllib.parse import urlsplit, urlunsplit
 import requests
 
 from utils.custom.logger import get_logger
+from utils.third_party.allure_reporter import attach_json
 
 LOGGER = get_logger(__name__)
 SENSITIVE_KEYS = {
@@ -109,6 +110,7 @@ class HttpClient:
             "payload": mask_sensitive(payload),
         }
         LOGGER.info("Gateway 请求数据:\n%s", _format_log_data(safe_request))
+        attach_json("Gateway 请求", safe_request)
         started_at = time.perf_counter()
         try:
             response = self.session.post(
@@ -117,9 +119,17 @@ class HttpClient:
                 json=payload,
                 timeout=timeout,
             )
-        except requests.RequestException:
+        except requests.RequestException as exc:
             # 异常日志复用脱敏后的请求副本，避免网络失败时泄露凭证。
             elapsed_ms = (time.perf_counter() - started_at) * 1000
+            attach_json(
+                "Gateway 请求异常",
+                {
+                    "request": safe_request,
+                    "elapsed_ms": elapsed_ms,
+                    "exception_type": type(exc).__name__,
+                },
+            )
             LOGGER.error(
                 "Gateway 请求异常: elapsed_ms=%.2f\n%s",
                 elapsed_ms,
@@ -129,9 +139,23 @@ class HttpClient:
 
         try:
             response_body = response.json()
+            response_attachment = {
+                "status_code": response.status_code,
+                "elapsed_ms": (time.perf_counter() - started_at) * 1000,
+                "body_type": "json",
+                "body": mask_sensitive(response_body),
+            }
         except (TypeError, ValueError):
             # 非 JSON 响应仍需输出原始文本，方便定位网关或代理异常。
             response_body = getattr(response, "text", "")
+            # 报告不保存非 JSON 正文，只保留足以判断代理错误的类型和长度。
+            response_attachment = {
+                "status_code": response.status_code,
+                "elapsed_ms": (time.perf_counter() - started_at) * 1000,
+                "body_type": "text",
+                "body_length": len(response_body),
+            }
+        attach_json("Gateway 响应", response_attachment)
         LOGGER.info(
             "Gateway 响应数据: HTTP %s elapsed_ms=%.2f\n%s",
             response.status_code,
@@ -167,6 +191,7 @@ class HttpClient:
             "content_length": len(content),
         }
         LOGGER.info("PUT 上传请求数据:\n%s", _format_log_data(safe_request))
+        attach_json("COS PUT 请求", safe_request)
         started_at = time.perf_counter()
         try:
             response = self.session.put(
@@ -175,16 +200,33 @@ class HttpClient:
                 data=content,
                 timeout=timeout,
             )
-        except requests.RequestException:
+        except requests.RequestException as exc:
+            elapsed_ms = (time.perf_counter() - started_at) * 1000
+            attach_json(
+                "COS PUT 请求异常",
+                {
+                    "request": safe_request,
+                    "elapsed_ms": elapsed_ms,
+                    "exception_type": type(exc).__name__,
+                },
+            )
             LOGGER.error(
                 "PUT 上传请求异常: elapsed_ms=%.2f\n%s",
-                (time.perf_counter() - started_at) * 1000,
+                elapsed_ms,
                 _format_log_data(safe_request),
             )
             raise
+        elapsed_ms = (time.perf_counter() - started_at) * 1000
+        attach_json(
+            "COS PUT 响应",
+            {
+                "status_code": response.status_code,
+                "elapsed_ms": elapsed_ms,
+            },
+        )
         LOGGER.info(
             "PUT 上传响应: HTTP %s elapsed_ms=%.2f",
             response.status_code,
-            (time.perf_counter() - started_at) * 1000,
+            elapsed_ms,
         )
         return response
