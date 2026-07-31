@@ -60,6 +60,10 @@ pipeline {
                 dir("${PROJECT_DIR}") {
                     sh '''
                         set -eu
+                        # 首次构建尚未注册参数环境变量，使用参数声明中的默认值继续执行。
+                        ENVIRONMENT="${ENVIRONMENT:-test}"
+                        RUN_TYPE="${RUN_TYPE:-all}"
+                        FLOW="${FLOW:-}"
 
                         run_single() {
                             .venv/bin/python -m pytest \
@@ -150,12 +154,18 @@ pipeline {
                         set -eu
                         ALLURE_HOME="$WORKSPACE/.jenkins-tools"
                         ALLURE_BIN="$ALLURE_HOME/bin/allure"
-                        export PATH="/usr/local/bin:$ALLURE_HOME/bin:$PATH"
+                        # Jenkins 服务可能由不同方式安装 Homebrew，只在当前步骤补充常用路径。
+                        export PATH="/opt/homebrew/bin:/usr/local/bin:$ALLURE_HOME/bin:$PATH"
+                        NPM_BIN="$(command -v npm || true)"
 
                         if [ ! -x "$ALLURE_BIN" ] || \
                            [ "$("$ALLURE_BIN" --version)" != "$ALLURE_VERSION" ]; then
+                            if [ -z "$NPM_BIN" ]; then
+                                echo "未找到 npm，无法准备 Allure CLI"
+                                exit 1
+                            fi
                             rm -rf "$ALLURE_HOME"
-                            /usr/local/bin/npm install --global \
+                            "$NPM_BIN" install --global \
                                 --prefix "$WORKSPACE/.jenkins-tools" \
                                 "allure@$ALLURE_VERSION"
                         fi
@@ -163,7 +173,7 @@ pipeline {
                         "$ALLURE_BIN" --version
                     '''
                     withEnv([
-                        'PATH+NODE=/usr/local/bin',
+                        'PATH+NODE=/opt/homebrew/bin:/usr/local/bin',
                         "PATH+ALLURE=${env.WORKSPACE}/.jenkins-tools/bin"
                     ]) {
                         allure(

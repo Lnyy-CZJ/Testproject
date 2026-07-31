@@ -550,6 +550,10 @@ def test_jenkinsfile_preserves_existing_execution_contract() -> None:
     assert "test_cases/test_single_api.py" in content
     assert "test_cases/test_gateway_flow.py" in content
     assert ".venv/bin/python runtest.py" in content
+    # Jenkins 首次加载参数定义时尚无参数环境变量，必须使用声明值作为安全默认值。
+    assert 'ENVIRONMENT="${ENVIRONMENT:-test}"' in content
+    assert 'RUN_TYPE="${RUN_TYPE:-all}"' in content
+    assert 'FLOW="${FLOW:-}"' in content
 
 
 def test_jenkinsfile_generates_and_publishes_allure3() -> None:
@@ -576,10 +580,12 @@ def test_jenkinsfile_isolates_cli_and_archives_only_required_outputs() -> None:
     """Allure CLI 必须隔离在任务工作区，归档范围不得包含环境和工具目录。"""
     content = _read_jenkinsfile()
 
-    assert '/usr/local/bin/npm install --global' in content
+    assert 'export PATH="/opt/homebrew/bin:/usr/local/bin:' in content
+    assert 'NPM_BIN="$(command -v npm || true)"' in content
+    assert '"$NPM_BIN" install --global' in content
     assert '--prefix "$WORKSPACE/.jenkins-tools"' in content
     assert '"allure@$ALLURE_VERSION"' in content
-    assert "PATH+NODE=/usr/local/bin" in content
+    assert "PATH+NODE=/opt/homebrew/bin:/usr/local/bin" in content
     assert ".jenkins-tools/bin" in content
     assert (
         "artifacts: "
