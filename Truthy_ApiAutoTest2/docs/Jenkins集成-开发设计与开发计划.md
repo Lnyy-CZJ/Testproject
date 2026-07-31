@@ -4,13 +4,13 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | J1.0 |
+| 文档版本 | J1.1 |
 | 编写日期 | 2026-07-31 |
 | 需求依据 | `docs/接口自动化Jenkins集成-PRD.md` |
 | 项目基线 | Gateway 接口自动化 V1.3 + Allure 报告 R1.0 |
 | 技术栈 | Jenkins Pipeline + Python + pytest + JUnit + Allure 3 |
 | 默认分支 | `dev` |
-| 文档状态 | 待 Review |
+| 文档状态 | 实施中（阶段 8 待首次自然定时构建） |
 
 ## 2. 设计目标
 
@@ -93,13 +93,14 @@ Allure 不替代 JUnit，报告发布失败也不能把真实接口失败误标�
 - 禁止同一任务并发构建。
 - 构建记录和产物保留策略。
 
-当前缺口：
+当前实现：
 
-- pytest 命令尚未生成 `allure-results`。
-- 构建后尚未发布 Jenkins Allure 报告。
-- 尚未归档 Allure 原始结果。
-- 尚未验证 Jenkins Allure Report 插件。
-- 尚未验证 Jenkins 服务用户能否执行 Allure 3 CLI。
+- 三种运行模式均生成 JUnit XML 和 `allure-results`。
+- 构建后通过 Allure Jenkins Plugin 发布 Allure 3 报告。
+- 日期日志和 Allure 原始结果均已归档。
+- Allure 发布异常通过 `catchError` 降级为 `UNSTABLE`。
+- pytest 或用例加载失败仍保持 `FAILURE`。
+- Allure 3 CLI 和 Node.js 安装在新任务自己的 `.jenkins-tools` 工作区。
 
 ### 4.3 Jenkins 环境
 
@@ -108,13 +109,12 @@ Allure 不替代 JUnit，报告发布失败也不能把真实接口失败误标�
 - 当前账号具备新建、配置和执行 Pipeline 的权限。
 - Pipeline、Git、Credentials、Credentials Binding 和 JUnit 插件可用。
 - 当前 macOS Apple Silicon 构建节点在线。
-
-待确认：
-
-- Allure Report 插件是否已安装。
-- Jenkins 服务用户的 PATH 是否包含 `allure`。
-- 构建节点是否能够执行 `python3`、`venv` 和 `pip`。
-- 构建节点是否能够访问 Git 仓库和测试 Gateway。
+- Jenkins 版本为 `2.568.1`。
+- Allure Jenkins Plugin `2.35.2` 已安装并可调用。
+- Jenkins 服务进程可执行 Allure CLI `3.14.3` 和 Node.js `22.23.2`。
+- 构建节点可创建 Python 虚拟环境、安装依赖、访问 Git 仓库和测试 Gateway。
+- Jenkins LaunchAgent PATH 已备份并更新，备份文件为
+  `/Users/truthy/Library/LaunchAgents/homebrew.mxcl.jenkins-lts.plist.codex-backup-20260731`。
 
 ## 5. 总体架构
 
@@ -561,7 +561,7 @@ pytest 结果 > JUnit 发布 > Allure 发布 > 日志归档
 
 ### 阶段 1：完成项目 Allure 能力
 
-状态：代码已实现，待最终回归确认。
+状态：已完成。
 
 工作项：
 
@@ -582,7 +582,7 @@ pytest 结果 > JUnit 发布 > Allure 发布 > 日志归档
 
 ### 阶段 2：确认 Jenkins Allure 前置条件
 
-状态：待执行。
+状态：已完成。
 
 工作项：
 
@@ -605,7 +605,7 @@ pytest 结果 > JUnit 发布 > Allure 发布 > 日志归档
 
 ### 阶段 3：更新 Jenkinsfile
 
-状态：待执行。
+状态：已完成。
 
 测试先行：
 
@@ -637,7 +637,7 @@ pytest 结果 > JUnit 发布 > Allure 发布 > 日志归档
 
 ### 阶段 4：项目侧回归
 
-状态：待执行。
+状态：已完成。
 
 验证：
 
@@ -675,7 +675,7 @@ python3 runtest.py \
 
 ### 阶段 5：提交并推送
 
-状态：待用户明确授权。
+状态：已完成。
 
 工作项：
 
@@ -689,7 +689,7 @@ python3 runtest.py \
 
 ### 阶段 6：创建独立 Jenkins 任务
 
-状态：待用户明确授权。
+状态：已完成。
 
 工作项：
 
@@ -706,7 +706,7 @@ python3 runtest.py \
 
 ### 阶段 7：手动构建验收
 
-状态：待执行。
+状态：已完成。
 
 按顺序验证：
 
@@ -765,7 +765,7 @@ FLOW=
 
 ### 阶段 8：定时构建与交接
 
-状态：待执行。
+状态：执行中，定时器已加载，等待首次自然触发。
 
 工作项：
 
@@ -775,6 +775,13 @@ FLOW=
 4. 检查 JUnit、Allure 和日志。
 5. 检查构建未并发执行。
 6. 记录任务地址、参数和排查说明。
+
+当前记录：
+
+- 任务地址：`http://10.0.30.33:8081/job/truthy-api-autotest/`
+- 定时规则：`TZ=Asia/Shanghai`、`H 2 * * *`
+- Jenkins 计算的首次自然触发时间：`2026-08-01 02:44:00`（Asia/Shanghai）
+- 默认参数：`ENVIRONMENT=test`、`RUN_TYPE=all`、`FLOW=`。
 
 完成条件：
 
@@ -812,23 +819,23 @@ FLOW=
 
 ## 17. 验收清单
 
-- [ ] Allure 项目侧回归通过。
-- [ ] `RUN_CASE_IDS` 为空。
-- [ ] `RUN_FLOW_IDS` 为空。
-- [ ] Allure Report 插件状态已确认。
-- [ ] Jenkins 服务用户可执行 Allure 3 CLI。
-- [ ] Jenkinsfile 三种模式均生成 JUnit。
-- [ ] Jenkinsfile 三种模式均生成 `allure-results`。
-- [ ] JUnit 发布成功。
-- [ ] Allure 3 报告发布成功。
-- [ ] 日志和 Allure 原始结果归档成功。
-- [ ] `.env` 和 `.venv` 未归档。
-- [ ] 单接口手动构建通过。
-- [ ] 指定 Flow 手动构建通过。
-- [ ] 全部接口手动构建通过。
-- [ ] 定时器已加载。
+- [x] Allure 项目侧回归通过。
+- [x] `RUN_CASE_IDS` 为空。
+- [x] `RUN_FLOW_IDS` 为空。
+- [x] Allure Report 插件状态已确认。
+- [x] Jenkins 服务用户可执行 Allure 3 CLI。
+- [x] Jenkinsfile 三种模式均生成 JUnit。
+- [x] Jenkinsfile 三种模式均生成 `allure-results`。
+- [x] JUnit 发布成功。
+- [x] Allure 3 报告发布成功。
+- [x] 日志和 Allure 原始结果归档成功。
+- [x] `.env` 和 `.venv` 未归档。
+- [x] 单接口手动构建通过（构建 `#7`，5 条通过）。
+- [x] 指定 Flow 手动构建通过（构建 `#8`，1 条通过）。
+- [x] 全部接口手动构建通过（构建 `#6`，6 条通过）。
+- [x] 定时器已加载。
 - [ ] 定时构建结果可查看。
-- [ ] 未修改任何已有 Jenkins 任务。
+- [x] 未修改任何已有 Jenkins 任务。
 
 ## 18. 风险与应对
 
@@ -871,18 +878,19 @@ FLOW=
 | 交付物 | 路径或位置 | 当前状态 |
 | --- | --- | --- |
 | Jenkins 集成 PRD | `docs/接口自动化Jenkins集成-PRD.md` | 已完成 |
-| Jenkins 详细设计与计划 | `docs/Jenkins集成-开发设计与开发计划.md` | 已更新，待 Review |
+| Jenkins 详细设计与计划 | `docs/Jenkins集成-开发设计与开发计划.md` | 已更新，阶段 8 待收口 |
 | Allure Pytest 依赖 | `requirements.txt` | 已接入 |
 | Allure Reporter | `utils/third_party/allure_reporter.py` | 已实现 |
 | 单接口 Allure 接入 | `test_cases/test_single_api.py` | 已实现 |
 | Flow Allure 接入 | `test_cases/test_gateway_flow.py` | 已实现 |
 | Allure 报告层测试 | `test_cases/test_allure_report.py` | 已实现 |
 | 基础 Jenkinsfile | `Jenkinsfile` | 已实现 |
-| Jenkinsfile Allure 发布 | `Jenkinsfile` | 待开发 |
-| Allure 插件和 CLI 检查 | Jenkins | 待执行 |
-| 独立 Jenkins 任务 | Jenkins | 未创建 |
-| 手动构建验收 | Jenkins | 未执行 |
-| 定时构建验收 | Jenkins | 未执行 |
+| Jenkinsfile Allure 发布 | `Jenkinsfile` | 已完成 |
+| Allure 插件和 CLI 检查 | Jenkins | 已完成：插件 2.35.2、CLI 3.14.3 |
+| 独立 Jenkins 任务 | Jenkins | 已创建：`truthy-api-autotest` |
+| 手动构建验收 | Jenkins | 已完成：`#6`、`#7`、`#8` |
+| 失败策略验收 | Jenkins | 已完成：报告失败为 `UNSTABLE`，构建 `#9` 验证 pytest 失败为 `FAILURE` |
+| 定时构建验收 | Jenkins | 待首次自然触发 |
 
 ## 21. 参考资料
 
