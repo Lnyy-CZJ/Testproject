@@ -580,13 +580,29 @@ def test_jenkinsfile_isolates_cli_and_archives_only_required_outputs() -> None:
     """Allure CLI 必须隔离在任务工作区，归档范围不得包含环境和工具目录。"""
     content = _read_jenkinsfile()
 
+    assert "NODE_VERSION = '22.23.2'" in content
+    assert (
+        "NODE_SHA256 = "
+        "'61130f394c1630d211dd50aecc4353d379480f36d3ac913cd85dbba1aed585c6'"
+        in content
+    )
+    assert (
+        'https://nodejs.org/dist/v$NODE_VERSION/'
+        'node-v$NODE_VERSION-darwin-arm64.tar.gz'
+        in content
+    )
+    assert "shasum -a 256 -c -" in content
     assert 'export PATH="/opt/homebrew/bin:/usr/local/bin:' in content
     assert 'NPM_BIN="$(command -v npm || true)"' in content
     assert '"$NPM_BIN" install --global' in content
-    assert '--prefix "$WORKSPACE/.jenkins-tools"' in content
+    assert '--prefix "$ALLURE_HOME"' in content
     assert '"allure@$ALLURE_VERSION"' in content
-    assert "PATH+NODE=/opt/homebrew/bin:/usr/local/bin" in content
-    assert ".jenkins-tools/bin" in content
+    assert (
+        "PATH+NODE=${env.WORKSPACE}/.jenkins-tools/"
+        "node-v${env.NODE_VERSION}-darwin-arm64/bin"
+        in content
+    )
+    assert ".jenkins-tools/allure/bin" in content
     assert (
         "artifacts: "
         "'Truthy_ApiAutoTest2/logs/**/*,"

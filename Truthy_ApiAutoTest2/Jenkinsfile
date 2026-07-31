@@ -36,6 +36,9 @@ pipeline {
         // 固定 Allure 版本和 pytest 参数，确保本地与 Jenkins 生成结果的方式一致。
         ALLURE_VERSION = '3.14.3'
         ALLURE_PYTEST_ARGS = '--alluredir=allure-results --clean-alluredir --allure-no-capture'
+        // Jenkins 节点未安装 Node 时，在任务工作区准备固定且经过校验的版本。
+        NODE_VERSION = '22.23.2'
+        NODE_SHA256 = '61130f394c1630d211dd50aecc4353d379480f36d3ac913cd85dbba1aed585c6'
     }
 
     stages {
@@ -152,11 +155,36 @@ pipeline {
                 catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
                     sh '''
                         set -eu
-                        ALLURE_HOME="$WORKSPACE/.jenkins-tools"
+                        TOOL_ROOT="$WORKSPACE/.jenkins-tools"
+                        NODE_HOME="$TOOL_ROOT/node-v$NODE_VERSION-darwin-arm64"
+                        ALLURE_HOME="$TOOL_ROOT/allure"
                         ALLURE_BIN="$ALLURE_HOME/bin/allure"
                         # Jenkins 服务可能由不同方式安装 Homebrew，只在当前步骤补充常用路径。
-                        export PATH="/opt/homebrew/bin:/usr/local/bin:$ALLURE_HOME/bin:$PATH"
+                        export PATH="/opt/homebrew/bin:/usr/local/bin:$NODE_HOME/bin:$ALLURE_HOME/bin:$PATH"
                         NPM_BIN="$(command -v npm || true)"
+
+                        if [ -z "$NPM_BIN" ]; then
+                            NODE_ARCHIVE="$TOOL_ROOT/node-v$NODE_VERSION-darwin-arm64.tar.gz"
+                            NODE_URL="https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-darwin-arm64.tar.gz"
+                            mkdir -p "$TOOL_ROOT"
+
+                            if [ ! -x "$NODE_HOME/bin/npm" ]; then
+                                curl --fail --location --retry 3 \
+                                    --output "$NODE_ARCHIVE" \
+                                    "$NODE_URL"
+                                (
+                                    cd "$TOOL_ROOT"
+                                    echo "$NODE_SHA256  $(basename "$NODE_ARCHIVE")" | \
+                                        shasum -a 256 -c -
+                                )
+                                rm -rf "$NODE_HOME"
+                                tar -xzf "$NODE_ARCHIVE" -C "$TOOL_ROOT"
+                                rm -f "$NODE_ARCHIVE"
+                            fi
+
+                            NPM_BIN="$NODE_HOME/bin/npm"
+                            export PATH="$NODE_HOME/bin:$PATH"
+                        fi
 
                         if [ ! -x "$ALLURE_BIN" ] || \
                            [ "$("$ALLURE_BIN" --version)" != "$ALLURE_VERSION" ]; then
@@ -166,15 +194,15 @@ pipeline {
                             fi
                             rm -rf "$ALLURE_HOME"
                             "$NPM_BIN" install --global \
-                                --prefix "$WORKSPACE/.jenkins-tools" \
+                                --prefix "$ALLURE_HOME" \
                                 "allure@$ALLURE_VERSION"
                         fi
 
                         "$ALLURE_BIN" --version
                     '''
                     withEnv([
-                        'PATH+NODE=/opt/homebrew/bin:/usr/local/bin',
-                        "PATH+ALLURE=${env.WORKSPACE}/.jenkins-tools/bin"
+                        "PATH+NODE=${env.WORKSPACE}/.jenkins-tools/node-v${env.NODE_VERSION}-darwin-arm64/bin:/opt/homebrew/bin:/usr/local/bin",
+                        "PATH+ALLURE=${env.WORKSPACE}/.jenkins-tools/allure/bin"
                     ]) {
                         allure(
                             allureVersion: '3',
