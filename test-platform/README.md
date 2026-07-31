@@ -1,15 +1,15 @@
-# 测试开发平台 MVP
+# 测试开发平台
 
-该项目是测试工具的统一入口。当前接入：
+该项目是测试工具的统一入口，当前使用 React + TypeScript + Vite、FastAPI、PostgreSQL、Alembic、Nginx 和 Docker Compose。首批接入：
 
 - `TrackEvents_tess`：埋点日志分析；
 - `log_filter_tool`：接口日志筛选与统计。
 
-平台只负责首页、服务状态和反向代理。两个工具保持独立源码、独立容器和独立测试。
+平台负责工具导航、状态探测和反向代理；两个工具继续保持独立源码、独立容器和独立测试。本轮不包含登录、RBAC、任务中心、Worker、Redis 或 Celery。
 
 ## 目录要求
 
-本地开发使用同级目录作为 Docker 构建上下文：
+三个项目保持同级，平台不复制工具业务源码：
 
 ```text
 Testproject/
@@ -18,91 +18,112 @@ Testproject/
 └── log_filter_tool/
 ```
 
-## 启动
+`web/` 是升级前静态首页，仅作为回滚资源保留；生产首页来自 `frontend/` 的 Vite 构建产物。
 
-需要 Docker 和 Docker Compose。
+## 启动与迁移
 
 ```bash
 cd /Users/admin/Testproject/test-platform
 cp .env.example .env
+# 首次启动前，请修改 .env 中的 POSTGRES_PASSWORD。
 docker compose up --build -d
 ```
 
-默认访问地址：`http://localhost:8080`。
+默认访问 `http://localhost:8080`。启动流程会等待 PostgreSQL 健康，运行 `alembic upgrade head`，迁移成功后再启动 FastAPI。只有 Nginx 的 `${PLATFORM_PORT:-8080}` 映射到宿主机。
 
-如需修改平台端口，编辑 `.env` 中的 `PLATFORM_PORT`。
-
-## 常用操作
+常用命令：
 
 ```bash
-# 查看服务状态
-docker compose ps
+# 查看服务与一次性迁移容器状态
+docker compose ps -a
 
-# 查看日志
-docker compose logs -f
+# 重复执行迁移（应保持幂等）
+docker compose run --rm platform-migrate
 
-# 重新构建并启动
-docker compose up --build -d
+# 查看平台日志
+docker compose logs --tail=100 platform-gateway platform-api platform-db platform-migrate
 
-# 停止平台
+# 停止服务，保留 PostgreSQL 命名卷
 docker compose down
+
+# 明确删除数据库数据（不可恢复，仅在确认重建空库时使用）
+docker compose down
+docker volume rm platform-db-data
 ```
 
-`docker compose down` 不会删除两个工具的源码。MVP 默认不持久保存平台收到的日志；日志分析工具的主动导出文件保存在容器临时目录，容器重建后会清除。
+## 配置
 
-## 验证
+| 环境变量 | 默认值 | 说明 |
+|---|---|---|
+| `PLATFORM_PORT` | `8080` | 唯一宿主机映射端口 |
+| `POSTGRES_DB` | `test_platform` | 平台数据库名 |
+| `POSTGRES_USER` | `platform` | 平台数据库用户 |
+| `POSTGRES_PASSWORD` | 本地开发默认值 | 应在 `.env` 中覆盖，禁止提交真实密码 |
+| `APP_ENV` | `development` | FastAPI 运行环境 |
+| `LOG_LEVEL` | `INFO` | 后端日志级别 |
+| `TOOL_HEALTH_TIMEOUT_SECONDS` | `3` | 工具内部健康探测超时秒数 |
 
-平台启动后运行：
+`DATABASE_URL` 由 Compose 使用以上数据库变量组装，不进入前端构建。
 
-```bash
-python3 -m unittest discover -s tests -v
-```
-
-两个工具的独立测试：
-
-```bash
-cd /Users/admin/Testproject/TrackEvents_tess
-python3 -m unittest discover -p 'test_*.py' -v
-
-cd /Users/admin/Testproject/log_filter_tool
-.venv/bin/python -m unittest discover -s tests -v
-```
-
-## 对外路由
+## 路由
 
 | 路径 | 功能 |
 |---|---|
-| `/` | 平台首页 |
+| `/` 及未知 React 页面路由 | React 平台首页 |
+| `/api/v1/health/live` | FastAPI 进程存活 |
+| `/api/v1/health/ready` | FastAPI 与 PostgreSQL 就绪 |
+| `/api/v1/tools` | 数据库驱动的工具目录 |
+| `/api/v1/tools/{tool_id}/health` | 平台代理的工具健康状态 |
 | `/trackevents/` | 埋点测试工具 |
-| `/trackevents/health` | 埋点工具健康检查 |
 | `/log-filter/` | 日志分析工具 |
-| `/log-filter/health` | 日志工具健康检查 |
 
-只有平台网关端口映射到宿主机；两个工具端口仅在 Docker 内部网络使用。
+平台 API 或数据库异常时，React 会显示提示并使用内置的两个基础工具入口；工具链接不会被禁用。
 
-## 独立运行兼容
+## 测试
 
-两个工具的基础路径默认均为空，因此原独立启动方式保持不变。平台 Compose 通过环境变量启用子路径：
+```bash
+# 前端
+cd /Users/admin/Testproject/test-platform/frontend
+npm test
+npm run build
+npm audit --audit-level=high
 
-- `TRACKEVENTS_BASE_PATH=/trackevents`；
-- `LOG_FILTER_BASE_PATH=/log-filter`。
+# 后端
+cd /Users/admin/Testproject/test-platform/backend
+.venv/bin/pytest
 
-## 接入新工具
+# 平台运行态冒烟
+cd /Users/admin/Testproject/test-platform
+python3 -m unittest discover -s tests -v
 
-新工具至少需要：
+# Nginx
+docker compose exec -T platform-gateway nginx -t
+```
 
-1. 独立 Dockerfile 和内部端口；
-2. 可配置的 URL 基础路径；
-3. 不依赖业务数据的轻量健康检查；
-4. 页面资源、表单和 API 地址遵循基础路径；
-5. 自动化测试和独立启动说明。
+两个工具继续使用各自项目中的独立测试命令。
 
-接入时只需在平台 Compose 中增加服务、在 Nginx 中增加代理路径，并在首页增加工具卡片和健康检查配置。不要把工具业务源码复制到平台项目。
+## 回滚
 
-## 当前限制
+React 上线异常时，可临时把 `platform-gateway` 恢复为 `nginx:1.27-alpine`，并重新挂载：
 
-- 尚未实现登录、权限和审计；
-- 尚未实现统一任务记录和结果汇总；
-- 建议仅部署在受控内网；
-- 本地构建依赖三个项目保持同级；
-- 工具主动导出的日志在容器重建后不会保留。
+```yaml
+volumes:
+  - ./web:/usr/share/nginx/html:ro
+  - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+  - ./nginx/tool-unavailable.html:/etc/nginx/errors/tool-unavailable.html:ro
+```
+
+数据库结构仅通过 Alembic 变更。需要回退本轮数据库结构时，先备份数据，再在后端镜像中执行 `alembic downgrade base`。API 或数据库暂时故障不要求回滚工具路由。
+
+## 排障
+
+```bash
+docker compose config
+docker compose ps -a
+docker compose logs --tail=200 platform-migrate platform-api platform-db
+curl -i http://127.0.0.1:8080/api/v1/health/live
+curl -i http://127.0.0.1:8080/api/v1/health/ready
+curl -i http://127.0.0.1:8080/api/v1/tools
+```
+
+`live` 正常但 `ready` 返回 503 时，优先检查 PostgreSQL 和迁移日志。工具不可用时，平台 API 仍以 200 返回 `unhealthy`，并且另一工具与平台首页应继续可用。

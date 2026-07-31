@@ -1,0 +1,31 @@
+@import "../../web/styles.css";
+
+.platform-alert {
+  margin: 0 0 20px;
+  padding: 12px 14px;
+  border: 1px solid rgba(138, 74, 0, 0.22);
+  border-radius: var(--radius-control);
+  color: var(--color-warning);
+  background: var(--color-warning-bg);
+  font-size: 13px;
+}
+
+.empty-state {
+  padding: 28px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-container);
+  color: var(--muted);
+  background: var(--color-surface);
+  text-align: center;
+}
+
+.not-found {
+  min-height: calc(100vh - 150px);
+  display: grid;
+  align-content: center;
+  justify-items: start;
+}
+
+.not-found h1 {
+  margin-bottom: 24px;
+}

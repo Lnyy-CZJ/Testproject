@@ -305,36 +305,455 @@ HTML_TEMPLATE = r"""<!doctype html>
       .layout { grid-template-columns: 1fr; }
       .summary { grid-template-columns: repeat(2, minmax(120px, 1fr)); }
     }
+
+    /* 桌面工程工作台视觉层：与平台首页共享语义 token，不改变原有业务结构。 */
+    :root {
+      --color-canvas: #f5f5f7;
+      --color-surface: #ffffff;
+      --color-surface-subtle: #fbfbfd;
+      --color-text-primary: #1d1d1f;
+      --color-text-secondary: #6e6e73;
+      --color-text-tertiary: #86868b;
+      --color-divider: rgba(0, 0, 0, .12);
+      --color-accent: #0071e3;
+      --color-accent-hover: #0077ed;
+      --color-success: #248a3d;
+      --color-success-bg: #eaf6ed;
+      --color-warning: #8a4a00;
+      --color-warning-bg: #fff5e6;
+      --color-danger: #d70015;
+      --color-danger-bg: #fff0f1;
+      --radius-control: 10px;
+      --radius-container: 16px;
+      --focus-ring: 0 0 0 3px rgba(0, 113, 227, .24);
+    }
+    html {
+      min-width: 1080px;
+      background: var(--color-canvas);
+    }
+    body {
+      color: var(--color-text-primary);
+      background: var(--color-canvas);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI",
+        "PingFang SC", "Microsoft YaHei", sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    .app-header {
+      height: 64px;
+      padding: 0;
+      border-bottom: 1px solid var(--color-divider);
+      background: rgba(251, 251, 253, .88);
+      backdrop-filter: saturate(180%) blur(18px);
+      -webkit-backdrop-filter: saturate(180%) blur(18px);
+    }
+    .app-header-content {
+      width: min(1360px, calc(100% - 64px));
+      height: 100%;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .platform-brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 15px;
+      font-weight: 650;
+    }
+    .platform-mark {
+      display: grid;
+      width: 28px;
+      height: 28px;
+      place-items: center;
+      border-radius: 8px;
+      color: #fff;
+      background: var(--color-accent);
+      font-size: 14px;
+      font-weight: 700;
+    }
+    .header-context {
+      margin-left: 14px;
+      padding-left: 14px;
+      border-left: 1px solid var(--color-divider);
+      color: var(--color-text-secondary);
+      font-size: 13px;
+    }
+    .header-home-link {
+      color: var(--color-accent);
+      font-size: 13px;
+      font-weight: 550;
+      text-decoration: none;
+    }
+    main {
+      width: min(1360px, calc(100% - 64px));
+      max-width: none;
+      margin: 0 auto;
+      padding: 32px 0 48px;
+    }
+    .page-heading {
+      margin-bottom: 24px;
+    }
+    .page-heading h1 {
+      margin: 0;
+      font-size: 32px;
+      font-weight: 650;
+      letter-spacing: -.025em;
+      line-height: 1.2;
+    }
+    .page-heading p {
+      margin: 8px 0 0;
+      color: var(--color-text-secondary);
+      font-size: 14px;
+    }
+    .layout {
+      grid-template-columns: 344px minmax(0, 1fr);
+      gap: 20px;
+    }
+    .panel {
+      padding: 20px;
+      border: 1px solid var(--color-divider);
+      border-radius: var(--radius-container);
+      background: var(--color-surface);
+    }
+    .input-panel {
+      position: sticky;
+      top: 20px;
+    }
+    .panel h2 {
+      margin: 0 0 4px;
+      font-size: 17px;
+      letter-spacing: -.01em;
+    }
+    .panel-intro {
+      margin: 0 0 20px;
+      color: var(--color-text-secondary);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .field-group {
+      margin-top: 18px;
+    }
+    .field-group:first-of-type {
+      margin-top: 0;
+    }
+    label {
+      margin: 0 0 7px;
+      color: var(--color-text-primary);
+      font-weight: 600;
+    }
+    input[type="file"], textarea {
+      border: 1px solid var(--color-divider);
+      border-radius: var(--radius-control);
+      background: var(--color-surface);
+      color: var(--color-text-primary);
+      transition: border-color 150ms ease, box-shadow 150ms ease;
+    }
+    input[type="file"] {
+      padding: 8px;
+      color: var(--color-text-secondary);
+      font-size: 12px;
+    }
+    input[type="file"]::file-selector-button {
+      margin-right: 10px;
+      padding: 6px 9px;
+      border: 0;
+      border-radius: 7px;
+      color: var(--color-accent);
+      background: #edf5ff;
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    textarea {
+      min-height: 126px;
+      border-radius: var(--radius-control);
+    }
+    #expectedCounts {
+      min-height: 154px;
+    }
+    input[type="file"]:focus-visible,
+    textarea:focus-visible,
+    select:focus-visible,
+    button:focus-visible,
+    a:focus-visible {
+      outline: none;
+      box-shadow: var(--focus-ring);
+    }
+    textarea[aria-invalid="true"] {
+      border-color: var(--color-danger);
+    }
+    .field-error {
+      margin: 7px 0 0;
+      color: var(--color-danger);
+      font-size: 12px;
+    }
+    .field-error:empty {
+      display: none;
+    }
+    .action-stack {
+      margin-top: 20px;
+      display: grid;
+      gap: 8px;
+    }
+    button {
+      margin: 0;
+      border-radius: var(--radius-control);
+      background: var(--color-accent);
+    }
+    button:hover:not(:disabled) {
+      background: var(--color-accent-hover);
+    }
+    button.secondary {
+      border: 1px solid var(--color-divider);
+      color: var(--color-text-primary);
+      background: var(--color-surface);
+    }
+    button.secondary:hover:not(:disabled) {
+      background: var(--color-surface-subtle);
+    }
+    .results-panel {
+      min-height: 610px;
+    }
+    .run-summary {
+      margin-bottom: 16px;
+      padding: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      border: 1px solid var(--color-divider);
+      border-radius: 12px;
+      background: var(--color-surface-subtle);
+    }
+    .run-summary-copy {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .run-summary-icon {
+      display: grid;
+      width: 34px;
+      height: 34px;
+      flex: none;
+      place-items: center;
+      border-radius: 50%;
+      font-size: 16px;
+      font-weight: 750;
+    }
+    .run-summary.pass-state .run-summary-icon {
+      color: var(--color-success);
+      background: var(--color-success-bg);
+    }
+    .run-summary.fail-state .run-summary-icon {
+      color: var(--color-danger);
+      background: var(--color-danger-bg);
+    }
+    .run-summary h2 {
+      margin: 0 0 3px;
+      font-size: 17px;
+    }
+    .run-summary p {
+      margin: 0;
+      color: var(--color-text-secondary);
+      font-size: 12px;
+    }
+    .problem-count {
+      color: var(--color-text-secondary);
+      font-size: 13px;
+      white-space: nowrap;
+    }
+    .problem-count strong {
+      color: var(--color-text-primary);
+      font-size: 20px;
+    }
+    .summary {
+      gap: 10px;
+    }
+    .metric {
+      border-color: var(--color-divider);
+      border-radius: var(--radius-control);
+      background: var(--color-surface);
+    }
+    .metric b {
+      font-size: 21px;
+    }
+    .metric span,
+    .hint {
+      color: var(--color-text-secondary);
+    }
+    .tabs {
+      gap: 4px;
+      margin: 20px 0 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--color-divider);
+    }
+    .tabs button {
+      border: 0;
+      color: var(--color-text-secondary);
+      background: transparent;
+    }
+    .tabs button.active {
+      border-color: transparent;
+      color: var(--color-accent);
+      background: #edf5ff;
+    }
+    .filter-bar select {
+      border-color: var(--color-divider);
+      border-radius: var(--radius-control);
+      color: var(--color-text-primary);
+      background: var(--color-surface);
+    }
+    th, td {
+      border-bottom-color: var(--color-divider);
+    }
+    th {
+      color: var(--color-text-secondary);
+      background: var(--color-surface-subtle);
+    }
+    .table-wrap {
+      border-color: var(--color-divider);
+      border-radius: var(--radius-control);
+    }
+    .pass { background: var(--color-success-bg); color: var(--color-success); }
+    .fail { background: var(--color-danger-bg); color: var(--color-danger); }
+    .warn { background: var(--color-warning-bg); color: var(--color-warning); }
+    .common-param-missing { color: var(--color-danger); }
+    .empty {
+      min-height: 566px;
+      padding: 48px 24px;
+      display: grid;
+      place-content: center;
+      border: 1px dashed var(--color-divider);
+      border-radius: 12px;
+      color: var(--color-text-secondary);
+      background: var(--color-surface-subtle);
+    }
+    .empty h2 {
+      margin-bottom: 7px;
+      color: var(--color-text-primary);
+      font-size: 18px;
+    }
+    .empty p {
+      max-width: 420px;
+      margin: 0;
+      font-size: 13px;
+    }
+    .error-state {
+      min-height: 566px;
+      padding: 48px 24px;
+      display: grid;
+      place-content: center;
+      text-align: center;
+      border: 1px solid rgba(215, 0, 21, .2);
+      border-radius: 12px;
+      background: var(--color-danger-bg);
+    }
+    .error-state h2 {
+      margin: 0 0 7px;
+      color: var(--color-danger);
+      font-size: 18px;
+    }
+    .error-state p {
+      max-width: 480px;
+      margin: 0;
+      color: #7d111b;
+      font-size: 13px;
+    }
+    .loading-state {
+      padding: 4px;
+    }
+    .loading-heading,
+    .skeleton {
+      border-radius: 8px;
+      background: linear-gradient(90deg, #ececef 25%, #f6f6f8 50%, #ececef 75%);
+      background-size: 200% 100%;
+      animation: loading 1.3s ease-in-out infinite;
+    }
+    .loading-heading {
+      width: 34%;
+      height: 26px;
+      margin: 14px 0 24px;
+    }
+    .loading-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+    }
+    .skeleton {
+      height: 76px;
+    }
+    .skeleton-table {
+      height: 340px;
+      margin-top: 22px;
+    }
+    @keyframes loading {
+      to { background-position: -200% 0; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation: none !important;
+        transition: none !important;
+        scroll-behavior: auto !important;
+      }
+    }
   </style>
 </head>
 <body>
-  <header>
-    <h1>埋点测试工具</h1>
-    <span class="hint">TrackEvents log 解析与校验 __PLATFORM_HOME_LINK__</span>
+  <header class="app-header">
+    <div class="app-header-content">
+      <div class="platform-brand">
+        <span class="platform-mark" aria-hidden="true">T</span>
+        <span>测试开发平台</span>
+        <span class="header-context">埋点测试</span>
+      </div>
+      __PLATFORM_HOME_LINK__
+    </div>
   </header>
   <main>
+    <div class="page-heading">
+      <h1>埋点测试工具</h1>
+      <p>解析 TrackEvents 日志，核对事件次数、字段与公共参数。</p>
+    </div>
     <div class="layout">
-      <section class="panel">
-        <h2>输入</h2>
-        <label for="logFile">上传 log 文件</label>
-        <input id="logFile" type="file" accept=".log,.txt,text/plain">
-        <label for="logText">粘贴 log 文本</label>
-        <textarea id="logText" spellcheck="false" placeholder="可直接在这里右键粘贴 Mac 复制的 log 文本"></textarea>
-        <p class="hint">粘贴内容优先于上传文件；清空后会使用上传文件，均为空时使用 default.log。</p>
-        <label for="expectedCounts">预期触发次数（可选）</label>
-        <textarea id="expectedCounts" spellcheck="false">{
+      <section class="panel input-panel" aria-labelledby="input-title">
+        <h2 id="input-title">运行配置</h2>
+        <p class="panel-intro">粘贴内容优先于上传文件，均为空时使用 default.log 示例。</p>
+        <div class="field-group">
+          <label for="logFile">上传 log 文件</label>
+          <input id="logFile" type="file" accept=".log,.txt,text/plain">
+        </div>
+        <div class="field-group">
+          <label for="logText">粘贴 log 文本</label>
+          <textarea id="logText" spellcheck="false" placeholder="粘贴 TrackEvents log 文本"></textarea>
+        </div>
+        <div class="field-group">
+          <label for="expectedCounts">预期触发次数，可选</label>
+          <textarea id="expectedCounts" spellcheck="false" aria-describedby="expectedCountsHint expectedCountsError" aria-invalid="false">{
   "app_foreground": 1,
   "app_page_stay": 3,
   "lead_leave_dialogview": 1,
   "lead_leave_leave_click": 1,
   "lead_page_exit": 1
 }</textarea>
-        <button id="analyzeBtn">开始解析</button>
-        <button id="downloadBtn" class="secondary" disabled>下载 Markdown 报告</button>
-        <p class="hint">支持 JSON 或一行一个 Action 的文本格式；文本行末尾数字为次数，无数字时按 1 次。只解析 method=TrackEvents。</p>
+          <p id="expectedCountsHint" class="hint">支持 JSON，或一行一个 Action；行末数字表示次数。</p>
+          <p id="expectedCountsError" class="field-error" role="alert"></p>
+        </div>
+        <div class="action-stack">
+          <button id="analyzeBtn">开始解析</button>
+          <button id="downloadBtn" class="secondary" disabled>下载 Markdown 报告</button>
+        </div>
+        <p class="hint">仅解析 method=TrackEvents。</p>
       </section>
-      <section class="panel">
-        <div id="result"><div class="empty">请选择 log 文件后开始解析</div></div>
+      <section class="panel results-panel" aria-label="测试结果">
+        <div id="result" aria-live="polite" aria-busy="false">
+          <div class="empty">
+            <div>
+              <h2>准备运行</h2>
+              <p>上传或粘贴日志，也可以直接解析 default.log 示例。</p>
+            </div>
+          </div>
+        </div>
       </section>
     </div>
   </main>
@@ -342,12 +761,16 @@ HTML_TEMPLATE = r"""<!doctype html>
     const fileInput = document.getElementById('logFile');
     const logTextInput = document.getElementById('logText');
     const expectedInput = document.getElementById('expectedCounts');
+    const expectedError = document.getElementById('expectedCountsError');
     const analyzeBtn = document.getElementById('analyzeBtn');
     const downloadBtn = document.getElementById('downloadBtn');
     const resultEl = document.getElementById('result');
     let latestReport = '';
 
+    // 每次运行前先清理字段错误，避免过期反馈干扰下一次输入。
     analyzeBtn.addEventListener('click', async () => {
+      expectedInput.setAttribute('aria-invalid', 'false');
+      expectedError.textContent = '';
       const file = fileInput.files[0];
       const pastedLog = logTextInput.value;
       const hasPastedLog = pastedLog.trim().length > 0;
@@ -357,12 +780,16 @@ HTML_TEMPLATE = r"""<!doctype html>
         try {
           expectedCounts = parseExpectedCounts(expectedText);
         } catch (error) {
-          resultEl.innerHTML = '<div class="empty">预期触发次数格式错误：' + escapeHtml(error.message) + '</div>';
+          expectedInput.setAttribute('aria-invalid', 'true');
+          expectedError.textContent = '格式错误：' + error.message;
+          expectedInput.focus();
           return;
         }
       }
       analyzeBtn.disabled = true;
       analyzeBtn.textContent = hasPastedLog ? '解析粘贴内容中...' : (file ? '解析上传文件中...' : '解析 default.log 中...');
+      resultEl.setAttribute('aria-busy', 'true');
+      renderLoading();
       try {
         const logText = hasPastedLog ? pastedLog : (file ? await file.text() : '');
         const response = await fetch('__ANALYZE_URL__', {
@@ -376,18 +803,63 @@ HTML_TEMPLATE = r"""<!doctype html>
         downloadBtn.disabled = !latestReport;
         renderResult(payload);
       } catch (error) {
-        resultEl.innerHTML = '<div class="empty">解析失败：' + escapeHtml(error.message) + '</div>';
+        renderError(error.message);
       } finally {
         analyzeBtn.disabled = false;
         analyzeBtn.textContent = '开始解析';
+        resultEl.setAttribute('aria-busy', 'false');
       }
     });
 
+    expectedInput.addEventListener('input', () => {
+      if (expectedInput.getAttribute('aria-invalid') === 'true') {
+        expectedInput.setAttribute('aria-invalid', 'false');
+        expectedError.textContent = '';
+      }
+    });
+
+    /** 展示稳定的加载骨架，并通过 aria-busy 向辅助技术同步状态。 */
+    function renderLoading() {
+      resultEl.innerHTML = `
+        <div class="loading-state" aria-label="正在解析日志">
+          <div class="loading-heading"></div>
+          <div class="loading-grid">
+            <div class="skeleton"></div><div class="skeleton"></div>
+            <div class="skeleton"></div><div class="skeleton"></div>
+          </div>
+          <div class="skeleton skeleton-table"></div>
+        </div>
+      `;
+    }
+
+    /** 将运行失败与输入格式错误区分，保留可操作的重试方向。 */
+    function renderError(message) {
+      const detail = /[\u4e00-\u9fff]/.test(String(message || ''))
+        ? message
+        : '服务暂时不可用，请检查输入内容后重试。';
+      resultEl.innerHTML = `
+        <div class="error-state" role="alert">
+          <div>
+            <h2>本次解析未完成</h2>
+            <p>${escapeHtml(detail)}</p>
+          </div>
+        </div>
+      `;
+    }
+
     function parseExpectedCounts(text) {
       if (text.startsWith('{')) {
-        const parsed = JSON.parse(text);
+        let parsed;
+        try {
+          parsed = JSON.parse(text);
+        } catch {
+          throw new Error('JSON 格式不完整，请检查引号、逗号和括号');
+        }
         if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') {
           throw new Error('JSON 必须是对象格式');
+        }
+        if (Object.values(parsed).some(value => !Number.isInteger(Number(value)))) {
+          throw new Error('每个预期触发次数都必须是整数');
         }
         return parsed;
       }
@@ -416,27 +888,55 @@ HTML_TEMPLATE = r"""<!doctype html>
 
     function renderResult(data) {
       const s = data.summary;
+      const problemCount = s.failed_event_count + s.failed_response_count + s.failed_count_check_count;
+      const hasProblems = problemCount > 0;
       resultEl.innerHTML = `
+        <div class="run-summary ${hasProblems ? 'fail-state' : 'pass-state'}">
+          <div class="run-summary-copy">
+            <span class="run-summary-icon" aria-hidden="true">${hasProblems ? '!' : '✓'}</span>
+            <div>
+              <h2>${hasProblems ? '发现需要处理的问题' : '本次检查通过'}</h2>
+              <p>${hasProblems ? '失败项已优先展示，请先核对事件与公共参数。' : '事件次数、响应与字段校验均未发现问题。'}</p>
+            </div>
+          </div>
+          <span class="problem-count"><strong>${problemCount}</strong> 个问题</span>
+        </div>
         <div class="summary">
           ${metric(s.request_count, 'TrackEvents 请求')}
           ${metric(s.response_count, 'TrackEvents 响应')}
           ${metric(s.event_count, '事件总数')}
-          ${metric(s.failed_event_count + s.failed_response_count + s.failed_count_check_count, '问题数')}
+          ${metric(problemCount, '问题数')}
         </div>
-        <div class="tabs">
-          <button class="active" data-tab="counts">事件统计</button>
-          <button data-tab="events">事件明细</button>
-          <button data-tab="responses">响应校验</button>
-          <button data-tab="report">报告文本</button>
+        <div class="tabs" role="tablist" aria-label="结果视图">
+          <button id="tab-counts" class="active" role="tab" aria-selected="true" aria-controls="tabPanel" data-tab="counts">事件统计</button>
+          <button id="tab-events" role="tab" aria-selected="false" aria-controls="tabPanel" data-tab="events">事件明细</button>
+          <button id="tab-responses" role="tab" aria-selected="false" aria-controls="tabPanel" data-tab="responses">响应校验</button>
+          <button id="tab-report" role="tab" aria-selected="false" aria-controls="tabPanel" data-tab="report">报告文本</button>
         </div>
-        <div id="tabPanel"></div>
+        <div id="tabPanel" role="tabpanel" aria-labelledby="tab-counts" tabindex="0"></div>
         <div id="commonParamsPanel"></div>
       `;
-      document.querySelectorAll('.tabs button').forEach(btn => {
+      const tabButtons = [...document.querySelectorAll('.tabs button')];
+      const activateTab = (btn) => {
+        tabButtons.forEach(item => {
+          item.classList.toggle('active', item === btn);
+          item.setAttribute('aria-selected', String(item === btn));
+        });
+        document.getElementById('tabPanel').setAttribute('aria-labelledby', btn.id);
+        renderTab(btn.dataset.tab, data);
+      };
+      tabButtons.forEach((btn, index) => {
         btn.addEventListener('click', () => {
-          document.querySelectorAll('.tabs button').forEach(item => item.classList.remove('active'));
-          btn.classList.add('active');
-          renderTab(btn.dataset.tab, data);
+          activateTab(btn);
+        });
+        // 结果页签支持左右方向键，减少键盘用户的重复 Tab 操作。
+        btn.addEventListener('keydown', event => {
+          if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+          event.preventDefault();
+          const offset = event.key === 'ArrowRight' ? 1 : -1;
+          const nextButton = tabButtons[(index + offset + tabButtons.length) % tabButtons.length];
+          nextButton.focus();
+          activateTab(nextButton);
         });
       });
       renderTab('counts', data);
@@ -529,7 +1029,11 @@ HTML_TEMPLATE = r"""<!doctype html>
 
     function renderCommonParams(data) {
       const panel = document.getElementById('commonParamsPanel');
-      const summaryRows = (data.common_param_summary || []).map(item => `
+      // 失败项优先排序，保持原始数据不变，只调整结果阅读顺序。
+      const failedFirst = items => [...(items || [])].sort((left, right) =>
+        Number(right.status === 'fail') - Number(left.status === 'fail')
+      );
+      const summaryRows = failedFirst(data.common_param_summary).map(item => `
         <tr>
           <td class="mono">${escapeHtml(item.key)}</td>
           <td>${item.required ? '是' : '否'}</td>
@@ -540,7 +1044,7 @@ HTML_TEMPLATE = r"""<!doctype html>
           <td>${statusBadge(item.status)}</td>
         </tr>
       `).join('');
-      const detailRows = (data.common_param_events || []).map(item => `
+      const detailRows = failedFirst(data.common_param_events).map(item => `
         <tr>
           <td>#${item.request_index}.${item.event_index}</td>
           <td class="mono">${escapeHtml(item.module || '')}</td>
@@ -638,7 +1142,10 @@ def render_html(
     home_link = ""
     if platform_home_url:
         safe_home_url = escape(platform_home_url, quote=True)
-        home_link = f'· <a href="{safe_home_url}">返回测试开发平台</a>'
+        home_link = (
+            f'<a class="header-home-link" href="{safe_home_url}">'
+            "返回平台首页</a>"
+        )
     return (
         HTML_TEMPLATE.replace("__FAVICON_URL__", route_path("/favicon.svg", base_path))
         .replace("__ANALYZE_URL__", route_path("/api/analyze", base_path))

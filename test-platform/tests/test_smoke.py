@@ -31,13 +31,25 @@ def request(path, data=None, content_type=None):
 class PlatformSmokeTest(unittest.TestCase):
     """从用户统一入口验证平台和两个独立工具的核心连通性。"""
 
-    def test_platform_home_lists_both_tools(self):
+    def test_platform_home_and_dynamic_tool_catalog_are_available(self):
         status, _, body = request("/")
+        api_status, _, api_body = request("/api/v1/tools")
 
         self.assertEqual(status, 200)
         self.assertIn("测试开发平台", body)
-        self.assertIn('/trackevents/', body)
-        self.assertIn('/log-filter/', body)
+        self.assertIn('id="root"', body)
+        self.assertEqual(api_status, 200)
+        tool_ids = [item["id"] for item in json.loads(api_body)["items"]]
+        self.assertEqual(tool_ids, ["trackevents", "log-filter"])
+
+    def test_platform_health_endpoints_are_available(self):
+        live_status, _, live_body = request("/api/v1/health/live")
+        ready_status, _, ready_body = request("/api/v1/health/ready")
+
+        self.assertEqual(live_status, 200)
+        self.assertEqual(json.loads(live_body)["status"], "ok")
+        self.assertEqual(ready_status, 200)
+        self.assertEqual(json.loads(ready_body)["status"], "ready")
 
     def test_trackevents_page_health_and_analysis_are_available(self):
         page_status, _, page = request("/trackevents/")

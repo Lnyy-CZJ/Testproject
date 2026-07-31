@@ -50,6 +50,26 @@ class TrackEventsWebTest(unittest.TestCase):
         self.assertIn('公参实际值', HTML)
         self.assertIn('缺失必填公参', HTML)
 
+    def test_web_page_exposes_empty_loading_and_error_feedback(self):
+        """运行区应向桌面用户和辅助技术提供完整的状态反馈。"""
+        self.assertIn('aria-live="polite"', HTML)
+        self.assertIn('aria-busy="false"', HTML)
+        self.assertIn('准备运行', HTML)
+        self.assertIn('function renderLoading()', HTML)
+        self.assertIn('function renderError(message)', HTML)
+
+    def test_expected_counts_error_is_inline_and_focusable(self):
+        """预期次数格式错误应就近显示，并把焦点移回问题字段。"""
+        self.assertIn('id="expectedCountsError"', HTML)
+        self.assertIn("expectedInput.setAttribute('aria-invalid', 'true')", HTML)
+        self.assertIn('expectedInput.focus()', HTML)
+
+    def test_result_tabs_support_keyboard_navigation(self):
+        """结果页签应提供标准语义和左右方向键导航。"""
+        self.assertIn('role="tablist"', HTML)
+        self.assertIn('role="tabpanel"', HTML)
+        self.assertIn("'ArrowLeft', 'ArrowRight'", HTML)
+
     def test_expected_counts_support_line_format(self):
         self.assertIn('function parseExpectedCounts(text)', HTML)
         self.assertIn("const match = value.match(/^(.+?)(\\d+)?$/)", HTML)

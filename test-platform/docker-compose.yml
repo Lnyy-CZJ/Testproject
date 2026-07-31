@@ -1,12 +1,9 @@
 services:
   platform-gateway:
-    image: nginx:1.27-alpine
+    build:
+      context: .
     ports:
       - "${PLATFORM_PORT:-8080}:80"
-    volumes:
-      - ./web:/usr/share/nginx/html:ro
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./nginx/tool-unavailable.html:/etc/nginx/errors/tool-unavailable.html:ro
     depends_on:
       - trackevents-web
       - log-filter-tool
@@ -16,6 +13,69 @@ services:
       timeout: 3s
       retries: 3
       start_period: 3s
+    restart: unless-stopped
+
+  platform-db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: "${POSTGRES_DB:-test_platform}"
+      POSTGRES_USER: "${POSTGRES_USER:-platform}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-platform_dev_password}"
+    volumes:
+      - platform-db-data:/var/lib/postgresql/data
+    expose:
+      - "5432"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-platform} -d ${POSTGRES_DB:-test_platform}",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    restart: unless-stopped
+
+  platform-migrate:
+    build:
+      context: ./backend
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      DATABASE_URL: "postgresql+psycopg://${POSTGRES_USER:-platform}:${POSTGRES_PASSWORD:-platform_dev_password}@platform-db:5432/${POSTGRES_DB:-test_platform}"
+      APP_ENV: "${APP_ENV:-development}"
+      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+      TOOL_HEALTH_TIMEOUT_SECONDS: "${TOOL_HEALTH_TIMEOUT_SECONDS:-3}"
+    depends_on:
+      platform-db:
+        condition: service_healthy
+    restart: "no"
+
+  platform-api:
+    build:
+      context: ./backend
+    environment:
+      DATABASE_URL: "postgresql+psycopg://${POSTGRES_USER:-platform}:${POSTGRES_PASSWORD:-platform_dev_password}@platform-db:5432/${POSTGRES_DB:-test_platform}"
+      APP_ENV: "${APP_ENV:-development}"
+      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+      TOOL_HEALTH_TIMEOUT_SECONDS: "${TOOL_HEALTH_TIMEOUT_SECONDS:-3}"
+    expose:
+      - "8000"
+    depends_on:
+      platform-migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health/live', timeout=3)",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
     restart: unless-stopped
 
   trackevents-web:
@@ -57,3 +117,7 @@ services:
       retries: 3
       start_period: 5s
     restart: unless-stopped
+
+volumes:
+  platform-db-data:
+    name: platform-db-data
