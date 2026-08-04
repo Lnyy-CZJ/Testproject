@@ -4,16 +4,18 @@ from __future__ import annotations
 
 import io
 import json
+import sqlite3
 import tempfile
 import time
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from analysis_service import AnalysisService
 from analysis_store import AnalysisStore
-from web_app import RunCoordinator, create_app
+from web_app import RunCoordinator, create_app, normalize_base_path
 
 
 def jsonl_bytes(records: list[dict]) -> bytes:
@@ -121,6 +123,95 @@ class WebAppTests(unittest.TestCase):
         if default_coordinator is not None:
             default_coordinator.shutdown(wait=False)
         self.temp_dir.cleanup()
+
+    def test_root_mode_health_and_existing_paths_remain_available(self):
+        """独立模式继续使用根路径，并通过健康接口检查临时 SQLite。"""
+
+        home_response = self.client.get("/")
+        health_response = self.client.get("/health")
+
+        self.assertEqual(200, home_response.status_code)
+        self.assertEqual(
+            {"service": "truthy-search", "status": "ok"},
+            health_response.get_json(),
+        )
+        self.assertEqual("", self.app.config["SEARCH_WEB_BASE_PATH"])
+
+    def test_health_returns_sanitized_503_when_sqlite_is_unavailable(self):
+        """SQLite 查询失败时健康接口返回脱敏 503，不包含本地路径。"""
+
+        with patch.object(
+            self.store,
+            "fetch_one",
+            side_effect=sqlite3.OperationalError("/private/searchtool.db"),
+        ):
+            response = self.client.get("/health")
+
+        self.assertEqual(503, response.status_code)
+        self.assertEqual(
+            {"service": "truthy-search", "status": "unavailable"},
+            response.get_json(),
+        )
+        self.assertNotIn("/private", response.get_data(as_text=True))
+
+    def test_base_path_normalization_accepts_platform_path_and_rejects_unsafe_values(self):
+        """平台前缀允许确定性规范化，并拒绝可能改变 URL 语义的值。"""
+
+        self.assertEqual("", normalize_base_path(""))
+        self.assertEqual("", normalize_base_path("/"))
+        self.assertEqual("/truthy-search", normalize_base_path("truthy-search/"))
+        for invalid in (
+            "..",
+            "/truthy-search//nested",
+            "https://example.test",
+            "/truthy-search?mode=1",
+            "/truthy-search#section",
+            r"/truthy-search\admin",
+        ):
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(ValueError):
+                    normalize_base_path(invalid)
+
+    def test_platform_mode_prefixes_pages_static_routes_health_and_navigation(self):
+        """平台模式保留完整前缀，并让 Flask 生成带前缀的页面链接。"""
+
+        prefixed_app = create_app(
+            {
+                "TESTING": True,
+                "SEARCH_DATA_DIR": str(self.root / "prefixed-data"),
+                "SEARCH_DB_FILE": str(self.root / "prefixed.db"),
+                "SEARCH_REPORT_DIR": str(self.root / "prefixed-reports"),
+                "SEARCH_ENV_FILE": str(self.root / ".env"),
+                "SEARCH_WEB_BASE_PATH": "/truthy-search/",
+                "PLATFORM_HOME_URL": "/",
+                "RECOVER_INTERRUPTED_RUNS": False,
+                "SEARCH_REPORT_EXCEL_ENABLED": False,
+            }
+        )
+        try:
+            client = prefixed_app.test_client()
+            home = client.get("/truthy-search/")
+            health = client.get("/truthy-search/health")
+            static_file = client.get("/truthy-search/static/app.js")
+
+            self.assertEqual(200, home.status_code)
+            self.assertEqual(200, health.status_code)
+            self.assertEqual(200, static_file.status_code)
+            body = home.get_data(as_text=True)
+            static_body = static_file.get_data(as_text=True)
+            self.assertIn('data-app-base-path="/truthy-search"', body)
+            self.assertIn('href="/truthy-search/imports"', body)
+            self.assertIn('href="/">返回平台首页</a>', body)
+            self.assertIn(
+                "${appBasePath}/api/raw/",
+                static_body,
+            )
+            self.assertEqual(404, client.get("/imports").status_code)
+            static_file.close()
+        finally:
+            prefixed_app.extensions["default_run_coordinator"].shutdown(
+                wait=False
+            )
 
     def test_stage1_datetime_filter_converts_utc_and_tolerates_history(self):
         """展示过滤器转换北京时间，同时兼容空值和非法历史值。"""

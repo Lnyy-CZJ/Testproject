@@ -223,6 +223,8 @@ docker compose down
 ```dotenv
 SEARCH_WEB_HOST=127.0.0.1
 SEARCH_WEB_PORT=5002
+SEARCH_WEB_BASE_PATH=
+PLATFORM_HOME_URL=
 SEARCH_DISPLAY_TIMEZONE=Asia/Shanghai
 SEARCH_WEB_MAX_UPLOAD_BYTES=52428800
 SEARCH_WEB_SECRET_KEY=replace-with-a-local-random-value
@@ -238,6 +240,32 @@ JSONL、Raw、API 及复核并发控制仍保留原始 UTC ISO 8601 值；非法
 `Asia/Shanghai`。
 
 接口凭证只在真正启动执行 Run 时读取，因此即使暂未配置真实接口，也可以先启动 Web 查看和导入历史数据。
+
+### 独立模式与测试平台模式
+
+独立 Compose 保持根路径运行，对宿主机只开放 `127.0.0.1:5002`：
+
+```dotenv
+SEARCH_WEB_BASE_PATH=
+PLATFORM_HOME_URL=
+```
+
+测试平台 Compose 以第三个独立服务启动本项目，并固定使用：
+
+```dotenv
+SEARCH_WEB_BASE_PATH=/truthy-search
+PLATFORM_HOME_URL=/
+```
+
+平台入口为 `/truthy-search/`，健康接口为 `/truthy-search/health`；独立模式对应 `/` 和 `/health`。页面、静态资源、表单跳转、Raw API 与下载链接都会保留当前模式的基础路径。
+
+两个模式挂载同一个 `data/searchtool_v1_3.db`，因此必须互斥运行。切换前先确认 `runs` 表没有 `RUNNING` 记录，再停止当前容器；不得让独立 `searchtool` 与平台 `truthy-search` 同时访问该 SQLite。出现异常时先检查：
+
+```bash
+docker compose ps
+docker compose logs --tail=100 searchtool
+curl -i http://127.0.0.1:5002/health
+```
 
 ### 字段配置与重新处理
 

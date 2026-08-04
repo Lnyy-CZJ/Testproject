@@ -9,12 +9,21 @@ export function ToolCard({
   tool: Tool;
   health: ToolHealthState;
 }) {
-  const iconClass = tool.icon_key === "log" ? "tool-icon-log" : "tool-icon-event";
+  // 显式维护小型工具图标映射，未知类型安全回退到平台默认样式。
+  const iconPresentation =
+    {
+      event: { className: "tool-icon-event", label: "EV" },
+      log: { className: "tool-icon-log", label: "LG" },
+      search: { className: "tool-icon-search", label: "SR" },
+    }[tool.icon_key] ?? { className: "tool-icon-event", label: "EV" };
   return (
     <article className="tool-card" data-tool={tool.id}>
       <div className="tool-card-header">
-        <div className={`tool-icon ${iconClass}`} aria-hidden="true">
-          {tool.icon_key === "log" ? "LG" : "EV"}
+        <div
+          className={`tool-icon ${iconPresentation.className}`}
+          aria-hidden="true"
+        >
+          {iconPresentation.label}
         </div>
         <div className="card-topline">
           <span className="tool-code">{tool.short_code}</span>

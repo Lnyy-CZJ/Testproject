@@ -3,6 +3,8 @@
 (() => {
   "use strict";
 
+  // 平台模式从服务端注入前缀，独立模式保持空字符串和原有根路径行为。
+  const appBasePath = document.body.dataset.appBasePath || "";
   const terminalStatuses = new Set([
     "COMPLETED",
     "PARTIAL_FAILED",
@@ -209,9 +211,12 @@
     updateText("#raw-dialog-title", label || "Raw JSON");
     rawDialog.showModal();
     try {
-      const response = await fetch(`/api/raw/${encodeURIComponent(rawId)}`, {
+      const response = await fetch(
+        `${appBasePath}/api/raw/${encodeURIComponent(rawId)}`,
+        {
         headers: { Accept: "application/json" },
-      });
+        },
+      );
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       loadedRaw = await response.json();
       rawTree.appendChild(renderJsonNode(loadedRaw));

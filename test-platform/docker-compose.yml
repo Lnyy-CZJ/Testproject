@@ -7,6 +7,7 @@ services:
     depends_on:
       - trackevents-web
       - log-filter-tool
+      - truthy-search
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/"]
       interval: 15s
@@ -116,6 +117,38 @@ services:
       timeout: 5s
       retries: 3
       start_period: 5s
+    restart: unless-stopped
+
+  truthy-search:
+    build:
+      context: ../Truthy_Search
+    environment:
+      SEARCH_WEB_BASE_PATH: /truthy-search
+      PLATFORM_HOME_URL: /
+      SEARCH_WEB_HOST: 0.0.0.0
+      SEARCH_WEB_PORT: "5002"
+      SEARCH_WEB_MAX_UPLOAD_BYTES: "26214400"
+      SEARCH_REPORT_EXCEL_ENABLED: "false"
+      SEARCH_DATA_DIR: /app/data
+      SEARCH_DB_FILE: /app/data/searchtool_v1_3.db
+      SEARCH_IMPORT_DIR: /app/data/imports
+      SEARCH_RAW_DIR: /app/data/raw
+      SEARCH_REPORT_DIR: /app/output/reports
+      SEARCH_OUTPUT_DIR: /app/output
+    volumes:
+      # 平台模式复用独立模式的数据目录；上线前必须先停止独立容器。
+      - ../Truthy_Search/.env:/run/secrets/searchtool.env:ro
+      - ../Truthy_Search/data:/app/data
+      - ../Truthy_Search/output:/app/output
+      - ../Truthy_Search/input:/app/input:ro
+    expose:
+      - "5002"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5002/truthy-search/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     restart: unless-stopped
 
 volumes:

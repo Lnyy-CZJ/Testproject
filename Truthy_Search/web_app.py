@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sqlite3
 import subprocess
 import tempfile
 import threading
@@ -74,6 +75,65 @@ REPORT_TYPES = {"SINGLE", "COMPARE"}
 REPORT_STATUSES = {"READY", "STALE", "FAILED"}
 DEFAULT_DISPLAY_TIMEZONE = "Asia/Shanghai"
 DISPLAY_TIME_FORMAT = "%Y-%m-%d %H:%M:%S"
+
+
+def normalize_base_path(value: Any) -> str:
+    """规范化平台挂载前缀并拒绝可能改变 URL 语义的输入。
+
+    功能说明:
+        把空值和根路径转换为空前缀；合法非空前缀统一为单个前导斜杠、
+        不带尾部斜杠的形式。
+
+    参数说明:
+        value: 环境变量或测试覆盖传入的基础路径。
+
+    返回值:
+        str: 空字符串或形如 ``/truthy-search`` 的安全前缀。
+
+    异常说明:
+        ValueError: 路径包含父目录、协议、查询参数、Fragment、反斜杠或
+        重复斜杠时抛出，避免平台路由被绕过。
+    """
+
+    raw = str(value or "").strip()
+    if raw in {"", "/"}:
+        return ""
+    if not raw.startswith("/"):
+        raw = f"/{raw}"
+    if any(token in raw for token in ("..", "://", "?", "#", "\\", "//")):
+        raise ValueError("SEARCH_WEB_BASE_PATH 必须是安全的单层或多层 URL 路径")
+    normalized = raw.rstrip("/")
+    if not normalized or any(not segment for segment in normalized.split("/")[1:]):
+        raise ValueError("SEARCH_WEB_BASE_PATH 格式无效")
+    return normalized
+
+
+class BasePathMiddleware:
+    """在平台模式下剥离固定前缀，并把前缀写入 WSGI ``SCRIPT_NAME``。"""
+
+    def __init__(self, app: Callable, base_path: str) -> None:
+        """绑定原始 WSGI 应用和已经过校验的平台路径前缀。"""
+
+        self.app = app
+        self.base_path = base_path
+
+    def __call__(self, environ: dict[str, Any], start_response: Callable) -> Any:
+        """转换匹配路径；不匹配请求直接返回不含内部信息的 404。"""
+
+        path_info = str(environ.get("PATH_INFO") or "/")
+        if path_info == self.base_path:
+            internal_path = "/"
+        elif path_info.startswith(f"{self.base_path}/"):
+            internal_path = path_info[len(self.base_path) :]
+        else:
+            start_response(
+                "404 Not Found",
+                [("Content-Type", "text/plain; charset=utf-8")],
+            )
+            return ["Not Found".encode("utf-8")]
+        environ["SCRIPT_NAME"] = self.base_path
+        environ["PATH_INFO"] = internal_path
+        return self.app(environ, start_response)
 
 
 def _project_path(value: str | Path) -> Path:
@@ -330,6 +390,10 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
         SEARCH_ENV_FILE=str(env_file),
         SEARCH_WEB_HOST=str(setting("SEARCH_WEB_HOST", "127.0.0.1")),
         SEARCH_WEB_PORT=_positive_int(setting("SEARCH_WEB_PORT", 5002), 5002),
+        SEARCH_WEB_BASE_PATH=normalize_base_path(
+            setting("SEARCH_WEB_BASE_PATH", "")
+        ),
+        PLATFORM_HOME_URL=str(setting("PLATFORM_HOME_URL", "")).strip(),
         MAX_CONTENT_LENGTH=_positive_int(
             setting("SEARCH_WEB_MAX_UPLOAD_BYTES", 50 * 1024 * 1024),
             50 * 1024 * 1024,
@@ -339,6 +403,14 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
     app.config.update(overrides)
     # 测试/嵌入覆盖同样必须经过 IANA 时区校验，不能把非法原值写回配置。
     app.config["SEARCH_DISPLAY_TIMEZONE"] = configured_timezone
+    app.config["SEARCH_WEB_BASE_PATH"] = normalize_base_path(
+        app.config.get("SEARCH_WEB_BASE_PATH", "")
+    )
+    if app.config["SEARCH_WEB_BASE_PATH"]:
+        app.wsgi_app = BasePathMiddleware(
+            app.wsgi_app,
+            app.config["SEARCH_WEB_BASE_PATH"],
+        )
 
     store = AnalysisStore(app.config["SEARCH_DB_FILE"])
     store.initialize()
@@ -359,6 +431,16 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
     app.extensions["analysis_service"] = service
     app.extensions["run_coordinator"] = coordinator
     app.extensions["default_run_coordinator"] = coordinator
+
+    @app.get("/health")
+    def health() -> tuple[Response, int] | Response:
+        """检查 Flask 进程与 SQLite 可查询性，不向调用方暴露异常详情。"""
+
+        try:
+            store.fetch_one("SELECT 1 AS ok")
+        except sqlite3.Error:
+            return jsonify(service="truthy-search", status="unavailable"), 503
+        return jsonify(service="truthy-search", status="ok")
 
     def page_number(name: str = "page") -> int:
         """读取最小为1的分页页码。"""

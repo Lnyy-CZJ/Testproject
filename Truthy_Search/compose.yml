@@ -17,6 +17,8 @@ services:
       SEARCH_OUTPUT_DIR: /app/output
       SEARCH_WEB_HOST: 0.0.0.0
       SEARCH_WEB_PORT: "5002"
+      SEARCH_WEB_BASE_PATH: ""
+      PLATFORM_HOME_URL: ""
       # artifact-tool 是 Codex 宿主运行时依赖，容器内先关闭自动 Excel。
       SEARCH_REPORT_EXCEL_ENABLED: "false"
     volumes:
@@ -31,7 +33,7 @@ services:
         - -c
         - >-
           from urllib.request import urlopen;
-          response = urlopen('http://127.0.0.1:5002/', timeout=5);
+          response = urlopen('http://127.0.0.1:5002/health', timeout=5);
           raise SystemExit(0 if response.status == 200 else 1)
       interval: 10s
       timeout: 5s

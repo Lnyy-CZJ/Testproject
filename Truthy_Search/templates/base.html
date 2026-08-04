@@ -7,13 +7,18 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
   <script src="{{ url_for('static', filename='app.js') }}" defer></script>
 </head>
-<body>
+<body data-app-base-path="{{ request.script_root }}">
   <header class="topbar">
-    <a class="brand" href="{{ url_for('index') }}">
-      <span class="brand-mark">TS</span>
-      <span>Truthy Search</span>
-      <small>检索分析系统</small>
-    </a>
+    <div class="brand-context">
+      <a class="brand" href="{{ url_for('index') }}">
+        <span class="brand-mark">TS</span>
+        <span>Truthy Search</span>
+        <small>检索分析系统</small>
+      </a>
+      {% if config.PLATFORM_HOME_URL %}
+        <a class="platform-home-link" href="{{ config.PLATFORM_HOME_URL }}">返回平台首页</a>
+      {% endif %}
+    </div>
     <nav aria-label="主导航">
       <a href="{{ url_for('index') }}">评测</a>
       <a href="{{ url_for('imports') }}">数据导入</a>
