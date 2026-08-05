@@ -723,8 +723,8 @@ def test_phase_zero_snapshot_records_final_flow_params_and_assertions() -> None:
     }
 
 
-def test_phase_six_migration_loads_all_api_routes() -> None:
-    """真实 API 目录应包含由 12 个旧 case 提取出的全部业务路由。"""
+def test_phase_six_migration_preserves_all_legacy_api_routes() -> None:
+    """新增 API 后，历史 case 提取出的全部业务路由仍必须保留。"""
     from utils.custom.api_loader import load_api_definitions
 
     definitions = load_api_definitions(PROJECT_ROOT)
@@ -739,7 +739,7 @@ def test_phase_six_migration_loads_all_api_routes() -> None:
         for case in LEGACY_CASE_SNAPSHOT.values()
     }
 
-    assert set(definitions) == set(expected)
+    assert set(expected).issubset(definitions)
     for api_id, expected_definition in expected.items():
         assert definitions[api_id]["name"] == expected_definition["name"]
         assert definitions[api_id]["request"] == expected_definition["request"]
@@ -792,8 +792,8 @@ def test_phase_six_migration_removes_legacy_case_files_and_flow_only() -> None:
     assert all("flow_only" not in load_yaml(path) for path in case_paths)
 
 
-def test_phase_six_migration_preserves_effective_flow_data() -> None:
-    """V1.3 Scenario 的完整数据应等于 V1.2 实际合并后的请求和断言。"""
+def test_phase_six_migration_preserves_legacy_flow_routes_and_extracts() -> None:
+    """扩展 Flow 后，历史业务步骤的 API 路由与提取规则仍必须保留。"""
     from utils.custom.flow_loader import load_flow_cases
 
     flow_case = load_flow_cases(
@@ -823,9 +823,51 @@ def test_phase_six_migration_preserves_effective_flow_data() -> None:
         for step_id, snapshot in LEGACY_FLOW_FINAL_SNAPSHOT.items()
     }
 
-    assert actual == expected
+    for step_id, expected_step in expected.items():
+        assert step_id in actual
+        assert actual[step_id]["api"] == expected_step["api"]
+        assert actual[step_id]["extract"] == expected_step["extract"]
     poll_step = next(step for step in flow["steps"] if step["id"] == "poll_task")
     assert poll_step["until"]["path"] == "$.status"
+
+
+def test_name_with_conditions_flow_uses_non_photo_create_task_clues() -> None:
+    """姓名附加条件 Flow 应复用链路，并只传递声明的非照片线索。"""
+    from utils.custom.flow_loader import load_flow_cases
+
+    flow_case = load_flow_cases(
+        PROJECT_ROOT,
+        selected_flow="NameWithConditionsSearch",
+    )[0]
+    steps = flow_case["flow"]["steps"]
+    create_params = flow_case["scenario"]["step_data"]["create_task"]["params"]
+
+    assert [step["api"] for step in steps] == [
+        "CreateIntentTask",
+        "GetTask",
+        "ListTaskCandidates",
+        "GetTaskCandidateDetail",
+        "GetSearchTaskDebug",
+        "GetProviderCostSummary",
+    ]
+    assert [clue["type"] for clue in create_params["clues"]] == [
+        "FULL_NAME",
+        "LOCATION",
+        "SOCIAL_LINK",
+    ]
+    assert (
+        create_params["clues"][0]["full_name_query"]["full_name"]
+        == "JOJO CCQQ MOCK"
+    )
+    assert create_params["clues"][2]["social_link_query"]["url"] == (
+        "https://www.linkedin.com/in/jojo-CCQQ-mock-1"
+    )
+    assert [item["type"] for item in create_params["additional_details"]] == [
+        "PROFESSION",
+        "EMPLOYER",
+        "SCHOOL",
+        "OTHER",
+    ]
 
 
 def _write_api_definition(

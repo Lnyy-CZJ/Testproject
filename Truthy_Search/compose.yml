@@ -15,6 +15,8 @@ services:
       SEARCH_RAW_DIR: /app/data/raw
       SEARCH_REPORT_DIR: /app/output/reports
       SEARCH_OUTPUT_DIR: /app/output
+      SEARCH_QUERY_LOG_ENABLED: "true"
+      SEARCH_QUERY_LOG_DIR: /app/log
       SEARCH_WEB_HOST: 0.0.0.0
       SEARCH_WEB_PORT: "5002"
       SEARCH_WEB_BASE_PATH: ""
@@ -26,6 +28,8 @@ services:
       - ./data:/app/data
       - ./output:/app/output
       - ./input:/app/input:ro
+      # 人物级逐请求日志独立持久化，容器重建后仍保留。
+      - ./log:/app/log
     healthcheck:
       test:
         - CMD

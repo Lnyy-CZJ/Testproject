@@ -1,5 +1,5 @@
-name: 搜索流程
-tags: [flow, media, search]
+name: 姓名与附加条件搜索流程
+tags: [flow, search, name_with_conditions]
 steps:
   - id: create_task
     api: CreateIntentTask
@@ -11,7 +11,7 @@ steps:
     until:
       path: $.status
       equals: SUCCEEDED
-      # 任务无搜索结果是正常终态；跳过候选人业务步骤，继续执行 Admin 审计步骤。
+      # 无结果时跳过候选人业务步骤，但继续执行末尾的 Admin 审计步骤。
       terminate_on: [NO_RESULT]
       interval_seconds: 2
       timeout_seconds: 120
@@ -24,7 +24,7 @@ steps:
   - id: candidate_detail
     api: GetTaskCandidateDetail
 
-  # 两个 Admin 审计接口在 SUCCEEDED 与 NO_RESULT 终态都执行。
+  # 成功与无结果两种终态均需保留搜索诊断和成本记录。
   - id: search_task_debug
     api: GetSearchTaskDebug
     run_on_termination: true

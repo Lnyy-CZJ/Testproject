@@ -39,6 +39,9 @@ USER_ID=your_user_id
 DEVICE_ID=your_device_id
 EXPIRES_TIME=milliseconds_since_epoch
 REFRESH_EXPIRES_TIME=milliseconds_since_epoch
+ADMIN_SESSION_TOKEN=your_admin_session_token
+ADMIN_OPERATOR_ID=your_admin_operator_id
+ADMIN_OPERATOR_NAME=your_admin_operator_name
 ```
 
 启动时优先复用未临期的 access token。token 距过期不足配置的安全窗口时，
@@ -47,6 +50,8 @@ REFRESH_EXPIRES_TIME=milliseconds_since_epoch
 
 创建或刷新成功后，token、用户 ID 和过期时间会更新到 `.env`。终端显式设置的
 同名环境变量优先于 `.env`。
+`AnonymousSessionMediaSearch` 的两个 Admin 审计步骤使用三个 `ADMIN_*` 字段访问
+独立的 Admin Gateway；pytest 真实 Flow 在任一字段缺失时会跳过，并提示对应变量名。
 
 ## 3. 目录职责
 

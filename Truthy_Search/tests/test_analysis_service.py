@@ -2464,6 +2464,159 @@ class AnalysisServiceTests(unittest.TestCase):
             )["is_active"],
         )
 
+    def test_jsonl_import_preserves_public_fields_and_admin_raw(self):
+        """历史导入应保留公共字段和三个 Admin Raw 阶段，且不发起网络请求。"""
+
+        results_path = self.root / "public-info-results.jsonl"
+        write_jsonl(
+            results_path,
+            [
+                {
+                    "result_schema_version": "1.3.1",
+                    "input_id": "query-public-info",
+                    "task_id": "task-public-info",
+                    "query_status": "NO_CANDIDATE",
+                    "result_status": "NO_CANDIDATES",
+                    "task_fields": {
+                        "llm_cost": None,
+                        "third_party_cost": None,
+                        "total_cost": None,
+                        "pdl_called": None,
+                        "search_duration_ms": None,
+                    },
+                    "public_fields": {
+                        "public_info_status": "COMPLETE",
+                        "cache_hit": True,
+                        "field_mapping_status": "NOT_MAPPED",
+                    },
+                    "raw": {
+                        "create_intent_task": {"stage": "CreateIntentTask"},
+                        "get_task_history": [{"stage": "GetTask"}],
+                        "admin_login": [{"stage": "AdminLogin"}],
+                        "get_search_task_debug": {
+                            "stage": "GetSearchTaskDebug"
+                        },
+                        "get_provider_cost_summary": {
+                            "stage": "GetProviderCostSummary"
+                        },
+                    },
+                    "results": [],
+                }
+            ],
+        )
+
+        imported = self.service.import_results_jsonl(
+            results_path,
+            evaluation_id="eval-import",
+            run_label="公共信息导入",
+            system_version="v1.3",
+            run_id="run-public-info-import",
+        )
+
+        query = self.store.fetch_one(
+            "SELECT public_fields_json FROM run_queries WHERE run_id = ?",
+            (imported.object_id,),
+        )
+        raw_stages = {
+            row["stage"]
+            for row in self.store.fetch_all(
+                "SELECT stage FROM raw_records WHERE run_id = ?",
+                (imported.object_id,),
+            )
+        }
+        self.assertEqual(
+            "COMPLETE",
+            json.loads(query["public_fields_json"])["public_info_status"],
+        )
+        self.assertTrue(json.loads(query["public_fields_json"])["cache_hit"])
+        self.assertTrue(
+            {
+                "AdminLogin",
+                "GetSearchTaskDebug",
+                "GetProviderCostSummary",
+            }.issubset(raw_stages)
+        )
+
+    def test_execution_failure_persists_collected_public_info(self):
+        """失败终态仍应保存公共字段和 Admin Raw，同时保持 EXECUTION_FAILED。"""
+
+        source = self.root / "failed-public-info-tasks.jsonl"
+        write_jsonl(
+            source,
+            [
+                {
+                    "input_id": "query-failed-public",
+                    "query_stage": "FULL_NAME",
+                    "clues": [{"type": "FULL_NAME"}],
+                }
+            ],
+        )
+        self.service.import_dataset_jsonl(
+            source,
+            name="失败终态公共信息",
+            dataset_id="dataset-failed-public",
+        )
+        run_id = self.service.create_execution_run(
+            evaluation_id="eval-import",
+            dataset_id="dataset-failed-public",
+            run_label="candidate",
+            system_version="web-v1",
+            evaluation_phase="PHASE_1_BASELINE",
+            run_id="run-failed-public",
+        )
+        error = FlowError("GetTask", "任务进入失败终态: FAILED", "task-failed")
+        error.public_fields = {
+            "public_info_status": "COMPLETE",
+            "cache_hit": False,
+        }
+        error.task_fields = {
+            "llm_cost": None,
+            "third_party_cost": None,
+            "total_cost": None,
+            "pdl_called": None,
+            "search_duration_ms": None,
+        }
+        error.raw_records = [
+            {
+                "stage": "GetSearchTaskDebug",
+                "sequence_no": 1,
+                "response": {"code": 0},
+            },
+            {
+                "stage": "GetProviderCostSummary",
+                "sequence_no": 1,
+                "response": {"code": 0},
+            },
+        ]
+
+        self.service._persist_execution_failure(
+            run_id=run_id,
+            query_id="query-failed-public",
+            error=error,
+        )
+
+        query = self.store.fetch_one(
+            "SELECT status, result_status, public_fields_json FROM run_queries "
+            "WHERE run_id = ? AND query_id = ?",
+            (run_id, "query-failed-public"),
+        )
+        raw_stages = {
+            row["stage"]
+            for row in self.store.fetch_all(
+                "SELECT stage FROM raw_records WHERE run_id = ?",
+                (run_id,),
+            )
+        }
+        self.assertEqual(("FAILED", "EXECUTION_FAILED"), (query["status"], query["result_status"]))
+        self.assertEqual(
+            "COMPLETE",
+            json.loads(query["public_fields_json"])["public_info_status"],
+        )
+        self.assertEqual(
+            {"GetSearchTaskDebug", "GetProviderCostSummary"},
+            raw_stages,
+        )
+
     def test_execution_run_persists_progress_candidates_raw_and_files(self):
         """Web 执行复用采集核心，并按 Query 事务保存结果和全部 Raw。"""
 
@@ -2558,11 +2711,15 @@ class AnalysisServiceTests(unittest.TestCase):
         self.assertEqual(1, run["success_queries"])
         self.assertEqual("SUCCESS", query["status"])
         self.assertEqual("HAS_CANDIDATES", query["result_status"])
-        self.assertEqual(1.25, query["llm_cost"])
-        self.assertEqual(2.5, query["third_party_cost"])
-        self.assertEqual(3.75, query["total_cost"])
-        self.assertEqual(1, query["pdl_called"])
-        self.assertEqual(4321, query["search_duration_ms"])
+        self.assertIsNone(query["llm_cost"])
+        self.assertIsNone(query["third_party_cost"])
+        self.assertIsNone(query["total_cost"])
+        self.assertIsNone(query["pdl_called"])
+        self.assertIsNone(query["search_duration_ms"])
+        self.assertEqual(
+            "NOT_CONFIGURED",
+            json.loads(query["public_fields_json"])["public_info_status"],
+        )
         self.assertEqual("candidate-execution", candidate["candidate_id"])
         self.assertEqual(0.88, candidate["rank_score"])
         self.assertEqual(

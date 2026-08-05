@@ -145,10 +145,14 @@ def test_session_values_are_loaded_from_dotenv_and_process_env_overrides(
     (tmp_path / ".env").write_text(
         "AUTH_TOKEN=file-access\nREFRESH_TOKEN=file-refresh\nUSER_ID=file-user\n"
         "DEVICE_ID=file-device\nEXPIRES_TIME=1800000000000\n"
-        "REFRESH_EXPIRES_TIME=1800100000000\n",
+        "REFRESH_EXPIRES_TIME=1800100000000\nADMIN_SESSION_TOKEN=admin-session\n"
+        "ADMIN_OPERATOR_ID=admin-user\nADMIN_OPERATOR_NAME=tester\n",
         encoding="utf-8",
     )
     monkeypatch.setenv("AUTH_TOKEN", "process-access")
+    monkeypatch.delenv("ADMIN_SESSION_TOKEN", raising=False)
+    monkeypatch.delenv("ADMIN_OPERATOR_ID", raising=False)
+    monkeypatch.delenv("ADMIN_OPERATOR_NAME", raising=False)
 
     settings = load_settings("test", project_root=tmp_path)
 
@@ -161,6 +165,11 @@ def test_session_values_are_loaded_from_dotenv_and_process_env_overrides(
         "device_id": "file-device",
         "expires_time": "1800000000000",
         "refresh_expires_time": "1800100000000",
+    }
+    assert settings["runtime_variables"] == {
+        "admin_session_token": "admin-session",
+        "admin_operator_id": "admin-user",
+        "admin_operator_name": "tester",
     }
 
 
@@ -222,6 +231,66 @@ def test_build_payload_creates_single_gateway_request() -> None:
             "params": {},
         }
     ]
+
+
+def test_gateway_api_uses_admin_target_without_user_session() -> None:
+    """Admin API 应使用独立 URL、Web comm，且不得触发用户会话创建。"""
+
+    class RecordingClient:
+        """记录 Gateway 调用参数的 HTTP 客户端替身。"""
+
+        def __init__(self) -> None:
+            self.call: dict[str, object] | None = None
+
+        def post_json(self, **kwargs: object) -> FakeResponse:
+            """保存请求参数并返回最小成功响应。"""
+            self.call = kwargs
+            return FakeResponse(200, {"code": 0, "responses": []})
+
+    client = RecordingClient()
+    gateway = GatewayApi(
+        {
+            "gateway_base_url": "http://business.example",
+            "comm": {"platform": "ios"},
+            "gateway_targets": {
+                "admin": {
+                    "base_url": "https://admin.example",
+                    "method": "POST",
+                    "path": "/gateway/invoke",
+                    "headers": {"Host": "admin.example"},
+                }
+            },
+        },
+        {"method": "POST", "path": "/gateway/invoke"},
+        http_client=client,  # type: ignore[arg-type]
+        runtime_context=RuntimeContext(
+            {"access_token": "user-access", "user_id": "user_1", "task_id": "task_1"}
+        ),
+    )
+    case = {
+        "request": {
+            "service_name": "tool.admin.AdminService",
+            "method_name": "GetSearchTaskDebug",
+            "params": {"task_id": "{{task_id}}"},
+        },
+        "transport": {
+            "target": "admin",
+            "requires_session": False,
+            "comm": {"platform": "web", "trace_id": "debug_{{task_id}}"},
+        },
+    }
+
+    gateway.invoke(case)
+
+    assert client.call is not None
+    assert client.call["url"] == "https://admin.example/gateway/invoke"
+    payload = client.call["payload"]
+    assert isinstance(payload, dict)
+    assert payload["comm"]["platform"] == "web"
+    assert payload["comm"]["trace_id"] == "debug_task_1"
+    assert "auth_token" not in payload["comm"]
+    assert "user_id" not in payload["comm"]
+    assert payload["requests"][0]["params"] == {"task_id": "task_1"}
 
 
 def test_assert_gateway_response_accepts_success() -> None:

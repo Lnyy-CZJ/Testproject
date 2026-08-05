@@ -192,8 +192,8 @@ Web 默认只监听 `127.0.0.1`，没有登录和权限系统，不应暴露到�
 ### Docker 本地运行
 
 Docker Compose 只把端口发布到宿主机 `127.0.0.1:5002`，并将 `.env` 只读挂载
-到容器。数据库、Raw、导入归档和报告继续保存在宿主机的 `data/`、`output/`，
-重建容器不会删除。
+到容器。数据库、Raw、导入归档、报告和人物链路日志继续保存在宿主机的
+`data/`、`output/`、`log/`，重建容器不会删除。
 
 ```bash
 docker compose up -d --build
@@ -232,6 +232,13 @@ SEARCH_DATA_DIR=data
 SEARCH_DB_FILE=data/searchtool_v1_3.db
 SEARCH_REPORT_DIR=output/reports
 SEARCH_REPORT_EXCEL_ENABLED=true
+SEARCH_ADMIN_ENABLED=false
+SEARCH_ADMIN_LOGIN_API_URL=http://admin-staging.example.test/admin/invoke
+SEARCH_ADMIN_API_URL=http://admin-staging.example.test/gateway/invoke
+SEARCH_ADMIN_USERNAME=
+SEARCH_ADMIN_PASSWORD=
+SEARCH_QUERY_LOG_ENABLED=true
+SEARCH_QUERY_LOG_DIR=log
 ```
 
 `SEARCH_DISPLAY_TIMEZONE` 只控制 Web、静态 HTML 和 processed Excel 的可见
@@ -239,7 +246,26 @@ SEARCH_REPORT_EXCEL_ENABLED=true
 JSONL、Raw、API 及复核并发控制仍保留原始 UTC ISO 8601 值；非法时区会回退到
 `Asia/Shanghai`。
 
-接口凭证只在真正启动执行 Run 时读取，因此即使暂未配置真实接口，也可以先启动 Web 查看和导入历史数据。
+接口凭证只在真正启动执行 Run 或 Query 重跑时读取。每次都会重新解析只读 Secret
+文件，不缓存到进程环境；平台显式环境变量覆盖 Secret 文件同名值。因此即使暂未
+配置真实接口，也可以先启动 Web 查看和导入历史数据，更新 Token 后也无需重启服务。
+
+Admin 公共信息采集在 GetTask 进入终态后等待 1 秒，再依次请求 Debug 和 Cost。
+一个 Run 共用一个内存 Session；Token 距离过期不足 1 小时或服务端返回认证失败时
+重新登录，原请求最多重放一次。Admin 配置缺失、认证失败或辅助接口失败不会阻断
+原 Search 链路。账号和密码必须通过平台只读 Secret 注入；密码、session_token、
+auth_token、Cookie、认证 Header、Device ID 和 User ID 均不会写入数据库、Raw 或人物日志。
+
+每个输入人物会在 `SEARCH_QUERY_LOG_DIR` 下生成一份不覆盖的可读文本日志，文件名为
+`YYYY-MM-DD_HHmmss_人物名.log`。日志按接口分段展示脱敏请求 JSON 和响应 JSON，包含
+Create、全部 GetTask、脱敏 Login 摘要、Debug、Cost、List、全部 Candidate Detail
+和 Query End。独立 Compose 与测试平台 Compose 均将宿主机 `log/` 挂载到
+`/app/log`；生产平台部署时不得移除此持久化挂载。关闭公共采集或人物日志可分别设置：
+
+```dotenv
+SEARCH_ADMIN_ENABLED=false
+SEARCH_QUERY_LOG_ENABLED=false
+```
 
 ### 独立模式与测试平台模式
 
@@ -451,6 +477,7 @@ for source, target in (
     (project / "data" / "imports", backup / "data" / "imports"),
     (project / "data" / "raw", backup / "data" / "raw"),
     (project / "output" / "reports", backup / "reports"),
+    (project / "log", backup / "log"),
 ):
     if source.exists():
         shutil.copytree(source, target)
@@ -507,6 +534,12 @@ python3 web_app.py --env-file .env.restore
   重新生成报告。
 - Excel 未生成：检查 `SEARCH_REPORT_EXCEL_ENABLED=true` 以及 Node/artifact-tool
   运行环境；Web 报告和静态 HTML 不受影响。
+- 公共信息显示 `NOT_CONFIGURED`：检查 `SEARCH_ADMIN_ENABLED=true`、两个 Admin
+  URL、账号和密码是否都已通过 Secret 注入；该状态不影响原检索结果。
+- 公共信息显示 `AUTH_FAILED`：检查 Admin 账号是否有效以及系统时间是否正确；
+  Token 只保存在当前 Run 的进程内，不应手工写入 `.env`。
+- 公共信息显示 `PARTIAL/FAILED`：在当前人物的 `log/*.log` 和 SQLite Raw 中查看
+  Debug、Cost 的脱敏响应；未确认成本字段保持 `null`，不会自动填 `0`。
 - 相同文件无法再次导入：这是 SHA-256 防覆盖策略；如数据确有变化，应生成内容
   不同的新文件并作为新 Run 导入。
 
@@ -524,6 +557,8 @@ python3 web_app.py --env-file .env.restore
 - 历史 Excel 缺少完整 Raw 时无法还原接口响应，系统会标记
   `LEGACY_PARTIAL_RAW`，不会伪造数据。
 - 静态 HTML 可包含人物级案例，应视为受控测试数据文件单独保管。
+- 人物日志当前不提供在线查看、下载、轮转或集中采集；请按平台磁盘策略管理
+  宿主机 `log/`。历史导入和无成本重处理不会调用 Login、Debug 或 Cost。
 
 ## 第二阶段：将结果导出为 Excel
 

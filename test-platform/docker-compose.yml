@@ -135,12 +135,16 @@ services:
       SEARCH_RAW_DIR: /app/data/raw
       SEARCH_REPORT_DIR: /app/output/reports
       SEARCH_OUTPUT_DIR: /app/output
+      SEARCH_QUERY_LOG_ENABLED: "true"
+      SEARCH_QUERY_LOG_DIR: /app/log
     volumes:
       # 平台模式复用独立模式的数据目录；上线前必须先停止独立容器。
       - ../Truthy_Search/.env:/run/secrets/searchtool.env:ro
       - ../Truthy_Search/data:/app/data
       - ../Truthy_Search/output:/app/output
       - ../Truthy_Search/input:/app/input:ro
+      # 人物级逐请求日志必须持久化，且不与容器标准输出混用。
+      - ../Truthy_Search/log:/app/log
     expose:
       - "5002"
     healthcheck:

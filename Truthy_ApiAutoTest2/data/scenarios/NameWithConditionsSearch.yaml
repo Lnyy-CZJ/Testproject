@@ -1,4 +1,4 @@
-name: 姓名搜索成功场景
+name: 姓名、位置与链接搜索场景
 step_data:
   create_task:
     params:
@@ -7,7 +7,14 @@ step_data:
       clues:
         - type: FULL_NAME
           full_name_query:
-            full_name: Ali Abdaal
+            full_name: Nas Daily
+        # - type: LOCATION
+        #   location_query:
+        #     location: us
+        - type: SOCIAL_LINK
+          social_link_query:
+            url: https://www.facebook.com/NasDaily/
+            platform_hint: facebook
       additional_details: []
     assert:
       http_status: 200

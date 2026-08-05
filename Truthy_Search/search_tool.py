@@ -6,20 +6,31 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import time
 import uuid
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import requests
-from dotenv import load_dotenv
+from dotenv import dotenv_values
 
 
+PROJECT_ROOT = Path(__file__).resolve().parent
 SERVICE_NAME = "tool.people_insight.SearchService"
+ADMIN_SERVICE_NAME = "tool.admin.AdminService"
 RESULT_SCHEMA_VERSION = "1.3.1"
+GET_TASK_RUNNING_STATUSES = frozenset({"QUEUED", "SEARCHING"})
+GET_TASK_SUCCESS_STATUS = "SUCCEEDED"
+GET_TASK_NO_RESULT_STATUS = "NO_RESULT"
+# 当前正式通用失败终态为 FAILED；后端扩充枚举时只修改此集合与契约测试。
+GET_TASK_FAILURE_TERMINAL_STATUSES = frozenset({"FAILED"})
+ADMIN_REFRESH_WINDOW = timedelta(hours=1)
+PUBLIC_INFO_TERMINAL_DELAY_SECONDS = 1.0
 ProgressCallback = Callable[[dict[str, Any]], None]
 RawCallback = Callable[[dict[str, Any]], None]
 FailureCallback = Callable[[dict[str, Any]], None]
@@ -83,6 +94,10 @@ class FlowError(RuntimeError):
         self.task_id = task_id
         self.response_body = response_body
         self.raw_records: list[dict[str, Any]] = []
+        self.task_fields: dict[str, Any] = {}
+        self.public_fields: dict[str, Any] = {}
+        self.http_status: int | None = None
+        self.duration_ms: int | None = None
 
 
 @dataclass(frozen=True)
@@ -102,10 +117,58 @@ class Config:
     input_file: str = "input/tasks.jsonl"
     output_dir: str = "output"
     allow_duplicate_run: bool = False
+    admin_enabled: bool = False
+    admin_login_api_url: str = ""
+    admin_api_url: str = ""
+    admin_headers: dict[str, str] | None = None
+    admin_username: str = ""
+    admin_password: str = ""
+    admin_reason: str = "searchTool 测试数据采集"
+    admin_debug_service: str = "worker"
+    admin_cost_limit: int = 100
+    admin_config_error: str = ""
+    query_log_enabled: bool = False
+    query_log_dir: str = "log"
+    query_log_timezone: str = "Asia/Shanghai"
 
     @classmethod
     def from_env(cls, env_file: Path | None = None) -> "Config":
-        load_dotenv(dotenv_path=env_file, override=False)
+        """从最新 Secret 文件与平台环境构造一次性运行配置。
+
+        功能说明:
+            每次调用都重新读取 ``env_file``，不再把文件内容写入全局
+            ``os.environ``。平台显式环境变量覆盖 Secret 文件同名值，因此既能
+            热更新 Token，也不会破坏 Compose 注入的路径和运行参数。
+
+        参数说明:
+            env_file: 平台只读 Secret 或本地 ``.env`` 路径；文件不存在时仅使用
+                当前进程初始环境。
+
+        返回值:
+            当前调用独立使用的不可变 ``Config``。
+
+        异常说明:
+            ConfigError: 原 Search 必填项、类型或布尔配置不合法时抛出；Admin
+                配置错误仍只关闭公共信息采集。
+        """
+
+        file_values = (
+            dotenv_values(env_file)
+            if env_file is not None and Path(env_file).is_file()
+            else {}
+        )
+        config_values = {
+            str(key): "" if value is None else str(value)
+            for key, value in file_values.items()
+        }
+        # 平台环境变量优先，但不修改进程环境，避免一次 Run 污染后续重跑。
+        config_values.update(os.environ)
+
+        def setting(name: str, default: str = "") -> str:
+            """读取合并后的单项配置，并统一返回字符串。"""
+
+            value = config_values.get(name, default)
+            return "" if value is None else str(value)
 
         required_names = [
             "SEARCH_API_URL",
@@ -113,11 +176,11 @@ class Config:
             "DEVICE_ID",
             "USER_ID",
         ]
-        missing = [name for name in required_names if not os.getenv(name, "").strip()]
+        missing = [name for name in required_names if not setting(name).strip()]
         if missing:
             raise ConfigError(f"缺少必要配置: {', '.join(missing)}")
 
-        raw_headers = os.getenv("SEARCH_HTTP_HEADERS_JSON", "{}")
+        raw_headers = setting("SEARCH_HTTP_HEADERS_JSON", "{}")
         try:
             headers = json.loads(raw_headers)
         except json.JSONDecodeError as exc:
@@ -128,32 +191,102 @@ class Config:
         ):
             raise ConfigError("SEARCH_HTTP_HEADERS_JSON 的键和值都必须是字符串")
 
-        poll_interval = _positive_float("POLL_INTERVAL_SECONDS", 5.0)
-        max_poll_count = _positive_int("MAX_POLL_COUNT", 60)
-        http_timeout = _positive_float("HTTP_TIMEOUT_SECONDS", 30.0)
+        poll_interval = _positive_float("POLL_INTERVAL_SECONDS", 5.0, setting)
+        max_poll_count = _positive_int("MAX_POLL_COUNT", 60, setting)
+        http_timeout = _positive_float("HTTP_TIMEOUT_SECONDS", 30.0, setting)
+
+        # Admin 配置错误只能关闭公共信息采集，不能阻断原 Search 主链路。
+        admin_enabled = _env_bool("SEARCH_ADMIN_ENABLED", False, setting)
+        admin_config_error = ""
+        admin_headers: dict[str, str] = {}
+        admin_login_api_url = setting("SEARCH_ADMIN_LOGIN_API_URL").strip()
+        admin_api_url = setting("SEARCH_ADMIN_API_URL").strip()
+        admin_username = setting("SEARCH_ADMIN_USERNAME").strip()
+        admin_password = setting("SEARCH_ADMIN_PASSWORD").strip()
+        if admin_enabled:
+            try:
+                parsed_admin_headers = json.loads(
+                    setting("SEARCH_ADMIN_HTTP_HEADERS_JSON", "{}")
+                )
+                if not isinstance(parsed_admin_headers, dict) or not all(
+                    isinstance(key, str) and isinstance(value, str)
+                    for key, value in parsed_admin_headers.items()
+                ):
+                    raise ValueError("键和值都必须是字符串")
+                admin_headers = parsed_admin_headers
+            except (json.JSONDecodeError, ValueError):
+                admin_config_error = (
+                    "SEARCH_ADMIN_HTTP_HEADERS_JSON 必须是合法 JSON 字符串对象"
+                )
+            missing_admin = [
+                name
+                for name, value in (
+                    ("SEARCH_ADMIN_LOGIN_API_URL", admin_login_api_url),
+                    ("SEARCH_ADMIN_API_URL", admin_api_url),
+                    ("SEARCH_ADMIN_USERNAME", admin_username),
+                    ("SEARCH_ADMIN_PASSWORD", admin_password),
+                )
+                if not value
+            ]
+            if missing_admin and not admin_config_error:
+                admin_config_error = "缺少 Admin 配置: " + ", ".join(missing_admin)
+        try:
+            admin_cost_limit = _positive_int(
+                "SEARCH_ADMIN_COST_LIMIT", 100, setting
+            )
+        except ConfigError as exc:
+            admin_cost_limit = 100
+            if admin_enabled and not admin_config_error:
+                admin_config_error = str(exc)
 
         return cls(
-            api_url=os.environ["SEARCH_API_URL"].strip(),
+            api_url=setting("SEARCH_API_URL").strip(),
             headers=headers,
-            auth_token=os.environ["AUTH_TOKEN"].strip(),
-            device_id=os.environ["DEVICE_ID"].strip(),
-            user_id=os.environ["USER_ID"].strip(),
+            auth_token=setting("AUTH_TOKEN").strip(),
+            device_id=setting("DEVICE_ID").strip(),
+            user_id=setting("USER_ID").strip(),
             poll_interval_seconds=poll_interval,
             max_poll_count=max_poll_count,
             http_timeout_seconds=http_timeout,
-            platform=os.getenv("PLATFORM", "ios").strip() or "ios",
-            app_version=os.getenv("APP_VERSION", "1.0.0").strip() or "1.0.0",
-            locale=os.getenv("LOCALE", "zh-Hans-CN").strip() or "zh-Hans-CN",
-            timezone=os.getenv("TIMEZONE", "UTC+08:00").strip() or "UTC+08:00",
-            input_file=os.getenv("SEARCH_INPUT_FILE", "input/tasks.jsonl").strip()
+            platform=setting("PLATFORM", "ios").strip() or "ios",
+            app_version=setting("APP_VERSION", "1.0.0").strip() or "1.0.0",
+            locale=setting("LOCALE", "zh-Hans-CN").strip() or "zh-Hans-CN",
+            timezone=setting("TIMEZONE", "UTC+08:00").strip() or "UTC+08:00",
+            input_file=setting("SEARCH_INPUT_FILE", "input/tasks.jsonl").strip()
             or "input/tasks.jsonl",
-            output_dir=os.getenv("SEARCH_OUTPUT_DIR", "output").strip() or "output",
-            allow_duplicate_run=_env_bool("ALLOW_DUPLICATE_RUN", False),
+            output_dir=setting("SEARCH_OUTPUT_DIR", "output").strip() or "output",
+            allow_duplicate_run=_env_bool("ALLOW_DUPLICATE_RUN", False, setting),
+            admin_enabled=admin_enabled,
+            admin_login_api_url=admin_login_api_url,
+            admin_api_url=admin_api_url,
+            admin_headers=admin_headers,
+            admin_username=admin_username,
+            admin_password=admin_password,
+            admin_reason=setting(
+                "SEARCH_ADMIN_REASON", "searchTool 测试数据采集"
+            ).strip()
+            or "searchTool 测试数据采集",
+            admin_debug_service=setting(
+                "SEARCH_ADMIN_DEBUG_SERVICE", "worker"
+            ).strip()
+            or "worker",
+            admin_cost_limit=admin_cost_limit,
+            admin_config_error=admin_config_error,
+            query_log_enabled=_env_bool("SEARCH_QUERY_LOG_ENABLED", True, setting),
+            query_log_dir=setting("SEARCH_QUERY_LOG_DIR", "log").strip() or "log",
+            query_log_timezone=setting(
+                "SEARCH_DISPLAY_TIMEZONE", "Asia/Shanghai"
+            ).strip()
+            or "Asia/Shanghai",
         )
 
 
-def _positive_float(name: str, default: float) -> float:
-    raw = os.getenv(name, str(default))
+def _positive_float(
+    name: str,
+    default: float,
+    value_getter: Callable[[str, str], str] = os.getenv,
+) -> float:
+    raw = value_getter(name, str(default))
     try:
         value = float(raw)
     except ValueError as exc:
@@ -163,8 +296,12 @@ def _positive_float(name: str, default: float) -> float:
     return value
 
 
-def _positive_int(name: str, default: int) -> int:
-    raw = os.getenv(name, str(default))
+def _positive_int(
+    name: str,
+    default: int,
+    value_getter: Callable[[str, str], str] = os.getenv,
+) -> int:
+    raw = value_getter(name, str(default))
     try:
         value = int(raw)
     except ValueError as exc:
@@ -174,7 +311,11 @@ def _positive_int(name: str, default: int) -> int:
     return value
 
 
-def _env_bool(name: str, default: bool) -> bool:
+def _env_bool(
+    name: str,
+    default: bool,
+    value_getter: Callable[[str, str], str] = os.getenv,
+) -> bool:
     """Parse a strict boolean environment setting.
 
     Args:
@@ -189,7 +330,7 @@ def _env_bool(name: str, default: bool) -> bool:
         ConfigError: If a non-empty value is not a recognized boolean.
     """
 
-    raw = os.getenv(name, "").strip().lower()
+    raw = value_getter(name, "").strip().lower()
     if not raw:
         return default
     if raw in {"true", "1", "yes", "on"}:
@@ -250,9 +391,19 @@ def select_output_paths(
 
 
 class SearchClient:
-    def __init__(self, config: Config, session: Any | None = None) -> None:
+    def __init__(
+        self,
+        config: Config,
+        session: Any | None = None,
+        admin_session: Any | None = None,
+    ) -> None:
+        """初始化原 Search Client，并为同一个 Run 持有一个 Admin Session。"""
+
         self.config = config
         self.session = session or requests.Session()
+        self.last_http_status: int | None = None
+        self.last_duration_ms: int | None = None
+        self.admin_client = AdminClient(config, admin_session)
 
     def call(self, method_name: str, params: dict[str, Any]) -> dict[str, Any]:
         """调用统一 HTTP RPC 接口并校验公共业务响应。
@@ -291,6 +442,8 @@ class SearchClient:
         }
         headers = {"Content-Type": "application/json", **self.config.headers}
 
+        started_at = time.monotonic()
+        self.last_http_status = None
         try:
             response = self.session.post(
                 self.config.api_url,
@@ -298,6 +451,7 @@ class SearchClient:
                 json=payload,
                 timeout=self.config.http_timeout_seconds,
             )
+            self.last_http_status = getattr(response, "status_code", None)
             response.raise_for_status()
             body = response.json()
         except requests.RequestException as exc:
@@ -308,19 +462,25 @@ class SearchClient:
                     response_body = error_response.json()
                 except (ValueError, TypeError):
                     response_body = None
-            raise FlowError(
+            flow_error = FlowError(
                 method_name,
                 f"HTTP 请求失败: {exc}",
                 response_body=response_body,
-            ) from exc
+            )
+            flow_error.http_status = self.last_http_status
+            raise flow_error from exc
         except (ValueError, TypeError) as exc:
             raise FlowError(method_name, "接口响应不是合法 JSON") from exc
+        finally:
+            self.last_duration_ms = int((time.monotonic() - started_at) * 1000)
 
         try:
             return self._validate_response(method_name, body)
         except FlowError as exc:
             # 业务失败响应仍属于可追溯 Raw；只挂到异常，不在客户端保存鉴权请求。
             exc.response_body = body
+            exc.http_status = self.last_http_status
+            exc.duration_ms = self.last_duration_ms
             raise
 
     @staticmethod
@@ -360,6 +520,291 @@ class SearchClient:
         return body
 
 
+class AdminClient:
+    """管理一个 Run 内复用的 Admin 登录会话和公共信息请求。"""
+
+    def __init__(self, config: Config, session: Any | None = None) -> None:
+        """保存 Admin 配置和内存 Token；不会持久化任何认证信息。"""
+
+        self.config = config
+        self.session = session or requests.Session()
+        self.session_token = ""
+        self.expire_time: datetime | None = None
+        self.operator_id = ""
+        self.operator_name = ""
+        self.last_http_status: int | None = None
+        self.last_duration_ms: int | None = None
+        self._audit_events: list[dict[str, Any]] = []
+        self._call_attempts: list[dict[str, Any]] = []
+
+    @property
+    def available(self) -> bool:
+        """返回 Admin 公共信息采集是否已正确配置。"""
+
+        return self.config.admin_enabled and not self.config.admin_config_error
+
+    def drain_audit_events(self) -> list[dict[str, Any]]:
+        """返回并清空 Login 脱敏审计事件，供当前 Query 写入 Raw。"""
+
+        events = self._audit_events
+        self._audit_events = []
+        return events
+
+    def drain_call_attempts(self) -> list[dict[str, Any]]:
+        """返回并清空最近一次 Debug/Cost 的请求尝试记录。"""
+
+        attempts = self._call_attempts
+        self._call_attempts = []
+        return attempts
+
+    def _session_is_fresh(self, now: datetime | None = None) -> bool:
+        """判断 Token 是否存在且距离接口失效时间至少还有一小时。"""
+
+        if not self.session_token or self.expire_time is None:
+            return False
+        current = now or datetime.now(timezone.utc)
+        return self.expire_time - current >= ADMIN_REFRESH_WINDOW
+
+    @staticmethod
+    def _parse_expire_time(value: Any) -> datetime:
+        """解析 Login 的 ISO 时间，并统一转换为 UTC 带时区时间。"""
+
+        if not isinstance(value, str) or not value.strip():
+            raise FlowError("AdminLogin", "Login 响应缺少 expire_time")
+        normalized = value.strip().replace("Z", "+00:00")
+        try:
+            parsed = datetime.fromisoformat(normalized)
+        except ValueError as exc:
+            raise FlowError("AdminLogin", "Login expire_time 格式无效") from exc
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+
+    @staticmethod
+    def _validate_envelope(stage: str, body: Any) -> dict[str, Any]:
+        """校验 Admin 公共响应信封并返回 responses[0].data。"""
+
+        if not isinstance(body, dict):
+            raise FlowError(stage, "Admin 接口响应必须是 JSON 对象")
+        responses = body.get("responses")
+        item = responses[0] if isinstance(responses, list) and responses else None
+        if body.get("code") != 0 or not isinstance(item, dict):
+            raise FlowError(
+                stage,
+                f"Admin 接口失败: code={body.get('code')}, "
+                f"message={body.get('message', '')}",
+                response_body=body,
+            )
+        if item.get("success") is not True or item.get("code", 0) != 0:
+            raise FlowError(
+                stage,
+                f"Admin 方法失败: code={item.get('code')}, "
+                f"message={item.get('message', '')}",
+                response_body=body,
+            )
+        data = item.get("data")
+        if not isinstance(data, dict):
+            raise FlowError(stage, "Admin 响应缺少 responses[0].data", response_body=body)
+        return data
+
+    def _post(self, url: str, payload: dict[str, Any], stage: str) -> dict[str, Any]:
+        """执行一次 Admin HTTP 请求并记录安全的 HTTP 元数据。"""
+
+        started_at = time.monotonic()
+        self.last_http_status = None
+        try:
+            response = self.session.post(
+                url,
+                headers={"Content-Type": "application/json", **(self.config.admin_headers or {})},
+                json=payload,
+                timeout=self.config.http_timeout_seconds,
+            )
+            self.last_http_status = getattr(response, "status_code", None)
+            response.raise_for_status()
+            body = response.json()
+        except requests.RequestException as exc:
+            response_body = None
+            error_response = getattr(exc, "response", None)
+            if error_response is not None:
+                try:
+                    response_body = error_response.json()
+                except (ValueError, TypeError):
+                    response_body = None
+            flow_error = FlowError(
+                stage,
+                f"Admin HTTP 请求失败: {exc}",
+                response_body=response_body,
+            )
+            flow_error.http_status = self.last_http_status
+            raise flow_error from exc
+        except (ValueError, TypeError) as exc:
+            raise FlowError(stage, "Admin 接口响应不是合法 JSON") from exc
+        finally:
+            self.last_duration_ms = int((time.monotonic() - started_at) * 1000)
+        return body
+
+    def login(self) -> None:
+        """使用平台 Secret 中的账号登录，并原子更新进程内 Session。"""
+
+        if not self.available:
+            raise FlowError(
+                "AdminLogin",
+                self.config.admin_config_error or "Admin 公共信息采集未启用",
+            )
+        payload = {
+            "client_request_id": f"admin_{int(time.time() * 1000)}_{uuid.uuid4().hex[:8]}",
+            "method_name": "Login",
+            "reason": "",
+            "params": {
+                "username": self.config.admin_username,
+                "password": self.config.admin_password,
+            },
+        }
+        body: Any = None
+        try:
+            body = self._post(self.config.admin_login_api_url, payload, "AdminLogin")
+            data = self._validate_envelope("AdminLogin", body)
+            token = data.get("session_token")
+            operator = data.get("operator")
+            if not isinstance(token, str) or not token:
+                raise FlowError("AdminLogin", "Login 响应缺少 session_token")
+            if not isinstance(operator, dict):
+                raise FlowError("AdminLogin", "Login 响应缺少 operator")
+            operator_id = operator.get("operator_id")
+            operator_name = operator.get("operator_name")
+            if not isinstance(operator_id, str) or not operator_id:
+                raise FlowError("AdminLogin", "Login 响应缺少 operator_id")
+            if not isinstance(operator_name, str) or not operator_name:
+                raise FlowError("AdminLogin", "Login 响应缺少 operator_name")
+            expire_time = self._parse_expire_time(data.get("expire_time"))
+            self.session_token = token
+            self.expire_time = expire_time
+            self.operator_id = operator_id
+            self.operator_name = operator_name
+            self._audit_events.append(
+                {
+                    "status": "SUCCESS",
+                    "expire_time": expire_time.isoformat(),
+                    "operator_id": "***",
+                    "token_saved": False,
+                    "response_summary": {"code": body.get("code"), "message": body.get("message")},
+                    "http_status": self.last_http_status,
+                    "duration_ms": self.last_duration_ms,
+                    "error": "",
+                }
+            )
+        except FlowError as exc:
+            self.session_token = ""
+            self.expire_time = None
+            self.operator_id = ""
+            self.operator_name = ""
+            self._audit_events.append(
+                {
+                    "status": "FAILED",
+                    "expire_time": None,
+                    "operator_id": "***",
+                    "token_saved": False,
+                    "response_summary": None,
+                    "http_status": exc.http_status or self.last_http_status,
+                    "duration_ms": exc.duration_ms or self.last_duration_ms,
+                    "error": str(exc),
+                }
+            )
+            raise
+
+    def ensure_session(self) -> None:
+        """Token 缺失或不足一小时有效期时重新登录。"""
+
+        if not self._session_is_fresh():
+            self.login()
+
+    @staticmethod
+    def _is_auth_failure(error: FlowError) -> bool:
+        """识别 HTTP 401/403 或响应中明确的 Session 认证失败。"""
+
+        if error.http_status in {401, 403}:
+            return True
+        if isinstance(error.response_body, dict):
+            codes = {error.response_body.get("code")}
+            responses = error.response_body.get("responses")
+            if isinstance(responses, list):
+                codes.update(
+                    item.get("code")
+                    for item in responses
+                    if isinstance(item, dict)
+                )
+            if codes & {401, 403}:
+                return True
+        body_text = json.dumps(error.response_body, ensure_ascii=False).lower()
+        message = f"{error} {body_text}".lower()
+        keywords = ("session_token", "session token", "token expired", "未登录", "认证失败")
+        return any(keyword in message for keyword in keywords)
+
+    def call(self, method_name: str, params: dict[str, Any]) -> dict[str, Any]:
+        """调用 Debug/Cost；认证失效时重新登录并仅重放一次。"""
+
+        self._call_attempts = []
+        self.ensure_session()
+        last_error: FlowError | None = None
+        for attempt in (1, 2):
+            payload = {
+                "comm": {
+                    "device_id": "admin-web",
+                    "platform": "web",
+                    "app_version": "1.0.0",
+                    "trace_id": f"trace_{uuid.uuid4().hex}",
+                },
+                "requests": [
+                    {
+                        "id": "req_0",
+                        "service_name": ADMIN_SERVICE_NAME,
+                        "method_name": method_name,
+                        "params": {
+                            "session_token": self.session_token,
+                            "operator_id": self.operator_id,
+                            "operator_name": self.operator_name,
+                            "reason": self.config.admin_reason,
+                            **params,
+                        },
+                    }
+                ],
+            }
+            try:
+                body = self._post(self.config.admin_api_url, payload, method_name)
+                self._validate_envelope(method_name, body)
+                self._call_attempts.append(
+                    {
+                        "attempt": attempt,
+                        "response_body": body,
+                        "error": "",
+                        "http_status": self.last_http_status,
+                        "duration_ms": self.last_duration_ms,
+                    }
+                )
+                return body
+            except FlowError as exc:
+                exc.http_status = exc.http_status or self.last_http_status
+                exc.duration_ms = exc.duration_ms or self.last_duration_ms
+                last_error = exc
+                self._call_attempts.append(
+                    {
+                        "attempt": attempt,
+                        "response_body": exc.response_body,
+                        "error": str(exc),
+                        "http_status": exc.http_status,
+                        "duration_ms": exc.duration_ms,
+                    }
+                )
+                if attempt == 1 and self._is_auth_failure(exc):
+                    self.session_token = ""
+                    self.expire_time = None
+                    self.login()
+                    continue
+                raise
+        assert last_error is not None
+        raise last_error
+
+
 def response_data(body: dict[str, Any], stage: str, task_id: str = "") -> dict[str, Any]:
     try:
         data = body["responses"][0]["data"]
@@ -389,6 +834,8 @@ def sanitize_raw(value: Any) -> Any:
     """
 
     sensitive_keys = {
+        "password",
+        "session_token",
         "auth_token",
         "authorization",
         "cookie",
@@ -470,6 +917,9 @@ def build_raw_record(
     request_params: dict[str, Any],
     response_body: Any,
     error: str = "",
+    attempt: int = 1,
+    http_status: int | None = None,
+    duration_ms: int | None = None,
 ) -> dict[str, Any]:
     """构造一条不含鉴权信息的 v1.3 Raw 回调记录。
 
@@ -499,8 +949,224 @@ def build_raw_record(
         "request_params": sanitize_raw(request_params),
         "response_body": sanitize_raw(response_body),
         "error": error,
+        "attempt": attempt,
+        "http_status": http_status,
+        "duration_ms": duration_ms,
+        "business_success": not bool(error),
         "collected_at": utc_now_text(),
     }
+
+
+def extract_person_name(item: dict[str, Any]) -> str:
+    """从 FULL_NAME 线索提取输入人物姓名，缺失时回退 input_id。"""
+
+    for clue in item.get("clues", []):
+        if not isinstance(clue, dict) or clue.get("type") != "FULL_NAME":
+            continue
+        full_name_query = clue.get("full_name_query")
+        if isinstance(full_name_query, dict):
+            full_name = full_name_query.get("full_name")
+            if isinstance(full_name, str) and full_name.strip():
+                return full_name.strip()
+        value = clue.get("value")
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return str(item.get("input_id") or "unknown")
+
+
+def safe_log_name(value: str) -> str:
+    """清理人物姓名中的路径、控制字符和不安全文件名字符。"""
+
+    cleaned = re.sub(r"[\\/:*?\"<>|\x00-\x1f]", "_", value.strip())
+    cleaned = re.sub(r"\s+", "_", cleaned)
+    cleaned = cleaned.replace("..", "_").strip("._")
+    return cleaned[:120] or "unknown"
+
+
+class QueryChainLogger:
+    """按输入人物追加便于人工阅读的脱敏请求与响应日志。"""
+
+    def __init__(
+        self,
+        *,
+        enabled: bool,
+        directory: Path,
+        run_id: str,
+        input_id: str,
+        person_name: str,
+        timezone_name: str = "Asia/Shanghai",
+    ) -> None:
+        """安全创建不覆盖的日志文件，目录错误不会中断检索。"""
+
+        self.enabled = enabled
+        self.run_id = run_id
+        self.input_id = input_id
+        self.person_name = person_name
+        try:
+            self.timezone = ZoneInfo(timezone_name)
+        except ZoneInfoNotFoundError:
+            self.timezone = ZoneInfo("Asia/Shanghai")
+        self.path: Path | None = None
+        self.handle: Any = None
+        self.error = ""
+        self._sequence = 0
+        if not enabled:
+            return
+        try:
+            directory.mkdir(parents=True, exist_ok=True)
+            created_at = datetime.now(self.timezone)
+            date_text = created_at.strftime("%Y-%m-%d")
+            time_text = created_at.strftime("%H%M%S")
+            microsecond_text = created_at.strftime("%f")
+            safe_person = safe_log_name(person_name)
+            safe_input = safe_log_name(input_id)
+            filename_prefix = f"{date_text}_{time_text}_{safe_person}"
+            candidates = [
+                directory / f"{filename_prefix}.log",
+                directory / f"{filename_prefix}_{safe_input}.log",
+            ]
+            candidates.append(
+                directory
+                / f"{filename_prefix}_{safe_input}_{microsecond_text}.log"
+            )
+            for candidate in candidates:
+                try:
+                    self.handle = candidate.open("x", encoding="utf-8")
+                    self.path = candidate
+                    break
+                except FileExistsError:
+                    continue
+            if self.handle is None:
+                for number in range(2, 10000):
+                    candidate = directory / (
+                        f"{filename_prefix}_{safe_input}_{microsecond_text}_{number:02d}.log"
+                    )
+                    try:
+                        self.handle = candidate.open("x", encoding="utf-8")
+                        self.path = candidate
+                        break
+                    except FileExistsError:
+                        continue
+            if self.handle is None:
+                raise OSError("无法分配不重复的人物日志文件名")
+        except OSError as exc:
+            self.error = f"人物日志创建失败: {exc}"
+            self.enabled = False
+
+    def write_event(self, stage: str, **values: Any) -> None:
+        """按事件标题、格式化请求 JSON 和响应 JSON 追加并立即 flush。
+
+        功能说明:
+            人物日志面向人工排障，不再把整个事件压缩为单行 JSONL。请求与
+            响应分别展示，HTTP 状态、耗时和重试次数放在标题中；所有内容仍
+            经过 ``sanitize_raw`` 脱敏。
+
+        参数说明:
+            stage: 当前 Query 或接口阶段。
+            values: task/candidate、HTTP 元数据、请求、响应和错误信息。
+
+        返回值:
+            无。写入成功后立即刷新文件缓冲区。
+
+        异常说明:
+            文件写入失败不会中断检索，只会在 ``error`` 中记录原因并停止继续写。
+        """
+
+        if not self.enabled or self.handle is None:
+            return
+        self._sequence += 1
+        now = datetime.now(self.timezone)
+        timestamp = now.strftime("%Y-%m-%d %H:%M:%S,%f")[:-3]
+        api_sequence_no = values.pop("api_sequence_no", None)
+        task_id = values.pop("task_id", "")
+        candidate_id = values.pop("candidate_id", "")
+        attempt = values.pop("attempt", 1)
+        http_status = values.pop("http_status", None)
+        business_success = values.pop("business_success", True)
+        duration_ms = values.pop("duration_ms", None)
+        request_data = sanitize_raw(values.pop("request", {}))
+        response_data_value = sanitize_raw(values.pop("response", {}))
+        error = str(values.pop("error", ""))
+        event_data = {
+            "sequence_no": self._sequence,
+            "api_sequence_no": api_sequence_no,
+            "run_id": self.run_id,
+            "input_id": self.input_id,
+            "person_name": self.person_name,
+            "task_id": task_id,
+            "candidate_id": candidate_id,
+            "stage": stage,
+            "attempt": attempt,
+            "business_success": business_success,
+            **sanitize_raw(values),
+        }
+        try:
+            self.handle.write(
+                f"{timestamp} | INFO | search_tool.QueryChainLogger | "
+                f"{stage} 事件:\n"
+            )
+            json.dump(event_data, self.handle, ensure_ascii=False, indent=2)
+            self.handle.write("\n")
+            if request_data not in (None, {}, []):
+                self.handle.write(
+                    f"{timestamp} | INFO | search_tool.QueryChainLogger | "
+                    f"{stage} 脱敏请求数据: attempt={attempt}\n"
+                )
+                json.dump(request_data, self.handle, ensure_ascii=False, indent=2)
+                self.handle.write("\n")
+            if response_data_value not in (None, {}, []):
+                status_text = http_status if http_status is not None else "-"
+                duration_text = duration_ms if duration_ms is not None else "-"
+                self.handle.write(
+                    f"{timestamp} | INFO | search_tool.QueryChainLogger | "
+                    f"{stage} 响应数据: HTTP {status_text} "
+                    f"elapsed_ms={duration_text}\n"
+                )
+                json.dump(
+                    response_data_value,
+                    self.handle,
+                    ensure_ascii=False,
+                    indent=2,
+                )
+                self.handle.write("\n")
+            if error:
+                self.handle.write(
+                    f"{timestamp} | ERROR | search_tool.QueryChainLogger | "
+                    f"{stage} 失败: {error}\n"
+                )
+            self.handle.write("\n")
+            self.handle.flush()
+        except OSError as exc:
+            self.error = f"人物日志写入失败: {exc}"
+            self.enabled = False
+
+    def write_raw(self, record: dict[str, Any]) -> None:
+        """把统一 Raw 事件转换成人物日志格式，避免第二套脱敏口径。"""
+
+        self.write_event(
+            str(record.get("stage") or "Unknown"),
+            api_sequence_no=record.get("sequence_no", 1),
+            task_id=record.get("task_id", ""),
+            candidate_id=record.get("candidate_id", ""),
+            attempt=record.get("attempt", 1),
+            http_status=record.get("http_status"),
+            business_success=record.get("business_success", not bool(record.get("error"))),
+            duration_ms=record.get("duration_ms"),
+            request=record.get("request_params", {}),
+            response=record.get("response_body"),
+            error=record.get("error", ""),
+        )
+
+    def close(self) -> None:
+        """关闭日志句柄；关闭失败仅保存错误文本。"""
+
+        if self.handle is not None:
+            try:
+                self.handle.close()
+            except OSError as exc:
+                self.error = f"人物日志关闭失败: {exc}"
+            finally:
+                self.handle = None
 
 
 def validate_input(item: Any, line_number: int, seen_ids: set[str]) -> dict[str, Any]:
@@ -579,6 +1245,30 @@ def process_one(
     task_id = ""
     candidate_count_total: int | None = None
     raw_records: list[dict[str, Any]] = []
+    admin_login_sequence = 0
+    final_log_status = "FAILED"
+    final_log_error = ""
+    final_log_candidate_count = 0
+    log_directory = Path(getattr(client.config, "query_log_dir", "log"))
+    if not log_directory.is_absolute():
+        # 相对路径固定从项目根目录解析，避免从父目录用绝对脚本路径启动时
+        # 把人物日志误写到其他项目的同名目录。
+        log_directory = PROJECT_ROOT / log_directory
+    chain_logger = QueryChainLogger(
+        enabled=bool(getattr(client.config, "query_log_enabled", False)),
+        directory=log_directory,
+        run_id=effective_run_id,
+        input_id=input_id,
+        person_name=extract_person_name(item),
+        timezone_name=str(
+            getattr(client.config, "query_log_timezone", "Asia/Shanghai")
+        ),
+    )
+    chain_logger.write_event(
+        "QueryStart",
+        request=sanitize_raw(item),
+        business_success=True,
+    )
 
     def emit_progress(event: str, **values: Any) -> None:
         """补齐通用标识后发送单条进度事件。"""
@@ -616,9 +1306,14 @@ def process_one(
                 request_params=params,
                 response_body=exc.response_body,
                 error=str(exc),
+                http_status=exc.http_status
+                or getattr(client, "last_http_status", None),
+                duration_ms=exc.duration_ms
+                or getattr(client, "last_duration_ms", None),
             )
             raw_records.append(record)
             emit_callback(raw_callback, record)
+            chain_logger.write_raw(record)
             raise
 
         record_task_id = task_id
@@ -637,10 +1332,122 @@ def process_one(
             sequence_no=sequence_no,
             request_params=params,
             response_body=body,
+            http_status=getattr(client, "last_http_status", None),
+            duration_ms=getattr(client, "last_duration_ms", None),
         )
         raw_records.append(record)
         emit_callback(raw_callback, record)
+        chain_logger.write_raw(record)
         return body, record
+
+    def emit_admin_login_records() -> list[dict[str, Any]]:
+        """把 AdminClient 产生的脱敏 Login 摘要接入统一 Raw 与人物日志。"""
+
+        nonlocal admin_login_sequence
+        records: list[dict[str, Any]] = []
+        for event in client.admin_client.drain_audit_events():
+            admin_login_sequence += 1
+            record = build_raw_record(
+                run_id=effective_run_id,
+                input_id=input_id,
+                task_id=task_id,
+                candidate_id="",
+                stage="AdminLogin",
+                sequence_no=admin_login_sequence,
+                request_params={
+                    "method_name": "Login",
+                    "username": "***",
+                    "password": "***",
+                },
+                response_body={
+                    "status": event.get("status"),
+                    "expire_time": event.get("expire_time"),
+                    "operator_id": "***",
+                    "token_saved": False,
+                    "response_summary": event.get("response_summary"),
+                },
+                error=str(event.get("error") or ""),
+                http_status=event.get("http_status"),
+                duration_ms=event.get("duration_ms"),
+            )
+            raw_records.append(record)
+            emit_callback(raw_callback, record)
+            chain_logger.write_raw(record)
+            emit_progress(
+                "query_stage",
+                stage="AdminLogin",
+                status=str(event.get("status") or "FAILED"),
+                message=(
+                    "Admin Session 已更新"
+                    if event.get("status") == "SUCCESS"
+                    else "Admin Session 获取失败"
+                ),
+            )
+            records.append(record)
+        return records
+
+    def call_admin_and_record(
+        stage: str,
+        params: dict[str, Any],
+        *,
+        sequence_no: int = 1,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """调用 Admin 接口并独立记录 Login、请求、响应和错误。"""
+
+        def emit_attempt_records() -> list[dict[str, Any]]:
+            """把 AdminClient 内部认证重放的每次尝试都落为独立 Raw。"""
+
+            records: list[dict[str, Any]] = []
+            for attempt_event in client.admin_client.drain_call_attempts():
+                attempt = int(attempt_event.get("attempt") or 1)
+                record = build_raw_record(
+                    run_id=effective_run_id,
+                    input_id=input_id,
+                    task_id=task_id,
+                    candidate_id="",
+                    stage=stage,
+                    sequence_no=sequence_no,
+                    request_params=params,
+                    response_body=attempt_event.get("response_body"),
+                    error=str(attempt_event.get("error") or ""),
+                    attempt=attempt,
+                    http_status=attempt_event.get("http_status"),
+                    duration_ms=attempt_event.get("duration_ms"),
+                )
+                raw_records.append(record)
+                emit_callback(raw_callback, record)
+                chain_logger.write_raw(record)
+                records.append(record)
+            return records
+
+        try:
+            body = client.admin_client.call(stage, params)
+        except FlowError as exc:
+            emit_admin_login_records()
+            records = emit_attempt_records()
+            if not records:
+                record = build_raw_record(
+                    run_id=effective_run_id,
+                    input_id=input_id,
+                    task_id=task_id,
+                    candidate_id="",
+                    stage=stage,
+                    sequence_no=sequence_no,
+                    request_params=params,
+                    response_body=exc.response_body,
+                    error=str(exc),
+                    http_status=exc.http_status or client.admin_client.last_http_status,
+                    duration_ms=exc.duration_ms or client.admin_client.last_duration_ms,
+                )
+                raw_records.append(record)
+                emit_callback(raw_callback, record)
+                chain_logger.write_raw(record)
+            raise
+        emit_admin_login_records()
+        records = emit_attempt_records()
+        if not records:
+            raise FlowError(stage, "Admin 请求未产生调用记录", task_id)
+        return body, records[-1]
 
     def raw_payload(record: dict[str, Any]) -> dict[str, Any]:
         """提取适合嵌入 results.jsonl 的请求、响应和顺序字段。"""
@@ -650,8 +1457,259 @@ def process_one(
             "request_params": record["request_params"],
             "response_body": record["response_body"],
             "error": record["error"],
+            "attempt": record.get("attempt", 1),
+            "http_status": record.get("http_status"),
+            "duration_ms": record.get("duration_ms"),
+            "business_success": record.get("business_success"),
             "collected_at": record["collected_at"],
         }
+
+    def collect_public_info() -> dict[str, Any]:
+        """顺序采集 Debug 和 Cost；任何辅助失败都转换为状态而不抛出。"""
+
+        public_fields: dict[str, Any] = {
+            "public_info_status": "NOT_CONFIGURED",
+            "debug_collection_status": "NOT_CONFIGURED",
+            "cost_collection_status": "NOT_CONFIGURED",
+            "cache_hit": None,
+            "public_info_warnings": [],
+            "field_mapping_status": "NOT_MAPPED",
+        }
+        result: dict[str, Any] = {
+            "public_fields": public_fields,
+            "debug_record": None,
+            "cost_record": None,
+            "login_records": [],
+        }
+        admin_enabled = bool(getattr(client.config, "admin_enabled", False))
+        admin_config_error = str(
+            getattr(client.config, "admin_config_error", "") or ""
+        )
+        if not admin_enabled or admin_config_error:
+            unavailable_reason = (
+                admin_config_error or "Admin 公共信息采集未启用或未配置"
+            )
+            if admin_config_error:
+                public_fields["public_info_warnings"].append(
+                    admin_config_error
+                )
+            for skipped_stage in (
+                "AdminLogin",
+                "GetSearchTaskDebug",
+                "GetProviderCostSummary",
+            ):
+                chain_logger.write_event(
+                    skipped_stage,
+                    task_id=task_id,
+                    business_success=False,
+                    response={
+                        "status": "NOT_CONFIGURED",
+                        "executed": False,
+                        "reason": unavailable_reason,
+                    },
+                    error=f"未执行: {unavailable_reason}",
+                )
+                emit_progress(
+                    "query_stage",
+                    stage=skipped_stage,
+                    status="NOT_CONFIGURED",
+                    message=f"{skipped_stage} 未执行：{unavailable_reason}",
+                )
+            return result
+
+        debug_body: dict[str, Any] | None = None
+        cost_body: dict[str, Any] | None = None
+        debug_error: FlowError | None = None
+        cost_error: FlowError | None = None
+        emit_progress(
+            "query_stage",
+            stage="GetSearchTaskDebug",
+            status="RUNNING",
+            message="正在采集任务诊断信息",
+        )
+        try:
+            debug_body, debug_record = call_admin_and_record(
+                "GetSearchTaskDebug",
+                {
+                    "task_id": task_id,
+                    "service": getattr(client.config, "admin_debug_service", "worker"),
+                },
+            )
+            result["debug_record"] = debug_record
+            public_fields["debug_collection_status"] = "SUCCESS"
+            emit_progress(
+                "query_stage",
+                stage="GetSearchTaskDebug",
+                status="SUCCEEDED",
+                message="任务诊断信息采集完成",
+            )
+        except FlowError as exc:
+            debug_error = exc
+            public_fields["debug_collection_status"] = (
+                "AUTH_FAILED" if exc.stage == "AdminLogin" else "FAILED"
+            )
+            public_fields["public_info_warnings"].append(
+                f"GetSearchTaskDebug: {exc}"
+            )
+            emit_progress(
+                "query_stage",
+                stage="GetSearchTaskDebug",
+                status="FAILED",
+                message="任务诊断信息采集失败，继续主检索链路",
+            )
+
+        # Login 本身失败时，立即再次登录只会重复同一认证错误；Cost 记录为 AUTH_FAILED。
+        if debug_error is not None and debug_error.stage == "AdminLogin":
+            public_fields["cost_collection_status"] = "AUTH_FAILED"
+            chain_logger.write_event(
+                "GetProviderCostSummary",
+                task_id=task_id,
+                business_success=False,
+                response={
+                    "status": "AUTH_FAILED",
+                    "executed": False,
+                    "reason": "Admin 登录失败",
+                },
+                error="未执行: Admin 登录失败",
+            )
+            emit_progress(
+                "query_stage",
+                stage="GetProviderCostSummary",
+                status="AUTH_FAILED",
+                message="Admin 登录失败，成本接口未执行",
+            )
+        else:
+            emit_progress(
+                "query_stage",
+                stage="GetProviderCostSummary",
+                status="RUNNING",
+                message="正在采集 Provider 成本信息",
+            )
+            try:
+                cost_body, cost_record = call_admin_and_record(
+                    "GetProviderCostSummary",
+                    {
+                        "task_id": task_id,
+                        "limit": int(getattr(client.config, "admin_cost_limit", 100)),
+                    },
+                )
+                cost_data = response_data(
+                    cost_body,
+                    "GetProviderCostSummary",
+                    task_id,
+                )
+                if not isinstance(cost_data.get("cost_summary"), dict):
+                    # 首次空响应允许一次短重试；不重复终态后的固定 1 秒等待。
+                    sleep_fn(PUBLIC_INFO_TERMINAL_DELAY_SECONDS)
+                    cost_body, cost_record = call_admin_and_record(
+                        "GetProviderCostSummary",
+                        {
+                            "task_id": task_id,
+                            "limit": int(getattr(client.config, "admin_cost_limit", 100)),
+                        },
+                        sequence_no=2,
+                    )
+                result["cost_record"] = cost_record
+                public_fields["cost_collection_status"] = "SUCCESS"
+                emit_progress(
+                    "query_stage",
+                    stage="GetProviderCostSummary",
+                    status="SUCCEEDED",
+                    message="Provider 成本信息采集完成",
+                )
+            except FlowError as exc:
+                cost_error = exc
+                public_fields["cost_collection_status"] = (
+                    "AUTH_FAILED" if exc.stage == "AdminLogin" else "FAILED"
+                )
+                public_fields["public_info_warnings"].append(
+                    f"GetProviderCostSummary: {exc}"
+                )
+                emit_progress(
+                    "query_stage",
+                    stage="GetProviderCostSummary",
+                    status="FAILED",
+                    message="Provider 成本信息采集失败，继续主检索链路",
+                )
+
+        login_records = [
+            record for record in raw_records if record.get("stage") == "AdminLogin"
+        ]
+        result["login_records"] = login_records
+
+        if debug_body is not None:
+            try:
+                debug_data = response_data(debug_body, "GetSearchTaskDebug", task_id)
+                debug = debug_data.get("debug")
+                if isinstance(debug, dict):
+                    debug_task = debug.get("task")
+                    diagnosis = debug.get("diagnosis")
+                    if isinstance(debug_task, dict):
+                        public_fields.update(
+                            {
+                                "cache_hit": sanitize_raw(debug_task.get("cache_hit")),
+                                "debug_task_status": sanitize_raw(debug_task.get("status")),
+                                "task_create_time": sanitize_raw(debug_task.get("create_time")),
+                                "task_start_time": sanitize_raw(debug_task.get("start_time")),
+                                "task_finish_time": sanitize_raw(debug_task.get("finish_time")),
+                            }
+                        )
+                    if isinstance(diagnosis, dict):
+                        for key in (
+                            "provider_request_count",
+                            "agent_tool_call_count",
+                            "successful_call_count",
+                            "failed_call_count",
+                            "unpriced_call_count",
+                            "fallback_used",
+                            "fallback_reason",
+                            "stop_reason",
+                            "final_status",
+                            "warnings",
+                        ):
+                            public_fields[f"debug_{key}"] = sanitize_raw(
+                                diagnosis.get(key)
+                            )
+            except FlowError as exc:
+                public_fields["public_info_warnings"].append(str(exc))
+
+        if cost_body is not None:
+            try:
+                cost_data = response_data(
+                    cost_body, "GetProviderCostSummary", task_id
+                )
+                cost_summary = cost_data.get("cost_summary")
+                if isinstance(cost_summary, dict):
+                    public_fields.update(
+                        {
+                            "cost_from_time": sanitize_raw(cost_summary.get("from_time")),
+                            "cost_to_time": sanitize_raw(cost_summary.get("to_time")),
+                            "cost_totals_by_currency": sanitize_raw(
+                                cost_summary.get("totals")
+                            ),
+                            "cost_by_provider": sanitize_raw(
+                                cost_summary.get("by_provider")
+                            ),
+                            "cost_by_worker": sanitize_raw(cost_summary.get("by_worker")),
+                            "cost_by_search": sanitize_raw(cost_summary.get("by_search")),
+                        }
+                    )
+            except FlowError as exc:
+                public_fields["public_info_warnings"].append(str(exc))
+
+        statuses = {
+            public_fields["debug_collection_status"],
+            public_fields["cost_collection_status"],
+        }
+        if statuses == {"SUCCESS"}:
+            public_fields["public_info_status"] = "COMPLETE"
+        elif "AUTH_FAILED" in statuses:
+            public_fields["public_info_status"] = "AUTH_FAILED"
+        elif "SUCCESS" in statuses:
+            public_fields["public_info_status"] = "PARTIAL"
+        else:
+            public_fields["public_info_status"] = "FAILED"
+        return result
 
     emit_progress("query_started", stage="Input", status="RUNNING")
     try:
@@ -680,6 +1738,7 @@ def process_one(
         get_task_history: list[dict[str, Any]] = []
         task_data: dict[str, Any] = {}
         no_result = False
+        terminal_failure_status = ""
         for poll_sequence in range(1, client.config.max_poll_count + 1):
             sleep_fn(client.config.poll_interval_seconds)
             task_body, task_raw = call_and_record(
@@ -700,7 +1759,7 @@ def process_one(
                     else "任务未完成，继续轮询"
                 ),
             )
-            if status in {"SUCCEEDED", "NO_RESULT"}:
+            if status in {GET_TASK_SUCCESS_STATUS, GET_TASK_NO_RESULT_STATUS}:
                 total_value = task_data.get("candidate_count")
                 if (
                     isinstance(total_value, int)
@@ -708,16 +1767,82 @@ def process_one(
                     and total_value >= 0
                 ):
                     candidate_count_total = total_value
-                if status == "NO_RESULT":
+                if status == GET_TASK_NO_RESULT_STATUS:
                     # NO_RESULT 是接口定义的终态：无需再请求候选列表或详情。
                     no_result = True
                     candidate_count_total = 0
                 break
+            if status in GET_TASK_FAILURE_TERMINAL_STATUSES:
+                terminal_failure_status = str(status)
+                break
             # QUEUED 和 SEARCHING 都表示任务尚未完成，继续下一轮 GetTask 轮询。
-            if status not in {"QUEUED", "SEARCHING"}:
+            if status not in GET_TASK_RUNNING_STATUSES:
                 raise FlowError("GetTask", f"未知任务状态: {status!r}", task_id)
         else:
             raise FlowError("GetTask", "任务轮询超时", task_id)
+
+        emit_progress(
+            "query_stage",
+            stage="PublicInfoDelay",
+            status="RUNNING",
+            message="任务已终态，等待 1 秒采集公共信息",
+        )
+        sleep_fn(PUBLIC_INFO_TERMINAL_DELAY_SECONDS)
+        public_info = collect_public_info()
+        public_fields = public_info["public_fields"]
+        if chain_logger.error:
+            public_fields.setdefault("public_info_warnings", []).append(
+                chain_logger.error
+            )
+            public_fields["query_log_status"] = "LOG_INCOMPLETE"
+        else:
+            public_fields["query_log_status"] = "COMPLETE"
+        public_fields["get_task_terminal_status"] = str(task_data.get("status") or "")
+        # 正式字段路径、单位和口径尚未确认。即使 Raw 中出现同名值，也不能
+        # 据此猜测映射；后端冻结契约后只需修改这一处映射和对应测试。
+        task_fields = {
+            "llm_cost": None,
+            "third_party_cost": None,
+            "total_cost": None,
+            "pdl_called": None,
+            "search_duration_ms": None,
+        }
+        admin_raw = {
+            "admin_login": [
+                raw_payload(record) for record in public_info["login_records"]
+            ],
+            "get_search_task_debug_history": [
+                raw_payload(record)
+                for record in raw_records
+                if record.get("stage") == "GetSearchTaskDebug"
+            ],
+            "get_search_task_debug": (
+                raw_payload(public_info["debug_record"])
+                if public_info["debug_record"] is not None
+                else None
+            ),
+            "get_provider_cost_summary_history": [
+                raw_payload(record)
+                for record in raw_records
+                if record.get("stage") == "GetProviderCostSummary"
+            ],
+            "get_provider_cost_summary": (
+                raw_payload(public_info["cost_record"])
+                if public_info["cost_record"] is not None
+                else None
+            ),
+        }
+
+        if terminal_failure_status:
+            failure = FlowError(
+                "GetTask",
+                f"任务进入失败终态: {terminal_failure_status}",
+                task_id,
+                response_body=task_data,
+            )
+            failure.task_fields = task_fields
+            failure.public_fields = public_fields
+            raise failure
 
         # 仅 GetTask 的 NO_RESULT 终态明确表示没有候选人；SUCCEEDED 即使
         # candidate_count 为 0，仍需通过 ListTaskCandidates 取得实际结果。
@@ -736,18 +1861,12 @@ def process_one(
                 "candidate_count_listed": 0,
                 "detail_success_count": 0,
                 "detail_failure_count": 0,
-                "task_fields": {
-                    "llm_cost": sanitize_raw(task_data.get("llm_cost")),
-                    "third_party_cost": sanitize_raw(task_data.get("third_party_cost")),
-                    "total_cost": sanitize_raw(task_data.get("total_cost")),
-                    "pdl_called": sanitize_raw(task_data.get("pdl_called")),
-                    "search_duration_ms": sanitize_raw(
-                        task_data.get("search_duration_ms")
-                    ),
-                },
+                "task_fields": task_fields,
+                "public_fields": public_fields,
                 "raw": {
                     "create_intent_task": raw_payload(create_raw),
                     "get_task_history": get_task_history,
+                    **admin_raw,
                 },
                 "results": [],
             }
@@ -760,6 +1879,7 @@ def process_one(
                 detail_failure_count=0,
                 message="GetTask 确认无候选人，未请求候选列表和详情",
             )
+            final_log_status = "NO_CANDIDATE"
             return result
 
         # 分页字段当前仅为接口预留；固定放大 page_size，接收全部候选人。
@@ -963,20 +2083,12 @@ def process_one(
             "candidate_count_listed": len(items),
             "detail_success_count": detail_success_count,
             "detail_failure_count": detail_failure_count,
-            "task_fields": {
-                "llm_cost": sanitize_raw(task_data.get("llm_cost")),
-                "third_party_cost": sanitize_raw(
-                    task_data.get("third_party_cost")
-                ),
-                "total_cost": sanitize_raw(task_data.get("total_cost")),
-                "pdl_called": sanitize_raw(task_data.get("pdl_called")),
-                "search_duration_ms": sanitize_raw(
-                    task_data.get("search_duration_ms")
-                ),
-            },
+            "task_fields": task_fields,
+            "public_fields": public_fields,
             "raw": {
                 "create_intent_task": raw_payload(create_raw),
                 "get_task_history": get_task_history,
+                **admin_raw,
                 "list_task_candidates": raw_payload(list_raw),
             },
             "results": results,
@@ -989,11 +2101,19 @@ def process_one(
             detail_success_count=detail_success_count,
             detail_failure_count=detail_failure_count,
         )
+        final_log_status = query_status
+        final_log_candidate_count = len(items)
         return result
     except FlowError as exc:
         if not exc.task_id and task_id:
             exc.task_id = task_id
         exc.raw_records = raw_records
+        if not exc.task_fields and "task_fields" in locals():
+            exc.task_fields = task_fields
+        if not exc.public_fields and "public_fields" in locals():
+            exc.public_fields = public_fields
+        final_log_status = "FAILED"
+        final_log_error = str(exc)
         emit_progress(
             "query_failed",
             stage=exc.stage,
@@ -1001,6 +2121,18 @@ def process_one(
             message=str(exc),
         )
         raise
+    finally:
+        chain_logger.write_event(
+            "QueryEnd",
+            task_id=task_id,
+            business_success=final_log_status not in {"FAILED", "EXECUTION_FAILED"},
+            response={
+                "status": final_log_status,
+                "candidate_count": final_log_candidate_count,
+            },
+            error=final_log_error,
+        )
+        chain_logger.close()
 
 
 def append_jsonl(path: Path, record: dict[str, Any]) -> None:
@@ -1107,6 +2239,8 @@ def run_batch(
                 "query_status": "FAILED",
                 "result_status": "EXECUTION_FAILED",
                 "error": str(exc),
+                "task_fields": exc.task_fields,
+                "public_fields": exc.public_fields,
                 "raw": exc.raw_records,
                 "created_at": utc_now_text(),
             }

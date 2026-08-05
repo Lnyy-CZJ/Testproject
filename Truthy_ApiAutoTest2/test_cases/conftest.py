@@ -99,7 +99,10 @@ def gateway_runtime(gateway_settings: dict[str, Any]) -> RuntimeContext:
     GatewayApi 会自动调用 CreateAnonymousSession 获取完整会话。同时提供当天的
     consent_policy_version，供匿名会话请求使用 YYYY-MM-DD 格式的最新日期。
     """
-    initial = dict(gateway_settings.get("runtime_session") or {})
+    initial = {
+        **(gateway_settings.get("runtime_session") or {}),
+        **(gateway_settings.get("runtime_variables") or {}),
+    }
     initial["consent_policy_version"] = date.today().isoformat()
     return RuntimeContext(initial)
 

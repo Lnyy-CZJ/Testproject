@@ -1,0 +1,22 @@
+{
+  "code": 0,
+  "message": "ok",
+  "responses": [
+    {
+      "id": "req_0",
+      "success": true,
+      "code": 0,
+      "message": "ok",
+      "data": {
+        "expire_time": "2099-08-05T15:01:37.804Z",
+        "operator": {
+          "operator_id": "admin_user_fixture",
+          "operator_name": "fixture-admin",
+          "permissions": ["fixture"],
+          "role": "fixture"
+        },
+        "session_token": "fixture-session-token"
+      }
+    }
+  ]
+}

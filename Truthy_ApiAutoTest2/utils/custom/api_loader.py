@@ -13,8 +13,9 @@ class ApiConfigError(ValueError):
     """表示 API 定义缺失、重复或格式不合法。"""
 
 
-_ALLOWED_ROOT_FIELDS = {"id", "name", "request"}
+_ALLOWED_ROOT_FIELDS = {"id", "name", "request", "transport"}
 _ALLOWED_REQUEST_FIELDS = {"service_name", "method_name"}
+_ALLOWED_TRANSPORT_FIELDS = {"target", "comm", "requires_session"}
 
 
 def _require_non_empty_string(
@@ -109,7 +110,7 @@ def _validate_api_content(
         "method_name",
         request_scope,
     )
-    return {
+    definition = {
         "id": api_id,
         "name": name,
         "request": {
@@ -117,6 +118,25 @@ def _validate_api_content(
             "method_name": method_name,
         },
     }
+    transport = content.get("transport")
+    if transport is None:
+        return definition
+    transport_scope = f"API {api_id}.transport"
+    if not isinstance(transport, dict):
+        raise ApiConfigError(f"{transport_scope} 必须是对象")
+    _reject_unexpected_fields(transport, _ALLOWED_TRANSPORT_FIELDS, transport_scope)
+    target = _require_non_empty_string(transport, "target", transport_scope)
+    normalized_transport: dict[str, Any] = {"target": target}
+    if "comm" in transport:
+        if not isinstance(transport["comm"], dict):
+            raise ApiConfigError(f"{transport_scope}.comm 必须是对象")
+        normalized_transport["comm"] = deepcopy(transport["comm"])
+    if "requires_session" in transport:
+        if not isinstance(transport["requires_session"], bool):
+            raise ApiConfigError(f"{transport_scope}.requires_session 必须是布尔值")
+        normalized_transport["requires_session"] = transport["requires_session"]
+    definition["transport"] = normalized_transport
+    return definition
 
 
 def _relative_source(path: Path, project_root: Path) -> str:
@@ -239,7 +259,7 @@ def build_execution_case(
     case_name = name if name is not None else api_definition.get("name")
     if not isinstance(case_name, str) or not case_name.strip():
         raise ApiConfigError(f"API {api_id} 的执行名称必须为非空字符串")
-    return {
+    execution_case = {
         "name": case_name.strip(),
         "request": {
             "service_name": service_name,
@@ -249,3 +269,7 @@ def build_execution_case(
         "assert": deepcopy(assertions),
         "extract": deepcopy(extract or {}),
     }
+    # 旧 API 没有传输覆盖时不添加该字段，保持既有可执行 case 数据结构不变。
+    if api_definition.get("transport"):
+        execution_case["transport"] = deepcopy(api_definition["transport"])
+    return execution_case

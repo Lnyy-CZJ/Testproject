@@ -124,6 +124,11 @@ def _validate_flow(
             raise FlowConfigError(
                 f"步骤 {step_id} 的 until 只能用于 api 步骤"
             )
+        if "run_on_termination" in step:
+            if "api" not in step or not isinstance(step["run_on_termination"], bool):
+                raise FlowConfigError(
+                    f"步骤 {step_id}.run_on_termination 只能为 API 步骤的布尔值"
+                )
         if "action" in step:
             if step["action"] != "prepared_media_upload":
                 raise FlowConfigError(
@@ -141,6 +146,14 @@ def _validate_flow(
             _validate_path(until.get("path"), f"步骤 {step_id}.until.path")
             if "equals" not in until:
                 raise FlowConfigError(f"步骤 {step_id}.until 缺少 equals")
+            if "terminate_on" in until:
+                terminate_on = until["terminate_on"]
+                if not isinstance(terminate_on, list) or any(
+                    not isinstance(value, str) or not value for value in terminate_on
+                ):
+                    raise FlowConfigError(
+                        f"步骤 {step_id}.until.terminate_on 必须是非空字符串数组"
+                    )
             interval = _validate_number(
                 until.get("interval_seconds"),
                 f"步骤 {step_id}.until.interval_seconds",

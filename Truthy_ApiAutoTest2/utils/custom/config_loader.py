@@ -22,6 +22,11 @@ SESSION_ENV_MAPPING = {
     "expires_time": "EXPIRES_TIME",
     "refresh_expires_time": "REFRESH_EXPIRES_TIME",
 }
+ADMIN_ENV_MAPPING = {
+    "admin_session_token": "ADMIN_SESSION_TOKEN",
+    "admin_operator_id": "ADMIN_OPERATOR_ID",
+    "admin_operator_name": "ADMIN_OPERATOR_NAME",
+}
 
 
 def load_dotenv_values(path: Path) -> dict[str, str]:
@@ -158,12 +163,9 @@ def load_settings(
         raise ConfigError("comm 配置必须是对象")
 
     env_values = load_dotenv_values(root / ".env")
+    managed_env_keys = (*SESSION_ENV_MAPPING.values(), *ADMIN_ENV_MAPPING.values())
     env_values.update(
-        {
-            key: value
-            for key in SESSION_ENV_MAPPING.values()
-            if (value := os.getenv(key))
-        }
+        {key: value for key in managed_env_keys if (value := os.getenv(key))}
     )
     comm_mapping = {
         "auth_token": "AUTH_TOKEN",
@@ -178,6 +180,11 @@ def load_settings(
     settings["runtime_session"] = {
         runtime_key: env_values[env_key]
         for runtime_key, env_key in SESSION_ENV_MAPPING.items()
+        if env_values.get(env_key)
+    }
+    settings["runtime_variables"] = {
+        runtime_key: env_values[env_key]
+        for runtime_key, env_key in ADMIN_ENV_MAPPING.items()
         if env_values.get(env_key)
     }
 

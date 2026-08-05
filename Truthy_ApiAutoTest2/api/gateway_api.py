@@ -56,12 +56,17 @@ def build_payload(
     settings: dict[str, Any],
     case: dict[str, Any],
     runtime_context: RuntimeContext | None = None,
+    comm_overrides: dict[str, Any] | None = None,
+    include_runtime_session: bool = True,
 ) -> dict[str, Any]:
     """构造 MVP 规定的单子请求 Gateway 信封。
 
     参数说明:
         settings: 包含 ``comm`` 的完整环境配置。
         case: 包含 ``request.service_name/method_name/params`` 的用例数据。
+        runtime_context: 可选运行时变量，用于解析请求参数与 comm 占位符。
+        comm_overrides: 可选完整 comm 覆盖，用于不同 Gateway 的客户端标识。
+        include_runtime_session: 是否将普通用户会话字段写入 comm。
 
     返回值:
         仅含 ``comm`` 和一个 ``req_0`` 子请求的字典。
@@ -80,12 +85,14 @@ def build_payload(
     variables.set("client_request_id", client_request_id)
 
     # 空字符串和 None 表示未配置字段，构造请求时不序列化。
+    comm_source = comm_overrides if comm_overrides is not None else settings.get("comm") or {}
     comm = {
         key: value
-        for key, value in (settings.get("comm") or {}).items()
+        for key, value in comm_source.items()
         if value is not None and value != ""
     }
-    if runtime_context:
+    comm = variables.resolve(comm)
+    if runtime_context and include_runtime_session:
         access_token = runtime_context.get("access_token")
         user_id = runtime_context.get("user_id")
         if access_token:
@@ -175,25 +182,47 @@ class GatewayApi:
         异常说明:
             ValueError: 接口配置不是 POST 时抛出；网络异常由 HttpClient 透传。
         """
-        if str(self.endpoint.get("method", "")).upper() != "POST":
-            raise ValueError("Gateway MVP 仅支持 POST 请求")
         request = case.get("request") or {}
         method_name = str(request.get("method_name") or "")
-        if self.runtime_context and method_name not in SESSION_METHODS:
+        transport = case.get("transport") or {}
+        requires_session = bool(transport.get("requires_session", True))
+        if self.runtime_context and requires_session and method_name not in SESSION_METHODS:
             self._ensure_session()
         return self._post(case)
 
     def _post(self, case: dict[str, Any]):
         """发送一次 Gateway POST，不执行会话检查，供会话接口避免递归调用。"""
-        base_url = str(self.settings["gateway_base_url"]).rstrip("/")
-        path = str(self.endpoint.get("path", "")).lstrip("/")
+        transport = case.get("transport") or {}
+        endpoint = self._resolve_endpoint(str(transport.get("target") or "default"))
+        base_url = str(endpoint["base_url"]).rstrip("/")
+        path = str(endpoint.get("path", "")).lstrip("/")
         url = f"{base_url}/{path}"
         return self.http_client.post_json(
             url=url,
-            headers=self.endpoint.get("headers") or {},
-            payload=build_payload(self.settings, case, self.runtime_context),
+            headers=endpoint.get("headers") or {},
+            payload=build_payload(
+                self.settings,
+                case,
+                self.runtime_context,
+                comm_overrides=transport.get("comm"),
+                include_runtime_session=bool(transport.get("requires_session", True)),
+            ),
             timeout=float(self.settings.get("timeout", 15)),
         )
+
+    def _resolve_endpoint(self, target: str) -> dict[str, Any]:
+        """解析默认或命名 Gateway 目标，并在请求前校验传输配置。"""
+        if target == "default":
+            endpoint = {**self.endpoint, "base_url": self.settings["gateway_base_url"]}
+        else:
+            endpoint = (self.settings.get("gateway_targets") or {}).get(target)
+        if not isinstance(endpoint, dict):
+            raise ValueError(f"未配置 Gateway 目标: {target}")
+        if str(endpoint.get("method", "")).upper() != "POST":
+            raise ValueError(f"Gateway 目标 {target} 仅支持 POST")
+        if not endpoint.get("base_url") or not endpoint.get("path"):
+            raise ValueError(f"Gateway 目标 {target} 缺少 base_url 或 path")
+        return endpoint
 
     def _ensure_session(self) -> None:
         """在普通请求前创建或刷新会话，刷新失败时仅回退重建一次。"""

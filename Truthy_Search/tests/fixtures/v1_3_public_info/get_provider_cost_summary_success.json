@@ -1,0 +1,31 @@
+{
+  "code": 0,
+  "message": "ok",
+  "responses": [
+    {
+      "id": "req_0",
+      "success": true,
+      "code": 0,
+      "message": "ok",
+      "data": {
+        "cost_summary": {
+          "from_time": "2026-08-05T01:00:00Z",
+          "to_time": "2026-08-05T01:00:05Z",
+          "totals": [
+            {
+              "currency": "USD",
+              "call_count": "2",
+              "priced_call_count": "2",
+              "unpriced_call_count": "0",
+              "total_cost_microunit": "1234"
+            }
+          ],
+          "by_provider": [],
+          "by_worker": [],
+          "by_search": [],
+          "calls": []
+        }
+      }
+    }
+  ]
+}

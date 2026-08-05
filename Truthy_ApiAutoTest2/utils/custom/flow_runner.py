@@ -77,8 +77,12 @@ class FlowRunner:
         gateway = self.gateway_factory(context)
         steps = flow.get("steps") or []
 
+        flow_terminated = False
         for position, step in enumerate(steps, start=1):
             step_id = str(step.get("id") or f"step_{position}")
+            if flow_terminated and not step.get("run_on_termination", False):
+                LOGGER.info("因流程终态跳过 Flow 步骤: step=%s", step_id)
+                continue
             step_title = self._build_step_title(
                 step,
                 step_id,
@@ -100,7 +104,7 @@ class FlowRunner:
                     self._execute_action(str(step["action"]), gateway, context)
                 elif "api" in step:
                     step_data = (scenario.get("step_data") or {}).get(step_id) or {}
-                    self._execute_api(
+                    should_terminate = self._execute_api(
                         step,
                         step_data,
                         api_definitions,
@@ -110,6 +114,12 @@ class FlowRunner:
                 else:
                     raise FlowExecutionError(f"步骤 {step_id} 没有可执行动作")
             LOGGER.info("完成 Flow 步骤: step=%s", step_id)
+            if "api" in step and should_terminate:
+                flow_terminated = True
+                LOGGER.info(
+                    "Flow 命中轮询终态: step=%s；仅继续执行标记 run_on_termination 的步骤",
+                    step_id,
+                )
         return context
 
     @staticmethod
@@ -149,7 +159,7 @@ class FlowRunner:
         api_definitions: dict[str, dict[str, Any]],
         gateway: Any,
         context: RuntimeContext,
-    ) -> None:
+    ) -> bool:
         """使用 API 路由和 Scenario 完整数据执行普通调用或轮询。
 
         参数说明:
@@ -160,7 +170,8 @@ class FlowRunner:
             context: 当前 Flow 的 RuntimeContext。
 
         返回值:
-            无。断言和提取成功后更新 context。
+            bool: 当前轮询步骤命中 ``terminate_on`` 时返回 True，调用方应停止
+            执行该 Flow 的后续步骤；其他情况返回 False。
 
         异常说明:
             FlowExecutionError: API 定义或 Scenario 步骤数据缺失时抛出。
@@ -193,11 +204,17 @@ class FlowRunner:
         )
 
         if step.get("until"):
-            data = self._poll(step, case, gateway, context)
+            data, should_terminate = self._poll(step, case, gateway, context)
         else:
             response = gateway.invoke(case)
             data = assert_gateway_response(response, case["assert"])
+            should_terminate = False
+        if should_terminate:
+            # 终态响应已通过 Gateway 协议断言；跳过成功态数据断言和提取，
+            # 防止 NO_RESULT 被按 SUCCEEDED 的场景断言误判为失败。
+            return True
         self._finalize_api(step, case, data, context)
+        return False
 
     def _poll(
         self,
@@ -205,11 +222,12 @@ class FlowRunner:
         case: dict[str, Any],
         gateway: Any,
         context: RuntimeContext,
-    ) -> dict[str, Any]:
-        """重复调用当前 case，直到受控路径值等于期望值或超时。"""
+    ) -> tuple[dict[str, Any], bool]:
+        """轮询至成功或声明的终态；终态时通知调用方结束整个 Flow。"""
         until = step["until"]
         path = str(until["path"])
         expected = context.resolve(until["equals"])
+        terminal_values = context.resolve(until.get("terminate_on") or [])
         interval = float(until["interval_seconds"])
         deadline = self.monotonic() + float(until["timeout_seconds"])
         attempts = 0
@@ -222,17 +240,24 @@ class FlowRunner:
                 data = assert_gateway_response(response, case["assert"])
                 last_value = RuntimeContext.read_path(data, path)
                 matched = last_value == expected
+                terminated = not matched and last_value in terminal_values
+                poll_summary = {
+                    "path": path,
+                    "actual": last_value,
+                    "expected": expected,
+                    "matched": matched,
+                }
+                # 仅在 YAML 声明终态时附加该信息，保持旧轮询报告结构兼容。
+                if terminal_values:
+                    poll_summary["terminated"] = terminated
                 attach_json(
                     "轮询结果",
-                    {
-                        "path": path,
-                        "actual": last_value,
-                        "expected": expected,
-                        "matched": matched,
-                    },
+                    poll_summary,
                 )
             if matched:
-                return data
+                return data, False
+            if terminated:
+                return data, True
             now = self.monotonic()
             if now >= deadline:
                 step_id = step.get("id") or "unknown"

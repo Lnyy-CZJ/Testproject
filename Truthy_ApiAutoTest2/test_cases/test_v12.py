@@ -628,6 +628,7 @@ def test_flow_runner_polls_until_value_matches(tmp_path: Path) -> None:
         [
             _gateway_response({"status": "RUNNING"}),
             _gateway_response({"status": "SUCCEEDED"}),
+            _gateway_response({}),
         ]
     )
     now = [0.0]
@@ -652,7 +653,8 @@ def test_flow_runner_polls_until_value_matches(tmp_path: Path) -> None:
                         "interval_seconds": 1,
                         "timeout_seconds": 3,
                     },
-                }
+                },
+                {"id": "audit_after_success", "api": "Detail", "run_on_termination": True},
             ]
         },
         "scenario": {
@@ -662,7 +664,11 @@ def test_flow_runner_polls_until_value_matches(tmp_path: Path) -> None:
                 "poll": {
                     "params": {},
                     "assert": _runner_success_assertions(),
-                }
+                },
+                "audit_after_success": {
+                    "params": {},
+                    "assert": _runner_success_assertions(),
+                },
             },
         },
     }
@@ -674,8 +680,70 @@ def test_flow_runner_polls_until_value_matches(tmp_path: Path) -> None:
         monotonic=lambda: now[0],
     ).run(flow_case)
 
-    assert len(gateway.calls) == 2
+    assert len(gateway.calls) == 3
     assert sleeps == [1.0]
+    assert gateway.calls[2]["request"]["method_name"] == "Detail"
+
+
+def test_flow_runner_runs_termination_steps_when_poll_returns_terminal_value(
+    tmp_path: Path,
+) -> None:
+    """NO_RESULT 应跳过业务步骤，但仍执行标记为终态执行的审计步骤。"""
+    from utils.custom.flow_runner import FlowRunner
+
+    gateway = QueueGateway(
+        [_gateway_response({"status": "NO_RESULT"}), _gateway_response({})]
+    )
+    flow_case = {
+        "id": "NoResultFlow",
+        "name": "无结果结束流程",
+        "api_definitions": _runner_api_definitions(),
+        "flow": {
+            "steps": [
+                {
+                    "id": "poll",
+                    "api": "Demo",
+                    "until": {
+                        "path": "$.status",
+                        "equals": "SUCCEEDED",
+                        "terminate_on": ["NO_RESULT"],
+                        "interval_seconds": 1,
+                        "timeout_seconds": 3,
+                    },
+                },
+                {"id": "must_not_run", "api": "Detail"},
+                {
+                    "id": "audit_after_termination",
+                    "api": "Detail",
+                    "run_on_termination": True,
+                },
+            ]
+        },
+        "scenario": {
+            "name": "无结果场景",
+            "variables": {},
+            "step_data": {
+                "poll": {
+                    "params": {},
+                    "assert": _runner_success_assertions({"status": "SUCCEEDED"}),
+                },
+                "must_not_run": {
+                    "params": {},
+                    "assert": _runner_success_assertions(),
+                },
+                "audit_after_termination": {
+                    "params": {},
+                    "assert": _runner_success_assertions(),
+                },
+            },
+        },
+    }
+
+    FlowRunner(tmp_path, gateway_factory=lambda runtime: gateway).run(flow_case)
+
+    assert len(gateway.calls) == 2
+    assert gateway.calls[0]["request"]["method_name"] == "Demo"
+    assert gateway.calls[1]["request"]["method_name"] == "Detail"
 
 
 def test_flow_runner_reports_poll_timeout(tmp_path: Path) -> None:

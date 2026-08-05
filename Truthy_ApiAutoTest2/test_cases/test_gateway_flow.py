@@ -23,7 +23,7 @@ from utils.third_party.allure_reporter import set_flow_metadata
 
 # 本地调试 Flow 的完整文件名 stem；空元组表示收集全部 Flow。
 # 临时调试示例：("AnonymousSessionMediaSearch",)。
-RUN_FLOW_IDS: tuple[str, ...] = ()
+RUN_FLOW_IDS: tuple[str, ...] = ("NameWithConditionsSearch",)
 # 仅复制会话生命周期需要的框架变量；Flow 业务变量始终保持独立。
 _FRAMEWORK_SESSION_KEYS = (
     "access_token",
@@ -32,7 +32,17 @@ _FRAMEWORK_SESSION_KEYS = (
     "refresh_expires_time",
     "user_id",
     "consent_policy_version",
+    # Admin 审计接口从 .env 读取的凭证也需要复制到每条独立 Flow 上下文。
+    "admin_session_token",
+    "admin_operator_id",
+    "admin_operator_name",
 )
+_ADMIN_FLOW_API_IDS = {"GetSearchTaskDebug", "GetProviderCostSummary"}
+_ADMIN_RUNTIME_VARIABLES = {
+    "admin_session_token": "ADMIN_SESSION_TOKEN",
+    "admin_operator_id": "ADMIN_OPERATOR_ID",
+    "admin_operator_name": "ADMIN_OPERATOR_NAME",
+}
 
 
 def _load_selected_flow_cases(selected_flow: str | None) -> list[dict[str, Any]]:
@@ -130,6 +140,22 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
 def test_gateway_flow(flow_case: dict[str, Any], gateway_api: GatewayApi) -> None:
     """使用通用 FlowRunner 执行一条独立 Flow/Scenario 用例。"""
     set_flow_metadata(flow_case)
+    flow_api_ids = {
+        str(step.get("api") or "")
+        for step in (flow_case.get("flow") or {}).get("steps") or []
+    }
+    if flow_api_ids & _ADMIN_FLOW_API_IDS:
+        runtime_values = gateway_api.runtime_context.as_dict() if gateway_api.runtime_context else {}
+        missing_env_keys = [
+            env_key
+            for runtime_key, env_key in _ADMIN_RUNTIME_VARIABLES.items()
+            if not runtime_values.get(runtime_key)
+        ]
+        if missing_env_keys:
+            pytest.skip(
+                "真实 Flow 未执行: .env 缺少 Admin 凭证 "
+                + ", ".join(missing_env_keys)
+            )
 
     def gateway_factory(runtime_context: RuntimeContext) -> GatewayApi:
         """为当前 Flow 创建绑定独立业务和会话上下文的 GatewayApi。"""

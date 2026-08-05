@@ -12249,6 +12249,10 @@ class AnalysisService:
         """保存 Query 级失败及失败前已获得的 Raw，并返回文件记录。"""
 
         now = utc_now_text()
+        task_fields = error.task_fields if isinstance(error.task_fields, dict) else {}
+        public_fields = (
+            error.public_fields if isinstance(error.public_fields, dict) else {}
+        )
         failure_record = {
             "failure_schema_version": RESULT_SCHEMA_VERSION,
             "run_id": run_id,
@@ -12260,6 +12264,8 @@ class AnalysisService:
             "query_status": "FAILED",
             "result_status": "EXECUTION_FAILED",
             "error": str(error),
+            "task_fields": task_fields,
+            "public_fields": public_fields,
             "raw": error.raw_records,
             "created_at": now,
         }
@@ -12268,11 +12274,27 @@ class AnalysisService:
                 """
                 UPDATE run_queries
                 SET task_id = ?, status = 'FAILED', current_stage = ?,
+                    llm_cost = ?, third_party_cost = ?, total_cost = ?,
+                    pdl_called = ?, search_duration_ms = ?,
+                    public_fields_json = ?,
                     result_status = 'EXECUTION_FAILED',
                     error = ?, finished_at = ?
                 WHERE run_id = ? AND query_id = ?
                 """,
-                (error.task_id, error.stage, str(error), now, run_id, query_id),
+                (
+                    error.task_id,
+                    error.stage,
+                    task_fields.get("llm_cost"),
+                    task_fields.get("third_party_cost"),
+                    task_fields.get("total_cost"),
+                    task_fields.get("pdl_called"),
+                    task_fields.get("search_duration_ms"),
+                    json_text(public_fields),
+                    str(error),
+                    now,
+                    run_id,
+                    query_id,
+                ),
             )
             for raw in error.raw_records:
                 self._insert_raw(
@@ -13402,6 +13424,11 @@ class AnalysisService:
                 key: sanitize_raw(value)
                 for key, value in task_fields.items()
             }
+            public_fields = (
+                sanitize_raw(raw_record.get("public_fields"))
+                if isinstance(raw_record.get("public_fields"), dict)
+                else {}
+            )
             for key in TASK_FIELD_KEYS:
                 normalized_task_fields.setdefault(key, None)
             normalized_record = dict(sanitize_raw(raw_record))
@@ -13435,6 +13462,7 @@ class AnalysisService:
                     "detail_success_count": success_details,
                     "detail_failure_count": failed_details,
                     "task_fields": normalized_task_fields,
+                    "public_fields": public_fields,
                     "raw": sanitize_raw(raw_value) if has_raw else {},
                     "raw_status": (
                         "COMPLETE_RAW" if has_raw else "LEGACY_PARTIAL_RAW"
@@ -13504,6 +13532,16 @@ class AnalysisService:
                     "scope": scope,
                     "stage": stage,
                     "error": str(record.get("error") or ""),
+                    "task_fields": (
+                        sanitize_raw(record.get("task_fields"))
+                        if isinstance(record.get("task_fields"), dict)
+                        else {}
+                    ),
+                    "public_fields": (
+                        sanitize_raw(record.get("public_fields"))
+                        if isinstance(record.get("public_fields"), dict)
+                        else {}
+                    ),
                     "raw": sanitize_raw(record.get("raw")),
                     "created_at": record.get("created_at") or utc_now_text(),
                 }
@@ -13947,6 +13985,36 @@ class AnalysisService:
             ],
             ("ListTaskCandidates", raw.get("list_task_candidates")),
         ]
+        stage_items.extend(
+            ("AdminLogin", item)
+            for item in raw.get("admin_login", [])
+            if isinstance(item, dict)
+        )
+        debug_history = raw.get("get_search_task_debug_history")
+        cost_history = raw.get("get_provider_cost_summary_history")
+        if isinstance(debug_history, list):
+            stage_items.extend(
+                ("GetSearchTaskDebug", item)
+                for item in debug_history
+                if isinstance(item, dict)
+            )
+        else:
+            stage_items.append(
+                ("GetSearchTaskDebug", raw.get("get_search_task_debug"))
+            )
+        if isinstance(cost_history, list):
+            stage_items.extend(
+                ("GetProviderCostSummary", item)
+                for item in cost_history
+                if isinstance(item, dict)
+            )
+        else:
+            stage_items.append(
+                (
+                    "GetProviderCostSummary",
+                    raw.get("get_provider_cost_summary"),
+                )
+            )
         stage_sequences: dict[str, int] = defaultdict(int)
         for stage, payload in stage_items:
             if not isinstance(payload, dict) or not payload:
@@ -14140,6 +14208,16 @@ class AnalysisService:
                         detail_success = 0
                         detail_failure = 0
                         task_fields: dict[str, Any] = {}
+                        task_fields.update(
+                            first_failure.get("task_fields", {})
+                            if isinstance(first_failure.get("task_fields"), dict)
+                            else {}
+                        )
+                        public_fields = (
+                            first_failure.get("public_fields", {})
+                            if isinstance(first_failure.get("public_fields"), dict)
+                            else {}
+                        )
                         result_status = "EXECUTION_FAILED"
                     else:
                         task_id = record["task_id"]
@@ -14165,11 +14243,19 @@ class AnalysisService:
                         detail_success = record["detail_success_count"]
                         detail_failure = record["detail_failure_count"]
                         task_fields = record.get("task_fields", {})
+                        public_fields = (
+                            record.get("public_fields", {})
+                            if isinstance(record.get("public_fields"), dict)
+                            else {}
+                        )
                         result_status = record["result_status"]
                     public_fields = {
-                        key: value
-                        for key, value in task_fields.items()
-                        if key not in TASK_FIELD_KEYS
+                        **public_fields,
+                        **{
+                            key: value
+                            for key, value in task_fields.items()
+                            if key not in TASK_FIELD_KEYS
+                        },
                     }
                     connection.execute(
                         """
@@ -14259,18 +14345,34 @@ class AnalysisService:
                             source_type=source_type,
                         )
                     else:
-                        self._insert_raw(
-                            connection,
-                            run_id=object_id,
-                            query_id=query_id,
-                            candidate_pk=None,
-                            stage="Import",
-                            sequence_no=1,
-                            payload={
-                                "raw_status": "LEGACY_PARTIAL_RAW",
-                                "source_type": source_type,
-                            },
-                        )
+                        failure_raw = first_failure.get("raw")
+                        if isinstance(failure_raw, list) and failure_raw:
+                            for raw_item in failure_raw:
+                                if not isinstance(raw_item, dict):
+                                    continue
+                                self._insert_raw(
+                                    connection,
+                                    run_id=object_id,
+                                    query_id=query_id,
+                                    candidate_pk=None,
+                                    stage=str(raw_item.get("stage") or "Import"),
+                                    sequence_no=int(raw_item.get("sequence_no") or 1),
+                                    payload=raw_item,
+                                    collected_at=raw_item.get("collected_at"),
+                                )
+                        else:
+                            self._insert_raw(
+                                connection,
+                                run_id=object_id,
+                                query_id=query_id,
+                                candidate_pk=None,
+                                stage="Import",
+                                sequence_no=1,
+                                payload={
+                                    "raw_status": "LEGACY_PARTIAL_RAW",
+                                    "source_type": source_type,
+                                },
+                            )
                 for failure in failure_records:
                     connection.execute(
                         """
