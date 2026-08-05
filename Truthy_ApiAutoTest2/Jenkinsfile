@@ -26,10 +26,7 @@ pipeline {
         )
     }
 
-    triggers {
-        // 每天北京时间凌晨 2 点左右执行，H 由 Jenkins 自动分配具体分钟。
-        cron('TZ=Asia/Shanghai\nH 2 * * *')
-    }
+    // 自动定时触发已暂停；恢复时再按原规则增加 triggers/cron 配置。
 
     environment {
         PROJECT_DIR = 'Truthy_ApiAutoTest2'

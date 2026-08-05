@@ -540,13 +540,15 @@ def _read_jenkinsfile() -> str:
 
 
 def test_jenkinsfile_preserves_existing_execution_contract() -> None:
-    """Jenkins 接入 Allure 后必须保留参数、定时规则和原有测试入口。"""
+    """暂停自动触发后仍必须保留参数和原有测试入口。"""
     content = _read_jenkinsfile()
 
     for parameter in ("ENVIRONMENT", "RUN_TYPE", "FLOW"):
         assert f"name: '{parameter}'" in content
     assert "disableConcurrentBuilds()" in content
-    assert "TZ=Asia/Shanghai\\nH 2 * * *" in content
+    # 暂停期间 Jenkinsfile 不能声明 cron，否则手动构建后会重新注册定时器。
+    assert "triggers {" not in content
+    assert "cron(" not in content
     assert "test_cases/test_single_api.py" in content
     assert "test_cases/test_gateway_flow.py" in content
     assert ".venv/bin/python runtest.py" in content
