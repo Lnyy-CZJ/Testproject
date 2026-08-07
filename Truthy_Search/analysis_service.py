@@ -16,6 +16,7 @@ import uuid
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Callable, Iterable
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -27,6 +28,7 @@ from search_tool import (
     RESULT_SCHEMA_VERSION,
     FlowError,
     extract_admin_task_fields,
+    extract_admin_tool_usage,
     normalize_result_status,
     process_one,
     sanitize_raw,
@@ -75,8 +77,17 @@ FIELD_MODULES = {
 }
 FIELD_SOURCE_STAGES = {
     "GetTask",
+    "GetSearchTaskDebug",
+    "GetProviderCostSummary",
+    "Admin",
     "ListTaskCandidates",
     "GetTaskCandidateDetail",
+}
+QUERY_FIELD_SOURCE_STAGES = {
+    "GetTask",
+    "GetSearchTaskDebug",
+    "GetProviderCostSummary",
+    "Admin",
 }
 FIELD_DATA_TYPES = {
     "string",
@@ -729,6 +740,56 @@ DEFAULT_FIELD_DEFINITIONS_V3 = [
     _v3_catalog_field(
         "search_duration_ms", "Search Duration (ms)", "Task", "task.search_duration_ms", "number", 60,
         source_stage="GetTask",
+    ),
+    _v3_catalog_field(
+        "cost_currency", "Cost Currency", "Task", "task.cost_currency", "string", 70,
+        source_stage="GetProviderCostSummary", run_compare_enabled=True,
+    ),
+    _v3_catalog_field(
+        "pdl_provider_cost", "PDL Provider Cost", "Task", "task.pdl_provider_cost", "number", 80,
+        source_stage="GetProviderCostSummary", run_compare_enabled=True,
+    ),
+    _v3_catalog_field(
+        "pdl_provider_cost_status", "PDL Provider Cost Status", "Task",
+        "task.pdl_provider_cost_status", "string", 85,
+        source_stage="GetProviderCostSummary", run_compare_enabled=True,
+    ),
+    *[
+        _v3_catalog_field(
+            f"{tool_key}_{suffix}",
+            f"{tool_label} {display_suffix}",
+            "Task",
+            f"task.{tool_key}_{suffix}",
+            data_type,
+            90 + tool_index * 30 + field_index * 10,
+            source_stage=(
+                "GetSearchTaskDebug" if suffix == "call_count"
+                else "GetProviderCostSummary"
+            ),
+            run_compare_enabled=True,
+        )
+        for tool_index, (tool_key, tool_label) in enumerate((
+            ("pdl_person_identify", "PDL Person Identify"),
+            ("pdl_person_search", "PDL Person Search"),
+            ("llm_search", "LLM Search"),
+            ("wiki", "Wiki / Public Figure"),
+            ("google_lens", "Google Lens"),
+            ("google_vision", "Google Vision"),
+            ("social_profile_extraction", "Social Profile Extraction"),
+        ))
+        for field_index, (suffix, display_suffix, data_type) in enumerate((
+            ("call_count", "Call Count", "number"),
+            ("cost", "Cost", "number"),
+            ("cost_status", "Cost Status", "string"),
+        ))
+    ],
+    _v3_catalog_field(
+        "tool_usage_summary", "Tool Usage Summary", "Task", "task.tool_usage_summary", "array", 310,
+        source_stage="Admin", array_mode="preserve", run_compare_enabled=True,
+    ),
+    _v3_catalog_field(
+        "cost_by_provider", "Provider Cost Summary", "Task", "task.cost_by_provider", "array", 320,
+        source_stage="GetProviderCostSummary", array_mode="preserve", run_compare_enabled=True,
     ),
     _v3_catalog_field(
         "candidate_id", "Candidate ID", "Candidate", "candidate.candidate_id", "string", 100,
@@ -1611,9 +1672,9 @@ def validate_field_definitions(
             errors.append(f"{label} missing_policy 不受支持")
         if (
             definition["value_scope"] == "QUERY"
-            and definition["source_stage"] != "GetTask"
+            and definition["source_stage"] not in QUERY_FIELD_SOURCE_STAGES
         ):
-            errors.append(f"{label} QUERY 字段仅支持 GetTask")
+            errors.append(f"{label} QUERY 字段仅支持任务或 Admin 公共信息阶段")
         try:
             _source_path_tokens(definition["source_path"])
         except FieldSchemaValidationError as exc:
@@ -9679,6 +9740,248 @@ class AnalysisService:
                 })
         return rows
 
+    def _build_report_execution_economics(
+        self,
+        process: sqlite3.Row,
+        metrics: dict[str, Any],
+        query_explorer: dict[str, Any],
+    ) -> dict[str, Any]:
+        """构建单 Run 与双 Process 共用的调用和成本分析快照。
+
+        功能说明：
+            成本按 Cost 接口 Provider 汇总，调用按 Debug 工具记录汇总；
+            两者在稳定工具分类上对齐，但仍保留 Provider 原始粒度。未采集、
+            未计价、非计费和真实零成本分别保存，禁止混为 0。
+
+        参数说明：
+            process: 当前 Process/Run 元数据。
+            metrics: 已计算的 metrics-v4 指标。
+            query_explorer: 当前侧完整 Query 快照。
+
+        返回值：
+            包含关键摘要、工具矩阵、Provider 明细和 Query 明细的字典。
+        """
+
+        run_id = process["run_id"]
+        query_rows = self.store.fetch_all(
+            """
+            SELECT query_id, public_fields_json FROM run_queries
+            WHERE run_id = ? ORDER BY query_id
+            """,
+            (run_id,),
+        )
+        raw_rows = self.store.fetch_all(
+            """
+            SELECT query_id, stage, payload_json FROM raw_records
+            WHERE run_id = ?
+              AND stage IN ('GetSearchTaskDebug', 'GetProviderCostSummary')
+            ORDER BY query_id, sequence_no, collected_at, raw_id
+            """,
+            (run_id,),
+        )
+        raw_by_query: dict[str, dict[str, dict[str, Any]]] = defaultdict(dict)
+        for raw in raw_rows:
+            try:
+                payload = json.loads(raw["payload_json"])
+            except (TypeError, json.JSONDecodeError):
+                continue
+            body = payload.get("response_body", payload) if isinstance(payload, dict) else None
+            if isinstance(body, dict) and raw["query_id"]:
+                raw_by_query[raw["query_id"]][raw["stage"]] = body
+
+        provider_map: dict[tuple[str, str], dict[str, Any]] = {}
+        tool_map: dict[str, dict[str, Any]] = {}
+        collected_tool_query_count = 0
+        for query in query_rows:
+            try:
+                public_fields = json.loads(query["public_fields_json"] or "{}")
+            except (TypeError, json.JSONDecodeError):
+                public_fields = {}
+            if not isinstance(public_fields, dict):
+                public_fields = {}
+            provider_rows = public_fields.get("cost_by_provider")
+            provider_rows = provider_rows if isinstance(provider_rows, list) else []
+            for row in provider_rows:
+                if not isinstance(row, dict):
+                    continue
+                provider = str(row.get("provider") or "").strip()
+                currency = str(row.get("currency") or "UNSPECIFIED").strip().upper()
+                if not provider:
+                    continue
+                key = (provider, currency)
+                target = provider_map.setdefault(key, {
+                    "provider": provider,
+                    "currency": currency,
+                    "query_ids": set(),
+                    "call_count": 0,
+                    "priced_call_count": 0,
+                    "non_billable_call_count": 0,
+                    "unpriced_call_count": 0,
+                    "cost_microunit": 0,
+                })
+                target["query_ids"].add(query["query_id"])
+                for field_key in (
+                    "call_count", "priced_call_count",
+                    "non_billable_call_count", "unpriced_call_count",
+                    "total_cost_microunit",
+                ):
+                    try:
+                        value = max(0, int(Decimal(str(row.get(field_key) or 0))))
+                    except (InvalidOperation, ValueError, TypeError):
+                        value = 0
+                    target_key = (
+                        "cost_microunit"
+                        if field_key == "total_cost_microunit" else field_key
+                    )
+                    target[target_key] += value
+
+            tool_usage = public_fields.get("tool_usage_summary")
+            if not isinstance(tool_usage, list):
+                query_raw = raw_by_query.get(query["query_id"], {})
+                tool_usage, _ = extract_admin_tool_usage(
+                    query_raw.get("GetSearchTaskDebug"),
+                    query_raw.get("GetProviderCostSummary"),
+                )
+            has_tool_collection = any(
+                item.get("cost_status") != "NOT_COLLECTED"
+                or item.get("call_count", 0)
+                for item in tool_usage if isinstance(item, dict)
+            )
+            collected_tool_query_count += int(has_tool_collection)
+            for item in tool_usage:
+                if not isinstance(item, dict) or not item.get("key"):
+                    continue
+                key = str(item["key"])
+                target = tool_map.setdefault(key, {
+                    "key": key,
+                    "label": item.get("label") or key,
+                    "query_ids": set(),
+                    "call_count": 0,
+                    "success_count": 0,
+                    "failed_count": 0,
+                    "provider_call_count": 0,
+                    "priced_call_count": 0,
+                    "non_billable_call_count": 0,
+                    "unpriced_call_count": 0,
+                    "cost_microunit": 0,
+                    "priced_cost_query_count": 0,
+                    "statuses": set(),
+                    "providers": set(),
+                })
+                target["query_ids"].add(query["query_id"])
+                for count_key in (
+                    "call_count", "success_count", "failed_count",
+                    "provider_call_count", "priced_call_count",
+                    "non_billable_call_count", "unpriced_call_count",
+                ):
+                    target[count_key] += int(item.get(count_key) or 0)
+                if item.get("cost_microunit") is not None:
+                    target["cost_microunit"] += int(item["cost_microunit"])
+                    target["priced_cost_query_count"] += 1
+                target["statuses"].add(item.get("cost_status") or "UNKNOWN")
+                target["providers"].update(item.get("providers") or [])
+
+        provider_rows = []
+        for item in provider_map.values():
+            currency = item["currency"]
+            provider_rows.append({
+                **{key: value for key, value in item.items() if key != "query_ids"},
+                "query_count": len(item["query_ids"]),
+                "cost": (
+                    float(Decimal(item["cost_microunit"]) / Decimal(1_000_000))
+                    if currency == "USD" else None
+                ),
+                "cost_status": (
+                    "PRICED" if currency == "USD" else
+                    "UNPRICED" if item["unpriced_call_count"] else
+                    "NON_BILLABLE" if item["non_billable_call_count"] else "UNKNOWN"
+                ),
+            })
+        provider_rows.sort(
+            key=lambda item: (
+                -(item["cost"] if item["cost"] is not None else -1),
+                -item["call_count"],
+                item["provider"],
+            )
+        )
+        tool_rows = []
+        for item in tool_map.values():
+            statuses = item["statuses"]
+            if item["priced_cost_query_count"]:
+                cost_status = "PRICED"
+                cost = float(
+                    Decimal(item["cost_microunit"]) / Decimal(1_000_000)
+                )
+            elif "UNPRICED" in statuses:
+                cost_status, cost = "UNPRICED", None
+            elif "NON_BILLABLE" in statuses:
+                cost_status, cost = "NON_BILLABLE", None
+            elif statuses == {"NOT_COLLECTED"}:
+                cost_status, cost = "NOT_COLLECTED", None
+            else:
+                cost_status, cost = "UNKNOWN", None
+            tool_rows.append({
+                **{
+                    key: value for key, value in item.items()
+                    if key not in {"query_ids", "statuses", "providers"}
+                },
+                "query_count": len(item["query_ids"]),
+                "providers": sorted(item["providers"]),
+                "cost": cost,
+                "cost_status": cost_status,
+            })
+        tool_order = {
+            key: index for index, key in enumerate((
+                "pdl_person_identify", "pdl_person_search", "llm_search",
+                "wiki", "google_lens", "google_vision",
+                "social_profile_extraction",
+            ))
+        }
+        tool_rows.sort(key=lambda item: tool_order.get(item["key"], 99))
+
+        cost_snapshot = self._report_compare_cost_snapshot(metrics)
+        total_metric = cost_snapshot["metrics"].get("total_cost", {})
+        total_queries = len(query_rows)
+        total_provider_calls = sum(item["call_count"] for item in provider_rows)
+        unpriced_calls = sum(item["unpriced_call_count"] for item in provider_rows)
+        non_billable_calls = sum(
+            item["non_billable_call_count"] for item in provider_rows
+        )
+        priced_providers = [
+            item for item in provider_rows if item["cost"] is not None
+        ]
+        most_expensive = priced_providers[0] if priced_providers else None
+        return {
+            "status": cost_snapshot["status"],
+            "query_count": total_queries,
+            "cost_covered_query_count": int(total_metric.get("value_count") or 0),
+            "cost_missing_query_count": int(total_metric.get("missing_count") or 0),
+            "cost_coverage_rate": (
+                int(total_metric.get("value_count") or 0) / total_queries
+                if total_queries else None
+            ),
+            "total_cost": total_metric.get("total"),
+            "average_cost_per_query": total_metric.get("average"),
+            "llm_cost": cost_snapshot["metrics"].get("llm_cost", {}).get("total"),
+            "third_party_cost": cost_snapshot["metrics"].get(
+                "third_party_cost", {}
+            ).get("total"),
+            "average_duration_ms": cost_snapshot["metrics"].get(
+                "search_duration_ms", {}
+            ).get("average"),
+            "pdl": cost_snapshot["pdl"],
+            "total_provider_calls": total_provider_calls,
+            "unpriced_call_count": unpriced_calls,
+            "non_billable_call_count": non_billable_calls,
+            "tool_collected_query_count": collected_tool_query_count,
+            "most_expensive_provider": most_expensive,
+            "tool_rows": tool_rows,
+            "provider_rows": provider_rows,
+            "query_rows": self._build_report_v5_task_cost_details(
+                query_explorer
+            ),
+        }
+
     def _build_report_v5_query_explorer(
         self,
         *,
@@ -11567,6 +11870,15 @@ class AnalysisService:
             # 未配置参考线时不在 v5 报告中输出空的判断对象，供后续模板直接隐藏。
             if not optional_sections["show_threshold"]:
                 model["threshold_assessment"] = None
+            candidate_side_explorer = self._report_compare_side_explorer(
+                query_explorer,
+                "candidate",
+            )
+            execution_economics = self._build_report_execution_economics(
+                candidate_process,
+                candidate_metrics,
+                candidate_side_explorer,
+            )
             model.update({
                 "overview": overview,
                 "processing_scope": processing_scope,
@@ -11580,6 +11892,7 @@ class AnalysisService:
                 "task_cost_details": self._build_report_v5_task_cost_details(
                     query_explorer
                 ),
+                "execution_economics": execution_economics,
                 "diagnostics": self._build_report_v5_diagnostics(
                     warnings=warnings,
                     not_ready_reasons=not_ready_reasons,
@@ -11609,6 +11922,12 @@ class AnalysisService:
                     )
                 )
                 candidate_module_overview = model["module_return_overview"]
+                baseline_economics = self._build_report_execution_economics(
+                    baseline_process,
+                    baseline_metrics or {},
+                    baseline_explorer,
+                )
+                candidate_economics = execution_economics
                 baseline_cost = self._report_compare_cost_snapshot(
                     baseline_metrics or {}
                 )
@@ -11691,6 +12010,31 @@ class AnalysisService:
                         "baseline": baseline_cost,
                         "candidate": candidate_cost,
                         "rows": cost_rows,
+                    },
+                    "execution_economics_comparison": {
+                        "baseline": baseline_economics,
+                        "candidate": candidate_economics,
+                        "tool_rows": [
+                            {
+                                "key": candidate_item["key"],
+                                "label": candidate_item["label"],
+                                "baseline": next(
+                                    (
+                                        item for item in baseline_economics[
+                                            "tool_rows"
+                                        ] if item["key"] == candidate_item["key"]
+                                    ),
+                                    {
+                                        "call_count": 0,
+                                        "query_count": 0,
+                                        "cost": None,
+                                        "cost_status": "NOT_COLLECTED",
+                                    },
+                                ),
+                                "candidate": candidate_item,
+                            }
+                            for candidate_item in candidate_economics["tool_rows"]
+                        ],
                     },
                     "module_changes": self._report_compare_module_rows(
                         baseline_module_overview,

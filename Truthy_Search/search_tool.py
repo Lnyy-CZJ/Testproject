@@ -36,6 +36,189 @@ ProgressCallback = Callable[[dict[str, Any]], None]
 RawCallback = Callable[[dict[str, Any]], None]
 FailureCallback = Callable[[dict[str, Any]], None]
 
+# Admin Debug 的 Provider 名称会继续扩展，但报告需要稳定的产品分类。
+# 这里保留固定 key 和显示名称；无法识别的新 Provider 仍完整保存在 Raw 和
+# cost_by_provider，不会被错误归入某个已知工具。
+ADMIN_TOOL_DEFINITIONS = (
+    ("pdl_person_identify", "PDL Person Identify"),
+    ("pdl_person_search", "PDL Person Search"),
+    ("llm_search", "LLM Search"),
+    ("wiki", "Wiki / Public Figure"),
+    ("google_lens", "Google Lens"),
+    ("google_vision", "Google Vision"),
+    ("social_profile_extraction", "Social Profile Extraction"),
+)
+
+
+def classify_admin_tool(provider: Any, operation: Any) -> str | None:
+    """把 Admin Provider/Operation 映射为稳定的报告工具分类。"""
+
+    provider_text = str(provider or "").strip().lower()
+    operation_text = str(operation or "").strip().lower()
+    token = f"{provider_text} {operation_text}"
+    if "google_lens" in token or "google lens" in token:
+        return "google_lens"
+    if "google_vision" in token or "google vision" in token:
+        return "google_vision"
+    if provider_text.startswith("llm_search"):
+        return "llm_search"
+    if provider_text == "social_profile":
+        return "social_profile_extraction"
+    if provider_text in {"public_figure", "wikidata", "wikipedia", "wiki"}:
+        return "wiki"
+    if provider_text == "people_data_labs":
+        return (
+            "pdl_person_identify"
+            if "identify" in operation_text
+            else "pdl_person_search"
+        )
+    return None
+
+
+def extract_admin_tool_usage(
+    debug_body: dict[str, Any] | None,
+    cost_body: dict[str, Any] | None,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """联合 Debug 与 Cost 响应，提取工具调用及可审计的成本归属。
+
+    返回值：
+        第一项为七类工具的调用、成功/失败、成本和计价状态；第二项为无法
+        精确拆分的 Provider 级成本。PDL Identify 与 Search 同时出现时，
+        people_data_labs 成本不会被擅自分摊。
+    """
+
+    def envelope_data(body: dict[str, Any] | None) -> dict[str, Any]:
+        """安全读取 Admin ``responses[0].data``。"""
+
+        if not isinstance(body, dict):
+            return {}
+        responses = body.get("responses")
+        if not isinstance(responses, list) or not responses:
+            return {}
+        response = responses[0]
+        data = response.get("data") if isinstance(response, dict) else None
+        return data if isinstance(data, dict) else {}
+
+    tools = {
+        key: {
+            "key": key,
+            "label": label,
+            "call_count": 0,
+            "success_count": 0,
+            "failed_count": 0,
+            "provider_call_count": 0,
+            "priced_call_count": 0,
+            "non_billable_call_count": 0,
+            "unpriced_call_count": 0,
+            "cost_microunit": None,
+            "cost": None,
+            "currency": None,
+            "cost_status": "NOT_COLLECTED",
+            "providers": [],
+        }
+        for key, label in ADMIN_TOOL_DEFINITIONS
+    }
+    debug_data = envelope_data(debug_body)
+    debug = debug_data.get("debug")
+    if isinstance(debug, dict):
+        calls = debug.get("agent_tool_calls")
+        for call in calls if isinstance(calls, list) else []:
+            if not isinstance(call, dict):
+                continue
+            provider = str(call.get("provider") or "").strip()
+            key = classify_admin_tool(provider, call.get("provider_operation"))
+            if key is None:
+                continue
+            item = tools[key]
+            item["call_count"] += 1
+            status = str(call.get("status") or "").strip().lower()
+            item["success_count"] += int(status == "success")
+            item["failed_count"] += int(status not in {"", "success"})
+            if provider and provider not in item["providers"]:
+                item["providers"].append(provider)
+
+    cost_data = envelope_data(cost_body)
+    cost_summary = cost_data.get("cost_summary")
+    cost_container = cost_summary if isinstance(cost_summary, dict) else cost_data
+    provider_rows = cost_container.get("by_provider")
+    provider_rows = provider_rows if isinstance(provider_rows, list) else []
+    pdl_keys_used = {
+        key for key in ("pdl_person_identify", "pdl_person_search")
+        if tools[key]["call_count"] > 0
+    }
+    provider_level: dict[str, Any] = {}
+
+    def integer(value: Any) -> int:
+        """把接口的整数字符串转换为非负整数，非法值按 0 处理。"""
+
+        try:
+            return max(0, int(Decimal(str(value or 0))))
+        except (InvalidOperation, ValueError, TypeError):
+            return 0
+
+    for row in provider_rows:
+        if not isinstance(row, dict):
+            continue
+        provider = str(row.get("provider") or "").strip()
+        key = classify_admin_tool(provider, "")
+        if provider.lower() == "people_data_labs":
+            if len(pdl_keys_used) == 1:
+                key = next(iter(pdl_keys_used))
+            else:
+                key = None
+        currency = str(row.get("currency") or "").strip().upper()
+        cost_microunit = integer(row.get("total_cost_microunit"))
+        call_count = integer(row.get("call_count"))
+        priced_count = integer(row.get("priced_call_count"))
+        non_billable_count = integer(row.get("non_billable_call_count"))
+        unpriced_count = integer(row.get("unpriced_call_count"))
+        if key is None:
+            if provider:
+                provider_level[provider] = {
+                    "provider": provider,
+                    "currency": currency or None,
+                    "cost_microunit": cost_microunit,
+                    "cost": (
+                        float(Decimal(cost_microunit) / Decimal(1_000_000))
+                        if currency == "USD" else None
+                    ),
+                    "call_count": call_count,
+                    "cost_status": (
+                        "PRICED" if currency == "USD" else
+                        "UNPRICED" if unpriced_count else
+                        "NON_BILLABLE" if non_billable_count else "UNKNOWN"
+                    ),
+                }
+            continue
+        item = tools[key]
+        item["provider_call_count"] += call_count
+        item["priced_call_count"] += priced_count
+        item["non_billable_call_count"] += non_billable_count
+        item["unpriced_call_count"] += unpriced_count
+        if provider and provider not in item["providers"]:
+            item["providers"].append(provider)
+        if currency == "USD":
+            current = item["cost_microunit"] or 0
+            item["cost_microunit"] = current + cost_microunit
+            item["currency"] = "USD"
+            item["cost_status"] = "PRICED"
+        elif unpriced_count:
+            if item["cost_status"] != "PRICED":
+                item["cost_status"] = "UNPRICED"
+        elif non_billable_count and item["cost_status"] not in {"PRICED", "UNPRICED"}:
+            item["cost_status"] = "NON_BILLABLE"
+        elif item["cost_status"] == "NOT_COLLECTED":
+            item["cost_status"] = "UNKNOWN"
+
+    for item in tools.values():
+        if item["cost_microunit"] is not None:
+            item["cost"] = float(
+                Decimal(item["cost_microunit"]) / Decimal(1_000_000)
+            )
+        if item["call_count"] == 0 and item["provider_call_count"]:
+            item["call_count"] = item["provider_call_count"]
+    return list(tools.values()), provider_level
+
 
 def normalize_result_status(
     query_status: str,
@@ -1037,6 +1220,22 @@ def extract_admin_task_fields(
         metadata["field_mapping_status"] = "COMPLETE"
     elif mapped_count:
         metadata["field_mapping_status"] = "PARTIAL"
+    tool_usage, provider_level_costs = extract_admin_tool_usage(
+        debug_body,
+        cost_body,
+    )
+    metadata["tool_usage_summary"] = tool_usage
+    metadata["provider_level_costs"] = provider_level_costs
+    # 扁平字段供 FieldSchema 开关与 Excel 使用；完整结构仍保留在
+    # tool_usage_summary，避免报告依赖固定 Provider 数量。
+    for item in tool_usage:
+        key = item["key"]
+        metadata[f"{key}_call_count"] = item["call_count"]
+        metadata[f"{key}_cost"] = item["cost"]
+        metadata[f"{key}_cost_status"] = item["cost_status"]
+    pdl_provider = provider_level_costs.get("people_data_labs", {})
+    metadata["pdl_provider_cost"] = pdl_provider.get("cost")
+    metadata["pdl_provider_cost_status"] = pdl_provider.get("cost_status")
     return fields, metadata
 
 

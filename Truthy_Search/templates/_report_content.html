@@ -30,6 +30,20 @@
   {{ (value * 100)|round(2) ~ '%' if value is not none else '无适用分母' }}
 {%- endmacro %}
 
+{% macro money(value) -%}
+  {{ ('$' ~ (value|round(6))) if value is not none else '未采集 / 未计价' }}
+{%- endmacro %}
+
+{% macro cost_status_text(value) -%}
+  {{ {
+    'PRICED': '已计价',
+    'UNPRICED': '尚未计价',
+    'NON_BILLABLE': '非计费调用',
+    'NOT_COLLECTED': '未采集',
+    'UNKNOWN': '状态未知'
+  }.get(value, value or '状态未知') }}
+{%- endmacro %}
+
 {% set is_compare_v6 = report.metadata.report_model_version == 'report-model-v6-compare' %}
 {% set is_report_v5 = report.metadata.report_model_version == 'report-model-v5' %}
 {% if is_compare_v6 %}
@@ -76,7 +90,13 @@
 
   <section class="report-section">
     <div class="section-head"><div><p class="eyebrow">02 · Execution & cost</p><h2>两次执行与成本差异</h2><p class="inline-note">未采集成本的旧版本显示“未采集”，不会按 0 参与差值。</p></div></div>
-    <div class="compare-v6-status-line"><span>优化前 {{ compare.execution_cost_comparison.baseline.status }}</span><span>优化后 {{ compare.execution_cost_comparison.candidate.status }}</span></div>
+    {% set economics = compare.execution_economics_comparison %}
+    <div class="compare-v6-cost-hero">
+      {% for label, side in [('优化前', economics.baseline), ('优化后', economics.candidate)] %}
+        <article><span>{{ label }} · {{ side.status }}</span><strong>{{ money(side.total_cost) }}</strong><small>平均 {{ money(side.average_cost_per_query) }} / Query · 覆盖 {{ side.cost_covered_query_count }} / {{ side.query_count }}</small></article>
+      {% endfor %}
+      <article class="compare-v6-cost-focus"><span>优化后主要成本来源</span><strong>{{ economics.candidate.most_expensive_provider.provider if economics.candidate.most_expensive_provider else '暂无已计价 Provider' }}</strong><small>{% if economics.candidate.most_expensive_provider %}{{ money(economics.candidate.most_expensive_provider.cost) }} · {{ economics.candidate.most_expensive_provider.call_count }} 次调用{% else %}尚无可比较的 Provider 成本{% endif %}</small></article>
+    </div>
     <div class="table-wrap"><table class="compare-v6-table">
       <thead><tr><th>字段</th><th>优化前总值 / 均值</th><th>优化后总值 / 均值</th><th>总值变化</th></tr></thead>
       <tbody>{% for row in compare.execution_cost_comparison.rows %}
@@ -87,10 +107,29 @@
         </tr>
       {% endfor %}</tbody>
     </table></div>
+    <h3>工具调用与成本</h3>
+    <div class="table-wrap"><table class="compare-v6-table"><thead><tr><th>工具</th><th>优化前</th><th>优化后</th><th>数据说明</th></tr></thead><tbody>
+      {% for row in economics.tool_rows %}
+        <tr><td><strong>{{ row.label }}</strong></td>
+          <td>{% if row.baseline.cost_status == 'NOT_COLLECTED' and row.baseline.call_count == 0 %}未采集{% else %}{{ row.baseline.call_count }} 次 · {{ money(row.baseline.cost) }}<small>{{ cost_status_text(row.baseline.cost_status) }} · {{ row.baseline.query_count }} 个 Query</small>{% endif %}</td>
+          <td>{% if row.candidate.cost_status == 'NOT_COLLECTED' and row.candidate.call_count == 0 %}未采集{% else %}{{ row.candidate.call_count }} 次 · {{ money(row.candidate.cost) }}<small>{{ cost_status_text(row.candidate.cost_status) }} · {{ row.candidate.query_count }} 个 Query</small>{% endif %}</td>
+          <td>{% if row.key in ['pdl_person_identify', 'pdl_person_search'] and row.candidate.cost is none and economics.candidate.provider_rows|selectattr('provider', 'equalto', 'people_data_labs')|list %}PDL 成本仅有 Provider 汇总，当前不能在 Identify / Search 间精确拆分{% elif row.candidate.cost_status == 'UNPRICED' %}已有调用，但接口尚无有效定价{% else %}按 Debug 调用与 Cost Provider 汇总对齐{% endif %}</td></tr>
+      {% endfor %}
+    </tbody></table></div>
+    <div class="compare-v6-cost-details">
+      {% for label, side in [('优化前 Provider 明细', economics.baseline), ('优化后 Provider 明细', economics.candidate)] %}
+        <details><summary>{{ label }} <span>{{ side.provider_rows|length }} 个 Provider</span></summary><div class="table-wrap"><table><thead><tr><th>Provider</th><th>调用</th><th>已计价 / 未计价 / 非计费</th><th>成本</th></tr></thead><tbody>{% for provider in side.provider_rows %}<tr><td class="mono">{{ provider.provider }}</td><td>{{ provider.call_count }}<small>{{ provider.query_count }} 个 Query</small></td><td>{{ provider.priced_call_count }} / {{ provider.unpriced_call_count }} / {{ provider.non_billable_call_count }}</td><td>{{ money(provider.cost) }}<small>{{ cost_status_text(provider.cost_status) }}</small></td></tr>{% else %}<tr><td colspan="4">未采集 Provider 成本明细。</td></tr>{% endfor %}</tbody></table></div></details>
+      {% endfor %}
+    </div>
   </section>
 
   <section class="report-section">
-    <div class="section-head"><div><p class="eyebrow">03 · Profile module changes</p><h2>五大资料模块返回变化</h2><p class="inline-note">同时观察全部候选人、HIT 与非命中/疑似候选人的模块有数据率和字段完整度。</p></div></div>
+    <div class="section-head"><div><p class="eyebrow">03 · Result migration</p><h2>同条件结果迁移</h2><p class="inline-note">先回答有多少 Query 改善或退化，再查看模块、置信度与明细原因。</p></div></div>
+    <div class="compare-v6-migration">{% for label in ['持续命中','新增命中','退化未命中','持续未命中'] %}<div><span>{{ label }}</span><strong>{{ compare.result_migration.category_counts.get(label, 0) }}</strong></div>{% endfor %}</div>
+  </section>
+
+  <section class="report-section">
+    <div class="section-head"><div><p class="eyebrow">04 · Profile module changes</p><h2>五大资料模块返回变化</h2><p class="inline-note">同时观察全部候选人、HIT 与非命中/疑似候选人的模块有数据率和字段完整度。</p></div></div>
     <div class="table-wrap"><table class="compare-v6-table compare-v6-module-table">
       <thead><tr><th>模块</th><th>人群</th><th>模块有数据率（前 → 后）</th><th>字段完整度（前 → 后）</th><th>样本（前 → 后）</th></tr></thead>
       <tbody>{% for module in compare.module_changes %}{% for population_key, population_label in [('all','全部'),('hit','HIT'),('nonmatched','非命中 / 疑似')] %}{% set population = module.populations[population_key] %}
@@ -103,7 +142,7 @@
   </section>
 
   <section class="report-section">
-    <div class="section-head"><div><p class="eyebrow">04 · Confidence comparison</p><h2>候选人置信度差异</h2><p class="inline-note">占比优先、人数辅助，避免仅看人数受候选人总量变化影响。</p></div></div>
+    <div class="section-head"><div><p class="eyebrow">05 · Confidence comparison</p><h2>候选人置信度差异</h2><p class="inline-note">占比优先、人数辅助，避免仅看人数受候选人总量变化影响。</p></div></div>
     {% set before_conf = compare.confidence_comparison.baseline.overall %}{% set after_conf = compare.confidence_comparison.candidate.overall %}
     <div class="table-wrap"><table class="compare-v6-table"><thead><tr><th>Confidence</th><th>优化前</th><th>优化后</th><th>人数变化</th></tr></thead><tbody>
       {% for label in ['HIGH','MEDIUM','LOW','UNKNOWN'] %}{% set before = before_conf.distribution.get(label, {'count': 0, 'rate': none}) %}{% set after = after_conf.distribution.get(label, {'count': 0, 'rate': none}) %}
@@ -113,20 +152,7 @@
   </section>
 
   <section class="report-section">
-    <div class="section-head"><div><p class="eyebrow">05 · Tool call changes</p><h2>第三方工具调用差异</h2><p class="inline-note">来自 GetSearchTaskDebug Raw 聚合；无 Debug 的历史版本标记为未采集，不展示虚假 0 次。</p></div></div>
-    <div class="compare-v6-status-line"><span>优化前 {{ compare.tool_call_comparison.baseline_status }} · {{ compare.tool_call_comparison.baseline_debug_query_count }} Query</span><span>优化后 {{ compare.tool_call_comparison.candidate_status }} · {{ compare.tool_call_comparison.candidate_debug_query_count }} Query</span></div>
-    <div class="table-wrap"><table class="compare-v6-table"><thead><tr><th>工具</th><th>优化前</th><th>优化后</th><th>调用次数变化</th></tr></thead><tbody>{% for row in compare.tool_call_comparison.rows %}
-      <tr><td><strong>{{ row.label }}</strong></td><td>{% if row.baseline.available %}{{ row.baseline.request_count }} 次<small>{{ row.baseline.query_count }} 个 Query · 成功 {{ row.baseline.success_count }}</small>{% else %}未采集{% endif %}</td><td>{% if row.candidate.available %}{{ row.candidate.request_count }} 次<small>{{ row.candidate.query_count }} 个 Query · 成功 {{ row.candidate.success_count }}</small>{% else %}未采集{% endif %}</td><td>{% if row.request_count_delta is not none %}{{ '+' if row.request_count_delta > 0 else '' }}{{ row.request_count_delta }}{% else %}不可计算{% endif %}</td></tr>
-    {% endfor %}</tbody></table></div>
-  </section>
-
-  <section class="report-section">
-    <div class="section-head"><div><p class="eyebrow">06 · Result migration</p><h2>同条件结果迁移</h2></div></div>
-    <div class="compare-v6-migration">{% for label in ['持续命中','新增命中','退化未命中','持续未命中'] %}<div><span>{{ label }}</span><strong>{{ compare.result_migration.category_counts.get(label, 0) }}</strong></div>{% endfor %}</div>
-  </section>
-
-  <section class="report-section">
-    <div class="section-head"><div><p class="eyebrow">07 · Difference appendix</p><h2>详情附录</h2><p class="inline-note">用于定位改善、退化和数据来源。默认折叠，按人物查看同条件变化。</p></div></div>
+    <div class="section-head"><div><p class="eyebrow">06 · Difference appendix</p><h2>详情附录</h2><p class="inline-note">用于定位改善、退化和数据来源。默认折叠，按人物查看同条件变化。</p></div></div>
     {% for group_key, group_label in [('improved','改善'),('regressed','退化'),('stable','稳定')] %}{% set rows = compare.appendix.groups[group_key] %}
       <details class="compare-v6-appendix"><summary>{{ group_label }} <span>{{ rows|length }} 条</span></summary>
         <div class="table-wrap"><table><thead><tr><th>人物 / 条件</th><th>命中变化</th><th>准确度</th><th>完整度</th><th>候选人数</th><th>Confidence</th></tr></thead><tbody>{% for row in rows %}
@@ -219,8 +245,30 @@
     </div>
   </section>
 
+  {% if report.execution_economics is defined %}
+    {% set economics = report.execution_economics %}
+    <section class="report-section report-v5-economics">
+      <div class="section-head"><div><p class="eyebrow">02 · Execution & cost</p><h2>执行、工具调用与成本</h2><p class="inline-note">先看总成本和异常信号，再按工具、Provider 和 Query 下钻。未计价调用不会按 0 成本展示。</p></div></div>
+      <div class="report-v5-cost-hero">
+        <article><span>总成本</span><strong>{{ money(economics.total_cost) }}</strong><small>覆盖 {{ economics.cost_covered_query_count }} / {{ economics.query_count }} 个 Query</small></article>
+        <article><span>平均成本 / Query</span><strong>{{ money(economics.average_cost_per_query) }}</strong><small>LLM {{ money(economics.llm_cost) }} · 第三方 {{ money(economics.third_party_cost) }}</small></article>
+        <article><span>Provider 调用</span><strong>{{ economics.total_provider_calls }}</strong><small>{{ economics.provider_rows|length }} 个 Provider · 工具覆盖 {{ economics.tool_collected_query_count }} / {{ economics.query_count }} Query</small></article>
+        <article class="report-v5-cost-warning"><span>需要关注</span><strong>{{ economics.unpriced_call_count }} 次未计价</strong><small>另有 {{ economics.non_billable_call_count }} 次非计费调用</small></article>
+        <article><span>平均检索耗时</span><strong>{{ (economics.average_duration_ms|round(1) ~ ' ms') if economics.average_duration_ms is not none else '未采集' }}</strong><small>{% if economics.most_expensive_provider %}最高成本：{{ economics.most_expensive_provider.provider }}{% else %}暂无已计价 Provider{% endif %}</small></article>
+      </div>
+      <h3>工具调用与成本矩阵</h3>
+      <div class="table-wrap"><table class="report-v5-cost-table"><thead><tr><th>工具</th><th>调用</th><th>成功 / 失败</th><th>覆盖 Query</th><th>成本</th><th>计价状态</th></tr></thead><tbody>
+        {% for tool in economics.tool_rows %}<tr><td><strong>{{ tool.label }}</strong><small class="mono">{{ tool.providers|join(', ') if tool.providers else tool.key }}</small></td><td>{{ tool.call_count }}<small>Cost 侧 {{ tool.provider_call_count }} 次</small></td><td>{{ tool.success_count }} / {{ tool.failed_count }}</td><td>{{ tool.query_count }}</td><td>{{ money(tool.cost) }}</td><td><span class="report-v5-cost-status is-{{ tool.cost_status|lower }}">{{ cost_status_text(tool.cost_status) }}</span>{% if tool.key in ['pdl_person_identify', 'pdl_person_search'] and tool.cost is none %}<small>成本可能仅能在 PDL Provider 层汇总</small>{% endif %}</td></tr>{% endfor %}
+      </tbody></table></div>
+      <div class="report-v5-cost-details">
+        <details><summary><span>Provider 成本明细</span><small>{{ economics.provider_rows|length }} 个 Provider · 按成本与调用量排序</small></summary><div class="table-wrap"><table><thead><tr><th>Provider</th><th>Query</th><th>调用</th><th>已计价</th><th>未计价</th><th>非计费</th><th>成本</th></tr></thead><tbody>{% for provider in economics.provider_rows %}<tr><td class="mono">{{ provider.provider }}</td><td>{{ provider.query_count }}</td><td>{{ provider.call_count }}</td><td>{{ provider.priced_call_count }}</td><td>{{ provider.unpriced_call_count }}</td><td>{{ provider.non_billable_call_count }}</td><td>{{ money(provider.cost) }}<small>{{ cost_status_text(provider.cost_status) }} · {{ provider.currency }}</small></td></tr>{% else %}<tr><td colspan="7">尚未采集 Provider 成本明细。</td></tr>{% endfor %}</tbody></table></div></details>
+        <details><summary><span>Query 成本明细</span><small>{{ economics.query_rows|length }} 个任务</small></summary><div class="table-wrap"><table><thead><tr><th>Query / Task</th><th>LLM</th><th>第三方</th><th>总成本</th><th>耗时</th><th>PDL</th></tr></thead><tbody>{% for item in economics.query_rows %}<tr><td>{{ item.display_name or item.query_id }}<small class="mono">{{ item.query_id }} · {{ item.task_id }}</small></td><td>{{ money(item.llm_cost) }}</td><td>{{ money(item.third_party_cost) }}</td><td>{{ money(item.total_cost) }}</td><td>{{ (item.search_duration_ms ~ ' ms') if item.search_duration_ms is not none else '未采集' }}</td><td>{{ item.pdl_label }}</td></tr>{% endfor %}</tbody></table></div></details>
+      </div>
+    </section>
+  {% endif %}
+
   <section class="report-section">
-    <div class="section-head"><div><p class="eyebrow">02 · Query stage</p><h2>检索条件表现</h2></div></div>
+    <div class="section-head"><div><p class="eyebrow">03 · Query stage</p><h2>检索条件表现</h2></div></div>
     <div class="table-wrap"><table>
       <thead><tr><th>检索条件</th><th>Query</th><th>候选人返回率</th><th>目标人物命中率</th><th>有候选人条件下命中率</th><th>命中信息准确度</th><th>命中资料完整度</th><th>非命中资料完整度</th><th>非命中候选人资料相似度</th></tr></thead>
       <tbody>{% for stage, item in report.query_stage_metrics.items() %}<tr><td class="mono">{{ stage }}</td><td>{{ item.query_count }}</td><td>{{ metric_value(item.candidate_return_rate) }}</td><td>{{ metric_value(item.retrieval_success) }}</td><td>{{ metric_value(item.conditional_hit_rate) }}</td><td>{{ metric_value(item.matched_accuracy) }}</td><td>{{ metric_value(item.matched_completeness) }}</td><td>{{ metric_value(item.nonmatched_data_completeness) }}</td><td>{{ metric_value(item.nonmatched_baseline_overlap) }}</td></tr>{% else %}<tr><td colspan="9">没有可统计的 Query。</td></tr>{% endfor %}</tbody>
@@ -229,7 +277,7 @@
 
   {% if report.processing_scope is defined and report.processing_scope.fields %}
     <section class="report-section report-v5-processing-scope">
-      <div class="section-head"><div><p class="eyebrow">03 · Processing scope</p><h2>本次数据处理范围</h2><p class="inline-note">以本报告绑定的 FieldSchema 快照为准；“已返回”表示本次至少有一个处理对象返回该字段。</p></div></div>
+      <div class="section-head"><div><p class="eyebrow">04 · Processing scope</p><h2>本次数据处理范围</h2><p class="inline-note">以本报告绑定的 FieldSchema 快照为准；“已返回”表示本次至少有一个处理对象返回该字段。</p></div></div>
       <div class="report-v5-scope-summary">
         <span>启用提取 <strong>{{ report.processing_scope.enabled_field_count }}</strong></span>
         <span>实际有值 <strong>{{ report.processing_scope.actual_returned_field_count }}</strong></span>
@@ -271,7 +319,7 @@
     <section class="report-section report-v5-module-overview">
       <div class="section-head">
         <div>
-          <p class="eyebrow">04 · Module return overview</p>
+          <p class="eyebrow">05 · Module return overview</p>
           <h2>五大资料模块返回概览</h2>
           <p class="inline-note">“模块有数据率”表示候选人至少返回一个业务原子字段；“字段完整度”表示实际返回字段槽位占应有字段槽位的比例。状态、容器 JSON 和详情失败候选人不进入计算分母。</p>
         </div>
@@ -377,7 +425,7 @@
   {% if report.confidence_metrics and report.confidence_metrics.overall %}
     {% set confidence_total = report.confidence_metrics.overall.values()|sum %}
     <section class="report-section report-v5-confidence">
-      <div class="section-head"><div><p class="eyebrow">05 · Confidence distribution</p><h2>候选人置信度分布</h2><p class="inline-note">Confidence 是接口返回的候选人置信等级，用于观察结果结构，不等于身份命中准确率。</p></div></div>
+      <div class="section-head"><div><p class="eyebrow">06 · Confidence distribution</p><h2>候选人置信度分布</h2><p class="inline-note">Confidence 是接口返回的候选人置信等级，用于观察结果结构，不等于身份命中准确率。</p></div></div>
       <div class="report-v5-confidence-bars">
         {% for label, count in report.confidence_metrics.overall.items() %}
           <div><span class="mono">{{ label }}</span><div><i style="width: {{ ((count / confidence_total) * 100)|round(2) if confidence_total else 0 }}%"></i></div><strong>{{ (((count / confidence_total) * 100)|round(2)) if confidence_total else 0 }}% · {{ count }} 人</strong></div>
@@ -464,15 +512,8 @@
     </section>
   {% endif %}
 
-  {% if report.optional_sections.show_cost %}
-    <section class="report-section">
-      <div class="section-head"><div><p class="eyebrow">Cost</p><h2>执行与成本</h2></div></div>
-      <div class="table-wrap"><table><thead><tr><th>字段</th><th>有效 / 缺失 / 错误</th><th>总值</th><th>平均</th></tr></thead><tbody>{% for field_key in ['llm_cost', 'third_party_cost', 'total_cost', 'search_duration_ms'] %}{% set item = report.cost_metrics.get(field_key, {}) %}{% if item.total is not none %}<tr><td class="mono">{{ field_key }}</td><td>{{ item.value_count }} / {{ item.missing_count }} / {{ item.invalid_count }}</td><td>{{ item.total }}</td><td>{{ item.average }}</td></tr>{% endif %}{% endfor %}</tbody></table></div>
-    </section>
-  {% endif %}
-
   <section class="report-section report-v5-diagnostics">
-    <div class="section-head"><div><p class="eyebrow">Appendix</p><h2>风险、未就绪原因与技术信息</h2></div></div>
+    <div class="section-head"><div><p class="eyebrow">08 · Appendix</p><h2>风险、未就绪原因与技术信息</h2></div></div>
     {% if report.diagnostics['items'] %}<ul class="report-v5-diagnostic-list">{% for item in report.diagnostics['items'] %}<li><strong>{{ item.code }}</strong><span>{{ item.message }}</span></li>{% endfor %}</ul>{% else %}<p class="inline-note">没有需要额外说明的风险或未就绪原因。</p>{% endif %}
     <details><summary>技术元数据</summary><dl class="data-list report-metadata">{% for key, value in report.diagnostics.technical_metadata.items() %}<div><dt>{{ key }}</dt><dd class="mono">{{ value }}</dd></div>{% endfor %}</dl></details>
   </section>

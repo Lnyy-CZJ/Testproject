@@ -836,9 +836,14 @@ class AnalysisServiceTests(unittest.TestCase):
         legacy = validate_field_definitions([DEFAULT_FIELD_DEFINITIONS[0]])[0]
 
         self.assertEqual(DEFAULT_FIELD_SCHEMA_V3_VERSION, schema_version)
-        self.assertEqual(61, len(definitions))
+        self.assertEqual(87, len(definitions))
         self.assertTrue(by_key["summary_web_links"]["display_enabled"])
         self.assertFalse(by_key["llm_cost"]["enabled"])
+        self.assertIn("pdl_person_identify_call_count", by_key)
+        self.assertIn("pdl_provider_cost_status", by_key)
+        self.assertIn("google_vision_cost_status", by_key)
+        self.assertIn("tool_usage_summary", by_key)
+        self.assertIn("cost_by_provider", by_key)
         self.assertTrue(by_key["social_urls"]["identity_enabled"])
         self.assertTrue(by_key["social_urls"]["baseline_compare_enabled"])
         self.assertEqual("PATH", legacy["source_type"])
@@ -1181,6 +1186,16 @@ class AnalysisServiceTests(unittest.TestCase):
         self.assertIn("social_urls", processing_fields)
         self.assertIn("summary_location", processing_fields)
         self.assertIn("profile_full_name", processing_fields)
+        economics = report_v4["execution_economics"]
+        self.assertEqual(1, economics["query_count"])
+        self.assertEqual(
+            [
+                "pdl_person_identify", "pdl_person_search", "llm_search",
+                "wiki", "google_lens", "google_vision",
+                "social_profile_extraction",
+            ],
+            [item["key"] for item in economics["tool_rows"]],
+        )
         module_overview = report_v4["module_return_overview"]
         modules_by_name = {
             item["module"]: item for item in module_overview["modules"]
@@ -1390,6 +1405,10 @@ class AnalysisServiceTests(unittest.TestCase):
         )
         self.assertIn("confidence_comparison", comparison_report)
         self.assertIn("tool_call_comparison", comparison_report)
+        self.assertIn(
+            "execution_economics_comparison",
+            comparison_report,
+        )
         self.assertIn("appendix", comparison_report)
 
     def test_v5_completeness_does_not_require_baseline_compare(self):

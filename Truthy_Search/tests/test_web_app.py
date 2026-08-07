@@ -1653,12 +1653,16 @@ class WebAppTests(unittest.TestCase):
         self.assertEqual("report-model-v5", model["metadata"]["report_model_version"])
         self.assertEqual(200, page.status_code)
         self.assertIn("核心评测结果", html)
+        self.assertIn("02 · Execution & cost", html)
+        self.assertIn("执行、工具调用与成本", html)
+        self.assertIn("工具调用与成本矩阵", html)
+        self.assertIn("PDL Person Identify", html)
         self.assertIn("衡量系统能否在全部有效 Query 中找到目标人物", html)
         self.assertIn("本次数据处理范围", html)
         self.assertIn("五大资料模块返回概览", html)
         self.assertIn("模块有数据率", html)
         self.assertIn("字段完整度", html)
-        self.assertIn("05 · Confidence distribution", html)
+        self.assertIn("06 · Confidence distribution", html)
         self.assertIn("07 · Query explorer", html)
         self.assertIn("候选人置信度分布", html)
         self.assertRegex(html, r"\d+(?:\.\d+)?% · \d+ 人")
@@ -1669,6 +1673,12 @@ class WebAppTests(unittest.TestCase):
         self.assertIn('"initial_query_count": 5', html)
         self.assertIn('"load_more_query_count": 10', html)
         self.assertIn("Query 与全部候选人", html)
+        self.assertLess(html.index("核心评测结果"), html.index("执行、工具调用与成本"))
+        self.assertLess(html.index("执行、工具调用与成本"), html.index("检索条件表现"))
+        self.assertLess(html.index("检索条件表现"), html.index("本次数据处理范围"))
+        self.assertLess(html.index("本次数据处理范围"), html.index("五大资料模块返回概览"))
+        self.assertLess(html.index("五大资料模块返回概览"), html.index("候选人置信度分布"))
+        self.assertLess(html.index("候选人置信度分布"), html.index("Query 与全部候选人"))
         self.assertIn('data-report-explorer', html)
         self.assertIn('id="report-v5-snapshot"', html)
         self.assertIn(candidate_pk, html)
@@ -1676,13 +1686,15 @@ class WebAppTests(unittest.TestCase):
         self.assertNotIn("风险与口径说明", html)
         self.assertEqual(200, static_download.status_code)
         self.assertIn("核心评测结果", static_html)
+        self.assertIn("执行、工具调用与成本", static_html)
+        self.assertIn("Provider 成本明细", static_html)
         self.assertIn("计算公式", static_html)
         self.assertIn("正式整体指标", static_html)
         self.assertIn("本次数据处理范围", static_html)
         self.assertIn("五大资料模块返回概览", static_html)
         self.assertIn("模块有数据率", static_html)
         self.assertIn("字段完整度", static_html)
-        self.assertIn("05 · Confidence distribution", static_html)
+        self.assertIn("06 · Confidence distribution", static_html)
         self.assertIn("07 · Query explorer", static_html)
         self.assertIn("候选人置信度分布", static_html)
         self.assertRegex(static_html, r"\d+(?:\.\d+)?% · \d+ 人")
@@ -1747,6 +1759,19 @@ class WebAppTests(unittest.TestCase):
                     )
                 ],
             },
+            "execution_economics_comparison": {
+                "baseline": model["execution_economics"],
+                "candidate": model["execution_economics"],
+                "tool_rows": [
+                    {
+                        "key": item["key"],
+                        "label": item["label"],
+                        "baseline": item,
+                        "candidate": item,
+                    }
+                    for item in model["execution_economics"]["tool_rows"]
+                ],
+            },
             "module_changes": self.service._report_compare_module_rows(
                 model["module_return_overview"],
                 model["module_return_overview"],
@@ -1786,11 +1811,15 @@ class WebAppTests(unittest.TestCase):
         ).render(report=compare_model, static_export=True)
         self.assertIn("核心评测结果变化", compare_html)
         self.assertIn("两次执行与成本差异", compare_html)
+        self.assertIn("03 · Result migration", compare_html)
         self.assertIn("五大资料模块返回变化", compare_html)
         self.assertIn("候选人置信度差异", compare_html)
-        self.assertIn("第三方工具调用差异", compare_html)
+        self.assertIn("工具调用与成本", compare_html)
         self.assertIn("用于定位改善、退化和数据来源", compare_html)
         self.assertNotIn("Query 与全部候选人", compare_html)
+        self.assertLess(compare_html.index("核心评测结果变化"), compare_html.index("两次执行与成本差异"))
+        self.assertLess(compare_html.index("两次执行与成本差异"), compare_html.index("同条件结果迁移"))
+        self.assertLess(compare_html.index("同条件结果迁移"), compare_html.index("五大资料模块返回变化"))
 
 
     def test_stage2_reprocess_and_query_classification_web_flow(self):

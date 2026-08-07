@@ -42,6 +42,16 @@
     .compare-v6-facts span, .compare-v6-status-line span { padding: 8px 11px; border-radius: 8px; background: #eef5f3; color: #65737e; font-size: 12px; }
     .compare-v6-facts strong { color: #17212b; font-size: 16px; }
     .compare-v6-status-line { margin-bottom: 14px; }
+    .compare-v6-cost-hero { display: grid; grid-template-columns: repeat(3, 1fr); margin: 16px 0; overflow: hidden; border: 1px solid #dce3e7; border-radius: 12px; background: #fbfdfc; }
+    .compare-v6-cost-hero article, .report-v5-cost-hero article { display: grid; gap: 6px; padding: 16px; border-left: 1px solid #dce3e7; }
+    .compare-v6-cost-hero article:first-child, .report-v5-cost-hero article:first-child { border-left: 0; }
+    .compare-v6-cost-hero span, .compare-v6-cost-hero small, .report-v5-cost-hero span, .report-v5-cost-hero small { color: #65737e; font-size: 12px; }
+    .compare-v6-cost-hero strong, .report-v5-cost-hero strong { font-size: 22px; }
+    .compare-v6-cost-focus { background: #eef7f4; }
+    .compare-v6-cost-details { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px; }
+    .compare-v6-cost-details details, .report-v5-cost-details details { overflow: hidden; border: 1px solid #dce3e7; border-radius: 10px; }
+    .compare-v6-cost-details summary, .report-v5-cost-details summary { display: flex; justify-content: space-between; gap: 12px; padding: 13px 15px; }
+    .compare-v6-cost-details .table-wrap, .report-v5-cost-details .table-wrap { border-top: 1px solid #dce3e7; }
     .compare-v6-table td { vertical-align: middle; } .compare-v6-table td:first-child { min-width: 170px; }
     .compare-v6-delta { display: inline-block; padding: 5px 8px; border-radius: 7px; background: #eef2f1; color: #65737e; font-size: 12px; font-weight: 800; }
     .compare-v6-delta.improved { background: #ddf4e8; color: #11633e; } .compare-v6-delta.regressed { background: #f8e7e5; color: #9a3737; }
@@ -52,6 +62,12 @@
     .compare-v6-appendix > summary { display: flex; justify-content: space-between; padding: 15px 17px; list-style: none; }
     .compare-v6-appendix > summary span { color: #65737e; font-size: 12px; } .compare-v6-appendix .table-wrap { border-top: 1px solid #dce3e7; }
     .report-v5-hero { display: flex; justify-content: space-between; gap: 24px; padding: 26px; border: 1px solid #cce3de; border-radius: 16px; background: linear-gradient(135deg, #edf8f5, #fff 62%); margin-bottom: 18px; }
+    .report-v5-cost-hero { display: grid; grid-template-columns: 1.1fr 1.1fr .8fr .8fr 1fr; margin: 16px 0 22px; overflow: hidden; border: 1px solid #dce3e7; border-radius: 12px; background: #fbfdfc; }
+    .report-v5-cost-warning { background: #fff8ed; }
+    .report-v5-cost-table small { display: block; color: #65737e; }
+    .report-v5-cost-status { display: inline-block; padding: 5px 8px; border-radius: 7px; background: #eef2f1; color: #52615d; font-size: 11px; font-weight: 800; }
+    .report-v5-cost-status.is-priced { background: #ddf4e8; color: #11633e; } .report-v5-cost-status.is-unpriced { background: #fff1d8; color: #8a5a11; }
+    .report-v5-cost-details { display: grid; gap: 10px; margin-top: 15px; }
     .report-v5-hero-meta { display: grid; align-content: start; gap: 8px; min-width: 190px; color: #0c776d; }
     .report-v5-subtitle { margin-bottom: 0; color: #65737e; }
     .report-v5-alert { display: flex; gap: 10px; margin-bottom: 18px; padding: 14px 18px; border: 1px solid #e8ba82; border-radius: 12px; background: #fff7ec; color: #80500c; }
@@ -83,7 +99,7 @@
     .report-v5-static-drilldown { margin-top: 10px; }
     .report-v5-diagnostic-list { display: grid; gap: 8px; padding: 0; list-style: none; }
     .report-v5-diagnostic-list li { display: grid; grid-template-columns: minmax(170px, .5fr) 2fr; gap: 12px; padding: 10px; border-radius: 8px; background: #fff8ed; }
-    @media (max-width: 800px) { body { padding: 12px; } .metric-strip, .data-list, .report-v5-kpis { grid-template-columns: 1fr 1fr; } .report-v5-hero { flex-direction: column; } .compare-v6-hero { grid-template-columns: 1fr; } .compare-v6-route { grid-template-columns: 1fr; } .compare-v6-migration { grid-template-columns: 1fr 1fr; } .report-v5-diagnostic-list li { grid-template-columns: 1fr; } }
+    @media (max-width: 800px) { body { padding: 12px; } .metric-strip, .data-list, .report-v5-kpis { grid-template-columns: 1fr 1fr; } .report-v5-hero { flex-direction: column; } .compare-v6-hero, .compare-v6-cost-hero, .compare-v6-cost-details, .report-v5-cost-hero { grid-template-columns: 1fr; } .compare-v6-route { grid-template-columns: 1fr; } .compare-v6-migration { grid-template-columns: 1fr 1fr; } .report-v5-diagnostic-list li { grid-template-columns: 1fr; } }
     @media print { body { padding: 0; background: #fff; } .report-section, .report-v5-static-query { break-inside: avoid; box-shadow: none; } details { break-inside: avoid; } }
   </style>
 </head>

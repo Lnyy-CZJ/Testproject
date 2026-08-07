@@ -1226,6 +1226,17 @@ table small {
 .compare-v6-facts span, .compare-v6-status-line span { padding: 9px 12px; border-radius: 9px; color: var(--muted); background: #eef5f3; font-size: 12px; }
 .compare-v6-facts strong { margin-left: 4px; color: var(--ink); font-size: 16px; }
 .compare-v6-status-line { margin: 0 0 14px; }
+.compare-v6-cost-hero { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 16px 0; overflow: hidden; border: 1px solid var(--line); border-radius: 13px; background: #fbfdfc; }
+.compare-v6-cost-hero article { display: grid; gap: 6px; min-width: 0; padding: 17px; border-left: 1px solid var(--line); }
+.compare-v6-cost-hero article:first-child { border-left: 0; }
+.compare-v6-cost-hero span, .compare-v6-cost-hero small { color: var(--muted); font-size: 12px; }
+.compare-v6-cost-hero strong { font-size: 23px; overflow-wrap: anywhere; }
+.compare-v6-cost-focus { background: #eef7f4; }
+.compare-v6-cost-details { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 16px; }
+.compare-v6-cost-details details { overflow: hidden; border: 1px solid var(--line); border-radius: 11px; }
+.compare-v6-cost-details summary { display: flex; justify-content: space-between; gap: 12px; padding: 13px 15px; cursor: pointer; font-weight: 800; }
+.compare-v6-cost-details summary span { color: var(--muted); font-size: 12px; }
+.compare-v6-cost-details .table-wrap { margin: 0; border: 0; border-top: 1px solid var(--line); border-radius: 0; }
 .compare-v6-table td { vertical-align: middle; }
 .compare-v6-table td:first-child { min-width: 190px; }
 .compare-v6-table td small { display: block; margin-top: 4px; color: var(--muted); }
@@ -1255,6 +1266,25 @@ table small {
   border-radius: 18px;
   background: linear-gradient(135deg, #edf8f5, #fff 62%);
 }
+
+.report-v5-cost-hero { display: grid; grid-template-columns: 1.1fr 1.1fr .8fr .8fr 1fr; margin: 16px 0 24px; overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: #fbfdfc; }
+.report-v5-cost-hero article { display: grid; gap: 6px; min-width: 0; padding: 18px; border-left: 1px solid var(--line); }
+.report-v5-cost-hero article:first-child { border-left: 0; }
+.report-v5-cost-hero span, .report-v5-cost-hero small { color: var(--muted); font-size: 12px; line-height: 1.45; }
+.report-v5-cost-hero strong { color: var(--ink); font-size: 23px; overflow-wrap: anywhere; }
+.report-v5-cost-warning { background: #fff8ed; }
+.report-v5-cost-warning strong { color: #8a5a11; }
+.report-v5-cost-table td { vertical-align: middle; }
+.report-v5-cost-table small { display: block; margin-top: 3px; color: var(--muted); }
+.report-v5-cost-status { display: inline-flex; padding: 5px 8px; border-radius: 7px; background: #eef2f1; color: #52615d; font-size: 11px; font-weight: 800; }
+.report-v5-cost-status.is-priced { background: #ddf4e8; color: #11633e; }
+.report-v5-cost-status.is-unpriced { background: #fff1d8; color: #8a5a11; }
+.report-v5-cost-status.is-not_collected { background: #eef0f2; color: #65737e; }
+.report-v5-cost-details { display: grid; gap: 10px; margin-top: 16px; }
+.report-v5-cost-details details { overflow: hidden; border: 1px solid var(--line); border-radius: 11px; background: #fff; }
+.report-v5-cost-details summary { display: flex; justify-content: space-between; gap: 16px; padding: 14px 16px; cursor: pointer; font-weight: 800; }
+.report-v5-cost-details summary small { color: var(--muted); font-weight: 500; }
+.report-v5-cost-details .table-wrap { margin: 0; border: 0; border-top: 1px solid var(--line); border-radius: 0; }
 
 .report-v5-hero h1 { margin: 7px 0; }
 .report-v5-subtitle { max-width: 760px; margin: 0; color: var(--muted); }
@@ -2525,6 +2555,13 @@ button.report-v5-kpi:focus-visible { outline: 3px solid rgb(23 102 90 / 22%); ou
   .compare-v6-route { grid-template-columns: 1fr; }
   .compare-v6-route b { transform: rotate(90deg); justify-self: center; }
   .compare-v6-migration { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .compare-v6-cost-hero,
+  .compare-v6-cost-details,
+  .report-v5-cost-hero { grid-template-columns: 1fr; }
+  .compare-v6-cost-hero article,
+  .report-v5-cost-hero article { border-top: 1px solid var(--line); border-left: 0; }
+  .compare-v6-cost-hero article:first-child,
+  .report-v5-cost-hero article:first-child { border-top: 0; }
 
   .report-v5-kpis,
   .report-v5-toolbar,

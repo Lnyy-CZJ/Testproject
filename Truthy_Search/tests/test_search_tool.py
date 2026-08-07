@@ -101,6 +101,15 @@ class SearchToolTests(unittest.TestCase):
                         "finish_time": "2026-08-05T10:14:30.721Z",
                     },
                     "diagnosis": {"pdl_called": True},
+                    "agent_tool_calls": [
+                        {"provider": "people_data_labs", "provider_operation": "person_identify", "status": "success"},
+                        {"provider": "people_data_labs", "provider_operation": "person_search", "status": "success"},
+                        {"provider": "llm_search:deepseek", "provider_operation": "search", "status": "success"},
+                        {"provider": "public_figure", "provider_operation": "remote_lookup", "status": "success"},
+                        {"provider": "google_lens", "provider_operation": "image_search", "status": "failed"},
+                        {"provider": "google_vision", "provider_operation": "face_match", "status": "success"},
+                        {"provider": "social_profile", "provider_operation": "extract", "status": "success"},
+                    ],
                 }
             }
         )
@@ -133,6 +142,25 @@ class SearchToolTests(unittest.TestCase):
                             "currency": "UNSPECIFIED",
                             "total_cost_microunit": "0",
                         },
+                        {
+                            "provider": "google_lens",
+                            "currency": "USD",
+                            "total_cost_microunit": "2000",
+                            "call_count": 1,
+                        },
+                        {
+                            "provider": "google_vision",
+                            "currency": "USD",
+                            "total_cost_microunit": "3000",
+                            "call_count": 1,
+                        },
+                        {
+                            "provider": "social_profile",
+                            "currency": "UNSPECIFIED",
+                            "total_cost_microunit": "0",
+                            "call_count": 1,
+                            "unpriced_call_count": "1",
+                        },
                     ],
                     "by_search": [
                         {
@@ -143,7 +171,7 @@ class SearchToolTests(unittest.TestCase):
                         {
                             "task_id": "task-confirmed",
                             "currency": "USD",
-                            "total_cost_microunit": "1391400",
+                            "total_cost_microunit": "1396400",
                         },
                     ],
                     "totals": [
@@ -163,15 +191,29 @@ class SearchToolTests(unittest.TestCase):
         )
 
         self.assertEqual(0.0004, task_fields["llm_cost"])
-        self.assertEqual(1.391, task_fields["third_party_cost"])
-        self.assertEqual(1.3914, task_fields["total_cost"])
+        self.assertEqual(1.396, task_fields["third_party_cost"])
+        self.assertEqual(1.3964, task_fields["total_cost"])
         self.assertIs(task_fields["pdl_called"], True)
         self.assertEqual(11595, task_fields["search_duration_ms"])
         self.assertEqual("USD", metadata["cost_currency"])
         self.assertEqual(400, metadata["llm_cost_microunit"])
-        self.assertEqual(1391000, metadata["third_party_cost_microunit"])
-        self.assertEqual(1391400, metadata["total_cost_microunit"])
+        self.assertEqual(1396000, metadata["third_party_cost_microunit"])
+        self.assertEqual(1396400, metadata["total_cost_microunit"])
         self.assertEqual("COMPLETE", metadata["field_mapping_status"])
+        tool_usage = {
+            item["key"]: item for item in metadata["tool_usage_summary"]
+        }
+        self.assertEqual(1, tool_usage["pdl_person_identify"]["call_count"])
+        self.assertEqual(1, tool_usage["pdl_person_search"]["call_count"])
+        self.assertEqual(0.0004, tool_usage["llm_search"]["cost"])
+        self.assertEqual(0.002, tool_usage["google_lens"]["cost"])
+        self.assertEqual(0.003, tool_usage["google_vision"]["cost"])
+        self.assertEqual("UNPRICED", tool_usage["social_profile_extraction"]["cost_status"])
+        # PDL Provider 同一 Query 同时执行 Identify 与 Search，成本只能保留
+        # Provider 级汇总，不允许在两个工具之间擅自分摊。
+        self.assertIsNone(tool_usage["pdl_person_identify"]["cost"])
+        self.assertEqual(1.39, metadata["pdl_provider_cost"])
+        self.assertEqual(1, metadata["wiki_call_count"])
 
     def test_extract_admin_task_fields_keeps_zero_distinct_from_missing(self):
         """真实零成本和 False 正常落库，未返回的字段继续保持空值。"""
