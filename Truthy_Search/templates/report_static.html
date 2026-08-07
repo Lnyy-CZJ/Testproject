@@ -33,6 +33,24 @@
     details { border-top: 1px solid #e2e7ea; padding: 12px 0; }
     summary { cursor: pointer; font-weight: 700; }
     .report-warnings { border-color: #e5c76b; background: #fffaf0; }
+    .compare-v6-hero { display: grid; grid-template-columns: 1fr minmax(460px, .9fr); gap: 28px; align-items: center; padding: 28px; border: 1px solid #cce3de; border-radius: 16px; background: linear-gradient(135deg, #edf8f5, #fff 64%); margin-bottom: 18px; }
+    .compare-v6-hero h1 { margin: 7px 0; } .compare-v6-hero p:last-child { color: #65737e; }
+    .compare-v6-route { display: grid; grid-template-columns: 1fr auto 1fr; gap: 12px; align-items: center; }
+    .compare-v6-route > div { display: grid; gap: 5px; min-width: 0; padding: 14px; border: 1px solid #d8e6e2; border-radius: 11px; background: #fff; }
+    .compare-v6-route small, .compare-v6-route span { color: #65737e; font-size: 11px; overflow-wrap: anywhere; } .compare-v6-route b { color: #0c776d; font-size: 20px; }
+    .compare-v6-facts, .compare-v6-status-line { display: flex; flex-wrap: wrap; gap: 9px; }
+    .compare-v6-facts span, .compare-v6-status-line span { padding: 8px 11px; border-radius: 8px; background: #eef5f3; color: #65737e; font-size: 12px; }
+    .compare-v6-facts strong { color: #17212b; font-size: 16px; }
+    .compare-v6-status-line { margin-bottom: 14px; }
+    .compare-v6-table td { vertical-align: middle; } .compare-v6-table td:first-child { min-width: 170px; }
+    .compare-v6-delta { display: inline-block; padding: 5px 8px; border-radius: 7px; background: #eef2f1; color: #65737e; font-size: 12px; font-weight: 800; }
+    .compare-v6-delta.improved { background: #ddf4e8; color: #11633e; } .compare-v6-delta.regressed { background: #f8e7e5; color: #9a3737; }
+    .compare-v6-migration { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+    .compare-v6-migration > div { padding: 16px; border: 1px solid #dce3e7; border-radius: 12px; background: #f7faf9; }
+    .compare-v6-migration span { display: block; color: #65737e; font-size: 12px; } .compare-v6-migration strong { display: block; margin-top: 7px; font-size: 28px; }
+    .compare-v6-appendix { overflow: hidden; margin-top: 10px; border: 1px solid #dce3e7; border-radius: 12px; background: #fff; }
+    .compare-v6-appendix > summary { display: flex; justify-content: space-between; padding: 15px 17px; list-style: none; }
+    .compare-v6-appendix > summary span { color: #65737e; font-size: 12px; } .compare-v6-appendix .table-wrap { border-top: 1px solid #dce3e7; }
     .report-v5-hero { display: flex; justify-content: space-between; gap: 24px; padding: 26px; border: 1px solid #cce3de; border-radius: 16px; background: linear-gradient(135deg, #edf8f5, #fff 62%); margin-bottom: 18px; }
     .report-v5-hero-meta { display: grid; align-content: start; gap: 8px; min-width: 190px; color: #0c776d; }
     .report-v5-subtitle { margin-bottom: 0; color: #65737e; }
@@ -65,7 +83,7 @@
     .report-v5-static-drilldown { margin-top: 10px; }
     .report-v5-diagnostic-list { display: grid; gap: 8px; padding: 0; list-style: none; }
     .report-v5-diagnostic-list li { display: grid; grid-template-columns: minmax(170px, .5fr) 2fr; gap: 12px; padding: 10px; border-radius: 8px; background: #fff8ed; }
-    @media (max-width: 800px) { body { padding: 12px; } .metric-strip, .data-list, .report-v5-kpis { grid-template-columns: 1fr 1fr; } .report-v5-hero { flex-direction: column; } .report-v5-diagnostic-list li { grid-template-columns: 1fr; } }
+    @media (max-width: 800px) { body { padding: 12px; } .metric-strip, .data-list, .report-v5-kpis { grid-template-columns: 1fr 1fr; } .report-v5-hero { flex-direction: column; } .compare-v6-hero { grid-template-columns: 1fr; } .compare-v6-route { grid-template-columns: 1fr; } .compare-v6-migration { grid-template-columns: 1fr 1fr; } .report-v5-diagnostic-list li { grid-template-columns: 1fr; } }
     @media print { body { padding: 0; background: #fff; } .report-section, .report-v5-static-query { break-inside: avoid; box-shadow: none; } details { break-inside: avoid; } }
   </style>
 </head>

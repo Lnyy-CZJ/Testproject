@@ -27,8 +27,10 @@ from analysis_service import (
     METRICS_RULE_VERSION,
     PersonLinkValidationError,
     REPORT_MODEL_VERSION,
+    REPORT_V5_CORE_METRIC_DEFINITIONS,
     ReviewValidationError,
     V5_REPORT_MODEL_VERSION,
+    COMPARE_REPORT_MODEL_VERSION,
     V5_FIELD_PROCESSING_RULE_VERSION,
     extract_source_path,
     extract_profile_item,
@@ -157,6 +159,33 @@ class AnalysisServiceTests(unittest.TestCase):
         """清理当前测试创建的临时数据库和归档。"""
 
         self.temp_dir.cleanup()
+
+    def test_compare_report_delta_direction_respects_metric_meaning(self):
+        """非命中相似度越低越好，资料完整度变化只做观察不误标提升。"""
+
+        baseline = {
+            key: {"value": 0.5}
+            for key in REPORT_V5_CORE_METRIC_DEFINITIONS
+        }
+        candidate = {
+            key: {"value": 0.6}
+            for key in REPORT_V5_CORE_METRIC_DEFINITIONS
+        }
+        candidate["nonmatched_baseline_overlap"] = {"value": 0.4}
+        rows = {
+            item["key"]: item
+            for item in self.service._report_compare_metric_rows(
+                baseline, candidate
+            )
+        }
+        self.assertEqual(
+            "IMPROVED",
+            rows["nonmatched_baseline_overlap"]["delta_status"],
+        )
+        self.assertEqual(
+            "OBSERVED",
+            rows["nonmatched_data_completeness"]["delta_status"],
+        )
 
     def test_identity_rule_uses_social_priority_then_photo_fallback(self):
         """Social 冲突优先，照片仅在 Social 无结论时作为自动终判兜底。"""
@@ -1339,6 +1368,29 @@ class AnalysisServiceTests(unittest.TestCase):
         )
         self.assertTrue(stored_candidate["references"]["raw_ids"])
         self.assertNotIn("detail_data_raw", stored_candidate)
+
+        # 双 Process 报告必须使用独立对比模型，不能继续套用单 Run v5 主体。
+        compare_report = self.service.create_report(
+            candidate_process_id=reprocessed.process_id,
+            baseline_process_id=process.process_id,
+            data_marker="MOCK",
+            report_id="report-stage2-v6-compare",
+        )
+        compare_model = compare_report.model
+        self.assertEqual(
+            COMPARE_REPORT_MODEL_VERSION,
+            compare_model["metadata"]["report_model_version"],
+        )
+        comparison_report = compare_model["comparison_report"]
+        self.assertIn("core_metric_changes", comparison_report)
+        self.assertIn("execution_cost_comparison", comparison_report)
+        self.assertEqual(
+            ["Insights", "Photos", "Profile", "Social", "Summary"],
+            [item["module"] for item in comparison_report["module_changes"]],
+        )
+        self.assertIn("confidence_comparison", comparison_report)
+        self.assertIn("tool_call_comparison", comparison_report)
+        self.assertIn("appendix", comparison_report)
 
     def test_v5_completeness_does_not_require_baseline_compare(self):
         """完整度开关独立于基准对比，避免字段出现“完整度未生成”。
@@ -2536,6 +2588,130 @@ class AnalysisServiceTests(unittest.TestCase):
                 "GetProviderCostSummary",
             }.issubset(raw_stages)
         )
+
+    def test_reprocess_backfills_confirmed_admin_fields_without_network(self):
+        """无成本重处理仅从已入库 Admin Raw 补齐五个任务公共字段。"""
+
+        results_path = self.root / "admin-mapping-results.jsonl"
+        debug_body = api_body(
+            {
+                "debug": {
+                    "task": {
+                        "start_time": "2026-08-05T10:14:19.126Z",
+                        "finish_time": "2026-08-05T10:14:30.721Z",
+                    },
+                    "diagnosis": {"pdl_called": True},
+                }
+            }
+        )
+        cost_body = api_body(
+            {
+                "cost_summary": {
+                    "by_provider": [
+                        {
+                            "provider": "llm_search:deepseek",
+                            "currency": "USD",
+                            "total_cost_microunit": "383",
+                        },
+                        {
+                            "provider": "people_data_labs",
+                            "currency": "USD",
+                            "total_cost_microunit": "1390000",
+                        },
+                    ],
+                    "by_search": [
+                        {
+                            "task_id": "task-admin-mapping",
+                            "currency": "USD",
+                            "total_cost_microunit": "1390383",
+                        }
+                    ],
+                    "totals": [],
+                }
+            }
+        )
+        write_jsonl(
+            results_path,
+            [
+                {
+                    "result_schema_version": "1.3.1",
+                    "input_id": "query-admin-mapping",
+                    "task_id": "task-admin-mapping",
+                    "query_status": "NO_CANDIDATE",
+                    "result_status": "NO_CANDIDATES",
+                    "task_fields": {
+                        "llm_cost": None,
+                        "third_party_cost": None,
+                        "total_cost": None,
+                        "pdl_called": None,
+                        "search_duration_ms": None,
+                    },
+                    "public_fields": {"field_mapping_status": "NOT_MAPPED"},
+                    "raw": {
+                        "get_search_task_debug": {
+                            "response_body": debug_body,
+                        },
+                        "get_provider_cost_summary": {
+                            "response_body": cost_body,
+                        },
+                    },
+                    "results": [],
+                }
+            ],
+        )
+        imported = self.service.import_results_jsonl(
+            results_path,
+            evaluation_id="eval-import",
+            run_label="Admin 字段重处理",
+            system_version="v1.3",
+            run_id="run-admin-mapping",
+        )
+        schema_version = self.service.ensure_default_field_schema()
+        raw_before = [
+            row["payload_json"]
+            for row in self.store.fetch_all(
+                "SELECT payload_json FROM raw_records WHERE run_id = ? ORDER BY raw_id",
+                (imported.object_id,),
+            )
+        ]
+
+        process = self.service.reprocess_existing_run(
+            run_id=imported.object_id,
+            schema_version=schema_version,
+        )
+
+        query = self.store.fetch_one(
+            """
+            SELECT llm_cost, third_party_cost, total_cost, pdl_called,
+                   search_duration_ms, public_fields_json
+            FROM run_queries WHERE run_id = ? AND query_id = ?
+            """,
+            (imported.object_id, "query-admin-mapping"),
+        )
+        processed = self.store.fetch_one(
+            "SELECT fields_json FROM processed_queries WHERE process_id = ?",
+            (process.process_id,),
+        )
+        raw_after = [
+            row["payload_json"]
+            for row in self.store.fetch_all(
+                "SELECT payload_json FROM raw_records WHERE run_id = ? ORDER BY raw_id",
+                (imported.object_id,),
+            )
+        ]
+        self.assertEqual(0.000383, query["llm_cost"])
+        self.assertEqual(1.39, query["third_party_cost"])
+        self.assertEqual(1.390383, query["total_cost"])
+        self.assertEqual(1, query["pdl_called"])
+        self.assertEqual(11595, query["search_duration_ms"])
+        self.assertEqual(
+            "COMPLETE",
+            json.loads(query["public_fields_json"])["field_mapping_status"],
+        )
+        processed_fields = json.loads(processed["fields_json"])
+        self.assertEqual(1.390383, processed_fields["total_cost"])
+        self.assertIs(processed_fields["pdl_called"], True)
+        self.assertEqual(raw_before, raw_after)
 
     def test_execution_failure_persists_collected_public_info(self):
         """失败终态仍应保存公共字段和 Admin Raw，同时保持 EXECUTION_FAILED。"""

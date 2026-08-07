@@ -870,6 +870,62 @@ def test_name_with_conditions_flow_uses_non_photo_create_task_clues() -> None:
     ]
 
 
+def test_name_with_conditions_and_photo_flow_has_media_upload_prerequisites() -> None:
+    """照片搜索 Flow 应先完成上传，并将返回的媒体 ID 传给创建搜索任务。
+
+    功能说明:
+        校验 YAML 编排顺序、Prepare 响应提取和 PHOTO 线索引用，避免 PUT
+        上传被放在签名 URL 生成之前，或 CreateIntentTask 使用错误的媒体变量。
+
+    返回值:
+        无；配置不满足约定时由断言抛出异常。
+    """
+    from utils.custom.flow_loader import load_flow_cases
+
+    flow_case = load_flow_cases(
+        PROJECT_ROOT,
+        selected_flow="NameWithConditionsAndPhotoSearch",
+    )[0]
+    steps = flow_case["flow"]["steps"]
+    scenario = flow_case["scenario"]
+    create_params = scenario["step_data"]["create_task"]["params"]
+
+    assert [
+        (step["id"], step.get("api") or step.get("action")) for step in steps
+    ] == [
+        ("get_media_upload_config", "GetMediaUploadConfig"),
+        ("prepare_media_upload", "PrepareMediaUpload"),
+        ("upload_media", "prepared_media_upload"),
+        ("complete_media_upload", "CompleteMediaUpload"),
+        ("create_task", "CreateIntentTask"),
+        ("poll_task", "GetTask"),
+        ("list_candidates", "ListTaskCandidates"),
+        ("candidate_detail", "GetTaskCandidateDetail"),
+        ("search_task_debug", "GetSearchTaskDebug"),
+        ("provider_cost_summary", "GetProviderCostSummary"),
+    ]
+    assert scenario["variables"]["media_file"].startswith("data/photo/")
+    assert steps[1]["extract"] == {
+        "upload_url": "$.upload_url",
+        "upload_headers": "$.upload_headers",
+        "media_asset_id": "$.media_asset_id",
+    }
+    assert scenario["step_data"]["prepare_media_upload"]["params"] == {
+        "client_request_id": "{{client_request_id}}",
+        "content_type": "image/jpeg",
+        "size_bytes": "{{media_size_bytes}}",
+    }
+    assert [clue["type"] for clue in create_params["clues"]] == [
+        "FULL_NAME",
+        "SOCIAL_LINK",
+        "PHOTO",
+    ]
+    assert create_params["clues"][-1]["photo_query"] == {
+        "media_asset_id": "{{media_asset_id}}",
+        "photo_type_hint": "face",
+    }
+
+
 def _write_api_definition(
     root: Path,
     file_name: str,

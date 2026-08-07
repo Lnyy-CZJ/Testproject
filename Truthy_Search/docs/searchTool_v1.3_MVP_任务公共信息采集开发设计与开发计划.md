@@ -413,9 +413,9 @@ limit：配置，默认 100
 - Cost 原始微单位和币种汇总；
 - `pdl_called` 的原始判断证据。
 
-#### B. 待确认业务口径字段
+#### B. 已确认业务口径字段
 
-以下字段架构预留，但只有口径确认后才写正式标量：
+以下字段从已入库 Admin Raw 提取，并写入现有正式标量：
 
 - `llm_cost`；
 - `third_party_cost`；
@@ -424,12 +424,13 @@ limit：配置，默认 100
 - `pdl_called`；
 - `search_duration_ms`。
 
-未确认时：
+映射规则：
 
-- 标准字段保持 `null`；
-- 原始值写 Debug/Cost Raw；
-- `public_fields_json` 记录 `NOT_MAPPED` 和来源；
-- 后续补充映射函数和测试，不修改接口采集顺序。
+- 三项 USD 成本由 microunit 除以 1,000,000；
+- LLM 与第三方按已确认 Provider 分类分别累计；
+- 总成本优先取当前 task_id 的 by_search USD 项，回退 totals USD 项；
+- PDL 读取 diagnosis.pdl_called，耗时由 finish_time 减 start_time；
+- 缺失值保持 `null`，真实零值保留 `0`，Raw 不修改。
 
 ### 9.3 来源优先级
 

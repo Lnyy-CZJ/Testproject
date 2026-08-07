@@ -539,7 +539,7 @@ python3 web_app.py --env-file .env.restore
 - 公共信息显示 `AUTH_FAILED`：检查 Admin 账号是否有效以及系统时间是否正确；
   Token 只保存在当前 Run 的进程内，不应手工写入 `.env`。
 - 公共信息显示 `PARTIAL/FAILED`：在当前人物的 `log/*.log` 和 SQLite Raw 中查看
-  Debug、Cost 的脱敏响应；未确认成本字段保持 `null`，不会自动填 `0`。
+  Debug、Cost 的脱敏响应；缺少可用 Admin Raw 的成本字段保持 `null`，不会自动填 `0`。
 - 相同文件无法再次导入：这是 SHA-256 防覆盖策略；如数据确有变化，应生成内容
   不同的新文件并作为新 Run 导入。
 
@@ -550,9 +550,10 @@ python3 web_app.py --env-file .env.restore
   保留并标记 `INTERRUPTED`。
 - 首版只支持 `FULL_NAME` 和 `FULL_NAME_SOCIAL`，照片输入及 PUT 流程未实现。
 - List Candidates 的分页字段只是预留，当前按一次响应取得的全部候选人处理。
-- `llm_cost`、`third_party_cost`、`total_cost`、`pdl_called`、
-  `search_duration_ms` 正式路径未接入时保持空值；成本单位和
-  `total_cost` 包含关系仍待后端确认；
+- `llm_cost`、`third_party_cost`、`total_cost` 按 Admin Cost Summary 的
+  USD microunit 除以 1,000,000 后保存；`pdl_called` 读取 Debug diagnosis，
+  `search_duration_ms` 使用 finish_time 减 start_time。历史 Run 仅在已保存
+  两个 Admin Raw 时才能通过无成本重处理补齐；
   `provider_summary`、顶层 `evidence`、`social_accounts` 暂只保留在 Raw。
 - 历史 Excel 缺少完整 Raw 时无法还原接口响应，系统会标记
   `LEGACY_PARTIAL_RAW`，不会伪造数据。

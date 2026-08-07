@@ -87,6 +87,33 @@ class RuntimeContext:
                 )
             self.set(variable_name, extracted)
 
+    def extract_optional(self, data: dict[str, Any], rules: dict[str, str]) -> None:
+        """按可选规则提取响应字段，目标路径不存在或为空时不写入变量。
+
+        功能说明:
+            用于列表可能为空的正常业务分支。与 ``extract`` 不同，当前响应中
+            缺少某个可选字段不会中断 Flow；后续步骤可通过 ``skip_if`` 根据
+            已成功提取的分支标识决定是否执行。
+
+        参数说明:
+            data: Gateway 目标子响应的 data 对象。
+            rules: ``变量名 -> $.field[0].child`` 格式的可选提取规则。
+
+        返回值:
+            无。仅将存在且非空的提取值写入当前运行时上下文。
+
+        异常说明:
+            无。路径不存在、数组越界或提取值为空均视为该可选字段未提供。
+        """
+        for variable_name, path in rules.items():
+            try:
+                extracted = self.read_path(data, path)
+            except RuntimeContextError:
+                continue
+            if extracted is None or extracted == "":
+                continue
+            self.set(variable_name, extracted)
+
     def access_token_needs_refresh(
         self,
         now_ms: int,

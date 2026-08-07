@@ -1694,27 +1694,103 @@ class WebAppTests(unittest.TestCase):
         self.assertNotIn("unknown_new_field", static_html)
         static_download.close()
 
-        # 对比报告复用同一 v5 静态分支；此处只替换快照中的对比上下文，
-        # 不触发新的 Process、HTTP 请求或临时数据库查询。
+        # 双 Process 报告使用独立 v6 对比分支，页面主体只展示前后变化。
+        # 此处用同一侧数据构造零变化快照，只验证模板契约，不重新请求接口。
         compare_model = json.loads(json.dumps(model))
         compare_model["metadata"]["report_type"] = "COMPARE"
-        compare_model["optional_sections"]["show_comparison"] = True
-        compare_model["comparison"] = {
-            "same_condition": {
-                "coverage": {"paired_count": 1},
-                "category_counts": {
-                    "持续命中": 1,
-                    "新增命中": 0,
-                    "退化未命中": 0,
-                    "持续未命中": 0,
+        compare_model["metadata"]["report_model_version"] = (
+            "report-model-v6-compare"
+        )
+        same_metrics = model["summary"]["candidate"]
+        same_cost = self.service._report_compare_cost_snapshot(same_metrics)
+        same_confidence = self.service._report_compare_confidence_snapshot(
+            same_metrics
+        )
+        compare_model["comparison_report"] = {
+            "phase_summary": {
+                "baseline": {
+                    "run_label": "优化前",
+                    "system_version": "before",
+                    "process_id": "process-before",
+                    "schema_version": model["metadata"]["schema_version"],
                 },
-            }
+                "candidate": {
+                    "run_label": "优化后",
+                    "system_version": "after",
+                    "process_id": "process-after",
+                    "schema_version": model["metadata"]["schema_version"],
+                },
+                "coverage": {
+                    "paired_count": 1,
+                    "baseline_query_count": 1,
+                    "candidate_query_count": 1,
+                    "not_comparable_count": 0,
+                },
+                "input_check_status": "VERIFIED",
+            },
+            "core_metric_changes": self.service._report_compare_metric_rows(
+                same_metrics, same_metrics
+            ),
+            "execution_cost_comparison": {
+                "baseline": same_cost,
+                "candidate": same_cost,
+                "rows": [
+                    {
+                        "field_key": key,
+                        "baseline": same_cost["metrics"][key],
+                        "candidate": same_cost["metrics"][key],
+                        "delta_total": 0,
+                    }
+                    for key in (
+                        "llm_cost", "third_party_cost", "total_cost",
+                        "search_duration_ms",
+                    )
+                ],
+            },
+            "module_changes": self.service._report_compare_module_rows(
+                model["module_return_overview"],
+                model["module_return_overview"],
+            ),
+            "confidence_comparison": {
+                "baseline": same_confidence,
+                "candidate": same_confidence,
+            },
+            "tool_call_comparison": {
+                "baseline_status": "NOT_COLLECTED",
+                "candidate_status": "NOT_COLLECTED",
+                "baseline_debug_query_count": 0,
+                "candidate_debug_query_count": 0,
+                "rows": [
+                    {
+                        "key": "llm", "label": "LLM Search",
+                        "baseline": {"available": False},
+                        "candidate": {"available": False},
+                        "request_count_delta": None,
+                    }
+                ],
+            },
+            "result_migration": {
+                "category_counts": {
+                    "持续命中": 1, "新增命中": 0,
+                    "退化未命中": 0, "持续未命中": 0,
+                },
+            },
+            "appendix": {
+                "groups": {"improved": [], "regressed": [], "stable": []},
+                "not_comparable": {"queries": []},
+                "data_sources": ["metrics-v4 Process 指标快照"],
+            },
         }
         compare_html = self.app.jinja_env.get_template(
             "report_static.html"
         ).render(report=compare_model, static_export=True)
-        self.assertIn("版本变化概览", compare_html)
-        self.assertIn("持续命中", compare_html)
+        self.assertIn("核心评测结果变化", compare_html)
+        self.assertIn("两次执行与成本差异", compare_html)
+        self.assertIn("五大资料模块返回变化", compare_html)
+        self.assertIn("候选人置信度差异", compare_html)
+        self.assertIn("第三方工具调用差异", compare_html)
+        self.assertIn("用于定位改善、退化和数据来源", compare_html)
+        self.assertNotIn("Query 与全部候选人", compare_html)
 
 
     def test_stage2_reprocess_and_query_classification_web_flow(self):

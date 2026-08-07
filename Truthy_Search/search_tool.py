@@ -12,6 +12,7 @@ import time
 import uuid
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Callable, Iterable
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -815,6 +816,230 @@ def response_data(body: dict[str, Any], stage: str, task_id: str = "") -> dict[s
     return data
 
 
+def extract_admin_task_fields(
+    *,
+    task_id: str,
+    debug_body: dict[str, Any] | None,
+    cost_body: dict[str, Any] | None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """从两个 Admin 响应提取五个已确认的任务公共字段。
+
+    功能说明:
+        依据正式接口口径汇总 LLM、第三方和任务总成本，读取 PDL 调用状态，
+        并使用任务开始、结束时间计算检索耗时。成本以接口 microunit 原值
+        除以 1,000,000 后保存为 USD，原始微单位同步返回供审计。
+
+    参数说明:
+        task_id: 当前检索任务 ID，用于精确匹配 ``by_search``。
+        debug_body: ``GetSearchTaskDebug`` 完整响应；缺失时只处理成本。
+        cost_body: ``GetProviderCostSummary`` 完整响应；缺失时只处理诊断。
+
+    返回值:
+        二元组。第一项是五个标准 ``task_fields``，无法提取的字段为 None；
+        第二项是币种、微单位原值、字段来源、映射状态和非敏感警告。
+
+    异常说明:
+        本函数不因单字段缺失或格式错误中断主链路；错误会写入映射警告，
+        且不会把缺失值伪造成 0 或 False。
+    """
+
+    fields: dict[str, Any] = {
+        "llm_cost": None,
+        "third_party_cost": None,
+        "total_cost": None,
+        "pdl_called": None,
+        "search_duration_ms": None,
+    }
+    metadata: dict[str, Any] = {
+        "cost_currency": None,
+        "llm_cost_microunit": None,
+        "third_party_cost_microunit": None,
+        "total_cost_microunit": None,
+        "field_mapping_sources": {},
+        "field_mapping_warnings": [],
+        "field_mapping_status": "NOT_MAPPED",
+    }
+    warnings: list[str] = metadata["field_mapping_warnings"]
+    sources: dict[str, str] = metadata["field_mapping_sources"]
+
+    def envelope_data(body: dict[str, Any] | None) -> dict[str, Any]:
+        """安全取得 Admin ``responses[0].data``，无效响应按缺失处理。"""
+
+        if not isinstance(body, dict):
+            return {}
+        responses = body.get("responses")
+        if not isinstance(responses, list) or not responses:
+            return {}
+        item = responses[0]
+        if not isinstance(item, dict) or item.get("success") is False:
+            return {}
+        data = item.get("data")
+        return data if isinstance(data, dict) else {}
+
+    def microunit(value: Any, field_name: str) -> int | None:
+        """把非负整数形式的微单位安全转换为 int。"""
+
+        if isinstance(value, bool) or value is None or value == "":
+            return None
+        try:
+            parsed = Decimal(str(value).strip())
+        except (InvalidOperation, ValueError):
+            warnings.append(f"{field_name} 不是合法 microunit")
+            return None
+        if not parsed.is_finite() or parsed < 0 or parsed != parsed.to_integral_value():
+            warnings.append(f"{field_name} 必须是非负整数 microunit")
+            return None
+        return int(parsed)
+
+    def usd_value(value: int | None) -> float | None:
+        """将接口微单位换算成现有报告使用的 USD 数值。"""
+
+        return float(Decimal(value) / Decimal(1_000_000)) if value is not None else None
+
+    debug_data = envelope_data(debug_body)
+    debug = debug_data.get("debug")
+    if isinstance(debug, dict):
+        diagnosis = debug.get("diagnosis")
+        if isinstance(diagnosis, dict) and isinstance(
+            diagnosis.get("pdl_called"), bool
+        ):
+            fields["pdl_called"] = diagnosis["pdl_called"]
+            sources["pdl_called"] = "debug.diagnosis.pdl_called"
+
+        debug_task = debug.get("task")
+        if isinstance(debug_task, dict):
+            start_time = debug_task.get("start_time")
+            finish_time = debug_task.get("finish_time")
+            if isinstance(start_time, str) and isinstance(finish_time, str):
+                try:
+                    start = datetime.fromisoformat(
+                        start_time.strip().replace("Z", "+00:00")
+                    )
+                    finish = datetime.fromisoformat(
+                        finish_time.strip().replace("Z", "+00:00")
+                    )
+                    if start.tzinfo is None:
+                        start = start.replace(tzinfo=timezone.utc)
+                    if finish.tzinfo is None:
+                        finish = finish.replace(tzinfo=timezone.utc)
+                    duration_ms = int(round((finish - start).total_seconds() * 1000))
+                    if duration_ms < 0:
+                        warnings.append("task.finish_time 早于 task.start_time")
+                    else:
+                        fields["search_duration_ms"] = duration_ms
+                        sources["search_duration_ms"] = (
+                            "debug.task.finish_time - debug.task.start_time"
+                        )
+                except ValueError:
+                    warnings.append("task.start_time 或 task.finish_time 格式无效")
+
+    cost_data = envelope_data(cost_body)
+    cost_summary = cost_data.get("cost_summary")
+    # 兼容接口文档把汇总数组直接放在 data 下的写法；实际响应优先使用
+    # data.cost_summary，避免历史 Raw 因包装层差异无法无成本重处理。
+    cost_container = cost_summary if isinstance(cost_summary, dict) else cost_data
+    by_provider = cost_container.get("by_provider")
+    by_search = cost_container.get("by_search")
+    totals = cost_container.get("totals")
+    provider_rows = by_provider if isinstance(by_provider, list) else []
+    search_rows = by_search if isinstance(by_search, list) else []
+    total_rows = totals if isinstance(totals, list) else []
+
+    llm_values: list[int] = []
+    third_party_values: list[int] = []
+    excluded_third_party = {
+        "llm_search",
+        "public_figure",
+        "agent_people",
+        "search_agent",
+    }
+    for index, row in enumerate(provider_rows):
+        if not isinstance(row, dict) or str(row.get("currency") or "").upper() != "USD":
+            continue
+        provider = str(row.get("provider") or "").strip().lower()
+        if not provider:
+            continue
+        value = microunit(
+            row.get("total_cost_microunit"),
+            f"by_provider[{index}].total_cost_microunit",
+        )
+        if value is None:
+            continue
+        if provider.startswith("llm_search"):
+            llm_values.append(value)
+        elif provider not in excluded_third_party:
+            third_party_values.append(value)
+
+    if llm_values:
+        llm_total = sum(llm_values)
+        metadata["llm_cost_microunit"] = llm_total
+        fields["llm_cost"] = usd_value(llm_total)
+        sources["llm_cost"] = "cost_summary.by_provider[provider^=llm_search]"
+    if third_party_values:
+        third_party_total = sum(third_party_values)
+        metadata["third_party_cost_microunit"] = third_party_total
+        fields["third_party_cost"] = usd_value(third_party_total)
+        sources["third_party_cost"] = "cost_summary.by_provider[third_party]"
+
+    total_microunit: int | None = None
+    for index, row in enumerate(search_rows):
+        if not isinstance(row, dict):
+            continue
+        if str(row.get("task_id") or "") != task_id:
+            continue
+        if str(row.get("currency") or "").upper() != "USD":
+            continue
+        total_microunit = microunit(
+            row.get("total_cost_microunit"),
+            f"by_search[{index}].total_cost_microunit",
+        )
+        if total_microunit is not None:
+            sources["total_cost"] = "cost_summary.by_search[task_id,currency=USD]"
+            break
+    if total_microunit is None:
+        for index, row in enumerate(total_rows):
+            if not isinstance(row, dict):
+                continue
+            if str(row.get("currency") or "").upper() != "USD":
+                continue
+            total_microunit = microunit(
+                row.get("total_cost_microunit"),
+                f"totals[{index}].total_cost_microunit",
+            )
+            if total_microunit is not None:
+                sources["total_cost"] = "cost_summary.totals[currency=USD]"
+                break
+    if total_microunit is not None:
+        metadata["total_cost_microunit"] = total_microunit
+        metadata["cost_currency"] = "USD"
+        fields["total_cost"] = usd_value(total_microunit)
+    elif llm_values or third_party_values:
+        metadata["cost_currency"] = "USD"
+
+    # Provider 明细非空时，未出现某一类别表示该类别没有产生费用；任务总成本
+    # 明确为 0 时也可确定各类别为真实 0。明细整体缺失且总成本非零时仍保留
+    # None，避免把无法分类误写成零成本。
+    provider_breakdown_complete = bool(provider_rows) or total_microunit == 0
+    if provider_breakdown_complete and total_microunit is not None:
+        if fields["llm_cost"] is None:
+            fields["llm_cost"] = 0.0
+            metadata["llm_cost_microunit"] = 0
+            sources["llm_cost"] = "cost_summary.by_provider[no_llm_provider]"
+        if fields["third_party_cost"] is None:
+            fields["third_party_cost"] = 0.0
+            metadata["third_party_cost_microunit"] = 0
+            sources["third_party_cost"] = (
+                "cost_summary.by_provider[no_third_party_provider]"
+            )
+
+    mapped_count = sum(value is not None for value in fields.values())
+    if mapped_count == len(fields):
+        metadata["field_mapping_status"] = "COMPLETE"
+    elif mapped_count:
+        metadata["field_mapping_status"] = "PARTIAL"
+    return fields, metadata
+
+
 def sanitize_raw(value: Any) -> Any:
     """递归移除 Raw 数据中的鉴权字段并保留其他未知业务字段。
 
@@ -1479,6 +1704,8 @@ def process_one(
             "public_fields": public_fields,
             "debug_record": None,
             "cost_record": None,
+            "debug_body": None,
+            "cost_body": None,
             "login_records": [],
         }
         admin_enabled = bool(getattr(client.config, "admin_enabled", False))
@@ -1536,6 +1763,7 @@ def process_one(
                 },
             )
             result["debug_record"] = debug_record
+            result["debug_body"] = debug_body
             public_fields["debug_collection_status"] = "SUCCESS"
             emit_progress(
                 "query_stage",
@@ -1610,6 +1838,7 @@ def process_one(
                         sequence_no=2,
                     )
                 result["cost_record"] = cost_record
+                result["cost_body"] = cost_body
                 public_fields["cost_collection_status"] = "SUCCESS"
                 emit_progress(
                     "query_stage",
@@ -1798,15 +2027,14 @@ def process_one(
         else:
             public_fields["query_log_status"] = "COMPLETE"
         public_fields["get_task_terminal_status"] = str(task_data.get("status") or "")
-        # 正式字段路径、单位和口径尚未确认。即使 Raw 中出现同名值，也不能
-        # 据此猜测映射；后端冻结契约后只需修改这一处映射和对应测试。
-        task_fields = {
-            "llm_cost": None,
-            "third_party_cost": None,
-            "total_cost": None,
-            "pdl_called": None,
-            "search_duration_ms": None,
-        }
+        # 使用已冻结的 Admin 契约生成正式任务字段；缺失或非法字段保持 None，
+        # 原始 microunit、币种和来源继续放在 public_fields 供审计。
+        task_fields, mapping_metadata = extract_admin_task_fields(
+            task_id=task_id,
+            debug_body=public_info.get("debug_body"),
+            cost_body=public_info.get("cost_body"),
+        )
+        public_fields.update(mapping_metadata)
         admin_raw = {
             "admin_login": [
                 raw_payload(record) for record in public_info["login_records"]

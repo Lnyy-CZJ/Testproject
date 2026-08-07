@@ -83,6 +83,9 @@ class FlowRunner:
             if flow_terminated and not step.get("run_on_termination", False):
                 LOGGER.info("因流程终态跳过 Flow 步骤: step=%s", step_id)
                 continue
+            if self._should_skip_step(step, context):
+                LOGGER.info("因条件跳过 Flow 步骤: step=%s", step_id)
+                continue
             step_title = self._build_step_title(
                 step,
                 step_id,
@@ -121,6 +124,29 @@ class FlowRunner:
                     step_id,
                 )
         return context
+
+    @staticmethod
+    def _should_skip_step(step: dict[str, Any], context: RuntimeContext) -> bool:
+        """根据步骤 ``skip_if`` 条件判断是否跳过当前步骤。
+
+        参数说明:
+            step: 当前 Flow 步骤；可选 ``skip_if`` 使用 ``variable`` 读取运行时
+                变量，并在其值等于 ``equals`` 时跳过当前步骤。
+            context: 当前 Flow 的运行时上下文。
+
+        返回值:
+            bool: 条件命中时返回 True；未配置条件、变量不存在或不匹配时返回 False。
+
+        异常说明:
+            RuntimeContextError: ``equals`` 使用了未定义的占位符时抛出。
+        """
+        skip_if = step.get("skip_if")
+        if not isinstance(skip_if, dict):
+            return False
+        variable = str(skip_if.get("variable") or "")
+        if not variable:
+            return False
+        return context.get(variable) == context.resolve(skip_if.get("equals"))
 
     @staticmethod
     def _build_step_title(
@@ -279,6 +305,9 @@ class FlowRunner:
         extract_rules = step.get("extract") or {}
         if extract_rules:
             context.extract(data, extract_rules)
+        optional_extract_rules = step.get("optional_extract") or {}
+        if optional_extract_rules:
+            context.extract_optional(data, optional_extract_rules)
 
     def _execute_action(
         self,
@@ -289,7 +318,7 @@ class FlowRunner:
         """执行已注册的特殊动作；V1.2 仅保留已有媒体 PUT。"""
         if action != "prepared_media_upload":
             raise FlowExecutionError(f"不支持的 Flow action: {action}")
-        media_path = Path(str(context.get("media_file") or "")).expanduser()
+        media_path = self._resolve_media_path(context, required=True)
         if not media_path.is_file():
             raise FlowEnvironmentError(f"媒体文件不存在: {media_path}")
         content = media_path.read_bytes()
@@ -313,13 +342,44 @@ class FlowRunner:
 
     def _prepare_media_metadata(self, context: RuntimeContext) -> None:
         """在 PrepareMediaUpload 前写入本地媒体文件实际字节数。"""
-        media_file = context.get("media_file")
-        if not media_file:
+        media_path = self._resolve_media_path(context)
+        if media_path is None:
             return
-        media_path = Path(str(media_file)).expanduser()
         if not media_path.is_file():
             raise FlowEnvironmentError(f"媒体文件不存在: {media_path}")
         context.set("media_size_bytes", media_path.stat().st_size)
+
+    def _resolve_media_path(
+        self,
+        context: RuntimeContext,
+        required: bool = False,
+    ) -> Path | None:
+        """解析 Scenario 中声明的媒体文件路径。
+
+        功能说明:
+            允许 YAML 直接写入相对项目根目录的路径，例如
+            ``data/photo/face.jpeg``；绝对路径和 ``~`` 路径保持原有兼容。
+
+        参数说明:
+            context: 当前 Flow 的运行时上下文，读取其中的 ``media_file``。
+            required: 为 True 时缺少 ``media_file`` 立即抛出环境配置异常。
+
+        返回值:
+            Path: 已展开并规范为项目绝对位置的媒体路径。
+            None: 未声明媒体文件且 ``required`` 为 False 时返回。
+
+        异常说明:
+            FlowEnvironmentError: 媒体动作必须执行但未配置 ``media_file`` 时抛出。
+        """
+        media_file = context.get("media_file")
+        if not media_file:
+            if required:
+                raise FlowEnvironmentError("媒体上传步骤缺少 Scenario variables.media_file")
+            return None
+        media_path = Path(str(media_file)).expanduser()
+        if not media_path.is_absolute():
+            media_path = self.project_root / media_path
+        return media_path
 
     def _resolve_environment(self, value: Any) -> Any:
         """递归解析 Scenario 中完整的 ``${ENV_NAME}`` 环境变量。"""

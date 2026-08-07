@@ -18,6 +18,7 @@ class FlowConfigError(ValueError):
 _PATH_PATTERN = re.compile(
     r"^\$\.[A-Za-z_][A-Za-z0-9_]*(?:(?:\.[A-Za-z_][A-Za-z0-9_]*)|(?:\[\d+]))*$"
 )
+_VARIABLE_NAME_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 def _validate_path(path: Any, field: str, allow_short: bool = False) -> None:
@@ -115,10 +116,26 @@ def _validate_flow(
             if api_id not in referenced_api_ids:
                 referenced_api_ids.append(api_id)
             _validate_extract(step.get("extract"), f"步骤 {step_id}.extract")
-        elif "extract" in step:
-            raise FlowConfigError(
-                f"步骤 {step_id} 的 extract 只能用于 api 步骤"
+            _validate_extract(
+                step.get("optional_extract"),
+                f"步骤 {step_id}.optional_extract",
             )
+        elif "extract" in step or "optional_extract" in step:
+            raise FlowConfigError(
+                f"步骤 {step_id} 的 extract、optional_extract 只能用于 api 步骤"
+            )
+
+        if "skip_if" in step:
+            skip_if = step["skip_if"]
+            if not isinstance(skip_if, dict):
+                raise FlowConfigError(f"步骤 {step_id}.skip_if 必须是对象")
+            variable = skip_if.get("variable")
+            if not isinstance(variable, str) or not _VARIABLE_NAME_PATTERN.fullmatch(variable):
+                raise FlowConfigError(
+                    f"步骤 {step_id}.skip_if.variable 必须是有效变量名"
+                )
+            if "equals" not in skip_if:
+                raise FlowConfigError(f"步骤 {step_id}.skip_if 缺少 equals")
 
         if "until" in step and "api" not in step:
             raise FlowConfigError(

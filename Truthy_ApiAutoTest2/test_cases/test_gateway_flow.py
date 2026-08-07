@@ -23,7 +23,7 @@ from utils.third_party.allure_reporter import set_flow_metadata
 
 # 本地调试 Flow 的完整文件名 stem；空元组表示收集全部 Flow。
 # 临时调试示例：("AnonymousSessionMediaSearch",)。
-RUN_FLOW_IDS: tuple[str, ...] = ("NameWithConditionsSearch",)
+RUN_FLOW_IDS: tuple[str, ...] = ("NameWithConditionsAndPhotoSearch",)
 # 仅复制会话生命周期需要的框架变量；Flow 业务变量始终保持独立。
 _FRAMEWORK_SESSION_KEYS = (
     "access_token",

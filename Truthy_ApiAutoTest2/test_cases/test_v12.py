@@ -746,6 +746,82 @@ def test_flow_runner_runs_termination_steps_when_poll_returns_terminal_value(
     assert gateway.calls[1]["request"]["method_name"] == "Detail"
 
 
+def test_flow_runner_skips_candidate_detail_when_candidates_are_empty(
+    tmp_path: Path,
+) -> None:
+    """NO_CANDIDATES 不应提取空数组，也不应阻断后续审计接口。
+
+    功能说明:
+        复现 ListTaskCandidates 成功但 items 为空的业务正常响应，验证可选提取
+        不会因 ``items[0]`` 越界报错，且 candidate_detail 会被条件跳过。
+
+    返回值:
+        无；调用数量或请求顺序不符合分支约定时由断言抛出异常。
+    """
+    from utils.custom.flow_runner import FlowRunner
+
+    gateway = QueueGateway(
+        [
+            _gateway_response({"empty_reason": "NO_CANDIDATES", "items": []}),
+            _gateway_response({"debug": {}}),
+        ]
+    )
+    flow_case = {
+        "id": "NoCandidatesFlow",
+        "name": "无候选人流程",
+        "api_definitions": _runner_api_definitions(),
+        "flow": {
+            "steps": [
+                {
+                    "id": "list_candidates",
+                    "api": "Demo",
+                    "optional_extract": {
+                        "candidate_id": "$.items[0].candidate_id",
+                        "list_empty_reason": "$.empty_reason",
+                    },
+                },
+                {
+                    "id": "candidate_detail",
+                    "api": "Detail",
+                    "skip_if": {
+                        "variable": "list_empty_reason",
+                        "equals": "NO_CANDIDATES",
+                    },
+                },
+                {"id": "search_task_debug", "api": "Detail"},
+            ]
+        },
+        "scenario": {
+            "name": "无候选人场景",
+            "variables": {},
+            "step_data": {
+                "list_candidates": {
+                    "params": {},
+                    "assert": _runner_success_assertions(),
+                },
+                "candidate_detail": {
+                    "params": {"candidate_id": "{{candidate_id}}"},
+                    "assert": _runner_success_assertions(),
+                },
+                "search_task_debug": {
+                    "params": {},
+                    "assert": _runner_success_assertions(),
+                },
+            },
+        },
+    }
+
+    context = FlowRunner(tmp_path, gateway_factory=lambda runtime: gateway).run(flow_case)
+
+    assert context.get("candidate_id") is None
+    assert context.get("list_empty_reason") == "NO_CANDIDATES"
+    assert len(gateway.calls) == 2
+    assert [call["request"]["method_name"] for call in gateway.calls] == [
+        "Demo",
+        "Detail",
+    ]
+
+
 def test_flow_runner_reports_poll_timeout(tmp_path: Path) -> None:
     """轮询超时错误应包含步骤、最后实际值和调用次数。"""
     from utils.custom.flow_runner import FlowExecutionError, FlowRunner
@@ -798,10 +874,11 @@ def test_flow_runner_reports_poll_timeout(tmp_path: Path) -> None:
 
 
 def test_flow_runner_uploads_prepared_media(tmp_path: Path) -> None:
-    """prepared_media_upload 应使用上下文中的 URL、请求头和文件字节。"""
+    """prepared_media_upload 应使用项目相对媒体路径、URL、请求头和文件字节。"""
     from utils.custom.flow_runner import FlowRunner
 
-    media_path = tmp_path / "photo.jpg"
+    media_path = tmp_path / "data" / "photo" / "photo.jpg"
+    media_path.parent.mkdir(parents=True)
     media_path.write_bytes(b"abc")
 
     class PutClient:
@@ -828,7 +905,7 @@ def test_flow_runner_uploads_prepared_media(tmp_path: Path) -> None:
         "scenario": {
             "name": "上传场景",
             "variables": {
-                "media_file": str(media_path),
+                "media_file": "data/photo/photo.jpg",
                 "upload_url": "https://upload.example/file",
                 "upload_headers": {"Content-Length": "3", "Content-Type": "image/jpeg"},
             },

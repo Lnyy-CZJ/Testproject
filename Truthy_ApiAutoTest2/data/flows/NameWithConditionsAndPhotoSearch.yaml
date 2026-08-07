@@ -1,6 +1,24 @@
-name: 搜索流程
-tags: [flow, media, search]
+name: 姓名、附加条件与照片搜索流程
+tags: [flow, media, search, name_with_conditions, photo]
 steps:
+  # 照片上传前置流程：获取配置、申请签名 URL、PUT 二进制文件并确认完成。
+  - id: get_media_upload_config
+    api: GetMediaUploadConfig
+
+  - id: prepare_media_upload
+    api: PrepareMediaUpload
+    extract:
+      upload_url: $.upload_url
+      upload_headers: $.upload_headers
+      media_asset_id: $.media_asset_id
+
+  # 使用 PrepareMediaUpload 返回的动态 URL、请求头和本地 JPEG 字节执行 COS PUT。
+  - id: upload_media
+    action: prepared_media_upload
+
+  - id: complete_media_upload
+    api: CompleteMediaUpload
+
   - id: create_task
     api: CreateIntentTask
     extract:
@@ -11,7 +29,7 @@ steps:
     until:
       path: $.status
       equals: SUCCEEDED
-      # 任务无搜索结果是正常终态；跳过候选人业务步骤，继续执行 Admin 审计步骤。
+      # 无结果时跳过候选人业务步骤，但继续执行末尾的 Admin 审计步骤。
       terminate_on: [NO_RESULT]
       interval_seconds: 2
       timeout_seconds: 120
@@ -29,7 +47,7 @@ steps:
       variable: list_empty_reason
       equals: NO_CANDIDATES
 
-  # 两个 Admin 审计接口在 SUCCEEDED 与 NO_RESULT 终态都执行。
+  # 成功与无结果两种终态均需保留搜索诊断和成本记录。
   - id: search_task_debug
     api: GetSearchTaskDebug
     run_on_termination: true

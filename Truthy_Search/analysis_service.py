@@ -26,6 +26,7 @@ from analysis_store import AnalysisStore, utc_now_text
 from search_tool import (
     RESULT_SCHEMA_VERSION,
     FlowError,
+    extract_admin_task_fields,
     normalize_result_status,
     process_one,
     sanitize_raw,
@@ -142,6 +143,9 @@ REPORT_MODEL_VERSION = "report-model-v4"
 # 报告优化 v5 的完整快照版本，仅供新的 metrics-v4 Process 报告使用，
 # 避免把历史 v2/v3 报告错误标记为新模型。
 V5_REPORT_MODEL_VERSION = "report-model-v5"
+# 双 Process 对比使用独立快照契约，避免继续复用单 Run v5 的页面结构。
+# 版本号只描述报告数据模型，不改变 metrics-v4 的计算口径。
+COMPARE_REPORT_MODEL_VERSION = "report-model-v6-compare"
 
 # 核心指标的产品说明属于报告契约，而不是页面文案。将其随报告快照保存，
 # 可以保证静态 HTML、Web 页面和后续导出使用同一套名称与计算口径。
@@ -4407,6 +4411,9 @@ class AnalysisService:
                 "该 Run 没有 Raw 记录，将使用已入库的 Query/Candidate "
                 "结构化字段进行重处理"
             )
+        # 无成本重处理只读取已入库 Admin Raw，回填已确认的派生任务字段；
+        # 不创建 Client、不写 Raw，也不会触发任何 HTTP 请求。
+        self._backfill_admin_task_fields(run_id)
         result = self.process_run(
             run_id=run_id,
             schema_version=schema_version,
@@ -4415,6 +4422,112 @@ class AnalysisService:
         )
         result.warnings.extend(warnings)
         return result
+
+    def _backfill_admin_task_fields(self, run_id: str) -> int:
+        """从历史 Admin Raw 回填五个正式任务字段。
+
+        功能说明:
+            对 Run 中每个 Query 读取最后一次有效 Debug/Cost 响应，调用采集层
+            共用映射函数后更新现有任务列和 ``public_fields_json``。Raw 与旧
+            Process 均不修改。
+
+        参数说明:
+            run_id: 待无成本重处理的已结束 Run。
+
+        返回值:
+            实际找到至少一个 Admin 响应并执行映射的 Query 数量。
+
+        异常说明:
+            损坏的单条 Raw 会被跳过；已有非空正式值不会被缺失映射覆盖。
+        """
+
+        def latest_body(query_id: str, stage: str) -> dict[str, Any] | None:
+            """返回指定阶段最后一条业务成功的完整响应。"""
+
+            selected: dict[str, Any] | None = None
+            rows = self.store.fetch_all(
+                """
+                SELECT payload_json FROM raw_records
+                WHERE run_id = ? AND query_id = ? AND stage = ?
+                ORDER BY sequence_no, collected_at, raw_id
+                """,
+                (run_id, query_id, stage),
+            )
+            for row in rows:
+                try:
+                    payload = json.loads(row["payload_json"])
+                except (TypeError, json.JSONDecodeError):
+                    continue
+                if not isinstance(payload, dict):
+                    continue
+                body = payload.get("response_body", payload)
+                if not isinstance(body, dict):
+                    continue
+                responses = body.get("responses")
+                item = responses[0] if isinstance(responses, list) and responses else None
+                if (
+                    body.get("code") == 0
+                    and isinstance(item, dict)
+                    and item.get("success") is True
+                    and isinstance(item.get("data"), dict)
+                ):
+                    selected = body
+            return selected
+
+        mapped_count = 0
+        queries = self.store.fetch_all(
+            "SELECT * FROM run_queries WHERE run_id = ? ORDER BY query_id",
+            (run_id,),
+        )
+        with self.store.transaction() as connection:
+            for query in queries:
+                debug_body = latest_body(query["query_id"], "GetSearchTaskDebug")
+                cost_body = latest_body(
+                    query["query_id"], "GetProviderCostSummary"
+                )
+                if debug_body is None and cost_body is None:
+                    continue
+                derived, metadata = extract_admin_task_fields(
+                    task_id=str(query["task_id"] or ""),
+                    debug_body=debug_body,
+                    cost_body=cost_body,
+                )
+                try:
+                    public_fields = json.loads(query["public_fields_json"] or "{}")
+                except (TypeError, json.JSONDecodeError):
+                    public_fields = {}
+                if not isinstance(public_fields, dict):
+                    public_fields = {}
+                public_fields.update(metadata)
+                values = {
+                    field_key: (
+                        derived[field_key]
+                        if derived[field_key] is not None
+                        else query[field_key]
+                    )
+                    for field_key in TASK_FIELD_KEYS
+                }
+                connection.execute(
+                    """
+                    UPDATE run_queries
+                    SET llm_cost = ?, third_party_cost = ?, total_cost = ?,
+                        pdl_called = ?, search_duration_ms = ?,
+                        public_fields_json = ?
+                    WHERE run_id = ? AND query_id = ?
+                    """,
+                    (
+                        values["llm_cost"],
+                        values["third_party_cost"],
+                        values["total_cost"],
+                        values["pdl_called"],
+                        values["search_duration_ms"],
+                        json_text(public_fields),
+                        run_id,
+                        query["query_id"],
+                    ),
+                )
+                mapped_count += 1
+        return mapped_count
 
     def get_query_classification_context(
         self,
@@ -5794,6 +5907,8 @@ class AnalysisService:
             """
             SELECT rq.query_id, rq.person_id, rq.query_stage,
                    rq.candidate_count_listed, rq.detail_failure_count,
+                   rq.llm_cost, rq.third_party_cost, rq.total_cost,
+                   rq.search_duration_ms, rq.pdl_called,
                    pq.result_status, pq.fields_json,
                    pq.empty_fields_json, pq.processing_errors_json
             FROM run_queries AS rq
@@ -5819,6 +5934,20 @@ class AnalysisService:
             item["task_fields"] = (
                 task_fields if isinstance(task_fields, dict) else {}
             )
+            # 成本、耗时与 PDL 是任务执行事实，不能依赖展示 Schema 是否启用。
+            # 直接以 run_queries 为准，同时保留旧 Process 中 fields_json 的其他字段。
+            native_task_fields = {
+                field_key: item.get(field_key)
+                for field_key in TASK_FIELD_KEYS
+                if item.get(field_key) is not None
+            }
+            if "pdl_called" in native_task_fields:
+                # SQLite 以 0/1 保存布尔值；指标层必须恢复成 Python bool，
+                # 才能与既有 JSONL 导入的 true/false 使用相同统计口径。
+                native_task_fields["pdl_called"] = bool(
+                    native_task_fields["pdl_called"]
+                )
+            item["task_fields"].update(native_task_fields)
             try:
                 task_processing_errors = json.loads(
                     row["processing_errors_json"]
@@ -6776,6 +6905,8 @@ class AnalysisService:
             SELECT rq.query_id, rq.person_id, rq.person_id_source,
                    rq.query_stage, rq.candidate_count_listed,
                    rq.detail_success_count, rq.detail_failure_count,
+                   rq.llm_cost, rq.third_party_cost, rq.total_cost,
+                   rq.search_duration_ms, rq.pdl_called,
                    pq.result_status, pq.fields_json,
                    pq.empty_fields_json, pq.processing_errors_json
             FROM run_queries AS rq
@@ -6800,7 +6931,19 @@ class AnalysisService:
             except (TypeError, json.JSONDecodeError):
                 item["fields"], item["empty_fields"] = {}, {}
                 item["task_processing_errors"] = []
-            item["task_fields"] = item["fields"]
+            # 与 metrics-v2 保持同一口径：执行数据来自 run_queries，而不是
+            # 可被 Schema 开关过滤的 processed_queries.fields_json。
+            item["task_fields"] = dict(item["fields"])
+            native_task_fields = {
+                field_key: item.get(field_key)
+                for field_key in TASK_FIELD_KEYS
+                if item.get(field_key) is not None
+            }
+            if "pdl_called" in native_task_fields:
+                native_task_fields["pdl_called"] = bool(
+                    native_task_fields["pdl_called"]
+                )
+            item["task_fields"].update(native_task_fields)
             query_rows.append(item)
 
         raw_candidates = self.store.fetch_all(
@@ -7615,33 +7758,31 @@ class AnalysisService:
             for field in compatibility_fields
             if baseline_process[field] != candidate_process[field]
         ]
-        if (
-            baseline_process["schema_version"]
-            != candidate_process["schema_version"]
-        ):
-            try:
-                baseline_definitions = validate_field_definitions(
-                    json.loads(baseline_process["definitions_json"])
-                )
-                candidate_definitions = validate_field_definitions(
-                    json.loads(candidate_process["definitions_json"])
-                )
-            except (
-                TypeError,
-                json.JSONDecodeError,
-                FieldSchemaValidationError,
-            ) as exc:
-                raise ReviewValidationError(
-                    "字段配置快照损坏，无法判断对比兼容性"
-                ) from exc
-            if json_text(baseline_definitions) != json_text(
-                candidate_definitions
-            ):
-                differences.append("schema_version")
+        try:
+            baseline_definitions = validate_field_definitions(
+                json.loads(baseline_process["definitions_json"])
+            )
+            candidate_definitions = validate_field_definitions(
+                json.loads(candidate_process["definitions_json"])
+            )
+        except (
+            TypeError,
+            json.JSONDecodeError,
+            FieldSchemaValidationError,
+        ) as exc:
+            raise ReviewValidationError(
+                "字段配置快照损坏，无法判断对比兼容性"
+            ) from exc
         if differences:
             raise ReviewValidationError(
                 "两个 Process 不兼容: " + ", ".join(differences)
             )
+        field_compatibility = self._compare_field_schema_snapshots(
+            baseline_definitions,
+            candidate_definitions,
+            baseline_process["schema_version"],
+            candidate_process["schema_version"],
+        )
 
         baseline_metrics = self.calculate_process_metrics(
             baseline_process_id
@@ -8081,6 +8222,110 @@ class AnalysisService:
             "pairs": pairs,
             "baseline_metrics": baseline_metrics,
             "candidate_metrics": candidate_metrics,
+            "field_compatibility": field_compatibility,
+        }
+
+    @staticmethod
+    def _compare_field_schema_snapshots(
+        baseline_definitions: list[dict[str, Any]],
+        candidate_definitions: list[dict[str, Any]],
+        baseline_schema_version: str,
+        candidate_schema_version: str,
+    ) -> dict[str, Any]:
+        """比较两个冻结字段 Schema，产出可安全计算差值的字段交集。
+
+        功能说明：Schema 版本不同不再阻断同条件报告。该方法按稳定的
+        ``field_key`` 对齐，并只把两侧均启用、均允许 Run 对比且统计语义
+        一致的字段交给差值计算；新增、删除、停用或语义变更字段只做说明，
+        绝不伪造成回归或提升。
+
+        参数说明：
+            baseline_definitions: 基线 Process 绑定的已校验字段定义。
+            candidate_definitions: 候选 Process 绑定的已校验字段定义。
+            baseline_schema_version: 基线 Schema 版本标识。
+            candidate_schema_version: 候选 Schema 版本标识。
+
+        返回值：字段兼容性摘要、逐字段状态和可用于字段指标对比的 key 集合。
+        """
+
+        baseline_by_key = {
+            item["field_key"]: item for item in baseline_definitions
+        }
+        candidate_by_key = {
+            item["field_key"]: item for item in candidate_definitions
+        }
+        comparable_keys: list[str] = []
+        fields: list[dict[str, Any]] = []
+        status_counts: dict[str, int] = defaultdict(int)
+        semantic_keys = (
+            "value_scope",
+            "data_type",
+            "array_mode",
+            "normalizer",
+            "compare_mode",
+            "baseline_field_key",
+        )
+        for field_key in sorted(set(baseline_by_key) | set(candidate_by_key)):
+            baseline = baseline_by_key.get(field_key)
+            candidate = candidate_by_key.get(field_key)
+            reasons: list[str] = []
+            if baseline is None:
+                status = "CANDIDATE_ONLY"
+                reasons.append("字段仅存在于 Candidate Schema")
+            elif candidate is None:
+                status = "BASELINE_ONLY"
+                reasons.append("字段仅存在于 Baseline Schema")
+            elif not baseline["enabled"] or not candidate["enabled"]:
+                status = "DISABLED_ON_ONE_SIDE"
+                reasons.append("字段未在两个版本中同时启用")
+            elif not baseline["run_compare_enabled"] or not candidate[
+                "run_compare_enabled"
+            ]:
+                status = "RUN_COMPARE_DISABLED"
+                reasons.append("字段未在两个版本中同时启用 Run 对比")
+            else:
+                changed = [
+                    key for key in semantic_keys
+                    if baseline[key] != candidate[key]
+                ]
+                if changed:
+                    status = "SEMANTICS_CHANGED"
+                    reasons.append(
+                        "统计语义发生变化: " + ", ".join(changed)
+                    )
+                else:
+                    status = "COMPARABLE"
+                    comparable_keys.append(field_key)
+                    if (
+                        baseline["source_type"] != candidate["source_type"]
+                        or baseline["source_path"] != candidate["source_path"]
+                        or baseline["source_options"]
+                        != candidate["source_options"]
+                    ):
+                        reasons.append("提取来源已调整，统计语义保持一致")
+            status_counts[status] += 1
+            fields.append({
+                "field_key": field_key,
+                "display_name": (
+                    (candidate or baseline)["display_name"]
+                ),
+                "module": (candidate or baseline)["module"],
+                "status": status,
+                "reasons": reasons,
+                "baseline_present": baseline is not None,
+                "candidate_present": candidate is not None,
+            })
+        return {
+            "status": (
+                "READY"
+                if all(item["status"] == "COMPARABLE" for item in fields)
+                else "PARTIAL"
+            ),
+            "baseline_schema_version": baseline_schema_version,
+            "candidate_schema_version": candidate_schema_version,
+            "comparable_field_keys": comparable_keys,
+            "status_counts": dict(status_counts),
+            "fields": fields,
         }
 
     def _report_process(self, process_id: str) -> sqlite3.Row:
@@ -9214,6 +9459,8 @@ class AnalysisService:
                    rq.query_stage, rq.task_id, rq.status AS query_status,
                    rq.candidate_count_total, rq.candidate_count_listed,
                    rq.detail_success_count, rq.detail_failure_count,
+                   rq.llm_cost, rq.third_party_cost, rq.total_cost,
+                   rq.search_duration_ms, rq.pdl_called,
                    pq.result_status, pq.fields_json, pq.empty_fields_json,
                    pq.processing_errors_json,
                    bp.display_name AS baseline_display_name,
@@ -9289,6 +9536,18 @@ class AnalysisService:
         for source in query_rows:
             row = dict(source)
             task_fields = self._report_v5_safe_json(row["fields_json"], {})
+            # 执行成本不属于可配置提取字段。以任务表保存的原始值覆盖同名
+            # 处理字段，确保禁用 Task 展示字段后仍能在报告中审计成本明细。
+            native_task_fields = {
+                field_key: row.get(field_key)
+                for field_key in TASK_FIELD_KEYS
+                if row.get(field_key) is not None
+            }
+            if "pdl_called" in native_task_fields:
+                native_task_fields["pdl_called"] = bool(
+                    native_task_fields["pdl_called"]
+                )
+            task_fields.update(native_task_fields)
             baseline_fields = self._report_v5_safe_json(
                 row["baseline_fields_json"], {}
             )
@@ -9330,6 +9589,7 @@ class AnalysisService:
                         or row["query_id"]
                     ),
                     "query_stage": row["query_stage"] or "UNSPECIFIED",
+                    "task_id": row["task_id"],
                     "query_status": row["query_status"],
                     "result_status": row["result_status"],
                     "candidate_count": len(candidate_snapshots),
@@ -9368,6 +9628,56 @@ class AnalysisService:
             "total_candidate_count": total_candidate_count,
             "items": items,
         }
+
+    @staticmethod
+    def _build_report_v5_task_cost_details(
+        query_explorer: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        """从冻结的 Query 工作台快照生成任务级成本明细。
+
+        功能说明：一个 CreateIntentTask 对应一个 Query/Task，成本和 PDL
+        也仅在该粒度返回。此处不向多个候选人分摊成本，避免报告产生不可
+        追溯的伪精确数据；对比报告则分别保留 Candidate 与 Baseline 两侧。
+
+        参数说明：
+            query_explorer: v5 已冻结的 Query/Candidate 工作台快照。
+
+        返回值：按 Query 排序的、适用于 ``details`` 展开的轻量审计行。
+        """
+
+        rows: list[dict[str, Any]] = []
+        for item in query_explorer.get("items", []):
+            for side, run in (
+                ("Candidate", item.get("candidate_run")),
+                ("Baseline", item.get("baseline_run")),
+            ):
+                if not isinstance(run, dict):
+                    continue
+                query = run.get("query", {})
+                task = query.get("task_metrics", {})
+                pdl_called = task.get("pdl_called")
+                rows.append({
+                    "side": side,
+                    "query_id": query.get("query_id"),
+                    "display_name": query.get("display_name"),
+                    "task_id": query.get("task_id"),
+                    "query_status": query.get("query_status"),
+                    "result_status": query.get("result_status"),
+                    "candidate_count": query.get("candidate_count"),
+                    "candidate_count_reported": query.get(
+                        "candidate_count_reported"
+                    ),
+                    "llm_cost": task.get("llm_cost"),
+                    "third_party_cost": task.get("third_party_cost"),
+                    "total_cost": task.get("total_cost"),
+                    "search_duration_ms": task.get("search_duration_ms"),
+                    "pdl_called": pdl_called,
+                    "pdl_label": (
+                        "已调用" if pdl_called is True else
+                        "未调用" if pdl_called is False else "未知"
+                    ),
+                })
+        return rows
 
     def _build_report_v5_query_explorer(
         self,
@@ -10485,6 +10795,348 @@ class AnalysisService:
             "recommendation_code": recommendation_code,
         }
 
+    @staticmethod
+    def _report_compare_metric_rows(
+        baseline_metrics: dict[str, Any],
+        candidate_metrics: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        """整理核心指标的优化前、优化后和差值，不重新计算指标口径。"""
+
+        rows: list[dict[str, Any]] = []
+        for key, definition in REPORT_V5_CORE_METRIC_DEFINITIONS.items():
+            baseline = baseline_metrics.get(key, {})
+            candidate = candidate_metrics.get(key, {})
+            before = baseline.get("value")
+            after = candidate.get("value")
+            delta = (
+                after - before
+                if isinstance(before, (int, float))
+                and not isinstance(before, bool)
+                and isinstance(after, (int, float))
+                and not isinstance(after, bool)
+                else None
+            )
+            if delta is None:
+                delta_status = "NOT_COMPARABLE"
+            elif delta == 0:
+                delta_status = "UNCHANGED"
+            elif key == "nonmatched_baseline_overlap":
+                delta_status = "IMPROVED" if delta < 0 else "REGRESSED"
+            elif key == "nonmatched_data_completeness":
+                # 非命中资料返回更多或更少都不是直接质量结论，只做观察。
+                delta_status = "OBSERVED"
+            else:
+                delta_status = "IMPROVED" if delta > 0 else "REGRESSED"
+            rows.append({
+                "key": key,
+                "label": definition["label"],
+                "purpose": definition["purpose"],
+                "formula": definition["formula"],
+                "baseline": baseline,
+                "candidate": candidate,
+                "delta": delta,
+                "delta_status": delta_status,
+            })
+        return rows
+
+    @staticmethod
+    def _report_compare_cost_snapshot(
+        metrics: dict[str, Any],
+    ) -> dict[str, Any]:
+        """冻结单侧成本与执行信息；缺失保持空值，禁止伪造成零。"""
+
+        cost_metrics = metrics.get("cost_metrics", {})
+        pdl = metrics.get("pdl_metrics", {})
+        return {
+            "query_count": metrics.get("execution_summary", {}).get(
+                "total_queries",
+                len(metrics.get("query_metrics", [])),
+            ),
+            "status": metrics.get("cost_status", {}).get("status", "NOT_CONNECTED"),
+            "metrics": {
+                key: dict(cost_metrics.get(key, {}))
+                for key in (
+                    "llm_cost",
+                    "third_party_cost",
+                    "total_cost",
+                    "search_duration_ms",
+                )
+            },
+            "pdl": dict(pdl),
+        }
+
+    @staticmethod
+    def _report_compare_side_explorer(
+        query_explorer: dict[str, Any],
+        side: str,
+    ) -> dict[str, Any]:
+        """把双侧 Query 快照投影为模块统计函数可复用的单侧结构。"""
+
+        run_key = "baseline_run" if side == "baseline" else "candidate_run"
+        items = []
+        candidate_count = 0
+        for item in query_explorer.get("items", []):
+            run = item.get(run_key)
+            if run is None:
+                continue
+            candidate_count += len(run.get("candidates", []))
+            items.append({"candidate_run": run})
+        return {
+            "total_query_count": len(items),
+            "total_candidate_count": candidate_count,
+            "items": items,
+        }
+
+    @staticmethod
+    def _report_compare_module_rows(
+        baseline_overview: dict[str, Any],
+        candidate_overview: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        """按五大资料模块对齐两侧返回率和完整度。"""
+
+        baseline_map = {
+            item["module"]: item
+            for item in baseline_overview.get("modules", [])
+        }
+        candidate_map = {
+            item["module"]: item
+            for item in candidate_overview.get("modules", [])
+        }
+        rows: list[dict[str, Any]] = []
+        for module in REPORT_V5_PROFILE_MODULES:
+            before = baseline_map.get(module, {})
+            after = candidate_map.get(module, {})
+            populations: dict[str, Any] = {}
+            for population in ("all", "hit", "nonmatched"):
+                before_metric = before.get("populations", {}).get(population, {})
+                after_metric = after.get("populations", {}).get(population, {})
+                metric_changes: dict[str, Any] = {}
+                for metric_key in ("module_return_rate", "field_completeness"):
+                    before_value = before_metric.get(metric_key)
+                    after_value = after_metric.get(metric_key)
+                    metric_changes[metric_key] = {
+                        "baseline": before_value,
+                        "candidate": after_value,
+                        "delta": (
+                            after_value - before_value
+                            if before_value is not None and after_value is not None
+                            else None
+                        ),
+                    }
+                populations[population] = {
+                    "baseline_candidate_count": before_metric.get(
+                        "detail_success_count", 0
+                    ),
+                    "candidate_candidate_count": after_metric.get(
+                        "detail_success_count", 0
+                    ),
+                    **metric_changes,
+                }
+            rows.append({
+                "module": module,
+                "baseline_business_field_count": before.get(
+                    "business_field_count", 0
+                ),
+                "candidate_business_field_count": after.get(
+                    "business_field_count", 0
+                ),
+                "populations": populations,
+            })
+        return rows
+
+    @staticmethod
+    def _report_compare_confidence_snapshot(
+        metrics: dict[str, Any],
+    ) -> dict[str, Any]:
+        """将置信度数量转换为数量与占比并存的快照。"""
+
+        source = metrics.get("confidence_metrics", {})
+        result: dict[str, Any] = {}
+        confidence_labels = ("HIGH", "MEDIUM", "LOW", "UNKNOWN")
+        for population in (
+            "overall", "all_hit", "primary_hit", "not_hit", "suspected", "pending"
+        ):
+            source_counts = dict(source.get(population, {}))
+            counts = {
+                label: int(source_counts.get(label, 0) or 0)
+                for label in confidence_labels
+            }
+            total = sum(
+                value for value in counts.values()
+                if isinstance(value, int) and not isinstance(value, bool)
+            )
+            result[population] = {
+                "total": total,
+                "distribution": {
+                    key: {
+                        "count": value,
+                        "rate": value / total if total else None,
+                    }
+                    for key, value in counts.items()
+                },
+            }
+        return result
+
+    def _report_compare_tool_calls(
+        self,
+        run_id: str,
+        total_query_count: int,
+    ) -> dict[str, Any]:
+        """从已入库 Debug Raw 聚合第三方工具调用，不把未采集解释为零。"""
+
+        rows = self.store.fetch_all(
+            """
+            SELECT query_id, payload_json FROM raw_records
+            WHERE run_id = ? AND stage = 'GetSearchTaskDebug'
+            ORDER BY query_id, sequence_no, collected_at, raw_id
+            """,
+            (run_id,),
+        )
+        latest_by_query: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            try:
+                payload = json.loads(row["payload_json"])
+            except (TypeError, json.JSONDecodeError):
+                continue
+            body = payload.get("response_body", payload) if isinstance(payload, dict) else {}
+            responses = body.get("responses") if isinstance(body, dict) else None
+            response = responses[0] if isinstance(responses, list) and responses else None
+            debug = (
+                response.get("data", {}).get("debug")
+                if isinstance(response, dict) and response.get("success") is True
+                else None
+            )
+            if isinstance(debug, dict) and row["query_id"]:
+                latest_by_query[row["query_id"]] = debug
+
+        labels = {
+            "pdl_person_identify": "PDL Person Identify",
+            "pdl_person_search": "PDL Person Search",
+            "llm": "LLM Search",
+            "wiki": "Wiki / Public Figure",
+            "google_lens": "Google Lens",
+            "google_vision": "Google Vision",
+            "social_profile": "Social Profile Extraction",
+        }
+        aggregates = {
+            key: {"key": key, "label": label, "request_count": 0,
+                  "success_count": 0, "query_ids": set()}
+            for key, label in labels.items()
+        }
+
+        def classify(provider: str, operation: str) -> str | None:
+            """按 Provider 与 Operation 归入产品约定的工具类别。"""
+
+            token = f"{provider} {operation}".lower()
+            if "google_lens" in token or "google lens" in token:
+                return "google_lens"
+            if "google_vision" in token or "google vision" in token:
+                return "google_vision"
+            if provider.startswith("llm_search"):
+                return "llm"
+            if provider == "social_profile":
+                return "social_profile"
+            if provider in {"public_figure", "wikidata", "wikipedia", "wiki"}:
+                return "wiki"
+            if provider == "people_data_labs":
+                return (
+                    "pdl_person_identify" if "identify" in operation.lower()
+                    else "pdl_person_search"
+                )
+            return None
+
+        for query_id, debug in latest_by_query.items():
+            diagnosis = debug.get("diagnosis", {})
+            calls = debug.get("agent_tool_calls", [])
+            seen_pdl: set[str] = set()
+            for call in calls if isinstance(calls, list) else []:
+                if not isinstance(call, dict):
+                    continue
+                provider = str(call.get("provider") or "")
+                operation = str(call.get("provider_operation") or "")
+                key = classify(provider, operation)
+                if key is None:
+                    continue
+                item = aggregates[key]
+                item["request_count"] += 1
+                item["success_count"] += int(
+                    str(call.get("status") or "").lower() == "success"
+                )
+                item["query_ids"].add(query_id)
+                if key.startswith("pdl_"):
+                    seen_pdl.add(key)
+            for key, flag_key, count_key in (
+                ("pdl_person_identify", "pdl_identify_called", "pdl_identify_call_count"),
+                ("pdl_person_search", "pdl_person_search_called", "pdl_person_search_call_count"),
+            ):
+                count = diagnosis.get(count_key) if isinstance(diagnosis, dict) else None
+                called = diagnosis.get(flag_key) if isinstance(diagnosis, dict) else None
+                if key not in seen_pdl and (called is True or isinstance(count, int) and count > 0):
+                    item = aggregates[key]
+                    item["request_count"] += count if isinstance(count, int) and count > 0 else 1
+                    item["success_count"] += count if isinstance(count, int) and count > 0 else 1
+                    item["query_ids"].add(query_id)
+
+        collected = len(latest_by_query)
+        status = (
+            "NOT_COLLECTED" if collected == 0 else
+            "COMPLETE" if collected >= total_query_count else "PARTIAL"
+        )
+        items = []
+        for item in aggregates.values():
+            items.append({
+                **{key: value for key, value in item.items() if key != "query_ids"},
+                "query_count": len(item["query_ids"]),
+                "available": collected > 0,
+            })
+        return {
+            "status": status,
+            "total_query_count": total_query_count,
+            "debug_query_count": collected,
+            "items": items,
+        }
+
+    @staticmethod
+    def _report_compare_appendix(
+        comparison: dict[str, Any],
+        query_explorer: dict[str, Any],
+    ) -> dict[str, Any]:
+        """按改善、退化和稳定分组冻结同条件 Query 差异定位信息。"""
+
+        names = {
+            item.get("person_id"): item.get("display_name")
+            for item in query_explorer.get("items", [])
+        }
+        groups = {"improved": [], "regressed": [], "stable": []}
+        for pair in comparison.get("same_condition", {}).get("pairs", []):
+            item = dict(pair)
+            item["display_name"] = names.get(pair.get("person_id"))
+            if pair.get("category") == "新增命中":
+                group = "improved"
+            elif pair.get("category") == "退化未命中":
+                group = "regressed"
+            else:
+                deltas = (
+                    pair.get("matched_accuracy_delta"),
+                    pair.get("matched_completeness_delta"),
+                )
+                group = (
+                    "improved" if any(value is not None and value > 0 for value in deltas)
+                    else "regressed" if any(value is not None and value < 0 for value in deltas)
+                    else "stable"
+                )
+            groups[group].append(item)
+        return {
+            "groups": groups,
+            "not_comparable": comparison.get("not_comparable", {}),
+            "data_sources": [
+                "metrics-v4 Process 指标快照",
+                "FieldSchema 字段配置与候选人字段比较",
+                "GetSearchTaskDebug Raw 聚合（若已采集）",
+                "Run Query / Candidate 结构化数据",
+            ],
+        }
+
     def build_report_model(
         self,
         *,
@@ -10558,9 +11210,20 @@ class AnalysisService:
                 baseline_modules,
                 candidate_modules,
             )
+            comparable_field_keys = set(
+                comparison.get("field_compatibility", {}).get(
+                    "comparable_field_keys", []
+                )
+            )
             field_metrics = self._merge_comparison_metrics(
-                baseline_fields,
-                candidate_fields,
+                {
+                    key: value for key, value in baseline_fields.items()
+                    if key in comparable_field_keys
+                },
+                {
+                    key: value for key, value in candidate_fields.items()
+                    if key in comparable_field_keys
+                },
             )
         else:
             module_metrics = candidate_modules
@@ -10581,6 +11244,12 @@ class AnalysisService:
                 "成本与 PDL 数据未完整接入，缺失值未按0计算。"
             )
         if comparison is not None:
+            field_compatibility = comparison.get("field_compatibility", {})
+            if field_compatibility.get("status") == "PARTIAL":
+                warnings.append(
+                    "字段 Schema 存在差异；字段级变化仅按两侧语义一致的"
+                    "启用字段计算，其余字段见字段兼容性说明。"
+                )
             coverage = comparison["same_condition"]["coverage"]
             if coverage["input_signature_unavailable_count"]:
                 warnings.append(
@@ -10699,7 +11368,10 @@ class AnalysisService:
         model = {
             "metadata": {
                 "report_model_version": (
-                    V5_REPORT_MODEL_VERSION
+                    (
+                        COMPARE_REPORT_MODEL_VERSION
+                        if comparison is not None else V5_REPORT_MODEL_VERSION
+                    )
                     if is_v4 else (
                         V3_REPORT_MODEL_VERSION
                         if is_modern else V2_REPORT_MODEL_VERSION
@@ -10847,6 +11519,10 @@ class AnalysisService:
                 "new_clue": {},
                 "not_comparable": {},
             },
+            "field_compatibility": (
+                comparison.get("field_compatibility", {})
+                if comparison else {}
+            ),
             "threshold_assessment": threshold_assessment,
             "query_stage_metrics": self._query_stage_report_metrics(
                 candidate_metrics
@@ -10901,6 +11577,9 @@ class AnalysisService:
                     )
                 ),
                 "query_explorer": query_explorer,
+                "task_cost_details": self._build_report_v5_task_cost_details(
+                    query_explorer
+                ),
                 "diagnostics": self._build_report_v5_diagnostics(
                     warnings=warnings,
                     not_ready_reasons=not_ready_reasons,
@@ -10908,6 +11587,140 @@ class AnalysisService:
                 ),
                 "optional_sections": optional_sections,
             })
+            if comparison is not None and baseline_process is not None:
+                # 对比报告采用独立快照模型。单 Run v5 字段仍保留以兼容既有
+                # 导出调用方，但专用模板只读取 comparison_report。
+                baseline_scope = self._build_report_v5_processing_scope(
+                    baseline_process,
+                    baseline_metrics or {},
+                )
+                baseline_explorer = self._report_compare_side_explorer(
+                    query_explorer,
+                    "baseline",
+                )
+                candidate_explorer = self._report_compare_side_explorer(
+                    query_explorer,
+                    "candidate",
+                )
+                baseline_module_overview = (
+                    self._build_report_v5_module_return_overview(
+                        baseline_explorer,
+                        baseline_scope,
+                    )
+                )
+                candidate_module_overview = model["module_return_overview"]
+                baseline_cost = self._report_compare_cost_snapshot(
+                    baseline_metrics or {}
+                )
+                candidate_cost = self._report_compare_cost_snapshot(
+                    candidate_metrics
+                )
+                cost_rows = []
+                for field_key in (
+                    "llm_cost",
+                    "third_party_cost",
+                    "total_cost",
+                    "search_duration_ms",
+                ):
+                    before = baseline_cost["metrics"].get(field_key, {})
+                    after = candidate_cost["metrics"].get(field_key, {})
+                    before_total = before.get("total")
+                    after_total = after.get("total")
+                    cost_rows.append({
+                        "field_key": field_key,
+                        "baseline": before,
+                        "candidate": after,
+                        "delta_total": (
+                            after_total - before_total
+                            if before_total is not None and after_total is not None
+                            else None
+                        ),
+                    })
+                baseline_tools = self._report_compare_tool_calls(
+                    baseline_process["run_id"],
+                    baseline_explorer["total_query_count"],
+                )
+                candidate_tools = self._report_compare_tool_calls(
+                    candidate_process["run_id"],
+                    candidate_explorer["total_query_count"],
+                )
+                baseline_tool_map = {
+                    item["key"]: item for item in baseline_tools["items"]
+                }
+                tool_rows = []
+                for candidate_item in candidate_tools["items"]:
+                    baseline_item = baseline_tool_map[candidate_item["key"]]
+                    tool_rows.append({
+                        "key": candidate_item["key"],
+                        "label": candidate_item["label"],
+                        "baseline": baseline_item,
+                        "candidate": candidate_item,
+                        "request_count_delta": (
+                            candidate_item["request_count"]
+                            - baseline_item["request_count"]
+                            if baseline_item["available"]
+                            and candidate_item["available"] else None
+                        ),
+                    })
+                model["comparison_report"] = {
+                    "phase_summary": {
+                        "baseline": {
+                            "process_id": baseline_process_id,
+                            "run_id": baseline_process["run_id"],
+                            "run_label": baseline_process["run_label"],
+                            "system_version": baseline_process["system_version"],
+                            "evaluation_phase": baseline_process["evaluation_phase"],
+                            "schema_version": baseline_process["schema_version"],
+                        },
+                        "candidate": {
+                            "process_id": candidate_process_id,
+                            "run_id": candidate_process["run_id"],
+                            "run_label": candidate_process["run_label"],
+                            "system_version": candidate_process["system_version"],
+                            "evaluation_phase": candidate_process["evaluation_phase"],
+                            "schema_version": candidate_process["schema_version"],
+                        },
+                        "coverage": comparison["same_condition"]["coverage"],
+                        "input_check_status": comparison.get("input_check_status"),
+                    },
+                    "core_metric_changes": self._report_compare_metric_rows(
+                        baseline_metrics or {},
+                        candidate_metrics,
+                    ),
+                    "execution_cost_comparison": {
+                        "baseline": baseline_cost,
+                        "candidate": candidate_cost,
+                        "rows": cost_rows,
+                    },
+                    "module_changes": self._report_compare_module_rows(
+                        baseline_module_overview,
+                        candidate_module_overview,
+                    ),
+                    "confidence_comparison": {
+                        "baseline": self._report_compare_confidence_snapshot(
+                            baseline_metrics or {}
+                        ),
+                        "candidate": self._report_compare_confidence_snapshot(
+                            candidate_metrics
+                        ),
+                    },
+                    "tool_call_comparison": {
+                        "baseline_status": baseline_tools["status"],
+                        "candidate_status": candidate_tools["status"],
+                        "baseline_debug_query_count": baseline_tools[
+                            "debug_query_count"
+                        ],
+                        "candidate_debug_query_count": candidate_tools[
+                            "debug_query_count"
+                        ],
+                        "rows": tool_rows,
+                    },
+                    "result_migration": comparison["same_condition"],
+                    "appendix": self._report_compare_appendix(
+                        comparison,
+                        query_explorer,
+                    ),
+                }
         return model
 
     def _report_directory(

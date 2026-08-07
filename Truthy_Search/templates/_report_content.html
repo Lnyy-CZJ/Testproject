@@ -30,8 +30,114 @@
   {{ (value * 100)|round(2) ~ '%' if value is not none else '无适用分母' }}
 {%- endmacro %}
 
+{% set is_compare_v6 = report.metadata.report_model_version == 'report-model-v6-compare' %}
 {% set is_report_v5 = report.metadata.report_model_version == 'report-model-v5' %}
-{% if is_report_v5 %}
+{% if is_compare_v6 %}
+  {% set compare = report.comparison_report %}
+  {% set phase = compare.phase_summary %}
+  <section class="compare-v6-hero">
+    <div>
+      <p class="eyebrow">{{ report.metadata.data_marker }} · PROCESS COMPARISON</p>
+      <h1>{{ report.metadata.evaluation_name }}</h1>
+      <p>同一检索条件下的优化前后差异。单次结果明细请使用对应的单 Run 报告。</p>
+    </div>
+    <div class="compare-v6-route" aria-label="对比版本">
+      <div><small>优化前</small><strong>{{ phase.baseline.run_label or phase.baseline.system_version }}</strong><span class="mono">{{ phase.baseline.process_id }}</span></div>
+      <b aria-hidden="true">→</b>
+      <div><small>优化后</small><strong>{{ phase.candidate.run_label or phase.candidate.system_version }}</strong><span class="mono">{{ phase.candidate.process_id }}</span></div>
+    </div>
+  </section>
+
+  <section class="report-section compare-v6-overview">
+    <div class="section-head"><div><p class="eyebrow">Comparison coverage</p><h2>本次对比范围</h2></div></div>
+    <div class="compare-v6-facts">
+      <span>成功配对 <strong>{{ phase.coverage.paired_count }}</strong></span>
+      <span>优化前 Query <strong>{{ phase.coverage.baseline_query_count }}</strong></span>
+      <span>优化后 Query <strong>{{ phase.coverage.candidate_query_count }}</strong></span>
+      <span>不可比 <strong>{{ phase.coverage.not_comparable_count }}</strong></span>
+      <span>输入校验 <strong>{{ phase.input_check_status }}</strong></span>
+    </div>
+  </section>
+
+  <section class="report-section">
+    <div class="section-head"><div><p class="eyebrow">01 · Core metric changes</p><h2>核心评测结果变化</h2><p class="inline-note">仅突出两次 Process 的变化；原始单次指标可在各自的单 Run 报告中查看。</p></div></div>
+    <div class="table-wrap"><table class="compare-v6-table">
+      <thead><tr><th>指标</th><th>优化前</th><th>优化后</th><th>变化</th></tr></thead>
+      <tbody>{% for item in compare.core_metric_changes %}
+        <tr>
+          <td><strong>{{ item.label }}</strong><small>{{ item.purpose }}</small></td>
+          <td>{{ metric_value(item.baseline) }}<small>{{ metric_fraction(item.baseline) }}</small></td>
+          <td>{{ metric_value(item.candidate) }}<small>{{ metric_fraction(item.candidate) }}</small></td>
+          <td><span class="compare-v6-delta {{ item.delta_status|lower }}">{% if item.delta is not none %}{{ '+' if item.delta > 0 else '' }}{{ (item.delta * 100)|round(2) }} 个百分点{% else %}不可计算{% endif %}</span></td>
+        </tr>
+      {% endfor %}</tbody>
+    </table></div>
+  </section>
+
+  <section class="report-section">
+    <div class="section-head"><div><p class="eyebrow">02 · Execution & cost</p><h2>两次执行与成本差异</h2><p class="inline-note">未采集成本的旧版本显示“未采集”，不会按 0 参与差值。</p></div></div>
+    <div class="compare-v6-status-line"><span>优化前 {{ compare.execution_cost_comparison.baseline.status }}</span><span>优化后 {{ compare.execution_cost_comparison.candidate.status }}</span></div>
+    <div class="table-wrap"><table class="compare-v6-table">
+      <thead><tr><th>字段</th><th>优化前总值 / 均值</th><th>优化后总值 / 均值</th><th>总值变化</th></tr></thead>
+      <tbody>{% for row in compare.execution_cost_comparison.rows %}
+        <tr><td class="mono">{{ row.field_key }}</td>
+          <td>{% if row.baseline.total is not none %}{{ row.baseline.total|round(6) }} / {{ row.baseline.average|round(6) }}<small>有效 {{ row.baseline.value_count }} · 缺失 {{ row.baseline.missing_count }}</small>{% else %}未采集{% endif %}</td>
+          <td>{% if row.candidate.total is not none %}{{ row.candidate.total|round(6) }} / {{ row.candidate.average|round(6) }}<small>有效 {{ row.candidate.value_count }} · 缺失 {{ row.candidate.missing_count }}</small>{% else %}未采集{% endif %}</td>
+          <td>{% if row.delta_total is not none %}{{ '+' if row.delta_total > 0 else '' }}{{ row.delta_total|round(6) }}{% else %}不可计算{% endif %}</td>
+        </tr>
+      {% endfor %}</tbody>
+    </table></div>
+  </section>
+
+  <section class="report-section">
+    <div class="section-head"><div><p class="eyebrow">03 · Profile module changes</p><h2>五大资料模块返回变化</h2><p class="inline-note">同时观察全部候选人、HIT 与非命中/疑似候选人的模块有数据率和字段完整度。</p></div></div>
+    <div class="table-wrap"><table class="compare-v6-table compare-v6-module-table">
+      <thead><tr><th>模块</th><th>人群</th><th>模块有数据率（前 → 后）</th><th>字段完整度（前 → 后）</th><th>样本（前 → 后）</th></tr></thead>
+      <tbody>{% for module in compare.module_changes %}{% for population_key, population_label in [('all','全部'),('hit','HIT'),('nonmatched','非命中 / 疑似')] %}{% set population = module.populations[population_key] %}
+        <tr><td>{% if loop.index == 1 %}<strong>{{ module.module }}</strong><small>字段 {{ module.baseline_business_field_count }} → {{ module.candidate_business_field_count }}</small>{% endif %}</td><td>{{ population_label }}</td>
+          <td>{{ percentage(population.module_return_rate.baseline) }} → {{ percentage(population.module_return_rate.candidate) }}<small>{% if population.module_return_rate.delta is not none %}变化 {{ '+' if population.module_return_rate.delta > 0 else '' }}{{ (population.module_return_rate.delta * 100)|round(2) }}pp{% else %}不可计算{% endif %}</small></td>
+          <td>{{ percentage(population.field_completeness.baseline) }} → {{ percentage(population.field_completeness.candidate) }}<small>{% if population.field_completeness.delta is not none %}变化 {{ '+' if population.field_completeness.delta > 0 else '' }}{{ (population.field_completeness.delta * 100)|round(2) }}pp{% else %}不可计算{% endif %}</small></td>
+          <td>{{ population.baseline_candidate_count }} → {{ population.candidate_candidate_count }}</td></tr>
+      {% endfor %}{% endfor %}</tbody>
+    </table></div>
+  </section>
+
+  <section class="report-section">
+    <div class="section-head"><div><p class="eyebrow">04 · Confidence comparison</p><h2>候选人置信度差异</h2><p class="inline-note">占比优先、人数辅助，避免仅看人数受候选人总量变化影响。</p></div></div>
+    {% set before_conf = compare.confidence_comparison.baseline.overall %}{% set after_conf = compare.confidence_comparison.candidate.overall %}
+    <div class="table-wrap"><table class="compare-v6-table"><thead><tr><th>Confidence</th><th>优化前</th><th>优化后</th><th>人数变化</th></tr></thead><tbody>
+      {% for label in ['HIGH','MEDIUM','LOW','UNKNOWN'] %}{% set before = before_conf.distribution.get(label, {'count': 0, 'rate': none}) %}{% set after = after_conf.distribution.get(label, {'count': 0, 'rate': none}) %}
+        <tr><td class="mono">{{ label }}</td><td>{{ percentage(before.rate) }}<small>{{ before.count }} 人</small></td><td>{{ percentage(after.rate) }}<small>{{ after.count }} 人</small></td><td>{{ '+' if after.count - before.count > 0 else '' }}{{ after.count - before.count }} 人</td></tr>
+      {% endfor %}
+    </tbody></table></div>
+  </section>
+
+  <section class="report-section">
+    <div class="section-head"><div><p class="eyebrow">05 · Tool call changes</p><h2>第三方工具调用差异</h2><p class="inline-note">来自 GetSearchTaskDebug Raw 聚合；无 Debug 的历史版本标记为未采集，不展示虚假 0 次。</p></div></div>
+    <div class="compare-v6-status-line"><span>优化前 {{ compare.tool_call_comparison.baseline_status }} · {{ compare.tool_call_comparison.baseline_debug_query_count }} Query</span><span>优化后 {{ compare.tool_call_comparison.candidate_status }} · {{ compare.tool_call_comparison.candidate_debug_query_count }} Query</span></div>
+    <div class="table-wrap"><table class="compare-v6-table"><thead><tr><th>工具</th><th>优化前</th><th>优化后</th><th>调用次数变化</th></tr></thead><tbody>{% for row in compare.tool_call_comparison.rows %}
+      <tr><td><strong>{{ row.label }}</strong></td><td>{% if row.baseline.available %}{{ row.baseline.request_count }} 次<small>{{ row.baseline.query_count }} 个 Query · 成功 {{ row.baseline.success_count }}</small>{% else %}未采集{% endif %}</td><td>{% if row.candidate.available %}{{ row.candidate.request_count }} 次<small>{{ row.candidate.query_count }} 个 Query · 成功 {{ row.candidate.success_count }}</small>{% else %}未采集{% endif %}</td><td>{% if row.request_count_delta is not none %}{{ '+' if row.request_count_delta > 0 else '' }}{{ row.request_count_delta }}{% else %}不可计算{% endif %}</td></tr>
+    {% endfor %}</tbody></table></div>
+  </section>
+
+  <section class="report-section">
+    <div class="section-head"><div><p class="eyebrow">06 · Result migration</p><h2>同条件结果迁移</h2></div></div>
+    <div class="compare-v6-migration">{% for label in ['持续命中','新增命中','退化未命中','持续未命中'] %}<div><span>{{ label }}</span><strong>{{ compare.result_migration.category_counts.get(label, 0) }}</strong></div>{% endfor %}</div>
+  </section>
+
+  <section class="report-section">
+    <div class="section-head"><div><p class="eyebrow">07 · Difference appendix</p><h2>详情附录</h2><p class="inline-note">用于定位改善、退化和数据来源。默认折叠，按人物查看同条件变化。</p></div></div>
+    {% for group_key, group_label in [('improved','改善'),('regressed','退化'),('stable','稳定')] %}{% set rows = compare.appendix.groups[group_key] %}
+      <details class="compare-v6-appendix"><summary>{{ group_label }} <span>{{ rows|length }} 条</span></summary>
+        <div class="table-wrap"><table><thead><tr><th>人物 / 条件</th><th>命中变化</th><th>准确度</th><th>完整度</th><th>候选人数</th><th>Confidence</th></tr></thead><tbody>{% for row in rows %}
+          <tr><td>{{ row.display_name or row.person_id }}<small class="mono">{{ row.query_stage }} · {{ row.baseline_query_id }} → {{ row.candidate_query_id }}</small></td><td>{{ '命中' if row.baseline_hit else '未命中' }} → {{ '命中' if row.candidate_hit else '未命中' }}<small>{{ row.category }}</small></td><td>{{ percentage(row.baseline_matched_accuracy) }} → {{ percentage(row.candidate_matched_accuracy) }}</td><td>{{ percentage(row.baseline_matched_completeness) }} → {{ percentage(row.candidate_matched_completeness) }}</td><td>{{ row.baseline_candidate_count }} → {{ row.candidate_candidate_count }}</td><td>{{ row.baseline_confidence or '—' }} → {{ row.candidate_confidence or '—' }}</td></tr>
+        {% else %}<tr><td colspan="6">没有{{ group_label }}项。</td></tr>{% endfor %}</tbody></table></div>
+      </details>
+    {% endfor %}
+    {% if compare.appendix.not_comparable.queries %}<details class="compare-v6-appendix"><summary>不可比 <span>{{ compare.appendix.not_comparable.queries|length }} 条</span></summary><ul>{% for row in compare.appendix.not_comparable.queries %}<li>{{ row.person_id }} · {{ row.query_stage }} · {{ row.reason }}</li>{% endfor %}</ul></details>{% endif %}
+    <details class="compare-v6-appendix"><summary>数据来源与口径</summary><ul>{% for source in compare.appendix.data_sources %}<li>{{ source }}</li>{% endfor %}</ul><p class="mono">FieldSchema {{ phase.baseline.schema_version }} → {{ phase.candidate.schema_version }}</p></details>
+  </section>
+{% elif is_report_v5 %}
   {# v5 只读取不可变报告快照；旧模型继续保留以下原有模板分支。 #}
   {% set overview = report.overview %}
   {% set explorer = report.query_explorer %}
@@ -707,6 +813,35 @@
         <div><span>PDL 调用率</span><strong>{{ (report.pdl_metrics.call_rate * 100)|round(2) ~ '%' if report.pdl_metrics.call_rate is not none else '字段未接入' }}</strong></div>
       </div>
     {% endif %}
+    {% if report.task_cost_details is defined and report.task_cost_details %}
+      <details class="report-v5-task-cost-details">
+        <summary>
+          <span><strong>按 Query / Task 查看成本明细</strong><small>成本、耗时和 PDL 均为一次请求的任务级数据，不对该请求返回的候选人进行分摊。</small></span>
+          <span>{{ report.task_cost_details|length }} 条请求</span>
+        </summary>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>版本侧</th><th>人物 / Query</th><th>Task</th><th>状态</th><th>候选人数</th><th>LLM (USD)</th><th>第三方 (USD)</th><th>总成本 (USD)</th><th>耗时 (ms)</th><th>PDL</th></tr></thead>
+            <tbody>
+              {% for item in report.task_cost_details %}
+                <tr>
+                  <td>{{ item.side }}</td>
+                  <td>{{ item.display_name or '—' }}<small class="mono">{{ item.query_id or '—' }}</small></td>
+                  <td class="mono">{{ item.task_id or '—' }}</td>
+                  <td>{{ item.query_status or item.result_status or '—' }}</td>
+                  <td>{{ item.candidate_count_reported if item.candidate_count_reported is not none else item.candidate_count if item.candidate_count is not none else '—' }}</td>
+                  <td>{{ item.llm_cost if item.llm_cost is not none else '—' }}</td>
+                  <td>{{ item.third_party_cost if item.third_party_cost is not none else '—' }}</td>
+                  <td>{{ item.total_cost if item.total_cost is not none else '—' }}</td>
+                  <td>{{ item.search_duration_ms if item.search_duration_ms is not none else '—' }}</td>
+                  <td class="{{ 'positive' if item.pdl_called is true else 'negative' if item.pdl_called is false else '' }}">{{ item.pdl_label }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </details>
+    {% endif %}
   {% else %}
     <div class="metric-strip four">
       <div><span>接入状态</span><strong>{{ report.cost_status.status }}</strong></div>
@@ -760,6 +895,26 @@
 
 <section class="report-section">
   <div class="section-head"><div><p class="eyebrow">05 · Field Quality</p><h2>模块与字段</h2></div></div>
+{% if report.field_compatibility is defined and report.field_compatibility %}
+    <div class="report-v5-field-compatibility">
+      <p><strong>字段兼容性：{{ report.field_compatibility.status }}</strong> · 可直接比较 {{ report.field_compatibility.comparable_field_keys|length }} 个字段。字段新增、删除、停用或统计语义变化不会参与字段级变化计算。</p>
+      {% if report.field_compatibility.status == 'PARTIAL' %}
+        <details>
+          <summary>查看字段 Schema 差异 · {{ report.field_compatibility.fields|length }} 个字段</summary>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>字段</th><th>模块</th><th>兼容状态</th><th>说明</th></tr></thead>
+              <tbody>
+                {% for item in report.field_compatibility.fields if item.status != 'COMPARABLE' %}
+                  <tr><td>{{ item.display_name }}<small class="mono">{{ item.field_key }}</small></td><td>{{ item.module }}</td><td class="mono">{{ item.status }}</td><td>{{ item.reasons|join('；') or '—' }}</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </details>
+      {% endif %}
+    </div>
+{% endif %}
 {% if report.metadata.report_model_version in ['report-model-v3', 'report-model-v4'] %}
     <h3>模块真实有数据率</h3>
     <div class="table-wrap">

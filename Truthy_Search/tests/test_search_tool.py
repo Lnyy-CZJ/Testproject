@@ -15,6 +15,7 @@ from search_tool import (
     FlowError,
     GET_TASK_FAILURE_TERMINAL_STATUSES,
     SearchClient,
+    extract_admin_task_fields,
     normalize_result_status,
     process_one,
     run_batch,
@@ -89,6 +90,140 @@ def public_info_fixture(name):
 
 
 class SearchToolTests(unittest.TestCase):
+    def test_extract_admin_task_fields_uses_confirmed_admin_contract(self):
+        """按已确认路径换算 USD 成本、PDL 调用状态和任务运行时长。"""
+
+        debug_body = api_body(
+            {
+                "debug": {
+                    "task": {
+                        "start_time": "2026-08-05T10:14:19.126Z",
+                        "finish_time": "2026-08-05T10:14:30.721Z",
+                    },
+                    "diagnosis": {"pdl_called": True},
+                }
+            }
+        )
+        cost_body = api_body(
+            {
+                "cost_summary": {
+                    "by_provider": [
+                        {
+                            "provider": "llm_search:deepseek",
+                            "currency": "USD",
+                            "total_cost_microunit": "383",
+                        },
+                        {
+                            "provider": "llm_search:other",
+                            "currency": "USD",
+                            "total_cost_microunit": "17",
+                        },
+                        {
+                            "provider": "people_data_labs",
+                            "currency": "USD",
+                            "total_cost_microunit": "1390000",
+                        },
+                        {
+                            "provider": "image_search",
+                            "currency": "USD",
+                            "total_cost_microunit": "1000",
+                        },
+                        {
+                            "provider": "public_figure",
+                            "currency": "UNSPECIFIED",
+                            "total_cost_microunit": "0",
+                        },
+                    ],
+                    "by_search": [
+                        {
+                            "task_id": "task-other",
+                            "currency": "USD",
+                            "total_cost_microunit": "9999999",
+                        },
+                        {
+                            "task_id": "task-confirmed",
+                            "currency": "USD",
+                            "total_cost_microunit": "1391400",
+                        },
+                    ],
+                    "totals": [
+                        {
+                            "currency": "USD",
+                            "total_cost_microunit": "8888888",
+                        }
+                    ],
+                }
+            }
+        )
+
+        task_fields, metadata = extract_admin_task_fields(
+            task_id="task-confirmed",
+            debug_body=debug_body,
+            cost_body=cost_body,
+        )
+
+        self.assertEqual(0.0004, task_fields["llm_cost"])
+        self.assertEqual(1.391, task_fields["third_party_cost"])
+        self.assertEqual(1.3914, task_fields["total_cost"])
+        self.assertIs(task_fields["pdl_called"], True)
+        self.assertEqual(11595, task_fields["search_duration_ms"])
+        self.assertEqual("USD", metadata["cost_currency"])
+        self.assertEqual(400, metadata["llm_cost_microunit"])
+        self.assertEqual(1391000, metadata["third_party_cost_microunit"])
+        self.assertEqual(1391400, metadata["total_cost_microunit"])
+        self.assertEqual("COMPLETE", metadata["field_mapping_status"])
+
+    def test_extract_admin_task_fields_keeps_zero_distinct_from_missing(self):
+        """真实零成本和 False 正常落库，未返回的字段继续保持空值。"""
+
+        task_fields, metadata = extract_admin_task_fields(
+            task_id="task-zero",
+            debug_body=api_body(
+                {
+                    "debug": {
+                        "task": {"start_time": "2026-08-05T10:00:00Z"},
+                        "diagnosis": {"pdl_called": False},
+                    }
+                }
+            ),
+            cost_body=api_body(
+                {
+                    "cost_summary": {
+                        "by_provider": [
+                            {
+                                "provider": "llm_search:deepseek",
+                                "currency": "USD",
+                                "total_cost_microunit": "0",
+                            }
+                        ],
+                        "by_search": [
+                            {
+                                "task_id": "task-zero",
+                                "currency": "USD",
+                                "total_cost_microunit": "0",
+                            }
+                        ],
+                        "totals": [],
+                    }
+                }
+            ),
+        )
+
+        self.assertEqual(0.0, task_fields["llm_cost"])
+        self.assertEqual(0.0, task_fields["third_party_cost"])
+        self.assertEqual(0.0, task_fields["total_cost"])
+        self.assertIs(task_fields["pdl_called"], False)
+        self.assertIsNone(task_fields["search_duration_ms"])
+        self.assertEqual("PARTIAL", metadata["field_mapping_status"])
+
+        missing_fields, missing_metadata = extract_admin_task_fields(
+            task_id="task-missing",
+            debug_body=None,
+            cost_body=None,
+        )
+        self.assertTrue(all(value is None for value in missing_fields.values()))
+        self.assertEqual("NOT_MAPPED", missing_metadata["field_mapping_status"])
+
     def test_normalize_result_status_uses_candidate_count_before_detail_status(self):
         """规范化状态区分有结果、无结果和执行失败。"""
 

@@ -401,11 +401,11 @@ POST http://admin-staging.spark-jam.top/admin/invoke
 | --- | --- | --- |
 | `llm_cost` | `cost_summary.by_provider` | 汇总被归类为 LLM 的 Provider |
 | `third_party_cost` | `cost_summary.by_provider` | 汇总 PDL 等第三方数据 Provider |
-| `total_cost` | `cost_summary.totals` | 直接采用接口总额，不用子成本二次相加 |
+| `total_cost` | `cost_summary.by_search` | 优先取当前 `task_id` 的 USD 总额，缺失时回退 USD `totals` |
 | `cost_currency` | `cost_summary.totals` | 单币种时保存该币种 |
 | `cost_totals_by_currency` | `cost_summary.totals` | 始终保留每个币种的汇总 |
 | `cost_complete` | `unpriced_call_count` | 为 0 时为 `true`，大于 0 时为 `false` |
-| `pdl_called` | Calls/Provider 汇总 | 存在 `people_data_labs` 调用即为 `true` |
+| `pdl_called` | `debug.diagnosis.pdl_called` | 直接采用诊断布尔值，不根据调用状态反推 |
 | `pdl_success` | Calls | 至少一次 PDL 调用状态为成功时为 `true` |
 
 成本处理规则：
@@ -413,8 +413,8 @@ POST http://admin-staging.spark-jam.top/admin/invoke
 1. `total_cost` 以 Cost Summary 为唯一正式数据源；
 2. Debug 中的 `estimated_cost_microunit` 仅用于一致性检查，不能与正式成本相加或取平均；
 3. 接口中的数字字符串需要安全转换为数字；
-4. `microunit` 换算规则需由后端最终确认；确认前保留原始微单位值，不在报告中推测币种金额；
-5. 单币种且单位确认后，标准金额按后端确认比例转换；
+4. USD `microunit` 按 `1,000,000 microunit = 1 USD` 转换为标准金额；
+5. LLM Provider 以 `llm_search` 开头，存在多个时累计；
 6. 多币种不能直接相加，`total_cost` 和 `cost_currency` 保存为 `null`，并按币种保留汇总；
 7. `unpriced_call_count > 0` 时允许展示已定价部分，但必须标记“成本不完整”；
 8. 没有返回成本和真实零成本必须区分：前者为 `null`，后者为数值 `0`。
@@ -943,16 +943,21 @@ YYYY-MM-DD HH:mm:ss
 
 ## 17. 待后端确认事项
 
-以下字段及业务口径均不阻塞 Login、Debug、Cost 的链路开发。未确认字段先完整保存 Raw 和来源状态，
-不能自行猜测或填 0；待后端信息整理完成后再补充正式映射：
+以下剩余业务口径不阻塞 Login、Debug、Cost 和本次五字段映射。未确认信息继续完整保存 Raw，
+不能自行猜测或填 0：
 
-1. `microunit` 与币种标准单位的正式换算比例；
-2. `GetProviderCostSummary.limit` 是否只限制 `calls`，还是也影响 `totals`、`by_provider` 等汇总；
-3. Cost Summary 是否可能返回多个币种；
-4. Provider 的完整枚举及 LLM、第三方、其他 Provider 的正式分类规则；
-5. PDL 调用成功状态的正式枚举；
-6. Debug 中 `start_time` 到 `finish_time` 是否可正式定义为检索处理时间；
-7. Cost Summary 的 `total_cost_microunit` 是否已经包含所有子 Provider 成本。
+1. `GetProviderCostSummary.limit` 是否只限制 `calls`，还是也影响汇总数组；
+2. 非 USD 币种的展示与换算规则；
+3. PDL 调用成功状态的正式枚举（本期只记录是否调用）。
+
+以下五字段口径已经确认：
+
+- LLM 成本：累计 `by_provider` 中名称以 `llm_search` 开头的 USD Provider；
+- 第三方成本：排除 `llm_search:*`、`llm_search`、`public_figure`、`agent_people`、
+  `search_agent` 后，累计其他实际计费 USD Provider；
+- 总成本：优先取当前 `task_id` 对应的 `by_search` USD 总额，回退 USD `totals`；
+- PDL Called：读取 `debug.diagnosis.pdl_called`；
+- Search Duration：以 `debug.task.finish_time - start_time` 计算毫秒。
 
 以下认证事项已经确认，不再列为待确认：
 

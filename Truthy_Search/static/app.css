@@ -1204,6 +1204,47 @@ table small {
 }
 
 /* ReportModel v5：首屏先展示结论和核心指标，明细由 Query 工作台按段创建 DOM。 */
+.compare-v6-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(520px, .9fr);
+  gap: 30px;
+  align-items: center;
+  margin: 4px 0 18px;
+  padding: 30px;
+  border: 1px solid #cce3de;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #edf8f5, #fff 64%);
+}
+
+.compare-v6-hero h1 { margin: 7px 0; }
+.compare-v6-hero p:last-child { margin-bottom: 0; color: var(--muted); }
+.compare-v6-route { display: grid; grid-template-columns: 1fr auto 1fr; gap: 14px; align-items: center; }
+.compare-v6-route > div { display: grid; gap: 5px; min-width: 0; padding: 15px; border: 1px solid #d8e6e2; border-radius: 12px; background: rgb(255 255 255 / 84%); }
+.compare-v6-route small, .compare-v6-route span { color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+.compare-v6-route b { color: var(--accent); font-size: 22px; }
+.compare-v6-facts, .compare-v6-status-line { display: flex; flex-wrap: wrap; gap: 10px; }
+.compare-v6-facts span, .compare-v6-status-line span { padding: 9px 12px; border-radius: 9px; color: var(--muted); background: #eef5f3; font-size: 12px; }
+.compare-v6-facts strong { margin-left: 4px; color: var(--ink); font-size: 16px; }
+.compare-v6-status-line { margin: 0 0 14px; }
+.compare-v6-table td { vertical-align: middle; }
+.compare-v6-table td:first-child { min-width: 190px; }
+.compare-v6-table td small { display: block; margin-top: 4px; color: var(--muted); }
+.compare-v6-delta { display: inline-flex; padding: 5px 8px; border-radius: 7px; background: #eef2f1; color: var(--muted); font-size: 12px; font-weight: 800; }
+.compare-v6-delta.improved { background: #ddf4e8; color: #11633e; }
+.compare-v6-delta.regressed { background: #f8e7e5; color: #9a3737; }
+.compare-v6-module-table td:first-child { min-width: 110px; }
+.compare-v6-migration { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.compare-v6-migration > div { padding: 17px; border: 1px solid var(--line); border-radius: 12px; background: #f7faf9; }
+.compare-v6-migration span { display: block; color: var(--muted); font-size: 12px; }
+.compare-v6-migration strong { display: block; margin-top: 7px; font-size: 28px; }
+.compare-v6-appendix { overflow: hidden; margin-top: 10px; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
+.compare-v6-appendix > summary { display: flex; justify-content: space-between; padding: 15px 17px; cursor: pointer; list-style: none; font-weight: 800; }
+.compare-v6-appendix > summary::-webkit-details-marker { display: none; }
+.compare-v6-appendix > summary span { color: var(--muted); font-size: 12px; }
+.compare-v6-appendix[open] > summary { border-bottom: 1px solid var(--line); background: #f8fbfa; }
+.compare-v6-appendix .table-wrap { margin: 0; border: 0; border-radius: 0; }
+.compare-v6-appendix > ul, .compare-v6-appendix > p { margin: 16px 20px; }
+
 .report-v5-hero {
   display: flex;
   justify-content: space-between;
@@ -1287,6 +1328,21 @@ button.report-v5-kpi:focus-visible { outline: 3px solid rgb(23 102 90 / 22%); ou
 .report-v5-module-details > details > summary span:last-child { color: var(--muted); font-size: 12px; }
 .report-v5-module-details > details[open] > summary { border-bottom: 1px solid var(--line); background: #f8fbfa; }
 .report-v5-module-details .table-wrap { margin: 0 16px 16px; }
+.report-v5-task-cost-details,
+.report-v5-field-compatibility > details { overflow: hidden; margin-top: 16px; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
+.report-v5-task-cost-details > summary,
+.report-v5-field-compatibility > details > summary { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 15px 17px; cursor: pointer; list-style: none; }
+.report-v5-task-cost-details > summary::-webkit-details-marker,
+.report-v5-field-compatibility > details > summary::-webkit-details-marker { display: none; }
+.report-v5-task-cost-details > summary span:first-child { display: grid; gap: 3px; }
+.report-v5-task-cost-details > summary small { color: var(--muted); font-size: 12px; font-weight: 400; }
+.report-v5-task-cost-details > summary > span:last-child { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.report-v5-task-cost-details[open] > summary,
+.report-v5-field-compatibility > details[open] > summary { border-bottom: 1px solid var(--line); background: #f8fbfa; }
+.report-v5-task-cost-details .table-wrap,
+.report-v5-field-compatibility .table-wrap { margin: 0; border: 0; border-radius: 0; }
+.report-v5-field-compatibility { margin: 16px 0; padding: 14px 16px; border-left: 3px solid #e0ae61; border-radius: 8px; background: #fffaf0; }
+.report-v5-field-compatibility > p { margin: 0; color: #714c16; font-size: 13px; line-height: 1.55; }
 .report-v5-module-populations { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; padding: 16px; }
 .report-v5-module-populations article { display: grid; gap: 5px; padding: 13px; border: 1px solid #dce9e5; border-radius: 10px; background: #f6faf9; }
 .report-v5-module-populations article > span,
@@ -2458,11 +2514,17 @@ button.report-v5-kpi:focus-visible { outline: 3px solid rgb(23 102 90 / 22%); ou
   }
 
   .report-v5-hero,
+  .compare-v6-hero,
   .report-v5-query-title,
   .report-v5-candidate > summary {
     align-items: stretch;
     flex-direction: column;
   }
+
+  .compare-v6-hero { display: flex; }
+  .compare-v6-route { grid-template-columns: 1fr; }
+  .compare-v6-route b { transform: rotate(90deg); justify-self: center; }
+  .compare-v6-migration { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
   .report-v5-kpis,
   .report-v5-toolbar,
@@ -2494,6 +2556,8 @@ button.report-v5-kpi:focus-visible { outline: 3px solid rgb(23 102 90 / 22%); ou
 
   .report-v5-scope-modules > details > summary,
   .report-v5-module-details > details > summary,
+  .report-v5-task-cost-details > summary,
+  .report-v5-field-compatibility > details > summary,
   .report-v5-static-query > summary {
     align-items: start;
     flex-direction: column;
