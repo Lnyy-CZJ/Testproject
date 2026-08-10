@@ -366,3 +366,28 @@ allure open allure-report
 希望清空旧结果时使用 `--clean-alluredir`；需要合并多批结果时，后续执行不要
 使用该参数。报告附件会脱敏 token 和签名 URL，不保存非 JSON 响应正文或媒体
 二进制，但仍不应将结果目录对外公开。
+
+## 12. 报告发布与同步
+
+平台展示的报告统一从 `reports/allure-current` 读取。该指针由发布脚本原子
+切换：报告先完整复制到 `reports/allure-reports/<版本>/`，再通过 rename 切换
+软链接，切换前旧报告始终可用。
+
+手动发布本地生成的报告（来源记为 `manual`）：
+
+```bash
+scripts/publish_allure_report.sh allure-report
+```
+
+从 Jenkins 拉取最近一次包含 HTML 归档的已完成构建并发布（来源记为
+`jenkins`，凭证通过环境变量传入，不得写入仓库）：
+
+```bash
+JENKINS_USER=<用户名> JENKINS_TOKEN=<API令牌> \
+  scripts/fetch_jenkins_report.sh
+```
+
+可选环境变量：`JENKINS_URL`（默认 http://10.0.30.33:8081）、`JOB_NAME`
+（默认 truthy-api-autotest）、`BUILD_NUMBER`（指定构建号，缺省自动选取）。
+Jenkins 侧的 HTML 归档由 `Jenkinsfile` post 阶段的
+`allure-report-publish/**` 提供。
