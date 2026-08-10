@@ -295,6 +295,70 @@ class WebAppTests(unittest.TestCase):
         )
         self.assertEqual(302, response.status_code)
 
+    def test_web_import_and_run_filter_support_full_name_social_photo(self):
+        """Web 现有导入与运行页面应独立识别 Social+Photo 组合 Stage。"""
+
+        response = self.client.post(
+            "/imports",
+            data={
+                "import_type": "dataset",
+                "dataset_id": "dataset-web-photo",
+                "name": "Web 照片数据集",
+                "source_file": (
+                    io.BytesIO(
+                        jsonl_bytes(
+                            [
+                                {
+                                    "input_id": "query-web-photo",
+                                    "person_id": "person-web-photo",
+                                    "query_stage": "FULL_NAME_SOCIAL_PHOTO",
+                                    "photo_path": "input_photos/person.jpg",
+                                    "clues": [
+                                        {
+                                            "type": "FULL_NAME",
+                                            "value": "Photo Person",
+                                        },
+                                        {
+                                            "type": "SOCIAL_LINK",
+                                            "social_link_query": {
+                                                "url": "https://linkedin.com/in/photo-person",
+                                                "platform_hint": "linkedin",
+                                            },
+                                        },
+                                    ],
+                                }
+                            ]
+                        )
+                    ),
+                    "tasks-web-photo.jsonl",
+                ),
+            },
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(302, response.status_code)
+        stored = self.store.fetch_one(
+            "SELECT query_stage, metadata_json FROM dataset_queries WHERE dataset_id = ?",
+            ("dataset-web-photo",),
+        )
+        self.assertEqual("FULL_NAME_SOCIAL_PHOTO", stored["query_stage"])
+        self.assertEqual(
+            "input_photos/person.jpg",
+            json.loads(stored["metadata_json"])["photo_path"],
+        )
+        run_id = self.service.create_execution_run(
+            evaluation_id="eval-web",
+            dataset_id="dataset-web-photo",
+            run_label="candidate",
+            system_version="photo-v1",
+            evaluation_phase="PHASE_1_BASELINE",
+            run_id="run-web-photo",
+        )
+
+        page = self.client.get(f"/runs/{run_id}")
+
+        self.assertEqual(200, page.status_code)
+        self.assertIn("FULL_NAME_SOCIAL_PHOTO", page.get_data(as_text=True))
+
     def seed_imported_result(self) -> tuple[str, str, str]:
         """导入一条历史结果，返回 Run、Candidate 与 Raw 标识。"""
 

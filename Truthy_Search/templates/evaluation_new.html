@@ -38,7 +38,7 @@
       <select name="threshold_profile_id">
         <option value="">暂不选择</option>
         {% for profile in threshold_profiles %}
-          <option value="{{ profile.profile_id }}" {% if form and form.threshold_profile_id == profile.profile_id %}selected{% endif %}>{{ profile.name }} v{{ profile.version }} · FULL_NAME {{ profile.configured_counts.FULL_NAME }} 项 / FULL_NAME_SOCIAL {{ profile.configured_counts.FULL_NAME_SOCIAL }} 项</option>
+          <option value="{{ profile.profile_id }}" {% if form and form.threshold_profile_id == profile.profile_id %}selected{% endif %}>{{ profile.name }} v{{ profile.version }} · FULL_NAME {{ profile.configured_counts.FULL_NAME }} 项 / FULL_NAME_SOCIAL {{ profile.configured_counts.FULL_NAME_SOCIAL }} 项 / FULL_NAME_PHOTO {{ profile.configured_counts.FULL_NAME_PHOTO }} 项 / FULL_NAME_SOCIAL_PHOTO {{ profile.configured_counts.FULL_NAME_SOCIAL_PHOTO }} 项</option>
         {% endfor %}
       </select>
       <small>方案内容会复制为 Evaluation 快照；未选择不影响执行和报告生成。</small>

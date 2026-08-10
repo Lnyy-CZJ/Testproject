@@ -171,6 +171,8 @@
       <option value="">全部检索条件</option>
       <option value="FULL_NAME" {% if filters.query_stage == 'FULL_NAME' %}selected{% endif %}>FULL_NAME</option>
       <option value="FULL_NAME_SOCIAL" {% if filters.query_stage == 'FULL_NAME_SOCIAL' %}selected{% endif %}>FULL_NAME_SOCIAL</option>
+      <option value="FULL_NAME_PHOTO" {% if filters.query_stage == 'FULL_NAME_PHOTO' %}selected{% endif %}>FULL_NAME_PHOTO</option>
+      <option value="FULL_NAME_SOCIAL_PHOTO" {% if filters.query_stage == 'FULL_NAME_SOCIAL_PHOTO' %}selected{% endif %}>FULL_NAME_SOCIAL_PHOTO</option>
     </select>
     <select name="result_status">
       <option value="">全部结果状态</option>

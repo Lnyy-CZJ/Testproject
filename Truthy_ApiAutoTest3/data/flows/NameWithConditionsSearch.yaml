@@ -1,0 +1,39 @@
+name: 姓名与附加条件搜索流程
+tags: [flow, search, name_with_conditions]
+steps:
+  - id: create_task
+    api: CreateIntentTask
+    extract:
+      task_id: $.task_id
+
+  - id: poll_task
+    api: GetTask
+    until:
+      path: $.status
+      equals: SUCCEEDED
+      # 无结果时跳过候选人业务步骤，但继续执行末尾的 Admin 审计步骤。
+      terminate_on: [NO_RESULT]
+      interval_seconds: 2
+      timeout_seconds: 120
+
+  - id: list_candidates
+    api: ListTaskCandidates
+    # 无候选人是正常结果：不提取不存在的 items[0]，由下一步条件跳过详情接口。
+    optional_extract:
+      candidate_id: $.items[0].candidate_id
+      list_empty_reason: $.empty_reason
+
+  - id: candidate_detail
+    api: GetTaskCandidateDetail
+    skip_if:
+      variable: list_empty_reason
+      equals: NO_CANDIDATES
+
+  # 成功与无结果两种终态均需保留搜索诊断和成本记录。
+  - id: search_task_debug
+    api: GetSearchTaskDebug
+    run_on_termination: true
+
+  - id: provider_cost_summary
+    api: GetProviderCostSummary
+    run_on_termination: true

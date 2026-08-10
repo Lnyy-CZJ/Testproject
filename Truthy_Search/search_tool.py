@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import copy
+import hashlib
 import json
 import os
 import re
@@ -15,6 +17,7 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Callable, Iterable
+from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import requests
@@ -23,8 +26,17 @@ from dotenv import dotenv_values
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 SERVICE_NAME = "tool.people_insight.SearchService"
+MEDIA_SERVICE_NAME = "tool.people_insight.MediaService"
 ADMIN_SERVICE_NAME = "tool.admin.AdminService"
-RESULT_SCHEMA_VERSION = "1.3.1"
+RESULT_SCHEMA_VERSION = "1.3.2"
+SUPPORTED_QUERY_STAGES = {
+    "FULL_NAME",
+    "FULL_NAME_SOCIAL",
+    "FULL_NAME_PHOTO",
+    "FULL_NAME_SOCIAL_PHOTO",
+}
+PHOTO_QUERY_STAGES = {"FULL_NAME_PHOTO", "FULL_NAME_SOCIAL_PHOTO"}
+SOCIAL_QUERY_STAGES = {"FULL_NAME_SOCIAL", "FULL_NAME_SOCIAL_PHOTO"}
 GET_TASK_RUNNING_STATUSES = frozenset({"QUEUED", "SEARCHING"})
 GET_TASK_SUCCESS_STATUS = "SUCCEEDED"
 GET_TASK_NO_RESULT_STATUS = "NO_RESULT"
@@ -82,9 +94,10 @@ def extract_admin_tool_usage(
     """联合 Debug 与 Cost 响应，提取工具调用及可审计的成本归属。
 
     返回值：
-        第一项为七类工具的调用、成功/失败、成本和计价状态；第二项为无法
-        精确拆分的 Provider 级成本。PDL Identify 与 Search 同时出现时，
-        people_data_labs 成本不会被擅自分摊。
+        第一项为七类工具的调用、成功/失败、成本和计价状态；第二项为全部
+        Provider 的标准化成本汇总。PDL Identify 与 Search 同时出现时，
+        people_data_labs 成本不会被擅自分摊到两个工具，但仍会完整保留在
+        Provider 汇总中。
     """
 
     def envelope_data(body: dict[str, Any] | None) -> dict[str, Any]:
@@ -156,6 +169,22 @@ def extract_admin_tool_usage(
         except (InvalidOperation, ValueError, TypeError):
             return 0
 
+    def merge_cost_status(current: str, incoming: str) -> str:
+        """合并同一 Provider 的多条计费状态，优先保留最可审计的状态。"""
+
+        priority = {
+            "NOT_COLLECTED": 0,
+            "UNKNOWN": 1,
+            "NON_BILLABLE": 2,
+            "UNPRICED": 3,
+            "PRICED": 4,
+        }
+        return (
+            incoming
+            if priority.get(incoming, 1) >= priority.get(current, 1)
+            else current
+        )
+
     for row in provider_rows:
         if not isinstance(row, dict):
             continue
@@ -172,23 +201,40 @@ def extract_admin_tool_usage(
         priced_count = integer(row.get("priced_call_count"))
         non_billable_count = integer(row.get("non_billable_call_count"))
         unpriced_count = integer(row.get("unpriced_call_count"))
+        row_cost_status = (
+            "PRICED" if currency == "USD" else
+            "UNPRICED" if unpriced_count else
+            "NON_BILLABLE" if non_billable_count else "UNKNOWN"
+        )
+        # Provider 汇总独立于工具分类：即使 Provider 已精确映射到某个工具，
+        # 也必须保留其总额，供 Excel、报告和未来未知 Provider 一致使用。
+        if provider:
+            provider_key = provider.casefold()
+            provider_item = provider_level.setdefault(provider_key, {
+                "provider": provider,
+                "currency": None,
+                "cost_microunit": None,
+                "cost": None,
+                "call_count": 0,
+                "priced_call_count": 0,
+                "non_billable_call_count": 0,
+                "unpriced_call_count": 0,
+                "cost_status": "NOT_COLLECTED",
+            })
+            provider_item["call_count"] += call_count
+            provider_item["priced_call_count"] += priced_count
+            provider_item["non_billable_call_count"] += non_billable_count
+            provider_item["unpriced_call_count"] += unpriced_count
+            provider_item["cost_status"] = merge_cost_status(
+                provider_item["cost_status"], row_cost_status
+            )
+            if currency == "USD":
+                provider_item["currency"] = "USD"
+                provider_item["cost_microunit"] = (
+                    (provider_item["cost_microunit"] or 0) + cost_microunit
+                )
+
         if key is None:
-            if provider:
-                provider_level[provider] = {
-                    "provider": provider,
-                    "currency": currency or None,
-                    "cost_microunit": cost_microunit,
-                    "cost": (
-                        float(Decimal(cost_microunit) / Decimal(1_000_000))
-                        if currency == "USD" else None
-                    ),
-                    "call_count": call_count,
-                    "cost_status": (
-                        "PRICED" if currency == "USD" else
-                        "UNPRICED" if unpriced_count else
-                        "NON_BILLABLE" if non_billable_count else "UNKNOWN"
-                    ),
-                }
             continue
         item = tools[key]
         item["provider_call_count"] += call_count
@@ -217,6 +263,11 @@ def extract_admin_tool_usage(
             )
         if item["call_count"] == 0 and item["provider_call_count"]:
             item["call_count"] = item["provider_call_count"]
+    for item in provider_level.values():
+        if item["cost_microunit"] is not None:
+            item["cost"] = float(
+                Decimal(item["cost_microunit"]) / Decimal(1_000_000)
+            )
     return list(tools.values()), provider_level
 
 
@@ -314,6 +365,9 @@ class Config:
     query_log_enabled: bool = False
     query_log_dir: str = "log"
     query_log_timezone: str = "Asia/Shanghai"
+    photo_enabled: bool = False
+    photo_input_dir: str = "input/input_photos"
+    photo_upload_host_suffixes: tuple[str, ...] = (".myqcloud.com",)
 
     @classmethod
     def from_env(cls, env_file: Path | None = None) -> "Config":
@@ -423,6 +477,31 @@ class Config:
             if admin_enabled and not admin_config_error:
                 admin_config_error = str(exc)
 
+        photo_enabled = _env_bool("SEARCH_PHOTO_ENABLED", False, setting)
+        photo_input_dir = (
+            setting("SEARCH_PHOTO_INPUT_DIR", "input/input_photos").strip()
+            or "input/input_photos"
+        )
+        photo_host_values = [
+            value.strip().lower()
+            for value in setting(
+                "SEARCH_PHOTO_UPLOAD_HOST_SUFFIXES", ".myqcloud.com"
+            ).split(",")
+            if value.strip()
+        ]
+        if photo_enabled and not photo_host_values:
+            raise ConfigError(
+                "SEARCH_PHOTO_UPLOAD_HOST_SUFFIXES 至少需要一个允许的 COS 域名"
+            )
+        if photo_enabled and any(
+            not value.startswith(".")
+            or not re.fullmatch(r"\.[a-z0-9.-]+", value)
+            for value in photo_host_values
+        ):
+            raise ConfigError(
+                "SEARCH_PHOTO_UPLOAD_HOST_SUFFIXES 必须是以 . 开头的域名后缀"
+            )
+
         return cls(
             api_url=setting("SEARCH_API_URL").strip(),
             headers=headers,
@@ -462,6 +541,13 @@ class Config:
                 "SEARCH_DISPLAY_TIMEZONE", "Asia/Shanghai"
             ).strip()
             or "Asia/Shanghai",
+            photo_enabled=photo_enabled,
+            photo_input_dir=photo_input_dir,
+            photo_upload_host_suffixes=(
+                tuple(photo_host_values)
+                if photo_enabled
+                else (".myqcloud.com",)
+            ),
         )
 
 
@@ -580,6 +666,7 @@ class SearchClient:
         config: Config,
         session: Any | None = None,
         admin_session: Any | None = None,
+        media_session: Any | None = None,
     ) -> None:
         """初始化原 Search Client，并为同一个 Run 持有一个 Admin Session。"""
 
@@ -588,8 +675,18 @@ class SearchClient:
         self.last_http_status: int | None = None
         self.last_duration_ms: int | None = None
         self.admin_client = AdminClient(config, admin_session)
+        # COS 使用独立 Session，避免把 Gateway Cookie 或认证 Header 带到签名 URL。
+        self.media_session = media_session or requests.Session()
+        self.last_media_http_status: int | None = None
+        self.last_media_duration_ms: int | None = None
 
-    def call(self, method_name: str, params: dict[str, Any]) -> dict[str, Any]:
+    def call(
+        self,
+        method_name: str,
+        params: dict[str, Any],
+        *,
+        service_name: str = SERVICE_NAME,
+    ) -> dict[str, Any]:
         """调用统一 HTTP RPC 接口并校验公共业务响应。
 
         参数说明:
@@ -618,7 +715,7 @@ class SearchClient:
             "requests": [
                 {
                     "id": "req_0",
-                    "service_name": SERVICE_NAME,
+                    "service_name": service_name,
                     "method_name": method_name,
                     "params": params,
                 }
@@ -666,6 +763,89 @@ class SearchClient:
             exc.http_status = self.last_http_status
             exc.duration_ms = self.last_duration_ms
             raise
+
+    def put_media_binary(
+        self,
+        upload_url: str,
+        upload_headers: dict[str, str],
+        content: bytes,
+    ) -> int:
+        """使用隔离 Session 将 JPEG 原始字节上传到受信任 COS Host。
+
+        功能说明:
+            保持 Prepare 返回的签名 URL 原样，不重编码查询参数；请求只携带
+            Content-Length 与 Content-Type，且禁止重定向和自动重试。
+
+        参数说明:
+            upload_url: Prepare 返回的动态 HTTPS 签名 URL。
+            upload_headers: 已与本地字节数核对的两个上传 Header。
+            content: 本地 JPEG 原始字节。
+
+        返回值:
+            COS 返回的 HTTP 状态码；仅 200、201、204 会正常返回。
+
+        异常说明:
+            FlowError: URL 越界、网络失败或 HTTP 状态不受支持时抛出。错误
+            文本不会包含完整签名 URL。
+        """
+
+        parsed = urlsplit(upload_url)
+        hostname = (parsed.hostname or "").lower()
+        allowed_suffixes = self.config.photo_upload_host_suffixes
+        try:
+            parsed_port = parsed.port
+        except ValueError as exc:
+            raise FlowError(
+                "PutMediaBinary", "COS 上传地址包含非法端口"
+            ) from exc
+        if (
+            parsed.scheme.lower() != "https"
+            or not hostname
+            or parsed.username is not None
+            or parsed.password is not None
+            or (parsed_port is not None and parsed_port != 443)
+        ):
+            raise FlowError("PutMediaBinary", "COS 上传地址必须是合法 HTTPS URL")
+        if not any(
+            hostname == suffix.lstrip(".") or hostname.endswith(suffix)
+            for suffix in allowed_suffixes
+        ):
+            raise FlowError("PutMediaBinary", "COS 上传地址不属于允许的域名")
+
+        started_at = time.monotonic()
+        self.last_media_http_status = None
+        cookies = getattr(self.media_session, "cookies", None)
+        if cookies is not None and hasattr(cookies, "clear"):
+            cookies.clear()
+        try:
+            response = self.media_session.put(
+                upload_url,
+                headers={
+                    "Content-Length": upload_headers["Content-Length"],
+                    "Content-Type": upload_headers["Content-Type"],
+                },
+                data=content,
+                timeout=self.config.http_timeout_seconds,
+                allow_redirects=False,
+            )
+            self.last_media_http_status = getattr(response, "status_code", None)
+        except requests.RequestException as exc:
+            error = FlowError("PutMediaBinary", "COS PUT 请求失败")
+            error.http_status = self.last_media_http_status
+            raise error from exc
+        finally:
+            self.last_media_duration_ms = int(
+                (time.monotonic() - started_at) * 1000
+            )
+        if self.last_media_http_status not in {200, 201, 204}:
+            error = FlowError(
+                "PutMediaBinary",
+                f"COS PUT 返回不受支持的 HTTP 状态: {self.last_media_http_status}",
+            )
+            error.http_status = self.last_media_http_status
+            error.duration_ms = self.last_media_duration_ms
+            raise error
+        return int(self.last_media_http_status)
 
     @staticmethod
     def _validate_response(method_name: str, body: Any) -> dict[str, Any]:
@@ -1226,6 +1406,13 @@ def extract_admin_task_fields(
     )
     metadata["tool_usage_summary"] = tool_usage
     metadata["provider_level_costs"] = provider_level_costs
+    # 标准化 Provider 汇总可直接被 FieldSchema、Excel 和报告使用；它涵盖
+    # 已知工具、未知 Provider、已计价、未计价和非计费调用，避免仅靠 LLM
+    # 或固定工具列导致第三方成本漏记。
+    metadata["provider_cost_details"] = sorted(
+        provider_level_costs.values(),
+        key=lambda item: str(item.get("provider") or "").casefold(),
+    )
     # 扁平字段供 FieldSchema 开关与 Excel 使用；完整结构仍保留在
     # tool_usage_summary，避免报告依赖固定 Provider 数量。
     for item in tool_usage:
@@ -1275,10 +1462,22 @@ def sanitize_raw(value: Any) -> Any:
             normalized_key = str(key).strip().lower().replace("-", "_")
             if normalized_key in sensitive_keys:
                 continue
+            if normalized_key == "upload_url":
+                sanitized[str(key)] = "***SIGNED_UPLOAD_URL***"
+                continue
             sanitized[str(key)] = sanitize_raw(item)
         return sanitized
     if isinstance(value, list):
         return [sanitize_raw(item) for item in value]
+    if isinstance(value, str):
+        # 异常文本也可能由 requests 带出签名 URL。只保留可定位的 Host，
+        # 不让 COS 路径和签名查询参数进入 Raw、SQLite 或人物日志。
+        return re.sub(
+            r"https://[^\s?'\"<>]*\.myqcloud\.com/[^\s'\"<>]*",
+            "https://***.myqcloud.com/***SIGNED_UPLOAD_URL***",
+            value,
+            flags=re.IGNORECASE,
+        )
     return value
 
 
@@ -1305,8 +1504,8 @@ def resolve_query_stage(item: dict[str, Any]) -> str:
         item: 当前 Query 输入对象。
 
     返回值:
-        ``FULL_NAME`` 或 ``FULL_NAME_SOCIAL``。旧输入存在 SOCIAL_LINK
-        线索时推断为后者，否则推断为前者。
+        返回当前支持的 Query Stage。旧输入只按 SOCIAL_LINK 推断，照片类型
+        必须显式声明，避免误触发上传。
 
     异常说明:
         FlowError: 显式 query_stage 不属于 v1.3 MVP 支持范围时抛出。
@@ -1322,10 +1521,11 @@ def resolve_query_stage(item: dict[str, Any]) -> str:
             if isinstance(clue, dict)
         }
         return "FULL_NAME_SOCIAL" if "SOCIAL_LINK" in clue_types else "FULL_NAME"
-    if query_stage not in {"FULL_NAME", "FULL_NAME_SOCIAL"}:
+    if query_stage not in SUPPORTED_QUERY_STAGES:
         raise FlowError(
             "Input",
-            "query_stage 只支持 FULL_NAME 或 FULL_NAME_SOCIAL",
+            "query_stage 只支持 FULL_NAME、FULL_NAME_SOCIAL、"
+            "FULL_NAME_PHOTO 或 FULL_NAME_SOCIAL_PHOTO",
         )
     return query_stage
 
@@ -1372,7 +1572,7 @@ def build_raw_record(
         "sequence_no": sequence_no,
         "request_params": sanitize_raw(request_params),
         "response_body": sanitize_raw(response_body),
-        "error": error,
+        "error": sanitize_raw(error),
         "attempt": attempt,
         "http_status": http_status,
         "duration_ms": duration_ms,
@@ -1594,6 +1794,24 @@ class QueryChainLogger:
 
 
 def validate_input(item: Any, line_number: int, seen_ids: set[str]) -> dict[str, Any]:
+    """校验单条 CLI 输入，并保留照片执行所需的白名单字段。
+
+    功能说明:
+        保持旧 Query 输入兼容，同时确保照片执行线显式提供 photo_path，且
+        输入无法绕过上传流程预置 PHOTO clue。
+
+    参数说明:
+        item: JSONL 当前行解析结果。
+        line_number: 用于错误定位的行号。
+        seen_ids: 当前文件已经出现的 input_id 集合。
+
+    返回值:
+        可直接交给 process_one 的规范化 Query 对象。
+
+    异常说明:
+        FlowError: 字段结构、Stage 组合或照片字段不符合契约时抛出。
+    """
+
     if not isinstance(item, dict):
         raise FlowError("Input", f"第 {line_number} 行必须是 JSON 对象")
     input_id = item.get("input_id")
@@ -1606,6 +1824,14 @@ def validate_input(item: Any, line_number: int, seen_ids: set[str]) -> dict[str,
     clues = item.get("clues")
     if not isinstance(clues, list) or not clues:
         raise FlowError("Input", f"第 {line_number} 行 clues 必须是非空数组")
+    clue_types = {
+        clue.get("type") for clue in clues if isinstance(clue, dict)
+    }
+    if "PHOTO" in clue_types:
+        raise FlowError(
+            "Input",
+            f"第 {line_number} 行不得预置 PHOTO clue，media_asset_id 必须运行时生成",
+        )
     additional_details = item.get("additional_details", [])
     if not isinstance(additional_details, list):
         raise FlowError("Input", f"第 {line_number} 行 additional_details 必须是数组")
@@ -1613,14 +1839,51 @@ def validate_input(item: Any, line_number: int, seen_ids: set[str]) -> dict[str,
     if not isinstance(match_strategy, str) or not match_strategy:
         raise FlowError("Input", f"第 {line_number} 行 match_strategy 必须是非空字符串")
     query_stage = resolve_query_stage(item)
+    photo_path = item.get("photo_path")
+    if query_stage in PHOTO_QUERY_STAGES:
+        if not isinstance(photo_path, str) or not photo_path.strip():
+            raise FlowError(
+                "Input",
+                f"第 {line_number} 行 {query_stage} 必须提供非空 photo_path",
+            )
+        if "FULL_NAME" not in clue_types:
+            raise FlowError(
+                "Input",
+                f"第 {line_number} 行 {query_stage} 缺少 FULL_NAME 线索",
+            )
+        if query_stage in SOCIAL_QUERY_STAGES and "SOCIAL_LINK" not in clue_types:
+            raise FlowError(
+                "Input",
+                f"第 {line_number} 行 {query_stage} 缺少 SOCIAL_LINK 线索",
+            )
+        if query_stage == "FULL_NAME_PHOTO" and "SOCIAL_LINK" in clue_types:
+            raise FlowError(
+                "Input",
+                f"第 {line_number} 行姓名、Social 与照片组合请使用 "
+                "FULL_NAME_SOCIAL_PHOTO",
+            )
+    elif photo_path not in (None, ""):
+        raise FlowError(
+            "Input",
+            f"第 {line_number} 行只有 FULL_NAME_PHOTO 或 "
+            "FULL_NAME_SOCIAL_PHOTO 可以提供 photo_path",
+        )
+    elif query_stage in SOCIAL_QUERY_STAGES and "SOCIAL_LINK" not in clue_types:
+        raise FlowError(
+            "Input",
+            f"第 {line_number} 行 {query_stage} 缺少 SOCIAL_LINK 线索",
+        )
 
-    return {
+    normalized = {
         "input_id": input_id,
         "query_stage": query_stage,
         "clues": clues,
         "additional_details": additional_details,
         "match_strategy": match_strategy,
     }
+    if query_stage in PHOTO_QUERY_STAGES:
+        normalized["photo_path"] = photo_path.strip()
+    return normalized
 
 
 def read_jsonl(path: Path) -> Iterable[tuple[int, Any, str | None]]:
@@ -1633,6 +1896,186 @@ def read_jsonl(path: Path) -> Iterable[tuple[int, Any, str | None]]:
                 yield line_number, json.loads(line), None
             except json.JSONDecodeError as exc:
                 yield line_number, None, f"第 {line_number} 行 JSON 格式错误: {exc.msg}"
+
+
+def load_photo_input(
+    item: dict[str, Any],
+    config: Config,
+) -> tuple[bytes, dict[str, Any]]:
+    """安全读取照片 Query 的本地 JPEG，并生成不含绝对路径的摘要。
+
+    功能说明:
+        将 photo_path 限制在配置目录内，拒绝绝对路径、路径穿越和符号链接，
+        并通过 JPEG SOI/EOI 签名做首版基础格式校验。EXIF 不解析、不清理。
+
+    参数说明:
+        item: 已通过结构校验的照片 Query。
+        config: 当前 Run 最新配置，提供照片开关和根目录。
+
+    返回值:
+        ``(原始 JPEG 字节, 安全照片摘要)``。
+
+    异常说明:
+        FlowError: 功能未启用、路径越界、文件不可读或格式不合法时抛出。
+    """
+
+    if not config.photo_enabled:
+        raise FlowError("PhotoValidation", "照片检索功能未启用")
+    raw_path = str(item.get("photo_path") or "").strip()
+    relative_path = Path(raw_path)
+    if relative_path.is_absolute() or ".." in relative_path.parts:
+        raise FlowError("PhotoValidation", "photo_path 必须是照片目录内的相对路径")
+    if relative_path.suffix.lower() not in {".jpg", ".jpeg"}:
+        raise FlowError("PhotoValidation", "首版照片只支持 .jpg 或 .jpeg")
+
+    configured_root = Path(config.photo_input_dir)
+    if not configured_root.is_absolute():
+        configured_root = PROJECT_ROOT / configured_root
+    try:
+        root = configured_root.resolve(strict=True)
+    except OSError as exc:
+        raise FlowError("PhotoValidation", "配置的照片目录不存在或不可访问") from exc
+
+    # PRD 示例使用 input_photos/name.jpg；配置本身也可能已经指向该目录。
+    # 两种写法统一到同一个根目录，兼容 CLI 与 Dataset 历史约定。
+    effective_parts = relative_path.parts
+    if effective_parts and effective_parts[0] == root.name:
+        effective_parts = effective_parts[1:]
+    if not effective_parts:
+        raise FlowError("PhotoValidation", "photo_path 未指向具体 JPEG 文件")
+    unresolved = root.joinpath(*effective_parts)
+    cursor = root
+    for part in effective_parts:
+        cursor = cursor / part
+        if cursor.is_symlink():
+            raise FlowError("PhotoValidation", "photo_path 不允许经过符号链接")
+    try:
+        resolved = unresolved.resolve(strict=True)
+        resolved.relative_to(root)
+    except (OSError, ValueError) as exc:
+        raise FlowError("PhotoValidation", "photo_path 不存在或超出照片目录") from exc
+    if not resolved.is_file():
+        raise FlowError("PhotoValidation", "photo_path 必须指向普通文件")
+    try:
+        content = resolved.read_bytes()
+    except OSError as exc:
+        raise FlowError("PhotoValidation", "照片文件不可读") from exc
+    if len(content) < 4 or not content.startswith(b"\xff\xd8") or not content.endswith(b"\xff\xd9"):
+        raise FlowError("PhotoValidation", "照片内容不是有效的 JPEG 基础格式")
+
+    return content, {
+        "photo_path": raw_path,
+        "content_type": "image/jpeg",
+        "content_length": len(content),
+        "sha256": hashlib.sha256(content).hexdigest(),
+        "config_version": None,
+        "media_asset_id": None,
+        "upload_status": "validated",
+    }
+
+
+def validate_media_config(data: dict[str, Any]) -> dict[str, Any]:
+    """校验 GetMediaUploadConfig 中首版执行依赖的字段。"""
+
+    allowed = data.get("allowed_content_types")
+    max_size = data.get("max_size_bytes")
+    retry = data.get("complete_retry")
+    if not isinstance(allowed, list) or "image/jpeg" not in allowed:
+        raise FlowError("GetMediaUploadConfig", "媒体配置不允许 image/jpeg")
+    if not isinstance(max_size, int) or isinstance(max_size, bool) or max_size <= 0:
+        raise FlowError("GetMediaUploadConfig", "媒体配置 max_size_bytes 非法")
+    if not isinstance(retry, dict):
+        raise FlowError("GetMediaUploadConfig", "媒体配置缺少 complete_retry")
+    values: dict[str, int] = {}
+    for key in ("initial_delay_ms", "max_attempts", "max_delay_ms"):
+        value = retry.get(key)
+        if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+            raise FlowError("GetMediaUploadConfig", f"complete_retry.{key} 非法")
+        values[key] = value
+    return {
+        "max_size_bytes": max_size,
+        "config_version": str(data.get("config_version") or ""),
+        "strip_exif": data.get("strip_exif"),
+        "complete_retry": values,
+    }
+
+
+def validate_prepare_data(
+    data: dict[str, Any],
+    *,
+    content_length: int,
+    config_max_size: int,
+) -> dict[str, Any]:
+    """交叉校验 Prepare 响应，防止大小、MIME 或上传目标错配。"""
+
+    media_asset_id = data.get("media_asset_id")
+    upload_url = data.get("upload_url")
+    headers = data.get("upload_headers")
+    if not isinstance(media_asset_id, str) or not media_asset_id:
+        raise FlowError("PrepareMediaUpload", "响应缺少 media_asset_id")
+    if not isinstance(upload_url, str) or not upload_url:
+        raise FlowError("PrepareMediaUpload", "响应缺少 upload_url")
+    if data.get("upload_method") != "PUT":
+        raise FlowError("PrepareMediaUpload", "upload_method 必须为 PUT")
+    if data.get("status") != "pending":
+        raise FlowError("PrepareMediaUpload", "Prepare 状态必须为 pending")
+    if not isinstance(headers, dict):
+        raise FlowError("PrepareMediaUpload", "响应缺少 upload_headers")
+    content_type = headers.get("Content-Type")
+    try:
+        header_length = int(headers.get("Content-Length"))
+        response_size = int(data.get("size_bytes"))
+        prepare_max_size = int(data.get("max_size_bytes"))
+        expires_time = int(data.get("expires_time"))
+    except (TypeError, ValueError) as exc:
+        raise FlowError("PrepareMediaUpload", "响应中的大小或过期时间非法") from exc
+    if content_type != "image/jpeg" or data.get("content_type") != "image/jpeg":
+        raise FlowError("PrepareMediaUpload", "Prepare 返回的 Content-Type 不一致")
+    if len({header_length, response_size, content_length}) != 1:
+        raise FlowError("PrepareMediaUpload", "Prepare 返回的 Content-Length 与文件不一致")
+    if content_length > config_max_size or content_length > prepare_max_size:
+        raise FlowError("PrepareMediaUpload", "照片大小超过媒体配置限制")
+    if expires_time <= int(time.time() * 1000):
+        raise FlowError("PrepareMediaUpload", "COS 上传签名已经过期")
+    return {
+        "media_asset_id": media_asset_id,
+        "upload_url": upload_url,
+        "upload_headers": {
+            "Content-Length": str(header_length),
+            "Content-Type": "image/jpeg",
+        },
+        "size_bytes": response_size,
+    }
+
+
+def build_create_clues(
+    item: dict[str, Any],
+    media_asset_id: str | None = None,
+) -> list[dict[str, Any]]:
+    """深拷贝输入 clues，并为照片 Query 追加当前上传生成的 PHOTO clue。"""
+
+    clues = copy.deepcopy(item["clues"])
+    if any(
+        isinstance(clue, dict) and clue.get("type") == "PHOTO"
+        for clue in clues
+    ):
+        raise FlowError(
+            "Input",
+            "输入不得预置 PHOTO clue，media_asset_id 必须由当前 Query 上传生成",
+        )
+    if item.get("query_stage") in PHOTO_QUERY_STAGES:
+        if not media_asset_id:
+            raise FlowError("CreateIntentTask", "照片 Query 缺少 media_asset_id")
+        clues.append(
+            {
+                "type": "PHOTO",
+                "photo_query": {
+                    "media_asset_id": media_asset_id,
+                    "photo_type_hint": "face",
+                },
+            }
+        )
+    return clues
 
 
 def process_one(
@@ -1714,11 +2157,17 @@ def process_one(
         *,
         sequence_no: int = 1,
         candidate_id: str = "",
+        service_name: str = SERVICE_NAME,
+        attempt: int = 1,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         """执行一次接口调用，并在成功或失败后立即生成脱敏 Raw。"""
 
         try:
-            body = client.call(stage, params)
+            if service_name == SERVICE_NAME:
+                # 保持旧测试 Client 和普通检索调用签名完全兼容。
+                body = client.call(stage, params)
+            else:
+                body = client.call(stage, params, service_name=service_name)
         except FlowError as exc:
             record = build_raw_record(
                 run_id=effective_run_id,
@@ -1730,6 +2179,7 @@ def process_one(
                 request_params=params,
                 response_body=exc.response_body,
                 error=str(exc),
+                attempt=attempt,
                 http_status=exc.http_status
                 or getattr(client, "last_http_status", None),
                 duration_ms=exc.duration_ms
@@ -1756,6 +2206,7 @@ def process_one(
             sequence_no=sequence_no,
             request_params=params,
             response_body=body,
+            attempt=attempt,
             http_status=getattr(client, "last_http_status", None),
             duration_ms=getattr(client, "last_duration_ms", None),
         )
@@ -2140,11 +2591,268 @@ def process_one(
         return result
 
     emit_progress("query_started", stage="Input", status="RUNNING")
+    photo_input: dict[str, Any] | None = None
     try:
         query_stage = resolve_query_stage(item)
+        media_asset_id: str | None = None
+        if query_stage in PHOTO_QUERY_STAGES:
+            emit_progress(
+                "query_stage",
+                stage="PhotoValidation",
+                status="RUNNING",
+                message="正在校验本地 JPEG 照片",
+            )
+            try:
+                photo_content, photo_input = load_photo_input(item, client.config)
+            except FlowError as exc:
+                validation_record = build_raw_record(
+                    run_id=effective_run_id,
+                    input_id=input_id,
+                    task_id="",
+                    candidate_id="",
+                    stage="PhotoValidation",
+                    sequence_no=1,
+                    request_params={"photo_path": item.get("photo_path")},
+                    response_body=None,
+                    error=str(exc),
+                )
+                raw_records.append(validation_record)
+                emit_callback(raw_callback, validation_record)
+                chain_logger.write_raw(validation_record)
+                raise
+            validation_record = build_raw_record(
+                run_id=effective_run_id,
+                input_id=input_id,
+                task_id="",
+                candidate_id="",
+                stage="PhotoValidation",
+                sequence_no=1,
+                request_params={"photo_path": item.get("photo_path")},
+                response_body=photo_input,
+            )
+            raw_records.append(validation_record)
+            emit_callback(raw_callback, validation_record)
+            chain_logger.write_raw(validation_record)
+            emit_progress(
+                "query_stage",
+                stage="PhotoValidation",
+                status="SUCCEEDED",
+                message="本地 JPEG 校验完成",
+            )
+
+            emit_progress(
+                "query_stage",
+                stage="GetMediaUploadConfig",
+                status="RUNNING",
+                message="正在获取媒体上传配置",
+            )
+            config_body, _ = call_and_record(
+                "GetMediaUploadConfig",
+                {},
+                service_name=MEDIA_SERVICE_NAME,
+            )
+            media_config = validate_media_config(
+                response_data(config_body, "GetMediaUploadConfig")
+            )
+            if photo_input["content_length"] > media_config["max_size_bytes"]:
+                raise FlowError(
+                    "GetMediaUploadConfig",
+                    "照片大小超过媒体配置 max_size_bytes",
+                )
+            photo_input["config_version"] = media_config["config_version"]
+            emit_progress(
+                "query_stage",
+                stage="GetMediaUploadConfig",
+                status="SUCCEEDED",
+                message="媒体上传配置获取完成",
+            )
+
+            prepare_params = {
+                "client_request_id": (
+                    f"media-{int(time.time() * 1000)}-{uuid.uuid4().hex[:10]}"
+                ),
+                "content_type": "image/jpeg",
+                "size_bytes": photo_input["content_length"],
+            }
+            emit_progress(
+                "query_stage",
+                stage="PrepareMediaUpload",
+                status="RUNNING",
+                message="正在准备媒体上传",
+            )
+            prepare_body, _ = call_and_record(
+                "PrepareMediaUpload",
+                prepare_params,
+                service_name=MEDIA_SERVICE_NAME,
+            )
+            prepared = validate_prepare_data(
+                response_data(prepare_body, "PrepareMediaUpload"),
+                content_length=photo_input["content_length"],
+                config_max_size=media_config["max_size_bytes"],
+            )
+            media_asset_id = prepared["media_asset_id"]
+            photo_input["media_asset_id"] = media_asset_id
+            photo_input["upload_status"] = "prepared"
+            emit_progress(
+                "query_stage",
+                stage="PrepareMediaUpload",
+                status="SUCCEEDED",
+                message="媒体上传准备完成",
+            )
+
+            emit_progress(
+                "query_stage",
+                stage="PutMediaBinary",
+                status="RUNNING",
+                message="正在上传 JPEG 原始字节",
+            )
+            put_request_summary = {
+                "upload_url": "***SIGNED_UPLOAD_URL***",
+                "content_length": photo_input["content_length"],
+                "content_type": "image/jpeg",
+                "binary_logged": False,
+            }
+            try:
+                put_status = client.put_media_binary(
+                    prepared["upload_url"],
+                    prepared["upload_headers"],
+                    photo_content,
+                )
+            except FlowError as exc:
+                put_record = build_raw_record(
+                    run_id=effective_run_id,
+                    input_id=input_id,
+                    task_id="",
+                    candidate_id="",
+                    stage="PutMediaBinary",
+                    sequence_no=1,
+                    request_params=put_request_summary,
+                    response_body={"response_body_logged": False},
+                    error=str(exc),
+                    http_status=exc.http_status,
+                    duration_ms=exc.duration_ms
+                    or getattr(client, "last_media_duration_ms", None),
+                )
+                raw_records.append(put_record)
+                emit_callback(raw_callback, put_record)
+                chain_logger.write_raw(put_record)
+                raise
+            put_record = build_raw_record(
+                run_id=effective_run_id,
+                input_id=input_id,
+                task_id="",
+                candidate_id="",
+                stage="PutMediaBinary",
+                sequence_no=1,
+                request_params=put_request_summary,
+                response_body={
+                    "status": "UPLOADED_TO_COS",
+                    "response_body_logged": False,
+                },
+                http_status=put_status,
+                duration_ms=getattr(client, "last_media_duration_ms", None),
+            )
+            raw_records.append(put_record)
+            emit_callback(raw_callback, put_record)
+            chain_logger.write_raw(put_record)
+            # 二进制上传完成后立即释放当前引用，后续 Complete/Create 只需要
+            # media_asset_id，避免候选人采集期间继续占用整张照片的内存。
+            del photo_content
+            photo_input["upload_status"] = "uploaded_to_cos"
+            emit_progress(
+                "query_stage",
+                stage="PutMediaBinary",
+                status="SUCCEEDED",
+                message="JPEG 已上传至 COS",
+            )
+
+            retry = media_config["complete_retry"]
+            complete_data: dict[str, Any] | None = None
+            for attempt in range(1, retry["max_attempts"] + 1):
+                if attempt > 1:
+                    delay_ms = min(
+                        retry["initial_delay_ms"] * (2 ** (attempt - 2)),
+                        retry["max_delay_ms"],
+                    )
+                    sleep_fn(delay_ms / 1000)
+                emit_progress(
+                    "query_stage",
+                    stage="CompleteMediaUpload",
+                    status="RUNNING",
+                    message=f"正在确认媒体上传（第 {attempt} 次）",
+                )
+                try:
+                    complete_body, _ = call_and_record(
+                        "CompleteMediaUpload",
+                        {"media_asset_id": media_asset_id},
+                        sequence_no=attempt,
+                        service_name=MEDIA_SERVICE_NAME,
+                        attempt=attempt,
+                    )
+                except FlowError as exc:
+                    status_code = exc.http_status
+                    retryable = (
+                        status_code is None
+                        or status_code in {408, 429}
+                        or (isinstance(status_code, int) and 500 <= status_code <= 599)
+                    )
+                    if retryable and attempt < retry["max_attempts"]:
+                        continue
+                    raise
+                complete_data = response_data(
+                    complete_body,
+                    "CompleteMediaUpload",
+                )
+                complete_status = complete_data.get("status")
+                if complete_status == "pending" and attempt < retry["max_attempts"]:
+                    continue
+                if complete_status == "pending":
+                    raise FlowError(
+                        "CompleteMediaUpload",
+                        "媒体上传在最大重试次数后仍为 pending",
+                        response_body=complete_body,
+                    )
+                if complete_status != "uploaded":
+                    raise FlowError(
+                        "CompleteMediaUpload",
+                        f"未知或失败的媒体状态: {complete_status!r}",
+                        response_body=complete_body,
+                    )
+                if complete_data.get("media_asset_id") != media_asset_id:
+                    raise FlowError(
+                        "CompleteMediaUpload",
+                        "Complete 返回的 media_asset_id 与 Prepare 不一致",
+                        response_body=complete_body,
+                    )
+                if complete_data.get("content_type") not in (None, "image/jpeg"):
+                    raise FlowError(
+                        "CompleteMediaUpload",
+                        "Complete 返回的 content_type 与 Prepare 不一致",
+                        response_body=complete_body,
+                    )
+                if complete_data.get("size_bytes") not in (
+                    None,
+                    photo_input["content_length"],
+                ):
+                    raise FlowError(
+                        "CompleteMediaUpload",
+                        "Complete 返回的 size_bytes 与 Prepare 不一致",
+                        response_body=complete_body,
+                    )
+                break
+            if complete_data is None:
+                raise FlowError("CompleteMediaUpload", "媒体上传确认未取得响应")
+            photo_input["upload_status"] = "uploaded"
+            emit_progress(
+                "query_stage",
+                stage="CompleteMediaUpload",
+                status="SUCCEEDED",
+                message="媒体上传确认完成",
+            )
+
         create_params = {
             "match_strategy": item["match_strategy"],
-            "clues": item["clues"],
+            "clues": build_create_clues(item, media_asset_id),
             "additional_details": item["additional_details"],
         }
         create_body, create_raw = call_and_record(
@@ -2226,6 +2934,8 @@ def process_one(
         else:
             public_fields["query_log_status"] = "COMPLETE"
         public_fields["get_task_terminal_status"] = str(task_data.get("status") or "")
+        if photo_input is not None:
+            public_fields["photo_input"] = sanitize_raw(photo_input)
         # 使用已冻结的 Admin 契约生成正式任务字段；缺失或非法字段保持 None，
         # 原始 microunit、币种和来源继续放在 public_fields 供审计。
         task_fields, mapping_metadata = extract_admin_task_fields(
@@ -2259,6 +2969,21 @@ def process_one(
                 else None
             ),
         }
+        photo_raw = {
+            stage: [
+                raw_payload(record)
+                for record in raw_records
+                if record.get("stage") == stage
+            ]
+            for stage in (
+                "PhotoValidation",
+                "GetMediaUploadConfig",
+                "PrepareMediaUpload",
+                "PutMediaBinary",
+                "CompleteMediaUpload",
+            )
+            if any(record.get("stage") == stage for record in raw_records)
+        }
 
         if terminal_failure_status:
             failure = FlowError(
@@ -2290,7 +3015,13 @@ def process_one(
                 "detail_failure_count": 0,
                 "task_fields": task_fields,
                 "public_fields": public_fields,
+                **(
+                    {"photo_input": sanitize_raw(photo_input)}
+                    if photo_input is not None
+                    else {}
+                ),
                 "raw": {
+                    **({"photo_upload": photo_raw} if photo_raw else {}),
                     "create_intent_task": raw_payload(create_raw),
                     "get_task_history": get_task_history,
                     **admin_raw,
@@ -2512,7 +3243,13 @@ def process_one(
             "detail_failure_count": detail_failure_count,
             "task_fields": task_fields,
             "public_fields": public_fields,
+            **(
+                {"photo_input": sanitize_raw(photo_input)}
+                if photo_input is not None
+                else {}
+            ),
             "raw": {
+                **({"photo_upload": photo_raw} if photo_raw else {}),
                 "create_intent_task": raw_payload(create_raw),
                 "get_task_history": get_task_history,
                 **admin_raw,
@@ -2539,6 +3276,9 @@ def process_one(
             exc.task_fields = task_fields
         if not exc.public_fields and "public_fields" in locals():
             exc.public_fields = public_fields
+        if photo_input is not None:
+            exc.public_fields = dict(exc.public_fields or {})
+            exc.public_fields["photo_input"] = sanitize_raw(photo_input)
         final_log_status = "FAILED"
         final_log_error = str(exc)
         emit_progress(

@@ -35,7 +35,14 @@ from search_tool import (
 )
 
 
-SUPPORTED_QUERY_STAGES = {"FULL_NAME", "FULL_NAME_SOCIAL"}
+SUPPORTED_QUERY_STAGES = {
+    "FULL_NAME",
+    "FULL_NAME_SOCIAL",
+    "FULL_NAME_PHOTO",
+    "FULL_NAME_SOCIAL_PHOTO",
+}
+PHOTO_QUERY_STAGES = {"FULL_NAME_PHOTO", "FULL_NAME_SOCIAL_PHOTO"}
+SOCIAL_QUERY_STAGES = {"FULL_NAME_SOCIAL", "FULL_NAME_SOCIAL_PHOTO"}
 EVALUATION_THRESHOLD_FIELDS = {
     "min_retrieval_success": "minimum_ratio",
     "min_matched_completeness": "minimum_ratio",
@@ -61,6 +68,35 @@ TASK_FIELD_KEYS = {
     "pdl_called",
     "search_duration_ms",
 }
+# 成本明细属于 Query 级审计事实。该集合用于处理导出，确保 Excel 与 Web
+# 报告读取同一批成本字段，而不是只保留 LLM、第三方和总成本三个摘要值。
+COST_AUDIT_FIELD_KEYS = (
+    "cost_currency",
+    "pdl_provider_cost",
+    "pdl_provider_cost_status",
+    "pdl_person_identify_call_count",
+    "pdl_person_identify_cost",
+    "pdl_person_identify_cost_status",
+    "pdl_person_search_call_count",
+    "pdl_person_search_cost",
+    "pdl_person_search_cost_status",
+    "llm_search_call_count",
+    "llm_search_cost",
+    "llm_search_cost_status",
+    "wiki_call_count",
+    "wiki_cost",
+    "wiki_cost_status",
+    "google_lens_call_count",
+    "google_lens_cost",
+    "google_lens_cost_status",
+    "google_vision_call_count",
+    "google_vision_cost",
+    "google_vision_cost_status",
+    "social_profile_extraction_call_count",
+    "social_profile_extraction_cost",
+    "social_profile_extraction_cost_status",
+    "provider_cost_details",
+)
 SAFE_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 FIELD_KEY_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]{0,127}$")
 FIELD_PATH_PART_PATTERN = re.compile(
@@ -790,6 +826,12 @@ DEFAULT_FIELD_DEFINITIONS_V3 = [
     _v3_catalog_field(
         "cost_by_provider", "Provider Cost Summary", "Task", "task.cost_by_provider", "array", 320,
         source_stage="GetProviderCostSummary", array_mode="preserve", run_compare_enabled=True,
+    ),
+    _v3_catalog_field(
+        "provider_cost_details", "Provider Cost Details", "Task",
+        "task.provider_cost_details", "array", 330,
+        source_stage="GetProviderCostSummary", array_mode="preserve",
+        run_compare_enabled=True,
     ),
     _v3_catalog_field(
         "candidate_id", "Candidate ID", "Candidate", "candidate.candidate_id", "string", 100,
@@ -1921,11 +1963,11 @@ def normalize_evaluation_thresholds(value: Any) -> dict[str, dict[str, float | N
     """校验并补齐 Evaluation 的分检索条件参考线。
 
     参数说明:
-        value: 以 ``FULL_NAME``、``FULL_NAME_SOCIAL`` 为键的对象；每个
-            阶段可以只提交部分阈值，空字符串和 ``None`` 均表示未配置。
+        value: 以支持的 Query Stage 为键的对象；每个阶段可以只提交部分
+            阈值，空字符串和 ``None`` 均表示未配置。
 
     返回值:
-        包含两个 Query Stage 和全部支持字段的稳定对象，数值统一为 float。
+        包含全部 Query Stage 和支持字段的稳定对象，数值统一为 float。
 
     异常说明:
         ReviewValidationError: 结构、字段名、数值类型或取值范围非法。
@@ -2177,8 +2219,9 @@ def _candidate_identity_rule(
     """按既定优先级自动判定候选人是否命中 Baseline Person。
 
     功能说明:
-        先执行 Social Link 强绑定规则，再使用照片相似度作为兜底。Social 同平台
-        链接冲突优先级最高，不能被名称、照片或其他普通字段覆盖。
+        先执行 Social Link 强绑定规则，再使用照片相似度作为兜底。任一规范化
+        Social URL 精确命中即确认身份；同平台的其他账号仅保留为冲突证据，
+        不能否决已命中的账号绑定。
 
     参数说明:
         baseline_urls: 基准候选人的 social_urls 与 summary_social_links 合集。
@@ -2235,11 +2278,14 @@ def _candidate_identity_rule(
             "social_rule_error": social_error or None,
         }
     )
-    # Social 冲突优先于所有后续证据，包括同一候选人上的其他匹配链接和照片相似度。
-    if conflicts:
-        return "NOT_HIT", "SOCIAL_CONFLICT", evidence
+    # 精确账号链接是当前最高优先级的身份强证据。候选资料可能同时聚合本人
+    # 的历史账号、机构账号或别名账号；因此同平台其他链接只写入 evidence，
+    # 不得覆盖已存在的精确命中。
     if matched:
         return "HIT", "SOCIAL_MATCH", evidence
+    # 仅在不存在任何精确命中时，同平台不同账号才构成身份冲突。
+    if conflicts:
+        return "NOT_HIT", "SOCIAL_CONFLICT", evidence
     if photo_rate is not None and photo_rate >= 80:
         return "HIT", "PHOTO_MATCH", evidence
     if not returned and photo_rate is None:
@@ -9488,6 +9534,113 @@ class AnalysisService:
             },
         }
 
+    @staticmethod
+    def _report_v5_provider_cost_details(value: Any) -> list[dict[str, Any]]:
+        """把新旧 Provider 成本结构统一成可展示、可导出的 Query 明细。
+
+        功能说明：新数据优先使用 ``provider_cost_details``；历史 Process
+        只有 ``cost_by_provider`` 时也可由其原始 microunit 汇总出同样的
+        Provider 行，生成报告无需重新调用外部接口。
+
+        参数说明：
+            value: 标准化明细或接口 ``by_provider`` 原始数组。
+
+        返回值：按 Provider 排序的成本行。USD 保留数值成本；未计价和
+            非计费调用保持空成本与状态，绝不伪造为 0。
+        """
+
+        if not isinstance(value, list):
+            return []
+
+        def integer(raw: Any) -> int:
+            """安全读取非负整数计数或 microunit，非法值按 0 处理。"""
+
+            try:
+                return max(0, int(Decimal(str(raw or 0))))
+            except (InvalidOperation, TypeError, ValueError):
+                return 0
+
+        def status_for(item: dict[str, Any], currency: str) -> str:
+            """从接口计数或标准化状态确定单行计价状态。"""
+
+            existing = str(item.get("cost_status") or "").strip().upper()
+            if existing in {
+                "PRICED", "UNPRICED", "NON_BILLABLE", "NOT_COLLECTED",
+                "UNKNOWN",
+            }:
+                return existing
+            if currency == "USD":
+                return "PRICED"
+            if integer(item.get("unpriced_call_count")):
+                return "UNPRICED"
+            if integer(item.get("non_billable_call_count")):
+                return "NON_BILLABLE"
+            return "UNKNOWN"
+
+        priority = {
+            "NOT_COLLECTED": 0,
+            "UNKNOWN": 1,
+            "NON_BILLABLE": 2,
+            "UNPRICED": 3,
+            "PRICED": 4,
+        }
+        grouped: dict[str, dict[str, Any]] = {}
+        for raw in value:
+            if not isinstance(raw, dict):
+                continue
+            provider = str(raw.get("provider") or "").strip()
+            if not provider:
+                continue
+            currency = str(raw.get("currency") or "").strip().upper()
+            key = provider.casefold()
+            item = grouped.setdefault(key, {
+                "provider": provider,
+                "currency": None,
+                "cost_microunit": None,
+                "cost": None,
+                "call_count": 0,
+                "priced_call_count": 0,
+                "unpriced_call_count": 0,
+                "non_billable_call_count": 0,
+                "cost_status": "NOT_COLLECTED",
+            })
+            for field_key in (
+                "call_count", "priced_call_count", "unpriced_call_count",
+                "non_billable_call_count",
+            ):
+                item[field_key] += integer(raw.get(field_key))
+            incoming_status = status_for(raw, currency)
+            if priority.get(incoming_status, 1) >= priority.get(
+                item["cost_status"], 1
+            ):
+                item["cost_status"] = incoming_status
+            if currency == "USD":
+                item["currency"] = "USD"
+                microunit = integer(
+                    raw.get("cost_microunit", raw.get("total_cost_microunit"))
+                )
+                # 标准化历史记录若只保存 USD 数值，按同一单位还原微单位。
+                if microunit == 0 and raw.get("cost") not in (None, ""):
+                    try:
+                        microunit = max(
+                            0,
+                            int(
+                                Decimal(str(raw["cost"]))
+                                * Decimal(1_000_000)
+                            ),
+                        )
+                    except (InvalidOperation, TypeError, ValueError):
+                        microunit = 0
+                item["cost_microunit"] = (item["cost_microunit"] or 0) + microunit
+
+        rows = list(grouped.values())
+        for item in rows:
+            if item["cost_microunit"] is not None:
+                item["cost"] = float(
+                    Decimal(item["cost_microunit"]) / Decimal(1_000_000)
+                )
+        return sorted(rows, key=lambda item: item["provider"].casefold())
+
     def _build_report_v5_process_snapshot(
         self,
         process: sqlite3.Row,
@@ -9522,7 +9675,7 @@ class AnalysisService:
                    rq.detail_success_count, rq.detail_failure_count,
                    rq.llm_cost, rq.third_party_cost, rq.total_cost,
                    rq.search_duration_ms, rq.pdl_called,
-                   pq.result_status, pq.fields_json, pq.empty_fields_json,
+                   rq.public_fields_json, pq.result_status, pq.fields_json, pq.empty_fields_json,
                    pq.processing_errors_json,
                    bp.display_name AS baseline_display_name,
                    bp.fields_json AS baseline_fields_json,
@@ -9597,6 +9750,9 @@ class AnalysisService:
         for source in query_rows:
             row = dict(source)
             task_fields = self._report_v5_safe_json(row["fields_json"], {})
+            public_task_fields = self._report_v5_safe_json(
+                row.get("public_fields_json"), {}
+            )
             # 执行成本不属于可配置提取字段。以任务表保存的原始值覆盖同名
             # 处理字段，确保禁用 Task 展示字段后仍能在报告中审计成本明细。
             native_task_fields = {
@@ -9609,6 +9765,18 @@ class AnalysisService:
                     native_task_fields["pdl_called"]
                 )
             task_fields.update(native_task_fields)
+            # 新 Schema 已将标准化明细处理进 fields_json；历史 Process 则从
+            # 已保存的原始 Provider 汇总回退生成，保证报告口径连续。
+            provider_cost_details = task_fields.get("provider_cost_details")
+            if not isinstance(provider_cost_details, list):
+                provider_cost_details = public_task_fields.get(
+                    "provider_cost_details"
+                )
+            if not isinstance(provider_cost_details, list):
+                provider_cost_details = public_task_fields.get("cost_by_provider")
+            task_fields["provider_cost_details"] = (
+                self._report_v5_provider_cost_details(provider_cost_details)
+            )
             baseline_fields = self._report_v5_safe_json(
                 row["baseline_fields_json"], {}
             )
@@ -9671,6 +9839,7 @@ class AnalysisService:
                             "total_cost",
                             "search_duration_ms",
                             "pdl_called",
+                            "provider_cost_details",
                         )
                     },
                     "processing_errors": self._report_v5_safe_json(
@@ -9737,8 +9906,51 @@ class AnalysisService:
                         "已调用" if pdl_called is True else
                         "未调用" if pdl_called is False else "未知"
                     ),
+                    "provider_cost_details": (
+                        task.get("provider_cost_details")
+                        if isinstance(task.get("provider_cost_details"), list)
+                        else []
+                    ),
                 })
         return rows
+
+    @staticmethod
+    def _build_report_v5_query_provider_cost_details(
+        query_explorer: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        """展平 Query 级 Provider 成本，供单报告与对比报告统一下钻。
+
+        功能说明：不把一个 Task 的成本分摊到候选人；每行始终保留版本侧、
+        Query、Task 与 Provider，使总成本、工具成本和 Provider 成本可追溯。
+
+        参数说明：
+            query_explorer: 已冻结的 Query/Candidate 工作台快照。
+
+        返回值：按版本侧、Query、Provider 排序的成本审计行。
+        """
+
+        rows: list[dict[str, Any]] = []
+        for task in AnalysisService._build_report_v5_task_cost_details(
+            query_explorer
+        ):
+            for provider in task.get("provider_cost_details", []):
+                if not isinstance(provider, dict) or not provider.get("provider"):
+                    continue
+                rows.append({
+                    "side": task["side"],
+                    "query_id": task["query_id"],
+                    "display_name": task["display_name"],
+                    "task_id": task["task_id"],
+                    **provider,
+                })
+        return sorted(
+            rows,
+            key=lambda item: (
+                str(item.get("side") or ""),
+                str(item.get("query_id") or ""),
+                str(item.get("provider") or "").casefold(),
+            ),
+        )
 
     def _build_report_execution_economics(
         self,
@@ -9979,6 +10191,9 @@ class AnalysisService:
             "provider_rows": provider_rows,
             "query_rows": self._build_report_v5_task_cost_details(
                 query_explorer
+            ),
+            "query_provider_rows": (
+                self._build_report_v5_query_provider_cost_details(query_explorer)
             ),
         }
 
@@ -12110,6 +12325,29 @@ class AnalysisService:
             task_fields = metric.get("task_fields", {})
             if not isinstance(task_fields, dict):
                 task_fields = {}
+            public_task_fields = self._report_v5_safe_json(
+                row["public_fields_json"], {}
+            )
+            provider_cost_details = task_fields.get("provider_cost_details")
+            if not isinstance(provider_cost_details, list):
+                provider_cost_details = public_task_fields.get(
+                    "provider_cost_details"
+                )
+            if not isinstance(provider_cost_details, list):
+                provider_cost_details = public_task_fields.get("cost_by_provider")
+            # 导出与报告使用同一标准化 Provider 明细。旧 Process 仅有 Raw
+            # by_provider 时同样可在不重跑接口的情况下得到完整成本记录。
+            exported_cost_fields = {
+                field_key: (
+                    self._report_v5_provider_cost_details(provider_cost_details)
+                    if field_key == "provider_cost_details"
+                    else task_fields.get(
+                        field_key,
+                        public_task_fields.get(field_key),
+                    )
+                )
+                for field_key in COST_AUDIT_FIELD_KEYS
+            }
             task_processing_errors = metric.get(
                 "task_processing_errors",
                 [],
@@ -12157,6 +12395,7 @@ class AnalysisService:
                     "search_duration_ms": task_fields.get(
                         "search_duration_ms"
                     ),
+                    **exported_cost_fields,
                     "retrieval_success": metric.get("retrieval_success"),
                     "matched_completeness": metric.get(
                         "matched_completeness"
@@ -13558,7 +13797,7 @@ class AnalysisService:
         query = self.store.fetch_one(
             """
             SELECT dq.query_id, dq.person_id, dq.query_stage, dq.match_strategy,
-                   dq.clues_json, dq.additional_details_json
+                   dq.clues_json, dq.additional_details_json, dq.metadata_json
             FROM runs AS r
             JOIN dataset_queries AS dq ON dq.dataset_id = r.dataset_id
             WHERE r.run_id = ? AND dq.query_id = ?
@@ -13597,6 +13836,9 @@ class AnalysisService:
             "clues": json.loads(query["clues_json"]),
             "additional_details": json.loads(query["additional_details_json"]),
         }
+        metadata = json.loads(query["metadata_json"] or "{}")
+        if query["query_stage"] in PHOTO_QUERY_STAGES:
+            item["photo_path"] = metadata.get("photo_path")
         raw_records: list[dict[str, Any]] = []
         candidate_failures: list[dict[str, Any]] = []
         try:
@@ -13699,7 +13941,7 @@ class AnalysisService:
             """
             SELECT dq.query_id, dq.person_id, dq.query_stage,
                    dq.match_strategy, dq.clues_json,
-                   dq.additional_details_json
+                   dq.additional_details_json, dq.metadata_json
             FROM dataset_queries AS dq
             JOIN runs AS r ON r.dataset_id = dq.dataset_id
             WHERE r.run_id = ?
@@ -13729,6 +13971,9 @@ class AnalysisService:
                 "clues": json.loads(query["clues_json"]),
                 "additional_details": json.loads(query["additional_details_json"]),
             }
+            metadata = json.loads(query["metadata_json"] or "{}")
+            if query["query_stage"] in PHOTO_QUERY_STAGES:
+                item["photo_path"] = metadata.get("photo_path")
             raw_records: list[dict[str, Any]] = []
             candidate_failures: list[dict[str, Any]] = []
             try:
@@ -13933,7 +14178,8 @@ class AnalysisService:
             seen_ids.add(query_id)
             if query_stage not in SUPPORTED_QUERY_STAGES:
                 errors.append(
-                    f"{label} query_stage 只支持 FULL_NAME/FULL_NAME_SOCIAL"
+                    f"{label} query_stage 只支持 FULL_NAME/FULL_NAME_SOCIAL/"
+                    "FULL_NAME_PHOTO/FULL_NAME_SOCIAL_PHOTO"
                 )
                 continue
             if not isinstance(clues, list) or not clues:
@@ -13942,11 +14188,34 @@ class AnalysisService:
             clue_types = {
                 clue.get("type") for clue in clues if isinstance(clue, dict)
             }
+            if "PHOTO" in clue_types:
+                errors.append(f"{label}不得预置 PHOTO 线索")
+                continue
             if "FULL_NAME" not in clue_types:
                 errors.append(f"{label}缺少 FULL_NAME 线索")
                 continue
-            if query_stage == "FULL_NAME_SOCIAL" and "SOCIAL_LINK" not in clue_types:
+            if query_stage in SOCIAL_QUERY_STAGES and "SOCIAL_LINK" not in clue_types:
                 errors.append(f"{label}缺少 SOCIAL_LINK 线索")
+                continue
+            photo_path = record.get("photo_path")
+            if query_stage in PHOTO_QUERY_STAGES:
+                if not isinstance(photo_path, str) or not photo_path.strip():
+                    errors.append(f"{label} {query_stage} 缺少非空 photo_path")
+                    continue
+                candidate_path = Path(photo_path.strip())
+                if candidate_path.is_absolute() or ".." in candidate_path.parts:
+                    errors.append(f"{label} photo_path 必须是安全相对路径")
+                    continue
+            elif photo_path not in (None, ""):
+                errors.append(
+                    f"{label}只有 FULL_NAME_PHOTO 或 FULL_NAME_SOCIAL_PHOTO "
+                    "可以提供 photo_path"
+                )
+                continue
+            if query_stage == "FULL_NAME_PHOTO" and "SOCIAL_LINK" in clue_types:
+                errors.append(
+                    f"{label}姓名、Social 与照片组合请使用 FULL_NAME_SOCIAL_PHOTO"
+                )
                 continue
             if not isinstance(additional_details, list):
                 errors.append(f"{label} additional_details 必须是数组")
@@ -13968,6 +14237,8 @@ class AnalysisService:
                     "additional_details",
                 }
             }
+            if query_stage in PHOTO_QUERY_STAGES:
+                metadata["photo_path"] = photo_path.strip()
             normalized.append(
                 {
                     "query_id": query_id,

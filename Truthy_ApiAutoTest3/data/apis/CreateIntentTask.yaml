@@ -1,0 +1,5 @@
+id: CreateIntentTask
+name: 创建并启动线索搜索任务
+request:
+  service_name: tool.people_insight.SearchService
+  method_name: CreateIntentTask

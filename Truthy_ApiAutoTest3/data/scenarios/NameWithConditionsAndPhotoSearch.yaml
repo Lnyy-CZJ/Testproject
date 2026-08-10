@@ -1,0 +1,232 @@
+name: 姓名、链接与照片搜索场景
+variables:
+  # 将具体文件名改为 data/photo 目录下的 JPEG；相对路径按项目根目录读取。
+  media_file: data/photo/RhiannonCombes.png
+step_data:
+  get_media_upload_config:
+    params: {}
+    assert:
+      http_status: 200
+      gateway:
+        code: 0
+        message: ok
+      response:
+        id: req_0
+        success: true
+        code: 0
+        message: ok
+      data_fields:
+        - allowed_content_types
+        - asset_ttl_seconds
+        - cache_expires_time
+        - complete_retry
+        - config_cache_ttl_seconds
+        - config_version
+        - face_detection_required
+        - max_size_bytes
+        - recommended_jpeg_quality
+        - recommended_max_height
+        - recommended_max_width
+        - strip_exif
+        - upload_url_ttl_seconds
+
+  prepare_media_upload:
+    params:
+      client_request_id: "{{client_request_id}}"
+      content_type: image/jpeg
+      # FlowRunner 根据 media_file 的实际文件大小写入该变量。
+      size_bytes: "{{media_size_bytes}}"
+    assert:
+      http_status: 200
+      gateway:
+        code: 0
+        message: ok
+      response:
+        id: req_0
+        success: true
+        code: 0
+        message: ok
+      data_fields:
+        - content_type
+        - expires_time
+        - max_size_bytes
+        - media_asset_id
+        - size_bytes
+        - status
+        - upload_headers
+        - upload_method
+        - upload_url
+
+  complete_media_upload:
+    params:
+      media_asset_id: "{{media_asset_id}}"
+    assert:
+      http_status: 200
+      gateway:
+        code: 0
+        message: ok
+      response:
+        id: req_0
+        success: true
+        code: 0
+        message: ok
+      data_fields:
+        - content_type
+        - expires_time
+        - media_asset_id
+        - size_bytes
+        - status
+        - upload_expires_time
+        - uploaded_time
+
+  create_task:
+    params:
+      client_request_id: "{{client_request_id}}"
+      match_strategy: UNION
+      clues:
+        - type: FULL_NAME
+          full_name_query:
+            full_name: Rhiannon Combes
+        - type: SOCIAL_LINK
+          social_link_query:
+            url: https://uk.linkedin.com/in/rhiannon-combes-34317284
+            platform_hint: linkedin
+        - type: PHOTO
+          photo_query:
+            media_asset_id: "{{media_asset_id}}"
+            photo_type_hint: face
+      additional_details: []
+    assert:
+      http_status: 200
+      gateway:
+        code: 0
+        message: ok
+      response:
+        id: req_0
+        success: true
+        code: 0
+        message: ok
+      data_fields:
+        - accepted_query_type
+        - additional_details
+        - cache_hit
+        - can_start_real_search
+        - clue_types
+        - entitlement_decision
+        - expires_time
+        - match_strategy
+        - status
+        - task_id
+      data_equals:
+        status: QUEUED
+
+  poll_task:
+    params:
+      task_id: "{{task_id}}"
+    assert:
+      http_status: 200
+      gateway:
+        code: 0
+        message: ok
+      response:
+        id: req_0
+        success: true
+        code: 0
+        message: ok
+      data_fields:
+        - cache_hit
+        - candidate_confidence_scores
+        - candidate_count
+        - error_code
+        - failure_reason
+        - has_additional_clues
+        - is_initial_search
+        - no_result_reason
+        - progress
+        - provider_execution
+        - provider_summary
+        - result_type
+        - status
+        - task_id
+        - top_confidence_score
+        - update_time
+      data_equals:
+        status: SUCCEEDED
+
+  list_candidates:
+    params:
+      task_id: "{{task_id}}"
+      page:
+        page_size: 10
+        page_token: ""
+    assert:
+      http_status: 200
+      gateway:
+        code: 0
+        message: ok
+      response:
+        id: req_0
+        success: true
+        code: 0
+        message: ok
+      data_fields:
+        - empty_reason
+        - items
+        - next_page_token
+        - provider_summary
+        - task_id
+        - update_time
+
+  candidate_detail:
+    params:
+      task_id: "{{task_id}}"
+      candidate_id: "{{candidate_id}}"
+    assert:
+      http_status: 200
+      gateway:
+        code: 0
+        message: ok
+      response:
+        id: req_0
+        success: true
+        code: 0
+        message: ok
+      data_fields:
+        - candidate
+        - candidate_id
+        - disclaimers
+        - entitlement_decision
+        - evidence
+        - person_id
+        - social_accounts
+        - task_id
+        - ui_sections
+        - update_time
+
+  search_task_debug:
+    params:
+      session_token: "{{admin_session_token}}"
+      operator_id: "{{admin_operator_id}}"
+      operator_name: "{{admin_operator_name}}"
+      reason: 排查 Agent 搜索链路
+      task_id: "{{task_id}}"
+      service: worker
+    assert:
+      http_status: 200
+      gateway: {code: 0, message: ok}
+      response: {id: req_0, success: true, code: 0, message: ok}
+      data_fields: [debug]
+
+  provider_cost_summary:
+    params:
+      session_token: "{{admin_session_token}}"
+      operator_id: "{{admin_operator_id}}"
+      operator_name: "{{admin_operator_name}}"
+      reason: 核对单次搜索成本
+      task_id: "{{task_id}}"
+      limit: 100
+    assert:
+      http_status: 200
+      gateway: {code: 0, message: ok}
+      response: {id: req_0, success: true, code: 0, message: ok}
+      data_fields: [cost_summary]

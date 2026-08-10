@@ -7,6 +7,13 @@ CreateIntentTask → GetTask（每 5 秒轮询）
 → ListTaskCandidates（一次获取当前全部候选人）→ GetTaskCandidateDetail
 ```
 
+`FULL_NAME_PHOTO` 和 `FULL_NAME_SOCIAL_PHOTO` 会在 Create 前增加照片前置流程：
+
+```text
+GetMediaUploadConfig → PrepareMediaUpload → COS PUT
+→ CompleteMediaUpload → CreateIntentTask（追加 PHOTO clue）
+```
+
 ## 安装
 
 建议使用 Python 3.10 或更高版本：
@@ -46,7 +53,29 @@ ALLOW_DUPLICATE_RUN=false
 cp input/tasks.example.jsonl input/tasks_v01.jsonl
 ```
 
-输入 JSONL 每行是一条搜索任务。`input_id` 和非空 `clues` 必填，`match_strategy` 默认 `UNION`，`additional_details` 默认空数组。v1.3 可显式填写 `query_stage=FULL_NAME/FULL_NAME_SOCIAL`；旧输入未填写时，包含 `SOCIAL_LINK` 线索会推断为 `FULL_NAME_SOCIAL`，否则为 `FULL_NAME`。复制后将 `SEARCH_INPUT_FILE` 改为对应路径。
+输入 JSONL 每行是一条搜索任务。`input_id` 和非空 `clues` 必填，`match_strategy` 默认 `UNION`，`additional_details` 默认空数组。v1.3 可显式填写 `query_stage=FULL_NAME/FULL_NAME_SOCIAL/FULL_NAME_PHOTO/FULL_NAME_SOCIAL_PHOTO`；旧输入未填写时，包含 `SOCIAL_LINK` 线索会推断为 `FULL_NAME_SOCIAL`，否则为 `FULL_NAME`。照片 Stage 必须显式声明，避免误触发上传。复制后将 `SEARCH_INPUT_FILE` 改为对应路径。
+
+照片检索默认关闭。开启后，照片放在 `input/input_photos`，输入使用相对路径：
+
+```dotenv
+SEARCH_PHOTO_ENABLED=true
+SEARCH_PHOTO_INPUT_DIR=input/input_photos
+SEARCH_PHOTO_UPLOAD_HOST_SUFFIXES=.myqcloud.com
+```
+
+```json
+{"input_id":"case-photo-001","query_stage":"FULL_NAME_PHOTO","photo_path":"input_photos/person.jpg","clues":[{"type":"FULL_NAME","value":"Example Person"}]}
+```
+
+姓名、Social Link 与照片组合使用独立 Stage：
+
+```json
+{"input_id":"case-social-photo-001","query_stage":"FULL_NAME_SOCIAL_PHOTO","photo_path":"input_photos/person.jpg","clues":[{"type":"FULL_NAME","value":"Example Person"},{"type":"SOCIAL_LINK","social_link_query":{"url":"https://linkedin.com/in/example-person","platform_hint":"linkedin"}}]}
+```
+
+首版只上传 JPEG 原始字节，不清理 EXIF、不转换格式。动态 COS 签名 URL、图片
+二进制和宿主机绝对路径不会写入结果、SQLite、Raw 或人物日志。Query 重跑会重新
+执行完整上传流程并生成新的 `media_asset_id`。
 
 ## 运行
 
@@ -82,7 +111,7 @@ output/20260722_tasks_v01_run03_failures.jsonl
 
 ```json
 {
-  "result_schema_version": "1.3",
+  "result_schema_version": "1.3.2",
   "run_id": "run_xxx",
   "input_id": "case-001",
   "task_id": "task_xxx",
@@ -137,7 +166,7 @@ output/20260722_tasks_v01_run03_failures.jsonl
 - `raw` 和候选人 Raw 保存脱敏后的业务请求与完整业务响应，不保存 Token、Cookie、HTTP Header、Device ID 或 User ID；
 - `ListTaskCandidates` 当前固定使用 `page_size=100`，并对实际返回的每名候选人依次请求 `GetTaskCandidateDetail`。
 
-`failures.jsonl` 每行包含 `failure_schema_version=1.3`、`run_id`、`input_id`、`task_id`、`candidate_id`、`scope`、`stage`、`error` 和失败时已经取得的脱敏 Raw。`scope` 为 `INPUT`、`QUERY` 或 `CANDIDATE`。
+新执行生成的 `failures.jsonl` 每行包含 `failure_schema_version=1.3.2`、`run_id`、`input_id`、`task_id`、`candidate_id`、`scope`、`stage`、`error` 和失败时已经取得的脱敏 Raw。`scope` 为 `INPUT`、`QUERY` 或 `CANDIDATE`；历史 1.3/1.3.1 文件继续兼容导入。
 
 退出码：全部成功或无候选人为 `0`，配置或输入文件无法启动为 `1`，批次中存在 Query 失败或部分候选人详情失败为 `2`。
 
@@ -169,7 +198,7 @@ Web 当前支持：
 
 - 创建 Evaluation；
 - 导入 Query Dataset JSONL 或固定 `Queries` Sheet Excel；
-- 选择 Dataset，后台顺序启动 `FULL_NAME` / `FULL_NAME_SOCIAL` 检索；
+- 选择 Dataset，后台顺序启动 `FULL_NAME` / `FULL_NAME_SOCIAL` / `FULL_NAME_PHOTO` / `FULL_NAME_SOCIAL_PHOTO` 检索；
 - 定时查看 Run 总数、当前 Query、接口阶段和失败信息；
 - 导入 v1.2/v1.3 JSONL 或规范化 Excel 历史结果；
 - 按50条分页、关键词、状态和检索条件查看 Query；

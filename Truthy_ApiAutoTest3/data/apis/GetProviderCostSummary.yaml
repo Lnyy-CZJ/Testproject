@@ -1,0 +1,14 @@
+id: GetProviderCostSummary
+name: 获取服务商成本汇总
+request:
+  service_name: tool.admin.AdminService
+  method_name: GetProviderCostSummary
+transport:
+  # Admin Gateway 使用 Web comm，且不需要普通用户会话。
+  target: admin
+  requires_session: false
+  comm:
+    device_id: admin-web
+    platform: web
+    app_version: 1.0.0
+    trace_id: "trace_debug_{{task_id}}"

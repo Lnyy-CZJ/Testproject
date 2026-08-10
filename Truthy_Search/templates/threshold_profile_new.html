@@ -18,7 +18,7 @@
     <label><span>方案名称</span><input name="name" required maxlength="200" value="{{ form.name if form else '' }}" placeholder="发布验收参考线"></label>
     <label><span>说明</span><textarea name="description" rows="3">{{ form.description if form else '' }}</textarea></label>
     {% if based_on_profile_id %}<p class="inline-note">来源版本：<a class="mono" href="{{ url_for('threshold_profile_detail', profile_id=based_on_profile_id) }}">{{ based_on_profile_id }}</a></p>{% endif %}
-    {% for query_stage in ['FULL_NAME', 'FULL_NAME_SOCIAL'] %}
+    {% for query_stage in ['FULL_NAME', 'FULL_NAME_SOCIAL', 'FULL_NAME_PHOTO', 'FULL_NAME_SOCIAL_PHOTO'] %}
       <fieldset>
         <legend class="mono">{{ query_stage }}</legend>
         {% for field_key in threshold_fields %}

@@ -8,6 +8,7 @@ import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from openpyxl import Workbook, load_workbook
 
@@ -187,10 +188,10 @@ class AnalysisServiceTests(unittest.TestCase):
             rows["nonmatched_data_completeness"]["delta_status"],
         )
 
-    def test_identity_rule_uses_social_priority_then_photo_fallback(self):
-        """Social 冲突优先，照片仅在 Social 无结论时作为自动终判兜底。"""
+    def test_identity_rule_uses_exact_social_match_before_conflict_and_photo(self):
+        """精确 Social 命中优先；同平台别名不能否决命中，照片仅作兜底。"""
 
-        judgement, reason, _ = _candidate_identity_rule(
+        judgement, reason, evidence = _candidate_identity_rule(
             ["https://linkedin.com/in/target"],
             [
                 "https://linkedin.com/in/target",
@@ -198,7 +199,11 @@ class AnalysisServiceTests(unittest.TestCase):
             ],
             99,
         )
-        self.assertEqual(("NOT_HIT", "SOCIAL_CONFLICT"), (judgement, reason))
+        self.assertEqual(("HIT", "SOCIAL_MATCH"), (judgement, reason))
+        self.assertEqual(
+            ["https://linkedin.com/in/another-person"],
+            json.loads(evidence)["conflicting_social_urls"],
+        )
 
         judgement, reason, _ = _candidate_identity_rule(
             ["https://twitter.com/Target/"],
@@ -836,7 +841,7 @@ class AnalysisServiceTests(unittest.TestCase):
         legacy = validate_field_definitions([DEFAULT_FIELD_DEFINITIONS[0]])[0]
 
         self.assertEqual(DEFAULT_FIELD_SCHEMA_V3_VERSION, schema_version)
-        self.assertEqual(87, len(definitions))
+        self.assertEqual(88, len(definitions))
         self.assertTrue(by_key["summary_web_links"]["display_enabled"])
         self.assertFalse(by_key["llm_cost"]["enabled"])
         self.assertIn("pdl_person_identify_call_count", by_key)
@@ -844,11 +849,48 @@ class AnalysisServiceTests(unittest.TestCase):
         self.assertIn("google_vision_cost_status", by_key)
         self.assertIn("tool_usage_summary", by_key)
         self.assertIn("cost_by_provider", by_key)
+        self.assertIn("provider_cost_details", by_key)
         self.assertTrue(by_key["social_urls"]["identity_enabled"])
         self.assertTrue(by_key["social_urls"]["baseline_compare_enabled"])
         self.assertEqual("PATH", legacy["source_type"])
         self.assertEqual({}, legacy["source_options"])
         self.assertTrue(legacy["display_enabled"])
+
+    def test_provider_cost_details_normalize_old_provider_summary(self):
+        """历史 by_provider 也能生成与新 Schema 相同的 Provider 成本明细。"""
+
+        rows = AnalysisService._report_v5_provider_cost_details([
+            {
+                "provider": "people_data_labs",
+                "currency": "USD",
+                "total_cost_microunit": "550000",
+                "call_count": 1,
+                "priced_call_count": 1,
+            },
+            {
+                "provider": "social_profile",
+                "currency": "USD",
+                "total_cost_microunit": "1880",
+                "call_count": 1,
+                "priced_call_count": 1,
+            },
+            {
+                "provider": "social_profile",
+                "currency": "UNSPECIFIED",
+                "total_cost_microunit": "0",
+                "call_count": 1,
+                "non_billable_call_count": 1,
+            },
+        ])
+        by_provider = {item["provider"]: item for item in rows}
+        self.assertEqual(0.55, by_provider["people_data_labs"]["cost"])
+        self.assertEqual("PRICED", by_provider["people_data_labs"]["cost_status"])
+        self.assertEqual(0.00188, by_provider["social_profile"]["cost"])
+        self.assertEqual(2, by_provider["social_profile"]["call_count"])
+        self.assertEqual(
+            1,
+            by_provider["social_profile"]["non_billable_call_count"],
+        )
 
     def test_field_schema_v3_profile_item_selector_and_validation(self):
         """PROFILE_ITEM 只按 section + label 提取，并拒绝缺少选择器的配置。"""
@@ -1188,6 +1230,7 @@ class AnalysisServiceTests(unittest.TestCase):
         self.assertIn("profile_full_name", processing_fields)
         economics = report_v4["execution_economics"]
         self.assertEqual(1, economics["query_count"])
+        self.assertIn("query_provider_rows", economics)
         self.assertEqual(
             [
                 "pdl_person_identify", "pdl_person_search", "llm_search",
@@ -1957,6 +2000,201 @@ class AnalysisServiceTests(unittest.TestCase):
                 "SELECT dataset_id FROM datasets WHERE dataset_id = ?",
                 ("dataset-invalid",),
             )
+        )
+
+    def test_social_photo_dataset_preserves_path_and_execute_run_whitelists_it(self):
+        """组合 Stage 保留照片路径，并在执行时恢复 Social 与照片字段。"""
+
+        source = self.root / "photo-tasks.jsonl"
+        write_jsonl(
+            source,
+            [
+                {
+                    "input_id": "query-photo",
+                    "person_id": "person-photo",
+                    "query_stage": "FULL_NAME_SOCIAL_PHOTO",
+                    "photo_path": "input_photos/person.jpg",
+                    "clues": [
+                        {"type": "FULL_NAME", "value": "Photo Person"},
+                        {
+                            "type": "SOCIAL_LINK",
+                            "social_link_query": {
+                                "url": "https://linkedin.com/in/photo-person",
+                                "platform_hint": "linkedin",
+                            },
+                        },
+                    ],
+                    "additional_details": [],
+                    "unrelated_metadata": "must-not-be-forwarded",
+                }
+            ],
+        )
+        self.service.import_dataset_jsonl(
+            source,
+            name="照片 Dataset",
+            dataset_id="dataset-photo",
+        )
+        stored = self.store.fetch_one(
+            "SELECT metadata_json FROM dataset_queries WHERE dataset_id = ?",
+            ("dataset-photo",),
+        )
+        self.assertEqual(
+            "input_photos/person.jpg",
+            json.loads(stored["metadata_json"])["photo_path"],
+        )
+        run_id = self.service.create_execution_run(
+            evaluation_id="eval-import",
+            dataset_id="dataset-photo",
+            run_label="candidate",
+            system_version="photo-v1",
+            evaluation_phase="PHASE_1_BASELINE",
+            run_id="run-photo",
+        )
+        captured = []
+
+        def fake_process(item, *_args, **_kwargs):
+            captured.append(dict(item))
+            return {
+                "result_schema_version": "1.3.2",
+                "run_id": run_id,
+                "input_id": item["input_id"],
+                "task_id": "task-photo",
+                "query_stage": item["query_stage"],
+                "query_status": "NO_CANDIDATE",
+                "candidate_count_total": 0,
+                "candidate_count_listed": 0,
+                "detail_success_count": 0,
+                "detail_failure_count": 0,
+                "task_fields": {},
+                "public_fields": {
+                    "photo_input": {"photo_path": item["photo_path"]}
+                },
+                "results": [],
+            }
+
+        with patch("analysis_service.process_one", side_effect=fake_process):
+            self.service.execute_run(
+                run_id,
+                SimpleNamespace(),
+                sleep_fn=lambda _seconds: None,
+            )
+
+        self.assertEqual("input_photos/person.jpg", captured[0]["photo_path"])
+        self.assertEqual("FULL_NAME_SOCIAL_PHOTO", captured[0]["query_stage"])
+        self.assertEqual(
+            ["FULL_NAME", "SOCIAL_LINK"],
+            [item["type"] for item in captured[0]["clues"]],
+        )
+        self.assertNotIn("unrelated_metadata", captured[0])
+        query = self.store.fetch_one(
+            "SELECT public_fields_json FROM run_queries WHERE run_id = ?",
+            (run_id,),
+        )
+        self.assertEqual(
+            "input_photos/person.jpg",
+            json.loads(query["public_fields_json"])["photo_input"]["photo_path"],
+        )
+
+    def test_dataset_rejects_photo_path_on_non_photo_stage(self):
+        """普通 Query 携带 photo_path 时在导入预览阶段明确失败。"""
+
+        source = self.root / "invalid-photo-tasks.jsonl"
+        write_jsonl(
+            source,
+            [
+                {
+                    "input_id": "query-name",
+                    "query_stage": "FULL_NAME",
+                    "photo_path": "input_photos/person.jpg",
+                    "clues": [{"type": "FULL_NAME"}],
+                }
+            ],
+        )
+
+        preview = self.service.preview_dataset_jsonl(source)
+
+        self.assertEqual(0, preview.valid_count)
+        self.assertTrue(any("FULL_NAME_PHOTO" in error for error in preview.errors))
+
+    def test_photo_query_retry_restores_path_and_creates_new_result(self):
+        """失败照片 Query 重跑时从 metadata 恢复路径并重新调用执行线。"""
+
+        source = self.root / "retry-photo-tasks.jsonl"
+        write_jsonl(
+            source,
+            [
+                {
+                    "input_id": "query-photo-retry",
+                    "query_stage": "FULL_NAME_PHOTO",
+                    "photo_path": "input_photos/retry.jpg",
+                    "clues": [{"type": "FULL_NAME", "value": "Retry Photo"}],
+                }
+            ],
+        )
+        self.service.import_dataset_jsonl(
+            source,
+            name="照片重跑 Dataset",
+            dataset_id="dataset-photo-retry",
+        )
+        run_id = self.service.create_execution_run(
+            evaluation_id="eval-import",
+            dataset_id="dataset-photo-retry",
+            run_label="candidate",
+            system_version="photo-v1",
+            evaluation_phase="PHASE_1_BASELINE",
+            run_id="run-photo-retry",
+        )
+        with patch(
+            "analysis_service.process_one",
+            side_effect=FlowError("PhotoValidation", "first photo failed"),
+        ):
+            self.service.execute_run(
+                run_id,
+                SimpleNamespace(),
+                sleep_fn=lambda _seconds: None,
+            )
+        captured = []
+
+        def fake_retry(item, *_args, **_kwargs):
+            captured.append(dict(item))
+            return {
+                "result_schema_version": "1.3.2",
+                "run_id": run_id,
+                "input_id": item["input_id"],
+                "task_id": "task-photo-retry",
+                "query_stage": item["query_stage"],
+                "query_status": "NO_CANDIDATE",
+                "candidate_count_total": 0,
+                "candidate_count_listed": 0,
+                "detail_success_count": 0,
+                "detail_failure_count": 0,
+                "task_fields": {},
+                "public_fields": {
+                    "photo_input": {
+                        "photo_path": item["photo_path"],
+                        "media_asset_id": "media-new",
+                    }
+                },
+                "results": [],
+            }
+
+        with patch("analysis_service.process_one", side_effect=fake_retry):
+            self.service.execute_query_retry(
+                run_id,
+                "query-photo-retry",
+                SimpleNamespace(),
+                sleep_fn=lambda _seconds: None,
+            )
+
+        self.assertEqual("input_photos/retry.jpg", captured[0]["photo_path"])
+        query = self.store.fetch_one(
+            "SELECT status, public_fields_json FROM run_queries WHERE run_id = ?",
+            (run_id,),
+        )
+        self.assertEqual("NO_CANDIDATE", query["status"])
+        self.assertEqual(
+            "media-new",
+            json.loads(query["public_fields_json"])["photo_input"]["media_asset_id"],
         )
 
     def test_field_path_and_builtin_normalizers_are_restricted_and_stable(self):
@@ -2938,7 +3176,7 @@ class AnalysisServiceTests(unittest.TestCase):
                 encoding="utf-8"
             )
         )
-        self.assertEqual("1.3.1", saved_result["result_schema_version"])
+        self.assertEqual("1.3.2", saved_result["result_schema_version"])
         self.assertEqual("HAS_CANDIDATES", saved_result["result_status"])
 
     def test_execution_run_failure_is_recorded_and_next_query_continues(self):

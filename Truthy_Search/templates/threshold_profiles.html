@@ -19,7 +19,7 @@
             <td><a href="{{ url_for('threshold_profile_detail', profile_id=profile.profile_id) }}">{{ profile.name }}</a><small class="mono">{{ profile.profile_id }}</small></td>
             <td>v{{ profile.version }}</td>
             <td><span class="status {{ profile.status|status_class }}">{{ profile.status }}</span></td>
-            <td>FULL_NAME {{ profile.configured_counts.FULL_NAME }} 项<small>FULL_NAME_SOCIAL {{ profile.configured_counts.FULL_NAME_SOCIAL }} 项</small></td>
+            <td>FULL_NAME {{ profile.configured_counts.FULL_NAME }} 项<small>FULL_NAME_SOCIAL {{ profile.configured_counts.FULL_NAME_SOCIAL }} 项 · FULL_NAME_PHOTO {{ profile.configured_counts.FULL_NAME_PHOTO }} 项 · FULL_NAME_SOCIAL_PHOTO {{ profile.configured_counts.FULL_NAME_SOCIAL_PHOTO }} 项</small></td>
             <td>{{ profile.evaluation_count }}</td>
             <td>{{ profile.created_at|format_datetime }}</td>
             <td><a href="{{ url_for('threshold_profile_copy', profile_id=profile.profile_id) }}">复制为新版本</a></td>

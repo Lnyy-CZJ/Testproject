@@ -120,6 +120,9 @@
       {% for label, side in [('优化前 Provider 明细', economics.baseline), ('优化后 Provider 明细', economics.candidate)] %}
         <details><summary>{{ label }} <span>{{ side.provider_rows|length }} 个 Provider</span></summary><div class="table-wrap"><table><thead><tr><th>Provider</th><th>调用</th><th>已计价 / 未计价 / 非计费</th><th>成本</th></tr></thead><tbody>{% for provider in side.provider_rows %}<tr><td class="mono">{{ provider.provider }}</td><td>{{ provider.call_count }}<small>{{ provider.query_count }} 个 Query</small></td><td>{{ provider.priced_call_count }} / {{ provider.unpriced_call_count }} / {{ provider.non_billable_call_count }}</td><td>{{ money(provider.cost) }}<small>{{ cost_status_text(provider.cost_status) }}</small></td></tr>{% else %}<tr><td colspan="4">未采集 Provider 成本明细。</td></tr>{% endfor %}</tbody></table></div></details>
       {% endfor %}
+      {% set baseline_query_providers = economics.baseline.query_provider_rows|default([]) %}
+      {% set candidate_query_providers = economics.candidate.query_provider_rows|default([]) %}
+      <details><summary>按 Query / Provider 成本明细 <span>{{ baseline_query_providers|length + candidate_query_providers|length }} 条</span></summary><div class="table-wrap"><table><thead><tr><th>版本侧</th><th>Query / Task</th><th>Provider</th><th>调用</th><th>已计价 / 未计价 / 非计费</th><th>成本</th></tr></thead><tbody>{% for provider in baseline_query_providers + candidate_query_providers %}<tr><td>{{ '优化前' if provider.side == 'Baseline' else '优化后' }}</td><td>{{ provider.display_name or provider.query_id }}<small class="mono">{{ provider.query_id }} · {{ provider.task_id }}</small></td><td class="mono">{{ provider.provider }}</td><td>{{ provider.call_count }}</td><td>{{ provider.priced_call_count }} / {{ provider.unpriced_call_count }} / {{ provider.non_billable_call_count }}</td><td>{{ money(provider.cost) }}<small>{{ cost_status_text(provider.cost_status) }} · {{ provider.currency or 'UNSPECIFIED' }}</small></td></tr>{% else %}<tr><td colspan="6">未采集 Query 级 Provider 成本明细。</td></tr>{% endfor %}</tbody></table></div></details>
     </div>
   </section>
 
@@ -263,6 +266,8 @@
       <div class="report-v5-cost-details">
         <details><summary><span>Provider 成本明细</span><small>{{ economics.provider_rows|length }} 个 Provider · 按成本与调用量排序</small></summary><div class="table-wrap"><table><thead><tr><th>Provider</th><th>Query</th><th>调用</th><th>已计价</th><th>未计价</th><th>非计费</th><th>成本</th></tr></thead><tbody>{% for provider in economics.provider_rows %}<tr><td class="mono">{{ provider.provider }}</td><td>{{ provider.query_count }}</td><td>{{ provider.call_count }}</td><td>{{ provider.priced_call_count }}</td><td>{{ provider.unpriced_call_count }}</td><td>{{ provider.non_billable_call_count }}</td><td>{{ money(provider.cost) }}<small>{{ cost_status_text(provider.cost_status) }} · {{ provider.currency }}</small></td></tr>{% else %}<tr><td colspan="7">尚未采集 Provider 成本明细。</td></tr>{% endfor %}</tbody></table></div></details>
         <details><summary><span>Query 成本明细</span><small>{{ economics.query_rows|length }} 个任务</small></summary><div class="table-wrap"><table><thead><tr><th>Query / Task</th><th>LLM</th><th>第三方</th><th>总成本</th><th>耗时</th><th>PDL</th></tr></thead><tbody>{% for item in economics.query_rows %}<tr><td>{{ item.display_name or item.query_id }}<small class="mono">{{ item.query_id }} · {{ item.task_id }}</small></td><td>{{ money(item.llm_cost) }}</td><td>{{ money(item.third_party_cost) }}</td><td>{{ money(item.total_cost) }}</td><td>{{ (item.search_duration_ms ~ ' ms') if item.search_duration_ms is not none else '未采集' }}</td><td>{{ item.pdl_label }}</td></tr>{% endfor %}</tbody></table></div></details>
+        {% set query_providers = economics.query_provider_rows|default([]) %}
+        <details><summary><span>按 Query / Provider 成本明细</span><small>{{ query_providers|length }} 条 · 不向候选人分摊</small></summary><div class="table-wrap"><table><thead><tr><th>Query / Task</th><th>Provider</th><th>调用</th><th>已计价 / 未计价 / 非计费</th><th>成本</th></tr></thead><tbody>{% for provider in query_providers %}<tr><td>{{ provider.display_name or provider.query_id }}<small class="mono">{{ provider.query_id }} · {{ provider.task_id }}</small></td><td class="mono">{{ provider.provider }}</td><td>{{ provider.call_count }}</td><td>{{ provider.priced_call_count }} / {{ provider.unpriced_call_count }} / {{ provider.non_billable_call_count }}</td><td>{{ money(provider.cost) }}<small>{{ cost_status_text(provider.cost_status) }} · {{ provider.currency or 'UNSPECIFIED' }}</small></td></tr>{% else %}<tr><td colspan="5">未采集 Query 级 Provider 成本明细。</td></tr>{% endfor %}</tbody></table></div></details>
       </div>
     </section>
   {% endif %}
@@ -719,7 +724,7 @@
 {% endif %}
 
 <section class="report-section">
-  <div class="section-head"><div><p class="eyebrow">02 · Query Stage</p><h2>FULL_NAME / FULL_NAME_SOCIAL</h2></div></div>
+  <div class="section-head"><div><p class="eyebrow">02 · Query Stage</p><h2>FULL_NAME / FULL_NAME_SOCIAL / FULL_NAME_PHOTO / FULL_NAME_SOCIAL_PHOTO</h2></div></div>
   <div class="table-wrap">
     <table>
       <thead><tr><th>检索条件</th><th>Query 数</th><th>目标人物命中率</th><th>命中资料完整度</th><th>命中信息准确度</th><th>非命中资料完整度</th><th>非命中候选人资料相似度</th><th>状态</th></tr></thead>

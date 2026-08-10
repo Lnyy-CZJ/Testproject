@@ -16,10 +16,12 @@ from search_tool import (
     GET_TASK_FAILURE_TERMINAL_STATUSES,
     SearchClient,
     extract_admin_task_fields,
+    load_photo_input,
     normalize_result_status,
     process_one,
     run_batch,
     select_output_paths,
+    validate_input,
 )
 
 
@@ -58,7 +60,21 @@ class FakeSession:
         body = self.bodies.pop(0)
         if isinstance(body, Exception):
             raise body
+        if isinstance(body, tuple):
+            return FakeResponse(body[0], status_code=body[1])
         return FakeResponse(body)
+
+
+class FakePutSession:
+    """记录 COS PUT，并返回测试指定的 HTTP 状态。"""
+
+    def __init__(self, status_code=200):
+        self.status_code = status_code
+        self.calls = []
+
+    def put(self, url, **kwargs):
+        self.calls.append((url, kwargs))
+        return FakeResponse({}, status_code=self.status_code)
 
 
 def config(**overrides):
@@ -71,6 +87,9 @@ def config(**overrides):
         "poll_interval_seconds": 5,
         "max_poll_count": 3,
         "http_timeout_seconds": 10,
+        "photo_enabled": True,
+        "photo_input_dir": "input/input_photos",
+        "photo_upload_host_suffixes": (".myqcloud.com",),
     }
     values.update(overrides)
     return Config(**values)
@@ -90,6 +109,210 @@ def public_info_fixture(name):
 
 
 class SearchToolTests(unittest.TestCase):
+    def test_social_photo_query_uploads_original_jpeg_and_preserves_social_clue(self):
+        """组合 Query 原样上传 JPEG，并把 Social 与运行时 PHOTO 一起提交。"""
+
+        jpeg_bytes = b"\xff\xd8\xff\xe1Exif\x00\x00source-metadata\xff\xd9"
+        upload_url = (
+            "https://bucket.cos.ap-shanghai.myqcloud.com/object.jpg"
+            "?q-sign-algorithm=sha1&q-signature=must-not-persist"
+        )
+        gateway = FakeSession(
+            [
+                api_body(
+                    {
+                        "allowed_content_types": ["image/jpeg"],
+                        "max_size_bytes": 10000000,
+                        "config_version": "media_upload_v4_10mb",
+                        "strip_exif": True,
+                        "complete_retry": {
+                            "initial_delay_ms": 500,
+                            "max_attempts": 3,
+                            "max_delay_ms": 5000,
+                        },
+                    }
+                ),
+                api_body(
+                    {
+                        "media_asset_id": "media-photo-001",
+                        "upload_url": upload_url,
+                        "upload_method": "PUT",
+                        "upload_headers": {
+                            "Content-Length": str(len(jpeg_bytes)),
+                            "Content-Type": "image/jpeg",
+                        },
+                        "content_type": "image/jpeg",
+                        "size_bytes": len(jpeg_bytes),
+                        "max_size_bytes": 10000000,
+                        "status": "pending",
+                        "expires_time": 4102444800000,
+                    }
+                ),
+                api_body(
+                    {
+                        "media_asset_id": "media-photo-001",
+                        "content_type": "image/jpeg",
+                        "size_bytes": len(jpeg_bytes),
+                        "status": "ignored-on-503",
+                    }
+                ),
+                api_body(
+                    {
+                        "media_asset_id": "media-photo-001",
+                        "content_type": "image/jpeg",
+                        "size_bytes": len(jpeg_bytes),
+                        "status": "pending",
+                    }
+                ),
+                api_body(
+                    {
+                        "media_asset_id": "media-photo-001",
+                        "content_type": "image/jpeg",
+                        "size_bytes": len(jpeg_bytes),
+                        "status": "uploaded",
+                    }
+                ),
+                api_body({"task_id": "task-photo-001"}),
+                api_body({"status": "NO_RESULT", "candidate_count": 0}),
+            ]
+        )
+        gateway.bodies[2] = (gateway.bodies[2], 503)
+        cos = FakePutSession(status_code=204)
+        waits = []
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            photo_root = Path(temp_dir) / "input_photos"
+            photo_root.mkdir()
+            (photo_root / "person.jpg").write_bytes(jpeg_bytes)
+            client = SearchClient(
+                config(photo_input_dir=str(photo_root)),
+                gateway,
+                media_session=cos,
+            )
+            result = process_one(
+                {
+                    "input_id": "case-photo-001",
+                    "query_stage": "FULL_NAME_SOCIAL_PHOTO",
+                    "photo_path": "person.jpg",
+                    "match_strategy": "UNION",
+                    "clues": [
+                        {
+                            "type": "FULL_NAME",
+                            "full_name_query": {"full_name": "Photo Person"},
+                        },
+                        {
+                            "type": "SOCIAL_LINK",
+                            "social_link_query": {
+                                "url": "https://linkedin.com/in/photo-person",
+                                "platform_hint": "linkedin",
+                            },
+                        },
+                    ],
+                    "additional_details": [],
+                },
+                client,
+                sleep_fn=waits.append,
+                run_id="run-photo-001",
+            )
+
+        self.assertEqual("1.3.2", result["result_schema_version"])
+        self.assertEqual("FULL_NAME_SOCIAL_PHOTO", result["query_stage"])
+        self.assertEqual("media-photo-001", result["photo_input"]["media_asset_id"])
+        self.assertEqual("uploaded", result["photo_input"]["upload_status"])
+        self.assertEqual(jpeg_bytes, cos.calls[0][1]["data"])
+        self.assertEqual(False, cos.calls[0][1]["allow_redirects"])
+        self.assertEqual(
+            {"Content-Length": str(len(jpeg_bytes)), "Content-Type": "image/jpeg"},
+            cos.calls[0][1]["headers"],
+        )
+        self.assertIn(0.5, waits)
+        self.assertIn(1.0, waits)
+        methods = [
+            call[1]["json"]["requests"][0]["method_name"]
+            for call in gateway.calls
+        ]
+        self.assertEqual(
+            [
+                "GetMediaUploadConfig",
+                "PrepareMediaUpload",
+                "CompleteMediaUpload",
+                "CompleteMediaUpload",
+                "CompleteMediaUpload",
+                "CreateIntentTask",
+                "GetTask",
+            ],
+            methods,
+        )
+        create_clues = gateway.calls[5][1]["json"]["requests"][0]["params"]["clues"]
+        self.assertEqual(["FULL_NAME", "SOCIAL_LINK", "PHOTO"], [item["type"] for item in create_clues])
+        self.assertEqual("PHOTO", create_clues[-1]["type"])
+        self.assertEqual("media-photo-001", create_clues[-1]["photo_query"]["media_asset_id"])
+        serialized = json.dumps(result, ensure_ascii=False)
+        self.assertNotIn("q-signature", serialized)
+        self.assertNotIn("must-not-persist", serialized)
+        self.assertNotIn("source-metadata", serialized)
+
+    def test_photo_input_contract_rejects_missing_path_and_prebuilt_photo_clue(self):
+        """照片输入必须提供相对路径，且不能预置运行时 PHOTO clue。"""
+
+        with self.assertRaisesRegex(FlowError, "photo_path"):
+            validate_input(
+                {
+                    "input_id": "missing-photo",
+                    "query_stage": "FULL_NAME_PHOTO",
+                    "clues": [{"type": "FULL_NAME"}],
+                },
+                1,
+                set(),
+            )
+        with self.assertRaisesRegex(FlowError, "PHOTO"):
+            validate_input(
+                {
+                    "input_id": "prebuilt-photo",
+                    "query_stage": "FULL_NAME_PHOTO",
+                    "photo_path": "input_photos/person.jpg",
+                    "clues": [
+                        {"type": "FULL_NAME"},
+                        {"type": "PHOTO", "photo_query": {"media_asset_id": "old"}},
+                    ],
+                },
+                1,
+                set(),
+            )
+        with self.assertRaisesRegex(FlowError, "SOCIAL_LINK"):
+            validate_input(
+                {
+                    "input_id": "missing-social",
+                    "query_stage": "FULL_NAME_SOCIAL_PHOTO",
+                    "photo_path": "input_photos/person.jpg",
+                    "clues": [{"type": "FULL_NAME"}],
+                },
+                1,
+                set(),
+            )
+
+    def test_photo_file_validation_blocks_traversal_symlink_and_fake_jpeg(self):
+        """本地照片读取拒绝目录逃逸、符号链接和伪造扩展名内容。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "input_photos"
+            root.mkdir()
+            outside = Path(temp_dir) / "outside.jpg"
+            outside.write_bytes(b"\xff\xd8outside\xff\xd9")
+            (root / "fake.jpg").write_bytes(b"not-a-jpeg")
+            (root / "linked.jpg").symlink_to(outside)
+            configured = config(photo_input_dir=str(root))
+
+            for photo_path in ("../outside.jpg", str(outside), "linked.jpg"):
+                with self.subTest(photo_path=photo_path):
+                    with self.assertRaises(FlowError):
+                        load_photo_input(
+                            {"photo_path": photo_path},
+                            configured,
+                        )
+            with self.assertRaisesRegex(FlowError, "JPEG"):
+                load_photo_input({"photo_path": "fake.jpg"}, configured)
+
     def test_extract_admin_task_fields_uses_confirmed_admin_contract(self):
         """按已确认路径换算 USD 成本、PDL 调用状态和任务运行时长。"""
 
@@ -214,6 +437,102 @@ class SearchToolTests(unittest.TestCase):
         self.assertIsNone(tool_usage["pdl_person_identify"]["cost"])
         self.assertEqual(1.39, metadata["pdl_provider_cost"])
         self.assertEqual(1, metadata["wiki_call_count"])
+
+    def test_extract_admin_task_fields_keeps_all_provider_costs_for_single_pdl_mode(self):
+        """单独调用 PDL Identify 时，Provider 总额和第三方成本都不得丢失。"""
+
+        task_fields, metadata = extract_admin_task_fields(
+            task_id="task-provider-costs",
+            debug_body=api_body(
+                {
+                    "debug": {
+                        "diagnosis": {"pdl_called": True},
+                        "agent_tool_calls": [
+                            {
+                                "provider": "people_data_labs",
+                                "provider_operation": "person_identify",
+                                "status": "success",
+                            }
+                        ],
+                    }
+                }
+            ),
+            cost_body=api_body(
+                {
+                    "cost_summary": {
+                        "by_provider": [
+                            {
+                                "provider": "people_data_labs",
+                                "currency": "USD",
+                                "total_cost_microunit": "550000",
+                                "call_count": 1,
+                                "priced_call_count": 1,
+                            },
+                            {
+                                "provider": "google_vision",
+                                "currency": "USD",
+                                "total_cost_microunit": "3500",
+                                "call_count": 1,
+                                "priced_call_count": 1,
+                            },
+                            {
+                                "provider": "searchapi_google_lens",
+                                "currency": "USD",
+                                "total_cost_microunit": "3000",
+                                "call_count": 1,
+                                "priced_call_count": 1,
+                            },
+                            {
+                                "provider": "social_profile",
+                                "currency": "USD",
+                                "total_cost_microunit": "1880",
+                                "call_count": 1,
+                                "priced_call_count": 1,
+                            },
+                            {
+                                "provider": "social_profile",
+                                "currency": "UNSPECIFIED",
+                                "total_cost_microunit": "0",
+                                "call_count": 1,
+                                "non_billable_call_count": 1,
+                            },
+                            {
+                                "provider": "llm_search:deepseek",
+                                "currency": "USD",
+                                "total_cost_microunit": "286",
+                                "call_count": 1,
+                                "priced_call_count": 1,
+                            },
+                        ],
+                        "by_search": [
+                            {
+                                "task_id": "task-provider-costs",
+                                "currency": "USD",
+                                "total_cost_microunit": "558666",
+                            }
+                        ],
+                    }
+                }
+            ),
+        )
+
+        self.assertEqual(0.000286, task_fields["llm_cost"])
+        self.assertEqual(0.55838, task_fields["third_party_cost"])
+        self.assertEqual(0.558666, task_fields["total_cost"])
+        self.assertEqual(0.55, metadata["pdl_provider_cost"])
+        self.assertEqual("PRICED", metadata["pdl_provider_cost_status"])
+        self.assertEqual(0.55, metadata["pdl_person_identify_cost"])
+        self.assertEqual(0.003, metadata["google_lens_cost"])
+        self.assertEqual(0.0035, metadata["google_vision_cost"])
+        self.assertEqual(0.00188, metadata["social_profile_extraction_cost"])
+        details = {
+            item["provider"]: item
+            for item in metadata["provider_cost_details"]
+        }
+        self.assertEqual(0.55, details["people_data_labs"]["cost"])
+        self.assertEqual(0.00188, details["social_profile"]["cost"])
+        self.assertEqual(2, details["social_profile"]["call_count"])
+        self.assertEqual(1, details["social_profile"]["non_billable_call_count"])
 
     def test_extract_admin_task_fields_keeps_zero_distinct_from_missing(self):
         """真实零成本和 False 正常落库，未返回的字段继续保持空值。"""
@@ -405,7 +724,7 @@ class SearchToolTests(unittest.TestCase):
             run_id="run-v13",
         )
 
-        self.assertEqual("1.3.1", result["result_schema_version"])
+        self.assertEqual("1.3.2", result["result_schema_version"])
         self.assertEqual("run-v13", result["run_id"])
         self.assertEqual("FULL_NAME_SOCIAL", result["query_stage"])
         self.assertEqual("PARTIAL_DETAIL_FAILED", result["query_status"])
@@ -519,7 +838,7 @@ class SearchToolTests(unittest.TestCase):
         self.assertEqual("PARTIAL_DETAIL_FAILED", result["query_status"])
         self.assertEqual("FAILED", result["results"][0]["detail_status"])
         self.assertEqual("SUCCESS", result["results"][1]["detail_status"])
-        self.assertEqual("1.3.1", failure["failure_schema_version"])
+        self.assertEqual("1.3.2", failure["failure_schema_version"])
         self.assertEqual("run-partial", failure["run_id"])
         self.assertEqual("CANDIDATE", failure["scope"])
         self.assertEqual("c1", failure["candidate_id"])
@@ -803,7 +1122,7 @@ class SearchToolTests(unittest.TestCase):
             self.assertEqual([], results[0]["results"])
             self.assertEqual("bad", failures[0]["input_id"])
             self.assertEqual("GetTask", failures[0]["stage"])
-            self.assertEqual("1.3.1", failures[0]["failure_schema_version"])
+            self.assertEqual("1.3.2", failures[0]["failure_schema_version"])
             self.assertEqual("QUERY", failures[0]["scope"])
             self.assertEqual(
                 ["CreateIntentTask", "GetTask"],
@@ -847,6 +1166,61 @@ class SearchToolTests(unittest.TestCase):
         self.assertEqual("input/tasks_v02.jsonl", configured.input_file)
         self.assertEqual("managed-output", configured.output_dir)
         self.assertTrue(configured.allow_duplicate_run)
+
+    def test_config_reads_photo_settings_without_changing_default_off_state(self):
+        """照片配置使用严格开关和逗号分隔 Host，默认仍保持关闭。"""
+
+        base = {
+            "SEARCH_API_URL": "https://example.test",
+            "AUTH_TOKEN": "token",
+            "DEVICE_ID": "device",
+            "USER_ID": "user",
+            "SEARCH_HTTP_HEADERS_JSON": "{}",
+        }
+        with patch.dict("os.environ", base, clear=True):
+            default_config = Config.from_env(Path("/does/not/exist"))
+        with patch.dict(
+            "os.environ",
+            {
+                **base,
+                "SEARCH_PHOTO_ENABLED": "true",
+                "SEARCH_PHOTO_INPUT_DIR": "/app/input/input_photos",
+                "SEARCH_PHOTO_UPLOAD_HOST_SUFFIXES": ".myqcloud.com,.example-cos.test",
+            },
+            clear=True,
+        ):
+            photo_config = Config.from_env(Path("/does/not/exist"))
+
+        self.assertFalse(default_config.photo_enabled)
+        self.assertTrue(photo_config.photo_enabled)
+        self.assertEqual("/app/input/input_photos", photo_config.photo_input_dir)
+        self.assertEqual(
+            (".myqcloud.com", ".example-cos.test"),
+            photo_config.photo_upload_host_suffixes,
+        )
+
+    def test_cos_put_accepts_confirmed_statuses_and_rejects_host_boundary_bypass(self):
+        """COS PUT 只接受确认的 2xx，并按域名边界阻止伪造 Host。"""
+
+        for status_code in (200, 201, 204):
+            with self.subTest(status_code=status_code):
+                cos = FakePutSession(status_code=status_code)
+                client = SearchClient(config(), FakeSession([]), media_session=cos)
+                returned = client.put_media_binary(
+                    "https://bucket.cos.myqcloud.com/object.jpg?signature=secret",
+                    {"Content-Length": "4", "Content-Type": "image/jpeg"},
+                    b"test",
+                )
+                self.assertEqual(status_code, returned)
+        blocked = FakePutSession()
+        client = SearchClient(config(), FakeSession([]), media_session=blocked)
+        with self.assertRaisesRegex(FlowError, "允许的域名"):
+            client.put_media_binary(
+                "https://evilmyqcloud.com/object.jpg?signature=secret",
+                {"Content-Length": "4", "Content-Type": "image/jpeg"},
+                b"test",
+            )
+        self.assertEqual([], blocked.calls)
 
     def test_config_reloads_updated_secret_file_without_process_cache(self):
         """每次创建配置都读取最新 Secret，且不得把凭证写入全局环境。"""

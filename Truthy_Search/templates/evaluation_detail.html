@@ -16,11 +16,11 @@
       <h2>参考线方案</h2>
       {% if evaluation.threshold_profile_id %}
         <p><strong>{{ evaluation.threshold_profile_name }} v{{ evaluation.threshold_profile_version }}</strong> <span class="status {{ evaluation.threshold_profile_status|status_class }}">{{ evaluation.threshold_profile_status }}</span></p>
-        <p>FULL_NAME：配置 {{ configured_counts.FULL_NAME }} 项 · FULL_NAME_SOCIAL：配置 {{ configured_counts.FULL_NAME_SOCIAL }} 项</p>
+        <p>FULL_NAME：配置 {{ configured_counts.FULL_NAME }} 项 · FULL_NAME_SOCIAL：配置 {{ configured_counts.FULL_NAME_SOCIAL }} 项 · FULL_NAME_PHOTO：配置 {{ configured_counts.FULL_NAME_PHOTO }} 项 · FULL_NAME_SOCIAL_PHOTO：配置 {{ configured_counts.FULL_NAME_SOCIAL_PHOTO }} 项</p>
         <a class="button secondary" href="{{ url_for('threshold_profile_detail', profile_id=evaluation.threshold_profile_id) }}">查看方案</a>
-      {% elif configured_counts.FULL_NAME or configured_counts.FULL_NAME_SOCIAL %}
+      {% elif configured_counts.FULL_NAME or configured_counts.FULL_NAME_SOCIAL or configured_counts.FULL_NAME_PHOTO or configured_counts.FULL_NAME_SOCIAL_PHOTO %}
         <p><strong>历史自定义参考线</strong></p>
-        <p>FULL_NAME：配置 {{ configured_counts.FULL_NAME }} 项 · FULL_NAME_SOCIAL：配置 {{ configured_counts.FULL_NAME_SOCIAL }} 项</p>
+        <p>FULL_NAME：配置 {{ configured_counts.FULL_NAME }} 项 · FULL_NAME_SOCIAL：配置 {{ configured_counts.FULL_NAME_SOCIAL }} 项 · FULL_NAME_PHOTO：配置 {{ configured_counts.FULL_NAME_PHOTO }} 项 · FULL_NAME_SOCIAL_PHOTO：配置 {{ configured_counts.FULL_NAME_SOCIAL_PHOTO }} 项</p>
       {% else %}
         <p><strong>尚未选择参考线方案。</strong></p>
         <p>不影响执行和生成报告；报告建议将显示“暂不能判断”。</p>

@@ -1,0 +1,221 @@
+pipeline {
+    agent any
+
+    options {
+        // 防止同一任务并发写入会话文件和日志目录。
+        disableConcurrentBuilds()
+        // 仅保留必要的构建记录和日志归档，避免长期占用 Jenkins 磁盘。
+        buildDiscarder(logRotator(numToKeepStr: '15', artifactNumToKeepStr: '7'))
+    }
+
+    parameters {
+        choice(
+            name: 'ENVIRONMENT',
+            choices: ['test'],
+            description: '选择接口自动化运行环境'
+        )
+        choice(
+            name: 'RUN_TYPE',
+            choices: ['all', 'single', 'flow'],
+            description: 'all=全部，single=单接口，flow=多接口流程'
+        )
+        string(
+            name: 'FLOW',
+            defaultValue: '',
+            description: '可选 Flow 文件名，不含 .yaml；留空执行全部 Flow'
+        )
+    }
+
+    // 自动定时触发已暂停；恢复时再按原规则增加 triggers/cron 配置。
+
+    environment {
+        PROJECT_DIR = 'Truthy_ApiAutoTest2'
+        // 固定 Allure 版本和 pytest 参数，确保本地与 Jenkins 生成结果的方式一致。
+        ALLURE_VERSION = '3.14.3'
+        ALLURE_PYTEST_ARGS = '--alluredir=allure-results --clean-alluredir --allure-no-capture'
+        // Jenkins 节点未安装 Node 时，在任务工作区准备固定且经过校验的版本。
+        NODE_VERSION = '22.23.2'
+        NODE_SHA256 = '61130f394c1630d211dd50aecc4353d379480f36d3ac913cd85dbba1aed585c6'
+    }
+
+    stages {
+        stage('准备 Python 环境') {
+            steps {
+                dir("${PROJECT_DIR}") {
+                    sh '''
+                        set -eu
+                        python3 -m venv .venv
+                        .venv/bin/python -m pip install \
+                            --disable-pip-version-check \
+                            -r requirements.txt
+                        mkdir -p reports
+                        rm -f reports/junit*.xml
+                    '''
+                }
+            }
+        }
+
+        stage('执行接口自动化') {
+            steps {
+                dir("${PROJECT_DIR}") {
+                    sh '''
+                        set -eu
+                        # 首次构建尚未注册参数环境变量，使用参数声明中的默认值继续执行。
+                        ENVIRONMENT="${ENVIRONMENT:-test}"
+                        RUN_TYPE="${RUN_TYPE:-all}"
+                        FLOW="${FLOW:-}"
+
+                        run_single() {
+                            .venv/bin/python -m pytest \
+                                test_cases/test_single_api.py \
+                                --env="$ENVIRONMENT" \
+                                -s \
+                                --log-cli-level=INFO \
+                                --junitxml=reports/junit-single.xml \
+                                $ALLURE_PYTEST_ARGS
+                        }
+
+                        run_flow() {
+                            if [ -n "$FLOW" ]; then
+                                .venv/bin/python runtest.py \
+                                    --env "$ENVIRONMENT" \
+                                    --flow "$FLOW" \
+                                    -- \
+                                    -s \
+                                    --log-cli-level=INFO \
+                                    --junitxml=reports/junit-flow.xml \
+                                    $ALLURE_PYTEST_ARGS
+                            else
+                                .venv/bin/python -m pytest \
+                                    test_cases/test_gateway_flow.py \
+                                    --env="$ENVIRONMENT" \
+                                    -s \
+                                    --log-cli-level=INFO \
+                                    --junitxml=reports/junit-flow.xml \
+                                    $ALLURE_PYTEST_ARGS
+                            fi
+                        }
+
+                        case "$RUN_TYPE" in
+                            single)
+                                run_single
+                                ;;
+                            flow)
+                                run_flow
+                                ;;
+                            all)
+                                # 使用一次 pytest 调用，确保单接口失败后仍会继续收集并执行 Flow。
+                                if [ -n "$FLOW" ]; then
+                                    .venv/bin/python -m pytest \
+                                        test_cases/test_single_api.py \
+                                        test_cases/test_gateway_flow.py \
+                                        --env="$ENVIRONMENT" \
+                                        --flow="$FLOW" \
+                                        -s \
+                                        --log-cli-level=INFO \
+                                        --junitxml=reports/junit-all.xml \
+                                        $ALLURE_PYTEST_ARGS
+                                else
+                                    .venv/bin/python -m pytest \
+                                        test_cases/test_single_api.py \
+                                        test_cases/test_gateway_flow.py \
+                                        --env="$ENVIRONMENT" \
+                                        -s \
+                                        --log-cli-level=INFO \
+                                        --junitxml=reports/junit-all.xml \
+                                        $ALLURE_PYTEST_ARGS
+                                fi
+                                ;;
+                            *)
+                                echo "不支持的 RUN_TYPE: $RUN_TYPE"
+                                exit 2
+                                ;;
+                        esac
+                    '''
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            script {
+                // JUnit 发布异常保持 FAILURE，但继续执行 Allure 发布和产物归档。
+                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+                    junit(
+                        allowEmptyResults: true,
+                        testResults: 'Truthy_ApiAutoTest2/reports/junit*.xml'
+                    )
+                }
+
+                // 报告工具或 Publisher 异常只标记 UNSTABLE，不覆盖 pytest 的 FAILURE。
+                catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+                    sh '''
+                        set -eu
+                        TOOL_ROOT="$WORKSPACE/.jenkins-tools"
+                        NODE_HOME="$TOOL_ROOT/node-v$NODE_VERSION-darwin-arm64"
+                        ALLURE_HOME="$TOOL_ROOT/allure"
+                        ALLURE_BIN="$ALLURE_HOME/bin/allure"
+                        # Jenkins 服务可能由不同方式安装 Homebrew，只在当前步骤补充常用路径。
+                        export PATH="/opt/homebrew/bin:/usr/local/bin:$NODE_HOME/bin:$ALLURE_HOME/bin:$PATH"
+                        NPM_BIN="$(command -v npm || true)"
+
+                        if [ -z "$NPM_BIN" ]; then
+                            NODE_ARCHIVE="$TOOL_ROOT/node-v$NODE_VERSION-darwin-arm64.tar.gz"
+                            NODE_URL="https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-darwin-arm64.tar.gz"
+                            mkdir -p "$TOOL_ROOT"
+
+                            if [ ! -x "$NODE_HOME/bin/npm" ]; then
+                                curl --fail --location --retry 3 \
+                                    --output "$NODE_ARCHIVE" \
+                                    "$NODE_URL"
+                                (
+                                    cd "$TOOL_ROOT"
+                                    echo "$NODE_SHA256  $(basename "$NODE_ARCHIVE")" | \
+                                        shasum -a 256 -c -
+                                )
+                                rm -rf "$NODE_HOME"
+                                tar -xzf "$NODE_ARCHIVE" -C "$TOOL_ROOT"
+                                rm -f "$NODE_ARCHIVE"
+                            fi
+
+                            NPM_BIN="$NODE_HOME/bin/npm"
+                            export PATH="$NODE_HOME/bin:$PATH"
+                        fi
+
+                        if [ ! -x "$ALLURE_BIN" ] || \
+                           [ "$("$ALLURE_BIN" --version)" != "$ALLURE_VERSION" ]; then
+                            if [ -z "$NPM_BIN" ]; then
+                                echo "未找到 npm，无法准备 Allure CLI"
+                                exit 1
+                            fi
+                            rm -rf "$ALLURE_HOME"
+                            "$NPM_BIN" install --global \
+                                --prefix "$ALLURE_HOME" \
+                                "allure@$ALLURE_VERSION"
+                        fi
+
+                        "$ALLURE_BIN" --version
+                    '''
+                    withEnv([
+                        "PATH+NODE=${env.WORKSPACE}/.jenkins-tools/node-v${env.NODE_VERSION}-darwin-arm64/bin:/opt/homebrew/bin:/usr/local/bin",
+                        "PATH+ALLURE=${env.WORKSPACE}/.jenkins-tools/allure/bin"
+                    ]) {
+                        allure(
+                            allureVersion: '3',
+                            includeProperties: false,
+                            resultPolicy: 'LEAVE_AS_IS',
+                            results: [[path: 'Truthy_ApiAutoTest2/allure-results']]
+                        )
+                    }
+                }
+            }
+
+            // 仅归档调试日志和原始 Allure 数据，不包含环境文件、虚拟环境或工具目录。
+            archiveArtifacts(
+                allowEmptyArchive: true,
+                artifacts: 'Truthy_ApiAutoTest2/logs/**/*,Truthy_ApiAutoTest2/allure-results/**/*'
+            )
+        }
+    }
+}
