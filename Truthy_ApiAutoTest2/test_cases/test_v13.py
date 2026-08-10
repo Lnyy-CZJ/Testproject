@@ -822,6 +822,10 @@ def test_phase_six_migration_preserves_legacy_flow_routes_and_extracts() -> None
         }
         for step_id, snapshot in LEGACY_FLOW_FINAL_SNAPSHOT.items()
     }
+    # 无候选人是正常结果：list_candidates 的提取规则已由 extract 迁移为
+    # optional_extract（见下方断言），此处基线跟随当前 Flow 结构放宽为空，
+    # 不改动 LEGACY_FLOW_FINAL_SNAPSHOT 本身（它仍是 V1.2 迁移冻结基线）。
+    expected["list_candidates"]["extract"] = {}
 
     for step_id, expected_step in expected.items():
         assert step_id in actual
@@ -829,6 +833,19 @@ def test_phase_six_migration_preserves_legacy_flow_routes_and_extracts() -> None
         assert actual[step_id]["extract"] == expected_step["extract"]
     poll_step = next(step for step in flow["steps"] if step["id"] == "poll_task")
     assert poll_step["until"]["path"] == "$.status"
+
+    # 空结果扩展行为必须固化：items[0] 不存在时不再强制提取，
+    # 候选人详情步骤依据列表为空原因条件跳过。
+    list_step = next(step for step in flow["steps"] if step["id"] == "list_candidates")
+    assert list_step.get("optional_extract") == {
+        "candidate_id": "$.items[0].candidate_id",
+        "list_empty_reason": "$.empty_reason",
+    }
+    detail_step = next(step for step in flow["steps"] if step["id"] == "candidate_detail")
+    assert detail_step.get("skip_if") == {
+        "variable": "list_empty_reason",
+        "equals": "NO_CANDIDATES",
+    }
 
 
 def test_name_with_conditions_flow_uses_non_photo_create_task_clues() -> None:
