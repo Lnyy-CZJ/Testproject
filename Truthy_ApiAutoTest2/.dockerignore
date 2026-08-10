@@ -1,0 +1,19 @@
+# 凭证与运行时数据绝不进入镜像
+.env*
+logs/
+reports/
+tasks/
+allure-results/
+allure-report/
+
+# 版本控制与开发环境产物
+.git/
+__pycache__/
+.venv/
+.pytest_cache/
+.vscode/
+.DS_Store
+AGENTS.md
+
+# 非运行所需目录
+docs/

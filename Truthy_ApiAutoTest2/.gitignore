@@ -1,5 +1,8 @@
-# 本地敏感配置
+# 环境变量与凭证
 .env
+.env.*
+!.env.example
+!.env.platform.example
 
 # Python 与 pytest 生成物
 .venv/
