@@ -390,6 +390,33 @@ class TestCatalogCredentialsReportRoutes:
         assert meta["report_url"] is None
         assert test_client.get("/reports/index.html").status_code == 404
 
+    def test_report_stat_oserror_degrades_to_missing(
+        self, client, fake_project, monkeypatch
+    ):
+        """报告目录 stat 抛 OSError 时降级为"暂无报告"，不得 500。
+
+        场景说明:
+            Docker Desktop for Mac 绑定挂载在宿主机原子切换 symlink 后，
+            容器内残留句柄可能使 exists()/resolve() 抛 OSError(EINVAL)
+            而非 ENOENT；只读展示端点必须优雅降级。
+        """
+        test_client, _ = client
+        (fake_project / "reports" / "allure-current").mkdir(parents=True)
+        real_exists = Path.exists
+
+        def flaky_exists(self, *args, **kwargs):
+            # 仅对报告指针目录注入异常，其余路径保持真实行为。
+            if self.name == "allure-current":
+                raise OSError(22, "Invalid argument")
+            return real_exists(self, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "exists", flaky_exists)
+        response = test_client.get("/api/report/meta")
+        assert response.status_code == 200
+        meta = response.get_json()
+        assert meta["exists"] is False
+        assert meta["report_url"] is None
+
     def test_report_published(self, client, fake_project):
         test_client, _ = client
         report_dir = fake_project / "reports" / "allure-current"

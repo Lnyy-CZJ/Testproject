@@ -181,11 +181,21 @@ def _require_task(task_id: str) -> dict[str, Any]:
 
 
 def _resolve_report_dir() -> Path | None:
-    """解析报告 current 指针指向的真实目录；不存在返回 None。"""
+    """解析报告 current 指针指向的真实目录；不存在返回 None。
+
+    异常说明:
+        Docker Desktop for Mac 绑定挂载在宿主机原子切换 symlink 后，
+        容器内残留句柄可能使 stat 抛 OSError(EINVAL) 而非 ENOENT；
+        报告展示属只读端点，此类文件系统异常按“暂无报告”降级处理，
+        避免 meta/报告页返回 500（重启容器可刷新挂载视图）。
+    """
     report_dir = _get_root() / _get_settings()["report_dir"]
-    if not report_dir.exists():
+    try:
+        if not report_dir.exists():
+            return None
+        return report_dir.resolve()
+    except OSError:
         return None
-    return report_dir.resolve()
 
 
 def _register_routes(blueprint: Blueprint) -> None:
