@@ -89,5 +89,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     return int(pytest.main(pytest_args))
 
 
+def test_jenkins_failure_build_probe() -> None:
+    """临时探针用例：仅用于验证 Jenkins 失败构建的报告发布链路。
+
+    功能说明:
+        该用例必然失败，用于端到端验证"测试失败构建 → post 仍发布 Allure
+        报告 → 平台页面展示失败统计与构建元信息"。验证完成后立即 revert。
+    """
+    assert False, "jenkins failure-build probe (temporary, will be reverted)"
+
+
 if __name__ == "__main__":
     raise SystemExit(main())
