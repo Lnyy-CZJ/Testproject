@@ -31,7 +31,7 @@ def run_alembic(database_url: str, *arguments: str) -> None:
 def test_empty_database_upgrade_is_repeatable_and_downgrade_is_scoped(
     tmp_path: Path,
 ) -> None:
-    """空库可重复升级，第三条数据正确，降级只删除 Truthy_Search。"""
+    """空库可重复升级，第四条数据正确，降级只删除接口自动化。"""
 
     database_path = tmp_path / "migration.db"
     database_url = f"sqlite:///{database_path}"
@@ -47,6 +47,7 @@ def test_empty_database_upgrade_is_repeatable_and_downgrade_is_scoped(
         "trackevents",
         "log-filter",
         "truthy-search",
+        "api-autotest",
     ]
     truthy = rows[2]
     assert truthy["entry_url"] == "/truthy-search/"
@@ -61,6 +62,20 @@ def test_empty_database_upgrade_is_repeatable_and_downgrade_is_scoped(
         "字段对比",
         "评测报告",
     ]
+    api_autotest = rows[3]
+    assert api_autotest["name"] == "接口自动化"
+    assert api_autotest["entry_url"] == "/api-autotest/"
+    assert api_autotest["health_url"] == (
+        "http://api-autotest:5003/api-autotest/health"
+    )
+    assert api_autotest["short_code"] == "API"
+    assert api_autotest["icon_key"] == "api"
+    assert api_autotest["category"] == "automation"
+    assert json.loads(api_autotest["features"]) == [
+        "执行触发",
+        "结果统计",
+        "报告查看",
+    ]
 
     run_alembic(database_url, "downgrade", "-1")
     remaining_ids = [
@@ -70,4 +85,4 @@ def test_empty_database_upgrade_is_repeatable_and_downgrade_is_scoped(
         ).fetchall()
     ]
     connection.close()
-    assert remaining_ids == ["trackevents", "log-filter"]
+    assert remaining_ids == ["trackevents", "log-filter", "truthy-search"]

@@ -1,7 +1,7 @@
 """测试开发平台运行态冒烟测试。
 
 功能说明:
-    验证平台首页、三个工具页面、健康检查以及关键 POST 请求均可通过
+    验证平台首页、四个工具页面、健康检查以及关键 POST 请求均可通过
     统一入口访问。测试只读取页面并发送最小输入，不保存测试日志。
 
 配置说明:
@@ -29,7 +29,7 @@ def request(path, data=None, content_type=None):
 
 
 class PlatformSmokeTest(unittest.TestCase):
-    """从用户统一入口验证平台和三个独立工具的核心连通性。"""
+    """从用户统一入口验证平台和四个独立工具的核心连通性。"""
 
     def test_platform_home_and_dynamic_tool_catalog_are_available(self):
         status, _, body = request("/")
@@ -42,7 +42,7 @@ class PlatformSmokeTest(unittest.TestCase):
         tool_ids = [item["id"] for item in json.loads(api_body)["items"]]
         self.assertEqual(
             tool_ids,
-            ["trackevents", "log-filter", "truthy-search"],
+            ["trackevents", "log-filter", "truthy-search", "api-autotest"],
         )
 
     def test_platform_health_endpoints_are_available(self):
@@ -101,6 +101,26 @@ class PlatformSmokeTest(unittest.TestCase):
         self.assertIn("返回平台首页", page)
         self.assertEqual(health_status, 200)
         self.assertEqual(json.loads(health_body)["status"], "ok")
+
+    def test_api_autotest_page_health_catalog_and_tasks_are_available(self):
+        """只读验证接口自动化页面、健康状态、执行目录和任务列表。"""
+
+        page_status, _, page = request("/api-autotest/")
+        health_status, _, health_body = request("/api-autotest/health")
+        catalog_status, _, catalog_body = request("/api-autotest/api/catalog")
+        tasks_status, _, tasks_body = request("/api-autotest/api/tasks")
+
+        self.assertEqual(page_status, 200)
+        self.assertIn("接口自动化", page)
+        self.assertEqual(health_status, 200)
+        self.assertEqual(json.loads(health_body)["status"], "ok")
+        self.assertEqual(catalog_status, 200)
+        catalog = json.loads(catalog_body)
+        self.assertIn("apis", catalog)
+        self.assertIn("cases", catalog)
+        self.assertIn("flows", catalog)
+        self.assertEqual(tasks_status, 200)
+        self.assertIn("items", json.loads(tasks_body))
 
 
 if __name__ == "__main__":

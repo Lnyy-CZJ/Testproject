@@ -15,6 +15,7 @@ export function ToolCard({
       event: { className: "tool-icon-event", label: "EV" },
       log: { className: "tool-icon-log", label: "LG" },
       search: { className: "tool-icon-search", label: "SR" },
+      api: { className: "tool-icon-api", label: "AP" },
     }[tool.icon_key] ?? { className: "tool-icon-event", label: "EV" };
   return (
     <article className="tool-card" data-tool={tool.id}>

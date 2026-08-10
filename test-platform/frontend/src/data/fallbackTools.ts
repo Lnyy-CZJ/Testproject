@@ -4,7 +4,7 @@ import type { Tool } from "../types/tool";
  * 平台 API 不可用时的只读工具目录。
  *
  * 关键逻辑:
- *   只保留已经存在且可以直接访问的三个工具，避免数据库或 API 故障
+ *   只保留已经存在且可以直接访问的四个工具，避免数据库或 API 故障
  *   导致测试入口完全消失。该配置不承担动态工具管理职责。
  */
 export const fallbackTools: Tool[] = [
@@ -43,5 +43,17 @@ export const fallbackTools: Tool[] = [
     features: ["检索执行", "字段对比", "评测报告"],
     sort_order: 30,
     fallback_health_path: "/truthy-search/health",
+  },
+  {
+    id: "api-autotest",
+    name: "接口自动化",
+    description: "触发 Gateway 接口自动化执行，查看回归结果与 Allure 报告。",
+    entry_url: "/api-autotest/",
+    short_code: "API",
+    icon_key: "api",
+    category: "automation",
+    features: ["执行触发", "结果统计", "报告查看"],
+    sort_order: 40,
+    fallback_health_path: "/api-autotest/health",
   },
 ];

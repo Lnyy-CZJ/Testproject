@@ -337,6 +337,11 @@ h2 {
   background: #e8f2ff;
 }
 
+.tool-icon-api {
+  color: #5b34a8;
+  background: #f1ecff;
+}
+
 .tool-card h3 {
   margin-bottom: 8px;
   font-size: 23px;

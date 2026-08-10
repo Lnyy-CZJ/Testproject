@@ -8,6 +8,7 @@ services:
       - trackevents-web
       - log-filter-tool
       - truthy-search
+      - api-autotest
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/"]
       interval: 15s
@@ -149,6 +150,33 @@ services:
       - "5002"
     healthcheck:
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5002/truthy-search/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+  api-autotest:
+    build:
+      context: ../Truthy_ApiAutoTest2
+    environment:
+      API_AUTOTEST_HOST: 0.0.0.0
+      API_AUTOTEST_PORT: "5003"
+      API_AUTOTEST_BASE_PATH: /api-autotest
+      PLATFORM_HOME_URL: /
+      API_AUTOTEST_TASK_TIMEOUT_SECONDS: "${API_AUTOTEST_TASK_TIMEOUT_SECONDS:-1800}"
+      API_AUTOTEST_TASKS_RETAIN: "${API_AUTOTEST_TASKS_RETAIN:-50}"
+    volumes:
+      # 平台侧独立凭证文件，与独立运行的 .env 隔离；缺失时容器降级为不可执行。
+      - ../Truthy_ApiAutoTest2/.env.platform:/app/.env
+      - ../Truthy_ApiAutoTest2/data:/app/data:ro
+      - ../Truthy_ApiAutoTest2/logs:/app/logs
+      - ../Truthy_ApiAutoTest2/reports:/app/reports
+      - ../Truthy_ApiAutoTest2/tasks:/app/tasks
+    expose:
+      - "5003"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5003/api-autotest/health', timeout=3)"]
       interval: 15s
       timeout: 5s
       retries: 3
