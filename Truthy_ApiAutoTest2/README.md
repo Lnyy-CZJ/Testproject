@@ -435,6 +435,7 @@ Jenkins 侧的 HTML 归档由 `Jenkinsfile` post 阶段的
 | `TASK_TIMEOUT` | 默认 1800 秒；按上表环境变量调整或拆分任务 |
 | 页面显示"暂无报告" | `reports/allure-current` 未指向版本目录；按第 12 节发布 |
 | `ADMIN_CREDENTIALS_MISSING` | `.env.platform` 缺少三个 `ADMIN_*` 字段 |
+| 发布后页面仍显示旧报告/暂无报告 | Docker Desktop 挂载缓存：`docker compose restart api-autotest` 刷新视图 |
 
 ### 回滚
 
