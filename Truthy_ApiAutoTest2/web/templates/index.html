@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>接口自动化 - Truthy_ApiAutoTest2</title>
+<style>
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+         margin: 0; background: #f5f6f8; color: #222; }
+  .container { max-width: 960px; margin: 0 auto; padding: 24px 16px 48px; }
+  header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+  h1 { font-size: 20px; margin: 0; }
+  .card { background: #fff; border: 1px solid #e3e5e8; border-radius: 8px;
+          padding: 16px; margin-bottom: 16px; }
+  .card h2 { font-size: 15px; margin: 0 0 12px; }
+  label { font-size: 13px; color: #555; display: block; margin: 8px 0 4px; }
+  select, input[type=text] { width: 100%; max-width: 320px; padding: 6px 8px;
+          border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+  .radio-row { display: flex; gap: 16px; margin: 4px 0; }
+  .radio-row label { display: inline-flex; align-items: center; gap: 4px; margin: 0; }
+  button { padding: 8px 20px; border: none; border-radius: 4px;
+           background: #2f6fed; color: #fff; cursor: pointer; font-size: 14px; }
+  button:disabled { background: #9db4e8; cursor: not-allowed; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+  .ok { background: #e6f4ea; color: #1e7e34; }
+  .bad { background: #fdecea; color: #c0392b; }
+  .warn { background: #fff8e1; color: #8a6d00; }
+  .muted { color: #888; font-size: 12px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #eee; }
+  a { color: #2f6fed; text-decoration: none; }
+  .error-banner { background: #fdecea; color: #c0392b; padding: 8px 12px;
+                  border-radius: 4px; margin-bottom: 12px; display: none; }
+  code { background: #f0f1f3; padding: 1px 4px; border-radius: 3px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>Gateway 接口自动化</h1>
+    <a href="{{ platform_home_url }}">&larr; 返回平台</a>
+  </header>
+
+  <div class="card">
+    <h2>执行任务</h2>
+    <div class="error-banner" id="submit-error"></div>
+    <label>环境</label>
+    <select id="env">
+      {% for env in envs %}<option value="{{ env }}">{{ env }}</option>{% endfor %}
+    </select>
+    <label>运行类型</label>
+    <div class="radio-row">
+      <label><input type="radio" name="run_type" value="all" checked> all（全部）</label>
+      <label><input type="radio" name="run_type" value="single"> single（单接口）</label>
+      <label><input type="radio" name="run_type" value="flow"> flow（指定流程）</label>
+    </div>
+    <label>Flow（run_type=flow 必填）</label>
+    <select id="flow">
+      <option value="">— 未选择 —</option>
+      {% for flow in flows %}<option value="{{ flow }}">{{ flow }}</option>{% endfor %}
+    </select>
+    <label>标签（可选，交给 pytest -m 解析）</label>
+    <input type="text" id="tag" placeholder="例如 smoke">
+    <div style="margin-top: 12px;">
+      <button id="submit-btn" onclick="submitTask()">提交任务</button>
+      <span class="muted" id="slot-hint"></span>
+    </div>
+    <div id="credential-status" class="muted" style="margin-top: 12px;"></div>
+  </div>
+
+  <div class="card">
+    <h2>Allure 报告</h2>
+    <div id="report-area" class="muted">加载中…</div>
+    <p class="muted">报告来自 Jenkins 归档或手动发布，属于外部报告，与平台任务无直接关联；报告中可能包含测试数据，请勿对外分享。</p>
+  </div>
+
+  <div class="card">
+    <h2>最近任务</h2>
+    <table>
+      <thead><tr><th>ID</th><th>类型</th><th>状态</th><th>提交时间</th><th>统计</th><th></th></tr></thead>
+      <tbody id="task-rows"><tr><td colspan="6" class="muted">加载中…</td></tr></tbody>
+    </table>
+    <p style="margin-top:12px;"><a href="{{ base_path }}/catalog">查看用例库 &rarr;</a></p>
+  </div>
+</div>
+
+<script>
+  // 接口基址由服务端注入，禁止硬编码根路径。
+  const BASE = {{ base_path|tojson }};
+  const TERMINAL = ["succeeded", "failed", "cancelled"];
+
+  function runType() {
+    return document.querySelector('input[name="run_type"]:checked').value;
+  }
+
+  async function refreshCredentialStatus() {
+    const params = new URLSearchParams({
+      env: document.getElementById("env").value,
+      run_type: runType(),
+      flow: document.getElementById("flow").value,
+      tag: document.getElementById("tag").value,
+    });
+    try {
+      const resp = await fetch(BASE + "/api/credentials/status?" + params);
+      const data = await resp.json();
+      const el = document.getElementById("credential-status");
+      const base = data.base_config.ready
+        ? '<span class="badge ok">基础配置就绪</span>'
+        : '<span class="badge bad">基础配置缺失</span> ' + data.base_config.message;
+      let admin = "";
+      if (data.admin.required) {
+        admin = data.admin.ready
+          ? ' <span class="badge ok">Admin 凭证就绪</span>'
+          : ' <span class="badge bad">缺少 Admin 凭证: ' + data.admin.missing_fields.join(", ") + "</span>";
+      }
+      el.innerHTML = "凭证状态：" + base + admin;
+    } catch (e) { /* 状态展示失败不影响提交 */ }
+  }
+
+  async function loadReportMeta() {
+    const el = document.getElementById("report-area");
+    try {
+      const resp = await fetch(BASE + "/api/report/meta");
+      const meta = await resp.json();
+      if (!meta.exists) { el.textContent = "报告尚未发布。"; return; }
+      let detail = "同步时间：" + (meta.synced_at || meta.generated_at || "未知") +
+                   "；来源：" + (meta.source || "unknown");
+      if (meta.source === "jenkins") {
+        detail += "；构建：" + (meta.job_name || "") + " #" + (meta.build_number || "") +
+                  "（" + (meta.build_result || "") + "）";
+      }
+      el.innerHTML = '<a href="' + meta.report_url + '" target="_blank">打开当前报告 &rarr;</a>' +
+                     '<div class="muted">' + detail + "</div>";
+    } catch (e) { el.textContent = "报告信息加载失败。"; }
+  }
+
+  function statusBadge(status) {
+    const map = { succeeded: "ok", failed: "bad", cancelled: "warn",
+                  running: "warn", pending: "warn" };
+    return '<span class="badge ' + (map[status] || "warn") + '">' + status + "</span>";
+  }
+
+  async function loadTasks() {
+    try {
+      const resp = await fetch(BASE + "/api/tasks?page=1&page_size=10");
+      const data = await resp.json();
+      const rows = document.getElementById("task-rows");
+      if (!data.items.length) {
+        rows.innerHTML = '<tr><td colspan="6" class="muted">暂无任务</td></tr>';
+        return false;
+      }
+      rows.innerHTML = data.items.map(t => {
+        const input = t.input || {};
+        const summary = t.summary ? (t.summary.passed + "/" + t.summary.total) : "-";
+        return "<tr><td><code>" + t.id + "</code></td><td>" + (input.run_type || "") +
+               "</td><td>" + statusBadge(t.status) + "</td><td>" + (t.created_at || "") +
+               "</td><td>" + summary + '</td><td><a href="' + BASE + "/tasks/" + t.id +
+               '">详情</a></td></tr>';
+      }).join("");
+      return data.items.some(t => !TERMINAL.includes(t.status));
+    } catch (e) { return false; }
+  }
+
+  async function submitTask() {
+    const btn = document.getElementById("submit-btn");
+    const errEl = document.getElementById("submit-error");
+    errEl.style.display = "none";
+    btn.disabled = true;
+    try {
+      const resp = await fetch(BASE + "/api/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          env: document.getElementById("env").value,
+          run_type: runType(),
+          flow: document.getElementById("flow").value || null,
+          tag: document.getElementById("tag").value || null,
+        }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        errEl.textContent = data.error || "提交失败";
+        errEl.style.display = "block";
+        btn.disabled = false;
+        return;
+      }
+      window.location.href = BASE + "/tasks/" + data.id;
+    } catch (e) {
+      errEl.textContent = "网络错误，提交失败";
+      errEl.style.display = "block";
+      btn.disabled = false;
+    }
+  }
+
+  // 存在非终态任务时 5 秒轮询；否则 15 秒低频刷新以发现新提交。
+  async function pollOnce() {
+    const hasActive = await loadTasks();
+    setTimeout(pollOnce, hasActive ? 5000 : 15000);
+  }
+
+  document.querySelectorAll('input[name="run_type"]').forEach(el =>
+    el.addEventListener("change", refreshCredentialStatus));
+  ["env", "flow", "tag"].forEach(id =>
+    document.getElementById(id).addEventListener("change", refreshCredentialStatus));
+
+  refreshCredentialStatus();
+  loadReportMeta();
+  pollOnce();
+</script>
+</body>
+</html>

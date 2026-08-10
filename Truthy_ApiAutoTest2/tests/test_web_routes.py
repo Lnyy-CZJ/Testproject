@@ -1,0 +1,429 @@
+"""壳服务路由单元测试。
+
+功能说明:
+    使用 Flask test client 覆盖全部端点的状态码与关键响应契约，验证
+    根路径与子路径（base path）两种挂载模式、分页夹取、凭证状态、
+    报告元信息与静态报告、日志兜底脱敏零泄漏。任务执行一律使用
+    patch_command 模拟子进程，不发真实请求。
+"""
+
+from __future__ import annotations
+
+import json
+import time
+from pathlib import Path
+
+import pytest
+from flask.testing import FlaskClient
+
+from conftest import junit_xml, patch_command
+from web.app import create_app, load_web_settings, validate_base_path
+from web.task_manager import TaskManager
+from web.task_store import TaskStore
+
+# 伪造任务 ID（格式合法但不存在）。
+UNKNOWN_TASK_ID = "20260101-000000-0000"
+
+
+def make_settings(base_path: str = "") -> dict:
+    """构造测试用运行配置。"""
+    return {
+        "host": "127.0.0.1",
+        "port": 5003,
+        "base_path": base_path,
+        "platform_home_url": "/",
+        "timeout_seconds": 30,
+        "tasks_retain": 50,
+        "report_dir": "reports/allure-current",
+    }
+
+
+@pytest.fixture
+def app_env(fake_project: Path, make_manager):
+    """应用工厂：返回 ``(test_client, manager, base_path)`` 构造器。"""
+
+    def _build(base_path: str = "", inject_manager: bool = True):
+        settings = make_settings(base_path)
+        manager = None
+        if inject_manager:
+            manager = make_manager(fake_project)
+            app = create_app(
+                project_root=fake_project,
+                settings=settings,
+                task_manager=manager,
+            )
+        else:
+            app = create_app(project_root=fake_project, settings=settings)
+        app.config["TESTING"] = True
+        return app.test_client(), manager
+
+    return _build
+
+
+@pytest.fixture
+def client(app_env) -> tuple[FlaskClient, TaskManager]:
+    """根路径模式下的测试客户端与执行引擎。"""
+    return app_env()
+
+
+class TestSettingsAndBasePath:
+    """运行配置解析与基础路径校验（纯函数）。"""
+
+    def test_validate_base_path_accepts_empty_and_strips_trailing_slash(self):
+        assert validate_base_path("") == ""
+        assert validate_base_path("  ") == ""
+        assert validate_base_path("/api-autotest") == "/api-autotest"
+        assert validate_base_path("/api-autotest/") == "/api-autotest"
+
+    @pytest.mark.parametrize(
+        "value",
+        ["api", "/a?b=1", "/a#frag", "http://x", "/a//b", "/a/../b"],
+    )
+    def test_validate_base_path_rejects_invalid(self, value):
+        with pytest.raises(ValueError):
+            validate_base_path(value)
+
+    def test_load_web_settings_defaults(self):
+        settings = load_web_settings({})
+        assert settings["host"] == "127.0.0.1"
+        assert settings["port"] == 5003
+        assert settings["base_path"] == ""
+        assert settings["timeout_seconds"] == 1800
+        assert settings["tasks_retain"] == 50
+        assert settings["report_dir"] == "reports/allure-current"
+
+    def test_load_web_settings_overrides(self):
+        settings = load_web_settings(
+            {
+                "API_AUTOTEST_HOST": "0.0.0.0",
+                "API_AUTOTEST_PORT": "6000",
+                "API_AUTOTEST_BASE_PATH": "/api-autotest/",
+                "API_AUTOTEST_TASK_TIMEOUT_SECONDS": "60",
+                "API_AUTOTEST_TASKS_RETAIN": "5",
+                "API_AUTOTEST_REPORT_DIR": "reports/x",
+                "PLATFORM_HOME_URL": "/home",
+            }
+        )
+        assert settings["host"] == "0.0.0.0"
+        assert settings["port"] == 6000
+        assert settings["base_path"] == "/api-autotest"
+        assert settings["timeout_seconds"] == 60
+        assert settings["tasks_retain"] == 5
+        assert settings["report_dir"] == "reports/x"
+        assert settings["platform_home_url"] == "/home"
+
+    def test_load_web_settings_invalid_port(self):
+        with pytest.raises(ValueError):
+            load_web_settings({"API_AUTOTEST_PORT": "not-a-port"})
+
+
+class TestPagesAndHealth:
+    """页面渲染与健康检查。"""
+
+    def test_health_ok(self, client):
+        test_client, _ = client
+        response = test_client.get("/health")
+        assert response.status_code == 200
+        assert response.get_json() == {"status": "ok", "service": "api-autotest"}
+
+    def test_index_and_catalog_pages_render(self, client):
+        test_client, _ = client
+        index = test_client.get("/")
+        assert index.status_code == 200
+        assert "接口自动化" in index.get_data(as_text=True)
+        catalog = test_client.get("/catalog")
+        assert catalog.status_code == 200
+
+    def test_task_detail_page(self, client, monkeypatch):
+        test_client, manager = client
+        patch_command(monkeypatch, manager, "print('ok')")
+        submitted = test_client.post(
+            "/api/tasks", json={"env": "test", "run_type": "single"}
+        )
+        task_id = submitted.get_json()["id"]
+        page = test_client.get(f"/tasks/{task_id}")
+        assert page.status_code == 200
+        assert task_id in page.get_data(as_text=True)
+
+    def test_task_detail_page_unknown_task(self, client):
+        test_client, _ = client
+        assert test_client.get(f"/tasks/{UNKNOWN_TASK_ID}").status_code == 404
+
+    def test_base_path_mode(self, app_env):
+        test_client, _ = app_env(base_path="/api-autotest")
+        assert test_client.get("/api-autotest/health").status_code == 200
+        assert test_client.get("/health").status_code == 404
+        index = test_client.get("/api-autotest/")
+        assert index.status_code == 200
+        # JS 基址注入模板，页面不硬编码根路径。
+        assert '"/api-autotest"' in index.get_data(as_text=True)
+
+
+class TestTaskRoutes:
+    """任务提交、列表、详情、取消与结果接口。"""
+
+    def test_submit_invalid_body(self, client):
+        test_client, _ = client
+        response = test_client.post(
+            "/api/tasks", data="not json", content_type="application/json"
+        )
+        assert response.status_code == 400
+        assert response.get_json()["error_code"] == "INVALID_PARAMS"
+
+    def test_submit_invalid_params(self, client):
+        test_client, _ = client
+        response = test_client.post(
+            "/api/tasks", json={"env": "prod", "run_type": "single"}
+        )
+        assert response.status_code == 400
+        assert response.get_json()["error_code"] == "INVALID_PARAMS"
+
+    def test_submit_and_query_lifecycle(self, client, monkeypatch):
+        test_client, manager = client
+        patch_command(monkeypatch, manager, "print('ok')")
+        submitted = test_client.post(
+            "/api/tasks", json={"env": "test", "run_type": "single"}
+        )
+        assert submitted.status_code == 201
+        body = submitted.get_json()
+        assert body["id"]
+        assert body["status"] in ("pending", "running")
+
+        manager.wait_idle()
+
+        listing = test_client.get("/api/tasks").get_json()
+        assert listing["total"] == 1
+        assert listing["items"][0]["id"] == body["id"]
+
+        detail = test_client.get(f"/api/tasks/{body['id']}").get_json()
+        assert detail["status"] == "succeeded"
+
+        # 未生成 JUnit：结果接口给出原因码而非错误。
+        result = test_client.get(f"/api/tasks/{body['id']}/result").get_json()
+        assert result["result_available"] is False
+        assert result["reason_code"] == "JUNIT_NOT_GENERATED"
+
+    def test_result_with_junit(self, client, monkeypatch, tmp_path):
+        test_client, manager = client
+        staged = tmp_path / "staged.xml"
+        staged.write_text(
+            junit_xml([("case_a", "passed"), ("case_b", "failure")]),
+            encoding="utf-8",
+        )
+        # 模拟 pytest：写出 JUnit 后以退出码 1 结束。
+        patch_command(
+            monkeypatch,
+            manager,
+            f"import shutil, sys; shutil.copy({str(staged)!r}, '{{junit}}'); "
+            "sys.exit(1)",
+        )
+        submitted = test_client.post(
+            "/api/tasks", json={"env": "test", "run_type": "single"}
+        )
+        manager.wait_idle()
+        result = test_client.get(
+            f"/api/tasks/{submitted.get_json()['id']}/result"
+        ).get_json()
+        assert result["result_available"] is True
+        assert result["summary"]["total"] == 2
+        assert result["summary"]["failed"] == 1
+        assert result["failed_cases"][0]["name"] == "case_b"
+
+    def test_pagination_clamped(self, client, monkeypatch):
+        test_client, manager = client
+        patch_command(monkeypatch, manager, "print('ok')")
+        for _ in range(2):
+            test_client.post("/api/tasks", json={"env": "test", "run_type": "single"})
+            manager.wait_idle()
+
+        first = test_client.get("/api/tasks?page=1&page_size=1").get_json()
+        second = test_client.get("/api/tasks?page=2&page_size=1").get_json()
+        assert first["total"] == 2
+        assert len(first["items"]) == 1
+        assert first["items"][0]["id"] != second["items"][0]["id"]
+
+        clamped = test_client.get("/api/tasks?page_size=999").get_json()
+        assert clamped["page_size"] == 100
+
+        assert test_client.get("/api/tasks?page=abc").status_code == 400
+
+    def test_slot_busy_via_route(self, client, monkeypatch):
+        test_client, manager = client
+        patch_command(monkeypatch, manager, "import time; time.sleep(2)")
+        first = test_client.post(
+            "/api/tasks", json={"env": "test", "run_type": "single"}
+        )
+        assert first.status_code == 201
+        # 等待子进程真正启动占住槽位。
+        task_id = first.get_json()["id"]
+        while manager.store.load(task_id)["status"] != "running":
+            time.sleep(0.02)
+        second = test_client.post(
+            "/api/tasks", json={"env": "test", "run_type": "single"}
+        )
+        assert second.status_code == 409
+        assert second.get_json()["error_code"] == "SLOT_BUSY"
+
+    def test_cancel_via_route(self, client, monkeypatch):
+        test_client, manager = client
+        patch_command(monkeypatch, manager, "import time; time.sleep(10)")
+        submitted = test_client.post(
+            "/api/tasks", json={"env": "test", "run_type": "single"}
+        )
+        task_id = submitted.get_json()["id"]
+        while manager.store.load(task_id)["status"] != "running":
+            time.sleep(0.02)
+
+        cancelled = test_client.post(f"/api/tasks/{task_id}/cancel")
+        assert cancelled.status_code == 200
+
+        manager.wait_idle()
+        assert (
+            test_client.get(f"/api/tasks/{task_id}").get_json()["status"]
+            == "cancelled"
+        )
+
+        again = test_client.post(f"/api/tasks/{task_id}/cancel")
+        assert again.status_code == 409
+        assert again.get_json()["error_code"] == "TASK_TERMINATED"
+
+    def test_unknown_task_endpoints(self, client):
+        test_client, _ = client
+        assert test_client.get(f"/api/tasks/{UNKNOWN_TASK_ID}").status_code == 404
+        assert (
+            test_client.post(f"/api/tasks/{UNKNOWN_TASK_ID}/cancel").status_code
+            == 404
+        )
+        assert (
+            test_client.get(f"/api/tasks/{UNKNOWN_TASK_ID}/result").status_code
+            == 404
+        )
+        assert (
+            test_client.get(f"/api/tasks/{UNKNOWN_TASK_ID}/logs").status_code == 404
+        )
+
+
+class TestLogsRoutes:
+    """日志接口：框架日志优先、console 兜底必须二次脱敏。"""
+
+    def test_console_fallback_redacts_secrets(self, client, monkeypatch):
+        test_client, manager = client
+        script = "print('Authorization: Bearer supersecret123')"
+        patch_command(monkeypatch, manager, script)
+        submitted = test_client.post(
+            "/api/tasks", json={"env": "test", "run_type": "single"}
+        )
+        manager.wait_idle()
+        task_id = submitted.get_json()["id"]
+
+        logs = test_client.get(f"/api/tasks/{task_id}/logs").get_json()
+        assert logs["source"] == "console_redacted"
+        text = "\n".join(logs["lines"])
+        assert "supersecret123" not in text
+        assert "[REDACTED]" in text
+
+    def test_logs_tail_param(self, client, monkeypatch):
+        test_client, manager = client
+        patch_command(monkeypatch, manager, "print('line')")
+        submitted = test_client.post(
+            "/api/tasks", json={"env": "test", "run_type": "single"}
+        )
+        manager.wait_idle()
+        task_id = submitted.get_json()["id"]
+
+        assert (
+            test_client.get(f"/api/tasks/{task_id}/logs?tail=abc").status_code == 400
+        )
+        logs = test_client.get(f"/api/tasks/{task_id}/logs?tail=1").get_json()
+        assert len(logs["lines"]) <= 1
+
+    def test_logs_without_any_output(self, client):
+        # 无 console 文件（任务从未启动子进程）时返回 none 而非报错。
+        test_client, manager = client
+        manager.store.save(
+            {
+                "id": "20260101-000000-0001",
+                "status": "failed",
+                "junit_file": "reports/junit-task-20260101-000000-0001.xml",
+                "log_file": None,
+            }
+        )
+        logs = test_client.get("/api/tasks/20260101-000000-0001/logs").get_json()
+        assert logs["source"] == "none"
+        assert logs["lines"] == []
+
+
+class TestCatalogCredentialsReportRoutes:
+    """用例库、凭证状态与报告接口。"""
+
+    def test_catalog_api(self, client):
+        test_client, _ = client
+        response = test_client.get("/api/catalog")
+        assert response.status_code == 200
+        body = response.get_json()
+        assert set(body.keys()) == {"apis", "cases", "flows", "errors"}
+
+    def test_credentials_status_ready(self, client):
+        test_client, _ = client
+        body = test_client.get(
+            "/api/credentials/status?env=test&run_type=single"
+        ).get_json()
+        assert body["base_config"]["ready"] is True
+        assert body["admin"]["required"] is False
+        assert body["admin"]["ready"] is True
+        # 只返回状态与字段名，不返回凭证值。
+        assert "fake-auth-token" not in json.dumps(body)
+
+    def test_credentials_status_admin_required(self, client):
+        test_client, _ = client
+        body = test_client.get(
+            "/api/credentials/status?env=test&run_type=flow&flow=AdminFlow"
+        ).get_json()
+        assert body["admin"]["required"] is True
+        assert body["admin"]["ready"] is True
+        assert body["admin"]["missing_fields"] == []
+
+    def test_report_missing(self, client):
+        test_client, _ = client
+        meta = test_client.get("/api/report/meta").get_json()
+        assert meta["exists"] is False
+        assert meta["report_url"] is None
+        assert test_client.get("/reports/index.html").status_code == 404
+
+    def test_report_published(self, client, fake_project):
+        test_client, _ = client
+        report_dir = fake_project / "reports" / "allure-current"
+        report_dir.mkdir(parents=True)
+        (report_dir / "index.html").write_text(
+            "<html>allure report</html>", encoding="utf-8"
+        )
+        (report_dir / "report-meta.json").write_text(
+            json.dumps({"synced_at": "2026-08-10T10:00:00+08:00", "source": "jenkins"}),
+            encoding="utf-8",
+        )
+
+        meta = test_client.get("/api/report/meta").get_json()
+        assert meta["exists"] is True
+        assert meta["source"] == "jenkins"
+        assert meta["report_url"] == "/reports/index.html"
+
+        page = test_client.get("/reports/index.html")
+        assert page.status_code == 200
+        assert "allure report" in page.get_data(as_text=True)
+
+
+class TestStartupRecovery:
+    """应用工厂自建引擎时执行启动恢复。"""
+
+    def test_create_app_recovers_leftover_tasks(self, fake_project):
+        store = TaskStore(fake_project / "tasks", fake_project / "reports")
+        store.save({"id": "20260101-000000-0009", "status": "running", "input": {}})
+
+        app = create_app(project_root=fake_project, settings=make_settings())
+        app.config["TESTING"] = True
+
+        record = TaskStore(fake_project / "tasks", fake_project / "reports").load(
+            "20260101-000000-0009"
+        )
+        assert record["status"] == "failed"
+        assert record["error_message"] == "服务重启，任务中断"

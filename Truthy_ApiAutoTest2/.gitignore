@@ -13,3 +13,6 @@ reports/*
 logs/*
 allure-results/
 allure-report/
+
+# 壳服务任务记录与 console 输出
+tasks/
