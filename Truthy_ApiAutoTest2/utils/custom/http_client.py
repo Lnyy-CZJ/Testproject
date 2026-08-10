@@ -19,6 +19,8 @@ SENSITIVE_KEYS = {
     "auth_token",
     "authorization",
     "refresh_token",
+    # Admin Gateway 审计步骤以请求体参数传递会话凭证，必须与 token 同级脱敏。
+    "session_token",
     "token",
 }
 

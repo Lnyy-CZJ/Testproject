@@ -391,3 +391,54 @@ JENKINS_USER=<用户名> JENKINS_TOKEN=<API令牌> \
 （默认 truthy-api-autotest）、`BUILD_NUMBER`（指定构建号，缺省自动选取）。
 Jenkins 侧的 HTML 归档由 `Jenkinsfile` post 阶段的
 `allure-report-publish/**` 提供。
+
+## 13. Web 壳服务与平台接入
+
+壳服务（`web/`）在既有框架外包一层薄 Web：接收任务提交、以子进程驱动
+`pytest`，并提供任务结果、脱敏日志、用例库与报告查看，不重写框架逻辑。
+
+### 独立模式
+
+```bash
+.venv/bin/python -m pip install -r requirements-web.txt  # Web 依赖单独成文件，不动框架依赖
+.venv/bin/python -m web.app                              # 默认 127.0.0.1:5003，读取项目 .env
+```
+
+### 平台模式
+
+`test-platform/docker-compose.yml` 构建并运行 `api-autotest` 服务，网关在
+`/api-autotest/` 路径反代：
+
+- `.env.platform` 挂载为容器内 `.env`，与独立模式的 `.env` 隔离；凭证缺失
+  或不完整时任务提交被拒绝（错误码列出缺失字段）；
+- `data/` 只读挂载；`logs/`、`reports/`、`tasks/` 运行时产物写回本项目目录；
+- 服务端口 5003 仅在 Docker 内网暴露，宿主机统一经网关访问。
+
+### 任务契约
+
+`POST /api-autotest/api/tasks`，参数：`env`（必填）、`run_type`
+（`all`/`single`/`flow`）、`flow`（run_type=flow 时必填）、`tag`
+（可选 pytest -m 表达式）：
+
+- 单槽位串行执行，运行中再次提交返回 409 `SLOT_BUSY`；
+- 退出码语义透传：0 成功；5 为"未收集到任何用例"；超时强制终止并标记
+  `TASK_TIMEOUT`（默认 1800 秒，可用 `API_AUTOTEST_TASK_TIMEOUT_SECONDS` 调整）；
+- 取消后 `result_available=false`、`reason_code=JUNIT_NOT_GENERATED`；
+- `/api/tasks/<id>/logs` 返回的日志经二次脱敏，凭证值不进入响应。
+
+### 排障
+
+| 现象 | 排查 |
+|---|---|
+| 网关显示"工具暂时不可用" | `docker compose ps api-autotest`，查看容器健康检查与日志 |
+| 409 `SLOT_BUSY` | 上一任务未结束；在任务详情页等待或取消 |
+| `TASK_TIMEOUT` | 默认 1800 秒；按上表环境变量调整或拆分任务 |
+| 页面显示"暂无报告" | `reports/allure-current` 未指向版本目录；按第 12 节发布 |
+| `ADMIN_CREDENTIALS_MISSING` | `.env.platform` 缺少三个 `ADMIN_*` 字段 |
+
+### 回滚
+
+- 平台侧：`docker compose stop api-autotest` 仅下线本工具，其余工具与首页
+  不受影响；目录记录可按平台文档用 `alembic downgrade -1` 禁用。
+- 工具侧：壳服务是附加层，回退相关提交即恢复纯 CLI 形态；任务记录、日志
+  与已发布报告均为文件产物，无数据库依赖。

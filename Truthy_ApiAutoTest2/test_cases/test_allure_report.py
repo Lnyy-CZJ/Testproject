@@ -576,6 +576,11 @@ def test_jenkinsfile_generates_and_publishes_allure3() -> None:
     assert "catchError(" in content
     assert "buildResult: 'UNSTABLE'" in content
     assert "stageResult: 'UNSTABLE'" in content
+    # 平台报告同步链路依赖 post 阶段在项目目录内生成可归档的 HTML 报告。
+    assert (
+        "allure awesome allure-results --output allure-report-publish"
+        in content
+    )
 
 
 def test_jenkinsfile_isolates_cli_and_archives_only_required_outputs() -> None:
@@ -605,10 +610,13 @@ def test_jenkinsfile_isolates_cli_and_archives_only_required_outputs() -> None:
         in content
     )
     assert ".jenkins-tools/allure/bin" in content
+    # 归档统一在 dir(PROJECT_DIR) 作用域内调用，pattern 不带项目目录前缀；
+    # 新增 allure-report-publish HTML 报告供平台拉取脚本同步（设计 12.1）。
     assert (
         "artifacts: "
-        "'Truthy_ApiAutoTest2/logs/**/*,"
-        "Truthy_ApiAutoTest2/allure-results/**/*'"
+        "'logs/**/*,"
+        "allure-results/**/*,"
+        "allure-report-publish/**/*'"
         in content
     )
     for excluded_path in (".env", ".venv", ".jenkins-tools"):

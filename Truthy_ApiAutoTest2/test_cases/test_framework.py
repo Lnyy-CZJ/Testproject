@@ -390,6 +390,8 @@ def test_http_client_logs_masked_request_and_response(
     client = HttpClient(session=SuccessfulSession())
     payload = {
         "comm": {"auth_token": "very-secret-token", "user_id": "user_1"},
+        # Admin Gateway 步骤以请求体参数传递会话凭证，日志必须同样脱敏。
+        "params": {"session_token": "admin-session-secret"},
         "requests": [],
     }
 
@@ -406,6 +408,7 @@ def test_http_client_logs_masked_request_and_response(
     assert "user_1" in caplog.text
     assert '"code": 0' in caplog.text
     assert "very-secret-token" not in caplog.text
+    assert "admin-session-secret" not in caplog.text
     assert "secret-header" not in caplog.text
     assert "response-access-secret" not in caplog.text
     assert "response-refresh-secret" not in caplog.text

@@ -1,23 +1,25 @@
 # 测试开发平台
 
-该项目是测试工具的统一入口，当前使用 React + TypeScript + Vite、FastAPI、PostgreSQL、Alembic、Nginx 和 Docker Compose。首批接入：
+该项目是测试工具的统一入口，当前使用 React + TypeScript + Vite、FastAPI、PostgreSQL、Alembic、Nginx 和 Docker Compose。接入工具：
 
 - `TrackEvents_tess`：埋点日志分析；
 - `log_filter_tool`：接口日志筛选与统计；
-- `Truthy_Search`：检索执行、字段对比与评测报告。
+- `Truthy_Search`：检索执行、字段对比与评测报告；
+- `Truthy_ApiAutoTest2`：Gateway 接口自动化（任务触发、结果统计、Allure 报告）。
 
-平台负责工具导航、状态探测和反向代理；三个工具继续保持独立源码、独立容器和独立测试。本轮不包含登录、RBAC、任务中心、Worker、Redis 或 Celery。
+平台负责工具导航、状态探测和反向代理；各工具继续保持独立源码、独立容器和独立测试。本轮不包含登录、RBAC、任务中心、Worker、Redis 或 Celery。
 
 ## 目录要求
 
-四个项目保持同级，平台不复制工具业务源码：
+五个项目保持同级，平台不复制工具业务源码：
 
 ```text
 Testproject/
 ├── test-platform/
 ├── TrackEvents_tess/
 ├── log_filter_tool/
-└── Truthy_Search/
+├── Truthy_Search/
+└── Truthy_ApiAutoTest2/
 ```
 
 `web/` 是升级前静态首页，仅作为回滚资源保留；生产首页来自 `frontend/` 的 Vite 构建产物。
@@ -79,10 +81,13 @@ docker volume rm platform-db-data
 | `/trackevents/` | 埋点测试工具 |
 | `/log-filter/` | 日志分析工具 |
 | `/truthy-search/` | 检索评测工具 |
+| `/api-autotest/` | 接口自动化工具 |
 
-平台 API 或数据库异常时，React 会显示提示并使用内置的三个基础工具入口；工具链接不会被禁用。
+平台 API 或数据库异常时，React 会显示提示并使用内置的四个基础工具入口；工具链接不会被禁用。
 
 `Truthy_Search` 的平台模式和独立模式会复用同一 SQLite，禁止同时运行。平台启动前应先确认没有 `RUNNING` Run，再停止 `Truthy_Search/compose.yml` 管理的独立 `searchtool` 容器。
+
+`Truthy_ApiAutoTest2` 平台模式的凭证放在 `Truthy_ApiAutoTest2/.env.platform`（挂载为容器内 `.env`，与独立模式的 `.env` 隔离）；任务单槽位串行执行，任务记录、日志与报告均为文件产物，不落平台数据库。
 
 ## 测试
 
@@ -131,6 +136,7 @@ curl -i http://127.0.0.1:8080/api/v1/health/live
 curl -i http://127.0.0.1:8080/api/v1/health/ready
 curl -i http://127.0.0.1:8080/api/v1/tools
 curl -i http://127.0.0.1:8080/truthy-search/health
+curl -i http://127.0.0.1:8080/api-autotest/health
 ```
 
 `live` 正常但 `ready` 返回 503 时，优先检查 PostgreSQL 和迁移日志。工具不可用时，平台 API 仍以 200 返回 `unhealthy`，其他工具与平台首页应继续可用。
