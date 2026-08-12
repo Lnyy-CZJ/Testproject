@@ -31,7 +31,7 @@ def run_alembic(database_url: str, *arguments: str) -> None:
 def test_empty_database_upgrade_is_repeatable_and_downgrade_is_scoped(
     tmp_path: Path,
 ) -> None:
-    """空库可重复升级，第四条数据正确，降级只删除接口自动化。"""
+    """空库可重复升级，第二阶段种子正确，各迁移可精确降级。"""
 
     database_path = tmp_path / "migration.db"
     database_url = f"sqlite:///{database_path}"
@@ -76,6 +76,20 @@ def test_empty_database_upgrade_is_repeatable_and_downgrade_is_scoped(
         "结果统计",
         "报告查看",
     ]
+
+    assert [row[0] for row in connection.execute(
+        "SELECT id FROM environments ORDER BY sort_order"
+    ).fetchall()] == ["dev", "prod"]
+    assert connection.execute("SELECT COUNT(*) FROM permissions").fetchone()[0] == 11
+    assert connection.execute("SELECT COUNT(*) FROM roles WHERE is_builtin = 1").fetchone()[0] == 5
+    assert connection.execute("SELECT COUNT(*) FROM config_definitions").fetchone()[0] == 43
+
+    # 第二阶段降级不得触碰 0003 已接入的接口自动化工具。
+    run_alembic(database_url, "downgrade", "20260807_0003")
+    phase1_ids = [row[0] for row in connection.execute(
+        "SELECT id FROM tools ORDER BY sort_order"
+    ).fetchall()]
+    assert phase1_ids == ["trackevents", "log-filter", "truthy-search", "api-autotest"]
 
     run_alembic(database_url, "downgrade", "-1")
     remaining_ids = [

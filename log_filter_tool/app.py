@@ -1,7 +1,12 @@
+import hmac
+import json
 import os
 import re
+import uuid
 from datetime import datetime, timedelta, timezone
+from http.cookies import SimpleCookie
 from pathlib import Path
+from urllib import request as urlrequest
 
 try:
     from flask import Blueprint, Flask, jsonify, render_template, request
@@ -386,7 +391,59 @@ def create_app(base_path=None):
     )
     app.config["LOG_FILTER_BASE_PATH"] = normalized_base_path
     app.config["PLATFORM_HOME_URL"] = os.environ.get("PLATFORM_HOME_URL", "").strip()
+    app.config["PLATFORM_API_URL"] = os.environ.get("PLATFORM_API_URL", "").rstrip("/")
+    app.config["PLATFORM_CLIENT_TOKEN_FILE"] = os.environ.get("PLATFORM_CLIENT_TOKEN_FILE", "")
     tool = Blueprint("tool", __name__)
+
+    def client_token():
+        """读取只读 Client Token，缺失时仅跳过审计上报。"""
+
+        try:
+            return Path(app.config["PLATFORM_CLIENT_TOKEN_FILE"]).read_text(encoding="utf-8").strip()
+        except (OSError, TypeError):
+            return ""
+
+    @app.before_request
+    def validate_platform_csrf():
+        """平台模式下校验所有写操作的双提交 CSRF Token。"""
+
+        if not app.config["PLATFORM_API_URL"] or request.method in {"GET", "HEAD", "OPTIONS"}:
+            return None
+        cookie = request.cookies.get("tp_csrf", "")
+        submitted = request.headers.get("X-CSRF-Token", "") or request.form.get("_csrf", "")
+        if not cookie or not submitted or not hmac.compare_digest(cookie, submitted):
+            return jsonify({"message": "请求安全校验失败"}), 403
+        return None
+
+    @app.after_request
+    def report_platform_audit(response):
+        """最大尽力上报分析和导出事件，平台故障不覆盖业务响应。"""
+
+        token = client_token()
+        if request.method in {"GET", "HEAD", "OPTIONS"} or not app.config["PLATFORM_API_URL"] or not token:
+            return response
+        payload = json.dumps({
+            "event_id": f"evt_{uuid.uuid4().hex}",
+            "action": "tool.export" if request.endpoint == "tool.export_log" else "tool.analysis.submit",
+            "resource_type": "log_filter_operation",
+            "outcome": "success" if response.status_code < 400 else ("denied" if response.status_code == 403 else "failed"),
+            "error_code": "CSRF_INVALID" if response.status_code == 403 else None,
+            "actor_user_id": request.headers.get("X-Platform-User-ID"),
+            "actor_username": request.headers.get("X-Platform-Username"),
+            "metadata": {},
+        }).encode("utf-8")
+        audit_request = urlrequest.Request(
+            f"{app.config['PLATFORM_API_URL']}/internal/tools/log-filter/audit-events",
+            data=payload,
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urlrequest.urlopen(audit_request, timeout=1):
+                pass
+        except Exception:
+            pass
+        return response
 
     @tool.route("/", methods=["GET", "POST"])
     def index():

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hmac
 import json
 import os
 import sqlite3
@@ -11,12 +12,15 @@ import subprocess
 import tempfile
 import threading
 import time
+import uuid
 from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+import requests
 
 from dotenv import dotenv_values
 from flask import (
@@ -252,18 +256,88 @@ class RunCoordinator:
         self._lock = threading.Lock()
         self._futures: dict[str, Future[None]] = {}
 
+    def prepare_run_client(self) -> tuple[SearchClient | None, str | None, int | None]:
+        """在创建新 Run 前获取一次平台快照；独立模式保持后台延迟构造。"""
+
+        source = os.getenv("SEARCH_CONFIG_SOURCE", "env").strip().lower()
+        if source != "platform":
+            return None, None, None
+        platform_api_url = os.getenv("PLATFORM_API_URL", "").rstrip("/")
+        token_file = Path(os.getenv("PLATFORM_CLIENT_TOKEN_FILE", ""))
+        if not platform_api_url or not token_file.is_file():
+            raise RuntimeError("平台运行配置客户端未正确部署")
+        token = token_file.read_text(encoding="utf-8").strip()
+        try:
+            response = requests.get(
+                f"{platform_api_url}/internal/tools/truthy-search/runtime-config",
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=5,
+            )
+            response.raise_for_status()
+            payload = response.json()
+        except (requests.RequestException, ValueError) as exc:
+            raise RuntimeError("平台运行配置暂时不可用") from exc
+        if not isinstance(payload, dict) or payload.get("tool_id") != "truthy-search" or not payload.get("release_id"):
+            raise RuntimeError("平台未发布可用的 Truthy Search 配置")
+        normal = payload.get("normal") if isinstance(payload.get("normal"), dict) else {}
+        secrets = payload.get("secrets") if isinstance(payload.get("secrets"), dict) else {}
+        snapshot = {**normal, **secrets}
+        # 平台模式不读取旧 .env，新 Run 仅使用本次不可变快照。
+        credential_metadata = payload.get("credential_metadata") if isinstance(payload.get("credential_metadata"), dict) else {}
+        credential_version = credential_metadata.get("credential_version")
+        return (
+            SearchClient(Config.from_env(None, overrides=snapshot)),
+            str(payload["release_id"]),
+            int(credential_version) if isinstance(credential_version, int) else None,
+        )
+
     def _default_client(self) -> SearchClient:
-        """仅在后台真正开始执行时读取接口鉴权配置。"""
+        """构造独立模式客户端；平台模式的客户端必须在 Run 创建前锁定。"""
 
-        return SearchClient(Config.from_env(self.env_file))
+        prepared, _release_id, _credential_version = self.prepare_run_client()
+        if prepared is None:
+            return SearchClient(Config.from_env(self.env_file))
+        return prepared
 
-    def _execute(self, run_id: str) -> None:
+    @staticmethod
+    def _report_admin_status(client: SearchClient) -> None:
+        """平台模式只上报 Admin 状态和过期时间，绝不发送 Session Token。"""
+
+        if os.getenv("SEARCH_CONFIG_SOURCE", "env").strip().lower() != "platform":
+            return
+        admin = client.admin_client
+        if not admin.available or (admin.expire_time is None and admin.last_duration_ms is None):
+            return
+        platform_api_url = os.getenv("PLATFORM_API_URL", "").rstrip("/")
+        token_file = Path(os.getenv("PLATFORM_CLIENT_TOKEN_FILE", ""))
+        if not platform_api_url or not token_file.is_file():
+            return
+        payload = {
+            "provider_type": "admin_login",
+            "status": "healthy" if admin.expire_time is not None else "action_required",
+            "expires_at": admin.expire_time.isoformat() if admin.expire_time else None,
+            "error_code": None if admin.expire_time is not None else "ADMIN_LOGIN_FAILED",
+        }
+        try:
+            requests.post(
+                f"{platform_api_url}/internal/tools/truthy-search/credential-status",
+                headers={"Authorization": f"Bearer {token_file.read_text(encoding='utf-8').strip()}"},
+                json=payload,
+                timeout=3,
+            ).raise_for_status()
+        except (OSError, requests.RequestException):
+            # 状态上报是旁路能力，不得改变 Run 的业务终态。
+            return
+
+    def _execute(self, run_id: str, prepared_client: SearchClient | None = None) -> None:
         """执行一个 Run，意外错误转换为可见终态且不暴露堆栈。"""
 
+        client: SearchClient | None = None
         try:
+            client = prepared_client or self.client_factory()
             self.service.execute_run(
                 run_id,
-                self.client_factory(),
+                client,
                 sleep_fn=time.sleep,
             )
         except Exception as exc:
@@ -272,6 +346,8 @@ class RunCoordinator:
                 f"后台执行失败（{type(exc).__name__}）: {exc}",
             )
         finally:
+            if client is not None:
+                self._report_admin_status(client)
             with self._lock:
                 self._futures.pop(run_id, None)
 
@@ -296,13 +372,15 @@ class RunCoordinator:
             with self._lock:
                 self._futures.pop(future_id, None)
 
-    def submit(self, run_id: str) -> None:
+    def submit(self, run_id: str, prepared_client: SearchClient | None = None) -> None:
         """提交一个已创建的 PENDING Run，重复提交同一 ID 时拒绝。"""
 
         with self._lock:
             if run_id in self._futures:
                 raise ActiveRunError(f"Run {run_id} 已提交")
-            self._futures[run_id] = self.executor.submit(self._execute, run_id)
+            self._futures[run_id] = self.executor.submit(
+                self._execute, run_id, prepared_client,
+            )
 
     def submit_query_retry(self, run_id: str, query_id: str) -> None:
         """把已校验的单条重跑加入既有单线程执行队列。"""
@@ -399,6 +477,8 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
             setting("SEARCH_WEB_BASE_PATH", "")
         ),
         PLATFORM_HOME_URL=str(setting("PLATFORM_HOME_URL", "")).strip(),
+        PLATFORM_API_URL=str(setting("PLATFORM_API_URL", "")).rstrip("/"),
+        PLATFORM_CLIENT_TOKEN_FILE=str(setting("PLATFORM_CLIENT_TOKEN_FILE", "")),
         MAX_CONTENT_LENGTH=_positive_int(
             setting("SEARCH_WEB_MAX_UPLOAD_BYTES", 50 * 1024 * 1024),
             50 * 1024 * 1024,
@@ -436,6 +516,52 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
     app.extensions["analysis_service"] = service
     app.extensions["run_coordinator"] = coordinator
     app.extensions["default_run_coordinator"] = coordinator
+
+    def platform_client_token() -> str:
+        """读取只读工具身份 Token，不将内容写入日志或响应。"""
+
+        try:
+            return Path(app.config["PLATFORM_CLIENT_TOKEN_FILE"]).read_text(encoding="utf-8").strip()
+        except (OSError, TypeError):
+            return ""
+
+    @app.before_request
+    def validate_platform_csrf() -> Response | None:
+        """平台模式下为所有写路由校验双提交 CSRF Token。"""
+
+        if not app.config["PLATFORM_API_URL"] or request.method in {"GET", "HEAD", "OPTIONS"}:
+            return None
+        cookie = request.cookies.get("tp_csrf", "")
+        submitted = request.headers.get("X-CSRF-Token", "") or request.form.get("_csrf", "")
+        if not cookie or not submitted or not hmac.compare_digest(cookie, submitted):
+            return jsonify(code="CSRF_INVALID", message="请求安全校验失败"), 403
+        return None
+
+    @app.after_request
+    def report_platform_audit(response: Response) -> Response:
+        """上报工具写操作的结构化审计，上报失败不改写业务响应。"""
+
+        token = platform_client_token()
+        if request.method in {"GET", "HEAD", "OPTIONS"} or not app.config["PLATFORM_API_URL"] or not token:
+            return response
+        payload = {
+            "event_id": f"evt_{uuid.uuid4().hex}",
+            "action": f"tool.{request.endpoint or 'write'}",
+            "resource_type": "truthy_search_operation",
+            "outcome": "success" if response.status_code < 400 else ("denied" if response.status_code == 403 else "failed"),
+            "error_code": "CSRF_INVALID" if response.status_code == 403 else None,
+            "actor_user_id": request.headers.get("X-Platform-User-ID"),
+            "actor_username": request.headers.get("X-Platform-Username"),
+            "metadata": {},
+        }
+        try:
+            requests.post(
+                f"{app.config['PLATFORM_API_URL']}/internal/tools/truthy-search/audit-events",
+                headers={"Authorization": f"Bearer {token}"}, json=payload, timeout=1,
+            )
+        except requests.RequestException:
+            pass
+        return response
 
     @app.get("/health")
     def health() -> tuple[Response, int] | Response:
@@ -496,6 +622,11 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
             f"""
             SELECT rp.report_id, rp.evaluation_id, rp.report_type,
                    rp.status, rp.html_file, rp.excel_file, rp.created_at,
+                   CASE WHEN json_valid(rp.metrics_json)
+                        THEN json_extract(
+                            rp.metrics_json, '$.metadata.report_name'
+                        )
+                        ELSE NULL END AS report_name,
                    e.name AS evaluation_name,
                    candidate_run.system_version,
                    candidate_run.evaluation_phase
@@ -1029,7 +1160,12 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
         )
         reports = store.fetch_all(
             """
-            SELECT rp.*, pr.run_id, r.run_label, r.system_version
+            SELECT rp.*, pr.run_id, r.run_label, r.system_version,
+                   CASE WHEN json_valid(rp.metrics_json)
+                        THEN json_extract(
+                            rp.metrics_json, '$.metadata.report_name'
+                        )
+                        ELSE NULL END AS report_name
             FROM reports AS rp
             JOIN process_runs AS pr
               ON pr.process_id = rp.candidate_process_id
@@ -1125,6 +1261,11 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
         """创建执行 Run 并立即提交给单线程后台协调器。"""
 
         try:
+            coordinator = app.extensions["run_coordinator"]
+            prepare = getattr(coordinator, "prepare_run_client", None)
+            prepared_client, release_id, credential_version = (
+                prepare() if callable(prepare) else (None, None, None)
+            )
             run_id = service.create_execution_run(
                 evaluation_id=evaluation_id,
                 dataset_id=request.form.get("dataset_id", "").strip(),
@@ -1134,8 +1275,13 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
                     "evaluation_phase",
                     "",
                 ).strip(),
+                platform_release_id=release_id,
+                platform_credential_version=credential_version,
             )
-            app.extensions["run_coordinator"].submit(run_id)
+            if prepared_client is None:
+                coordinator.submit(run_id)
+            else:
+                coordinator.submit(run_id, prepared_client)
         except ActiveRunError as exc:
             return (
                 render_template(
@@ -1145,6 +1291,16 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
                     status_code=409,
                 ),
                 409,
+            )
+        except RuntimeError as exc:
+            return (
+                render_template(
+                    "error.html",
+                    title="平台配置暂时不可用",
+                    message=str(exc),
+                    status_code=503,
+                ),
+                503,
             )
         except (ImportValidationError, ValueError) as exc:
             return (
@@ -2671,9 +2827,11 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
         process = store.fetch_one(
             """
             SELECT pr.*, r.run_label, r.system_version, r.evaluation_id,
+                   e.name AS evaluation_name,
                    fs.name AS schema_name, fs.definitions_json
             FROM process_runs AS pr
             JOIN runs AS r ON r.run_id = pr.run_id
+            JOIN evaluations AS e ON e.evaluation_id = r.evaluation_id
             JOIN field_schemas AS fs
               ON fs.schema_version = pr.schema_version
             WHERE pr.process_id = ?
@@ -2709,15 +2867,18 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
         compatible_processes = store.fetch_all(
             """
             SELECT other.process_id, other.run_id, other.schema_version,
-                   other.baseline_version, r.run_label, r.system_version
+                   other.baseline_version, other.rule_version,
+                   other.created_at, r.run_label, r.system_version,
+                   r.evaluation_id, r.evaluation_phase,
+                   e.name AS evaluation_name
             FROM process_runs AS other
             JOIN runs AS r ON r.run_id = other.run_id
-            WHERE r.evaluation_id = ?
-              AND other.process_id <> ?
+            JOIN evaluations AS e ON e.evaluation_id = r.evaluation_id
+            WHERE other.process_id <> ?
               AND other.status = 'COMPLETED'
-            ORDER BY other.created_at DESC
+            ORDER BY e.name, r.evaluation_id, other.created_at DESC
             """,
-            (process["evaluation_id"], process_id),
+            (process_id,),
         )
         reports = store.fetch_all(
             """
@@ -3141,6 +3302,44 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
             excel_available=excel_available,
             static_export=False,
         )
+
+    @app.post("/reports/<report_id>/name")
+    def report_rename(report_id: str) -> Response | tuple[str, int]:
+        """保存报告显示名称，并同步重新生成已有静态 HTML。"""
+
+        try:
+            model = service.rename_report(
+                report_id,
+                request.form.get("report_name", ""),
+            )
+        except ReviewValidationError as exc:
+            status_code = 404 if "报告不存在" in str(exc) else 400
+            return (
+                render_template(
+                    "error.html",
+                    title="无法修改报告名称",
+                    message=str(exc),
+                    status_code=status_code,
+                ),
+                status_code,
+            )
+
+        static_warning = ""
+        try:
+            static_html = render_template(
+                "report_static.html",
+                report=model,
+                static_export=True,
+            )
+            service.save_report_html(report_id, static_html)
+        except (OSError, ReviewValidationError) as exc:
+            # Web 报告名称已经保存；静态文件失败不能撤销用户刚完成的编辑。
+            static_warning = f"；静态 HTML 同步失败：{str(exc)[:200]}"
+        flash(
+            f"报告名称已保存{static_warning}",
+            "success" if not static_warning else "warning",
+        )
+        return redirect(url_for("report_detail", report_id=report_id))
 
     @app.get("/api/runs/<run_id>/status")
     def run_status(run_id: str) -> Response:

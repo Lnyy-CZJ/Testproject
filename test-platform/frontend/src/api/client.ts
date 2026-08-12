@@ -12,6 +12,7 @@ export class ApiError extends Error {
   constructor(
     message: string,
     readonly status?: number,
+    readonly code?: string,
   ) {
     super(message);
     this.name = "ApiError";
@@ -31,21 +32,43 @@ export class ApiError extends Error {
  * 异常说明:
  *   超时、网络错误或非 2xx 响应统一转换为 ApiError，调用方据此启用降级。
  */
-async function request(path: string, init: RequestInit = {}): Promise<Response> {
+function csrfToken(): string | undefined {
+  const prefix = "tp_csrf=";
+  return document.cookie
+    .split(";")
+    .map((item) => item.trim())
+    .find((item) => item.startsWith(prefix))
+    ?.slice(prefix.length);
+}
+
+/** 发送统一同源请求；写操作自动携带双提交 CSRF Header。 */
+export async function request(path: string, init: RequestInit = {}): Promise<Response> {
   const controller = new AbortController();
   const timeoutId = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
   try {
+    const method = (init.method ?? "GET").toUpperCase();
+    const csrf = !["GET", "HEAD", "OPTIONS"].includes(method) ? csrfToken() : undefined;
     const response = await fetch(path, {
       ...init,
+      credentials: "same-origin",
       headers: {
         Accept: "application/json",
+        ...(init.body ? { "Content-Type": "application/json" } : {}),
+        ...(csrf ? { "X-CSRF-Token": decodeURIComponent(csrf) } : {}),
         ...init.headers,
       },
       signal: controller.signal,
     });
     if (!response.ok) {
-      throw new ApiError(`请求失败：HTTP ${response.status}`, response.status);
+      const payload = (await response.clone().json().catch(() => null)) as
+        | { message?: string; code?: string }
+        | null;
+      throw new ApiError(
+        payload?.message ?? `请求失败：HTTP ${response.status}`,
+        response.status,
+        payload?.code,
+      );
     }
     return response;
   } catch (error) {
@@ -61,10 +84,15 @@ async function request(path: string, init: RequestInit = {}): Promise<Response> 
   }
 }
 
+/** 请求并解析 JSON；所有平台页面共享相同错误和安全策略。 */
+export async function apiJson<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const response = await request(`${API_PREFIX}${path}`, init);
+  return (await response.json()) as T;
+}
+
 /** 获取数据库中启用的工具目录。 */
 export async function fetchTools(): Promise<Tool[]> {
-  const response = await request(`${API_PREFIX}/tools`);
-  const payload = (await response.json()) as ToolListResponse;
+  const payload = await apiJson<ToolListResponse>("/tools");
   if (!Array.isArray(payload.items)) {
     throw new ApiError("工具目录响应格式错误");
   }
@@ -86,23 +114,13 @@ export async function fetchTools(): Promise<Tool[]> {
  */
 export async function fetchToolHealth(
   tool: Tool,
-  useFallback: boolean,
+  _useFallback = false,
 ): Promise<boolean> {
-  const path = useFallback
-    ? tool.fallback_health_path
-    : `${API_PREFIX}/tools/${encodeURIComponent(tool.id)}/health`;
-  if (!path) {
-    return false;
-  }
-
   try {
-    const response = await request(path);
-    const payload = (await response.json()) as
-      | PlatformToolHealthResponse
-      | { status?: string };
-    return useFallback
-      ? payload.status === "ok"
-      : payload.status === "healthy";
+    const payload = await apiJson<PlatformToolHealthResponse>(
+      `/tools/${encodeURIComponent(tool.id)}/health`,
+    );
+    return payload.status === "healthy";
   } catch {
     return false;
   }

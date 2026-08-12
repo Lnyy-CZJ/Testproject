@@ -2051,9 +2051,11 @@ class AnalysisServiceTests(unittest.TestCase):
             run_id="run-photo",
         )
         captured = []
+        captured_run_names = []
 
         def fake_process(item, *_args, **_kwargs):
             captured.append(dict(item))
+            captured_run_names.append(_kwargs.get("run_name"))
             return {
                 "result_schema_version": "1.3.2",
                 "run_id": run_id,
@@ -2080,6 +2082,7 @@ class AnalysisServiceTests(unittest.TestCase):
             )
 
         self.assertEqual("input_photos/person.jpg", captured[0]["photo_path"])
+        self.assertEqual(["candidate"], captured_run_names)
         self.assertEqual("FULL_NAME_SOCIAL_PHOTO", captured[0]["query_stage"])
         self.assertEqual(
             ["FULL_NAME", "SOCIAL_LINK"],
@@ -2154,9 +2157,11 @@ class AnalysisServiceTests(unittest.TestCase):
                 sleep_fn=lambda _seconds: None,
             )
         captured = []
+        captured_run_names = []
 
         def fake_retry(item, *_args, **_kwargs):
             captured.append(dict(item))
+            captured_run_names.append(_kwargs.get("run_name"))
             return {
                 "result_schema_version": "1.3.2",
                 "run_id": run_id,
@@ -2187,6 +2192,7 @@ class AnalysisServiceTests(unittest.TestCase):
             )
 
         self.assertEqual("input_photos/retry.jpg", captured[0]["photo_path"])
+        self.assertEqual(["candidate"], captured_run_names)
         query = self.store.fetch_one(
             "SELECT status, public_fields_json FROM run_queries WHERE run_id = ?",
             (run_id,),
@@ -3248,6 +3254,82 @@ class AnalysisServiceTests(unittest.TestCase):
             )["count"],
         )
 
+    def test_execution_run_pauses_after_three_consecutive_network_failures(self):
+        """连续三个 Query 网络失败后暂停批次，再继续执行后续 Query。"""
+
+        source = self.root / "network-circuit-tasks.jsonl"
+        write_jsonl(
+            source,
+            [
+                {
+                    "input_id": f"query-network-{index}",
+                    "query_stage": "FULL_NAME",
+                    "clues": [{"type": "FULL_NAME", "value": f"Person {index}"}],
+                }
+                for index in range(1, 5)
+            ],
+        )
+        self.service.import_dataset_jsonl(
+            source,
+            name="网络熔断数据集",
+            dataset_id="dataset-network-circuit",
+        )
+        run_id = self.service.create_execution_run(
+            evaluation_id="eval-import",
+            dataset_id="dataset-network-circuit",
+            run_label="candidate",
+            system_version="network-v1",
+            evaluation_phase="PHASE_1_BASELINE",
+            run_id="run-network-circuit",
+        )
+        failures = []
+        for _index in range(3):
+            error = FlowError("CreateIntentTask", "DNS resolution failed")
+            error.network_error_kind = "DNS"
+            failures.append(error)
+        success = {
+            "result_schema_version": "1.3.2",
+            "run_id": run_id,
+            "input_id": "query-network-4",
+            "task_id": "task-network-4",
+            "query_stage": "FULL_NAME",
+            "query_status": "NO_CANDIDATE",
+            "candidate_count_total": 0,
+            "candidate_count_listed": 0,
+            "detail_success_count": 0,
+            "detail_failure_count": 0,
+            "task_fields": {},
+            "public_fields": {},
+            "results": [],
+        }
+        waits = []
+        client = SimpleNamespace(
+            config=SimpleNamespace(
+                network_failure_threshold=3,
+                network_recovery_pause_seconds=30,
+            )
+        )
+
+        with patch(
+            "analysis_service.process_one",
+            side_effect=[*failures, success],
+        ):
+            self.service.execute_run(run_id, client, sleep_fn=waits.append)
+
+        self.assertEqual([30], waits)
+        pause_raw = self.store.fetch_one(
+            """
+            SELECT payload_json FROM raw_records
+            WHERE run_id = ? AND stage = 'NetworkRecoveryPause'
+            """,
+            (run_id,),
+        )
+        self.assertIsNotNone(pause_raw)
+        self.assertEqual(
+            30,
+            json.loads(pause_raw["payload_json"])["response_body"]["pause_seconds"],
+        )
+
     def test_failed_query_can_retry_in_same_run(self):
         """失败 Query 重跑后仍归属原 Run，且不影响已完成的其他 Query。"""
 
@@ -3352,7 +3434,14 @@ class AnalysisServiceTests(unittest.TestCase):
             system_version="web-v1",
             evaluation_phase="PHASE_1_BASELINE",
             run_id="run-active",
+            platform_release_id="rel_test_v1",
+            platform_credential_version=7,
         )
+        snapshot = self.store.fetch_one(
+            "SELECT platform_release_id, platform_credential_version FROM runs WHERE run_id = ?",
+            (first_run,),
+        )
+        self.assertEqual(("rel_test_v1", 7), tuple(snapshot))
 
         with self.assertRaises(ActiveRunError):
             self.service.create_execution_run(
@@ -5179,6 +5268,22 @@ class AnalysisServiceTests(unittest.TestCase):
             "eval-import",
             "report-threshold-v1",
         )
+        # Baseline Process 来自另一个 Evaluation；跨评测对比仍应按人物和
+        # Query Stage 对齐，报告归属保持 Candidate Evaluation。
+        self.store.create_evaluation(
+            "eval-stage6-baseline",
+            "阶段6历史基准评测",
+        )
+        with self.store.transaction() as connection:
+            connection.execute(
+                """
+                UPDATE runs SET evaluation_id = 'eval-stage6-baseline'
+                WHERE run_id = (
+                    SELECT run_id FROM process_runs WHERE process_id = ?
+                )
+                """,
+                (process_ids[0],),
+            )
         report = self.service.create_report(
             candidate_process_id=process_ids[1],
             baseline_process_id=process_ids[0],
@@ -5186,6 +5291,14 @@ class AnalysisServiceTests(unittest.TestCase):
             report_id="report-stage6",
         )
         self.assertEqual("COMPARE", report.model["metadata"]["report_type"])
+        self.assertEqual(
+            "eval-import",
+            report.model["metadata"]["evaluation_id"],
+        )
+        self.assertEqual(
+            "eval-stage6-baseline",
+            report.model["metadata"]["baseline_evaluation_id"],
+        )
         self.assertEqual(
             "report-model-v3",
             report.model["metadata"]["report_model_version"],
@@ -6211,6 +6324,183 @@ class AnalysisServiceTests(unittest.TestCase):
             "COMPARABLE",
             after_by_key["summary_social_links"]["status"],
         )
+
+    def test_report_tool_timing_details_preserve_query_and_call_durations(self):
+        """报告应同时保留 Query 总耗时和可用的逐工具耗时。
+
+        功能说明:
+            构造一个缓存命中的工具调用，验证时间差、结果语义和 Query 级
+            总耗时进入同一审计分组，且两种耗时不会互相覆盖。
+
+        返回值:
+            无；快照字段与计算结果正确即通过。
+
+        异常说明:
+            Admin 时间格式无法解析或工具状态误分类时测试失败。
+        """
+
+        explorer = {
+            "items": [{
+                "candidate_run": {
+                    "query": {
+                        "query_id": "case-timing",
+                        "display_name": "Timing Person",
+                        "task_id": "task-timing",
+                        "query_status": "SUCCESS",
+                        "result_status": "HAS_CANDIDATES",
+                        "candidate_count": 1,
+                        "candidate_count_reported": 1,
+                        "task_metrics": {
+                            "search_duration_ms": 2500,
+                            "pdl_called": False,
+                            "provider_cost_details": [],
+                        },
+                    }
+                },
+                "baseline_run": None,
+            }]
+        }
+        raw_by_query = {
+            "case-timing": {
+                "GetSearchTaskDebug": {
+                    "responses": [{
+                        "success": True,
+                        "data": {
+                            "debug": {
+                                "agent_tool_calls": [{
+                                    "provider": "social_profile",
+                                    "provider_operation": "profile_lookup",
+                                    "status": "cache_hit",
+                                    "start_time": "2026-08-11T03:00:00.000Z",
+                                    "finish_time": "2026-08-11T03:00:01.500Z",
+                                    "http_status": 200,
+                                }]
+                            }
+                        },
+                    }]
+                }
+            }
+        }
+
+        groups = self.service._build_report_v5_query_tool_timing_details(
+            explorer,
+            raw_by_query,
+        )
+
+        self.assertEqual(1, len(groups))
+        self.assertEqual(2500, groups[0]["query_duration_ms"])
+        self.assertEqual(1, groups[0]["timed_call_count"])
+        self.assertEqual(1500.0, groups[0]["calls"][0]["duration_ms"])
+        self.assertEqual("SUCCESS", groups[0]["calls"][0]["outcome"])
+
+    def test_report_tool_timing_details_identify_cached_query_without_calls(self):
+        """缓存命中且无工具调用时应保留 Admin 采集与缓存证据。
+
+        功能说明:
+            构造 Admin Debug 已成功采集、任务命中缓存但
+            ``agent_tool_calls`` 为空的场景，防止报告误写为未采集 Admin。
+
+        返回值:
+            无；状态标记与原始 Debug 证据一致即通过。
+
+        异常说明:
+            Admin 响应缺失或缓存状态识别错误时测试失败。
+        """
+
+        explorer = {
+            "items": [{
+                "candidate_run": {
+                    "query": {
+                        "query_id": "case-cached",
+                        "display_name": "Cached Person",
+                        "task_id": "task-cached",
+                        "query_status": "SUCCESS",
+                        "result_status": "HAS_CANDIDATES",
+                        "candidate_count": 1,
+                        "candidate_count_reported": 1,
+                        "task_metrics": {
+                            "search_duration_ms": 11,
+                            "pdl_called": False,
+                            "provider_cost_details": [],
+                        },
+                    }
+                },
+                "baseline_run": None,
+            }]
+        }
+        raw_by_query = {
+            "case-cached": {
+                "GetSearchTaskDebug": {
+                    "responses": [{
+                        "success": True,
+                        "data": {
+                            "debug": {
+                                "task": {"cache_hit": 1},
+                                "provider_requests": [{"status": "cache_hit"}],
+                                "agent_tool_calls": [],
+                            }
+                        },
+                    }]
+                }
+            }
+        }
+
+        groups = self.service._build_report_v5_query_tool_timing_details(
+            explorer,
+            raw_by_query,
+        )
+
+        self.assertEqual(1, len(groups))
+        self.assertTrue(groups[0]["admin_debug_collected"])
+        self.assertTrue(groups[0]["cache_hit"])
+        self.assertEqual(0, groups[0]["call_count"])
+        self.assertEqual(11, groups[0]["query_duration_ms"])
+
+    def test_cost_aggregate_treats_successful_empty_summary_as_zero(self):
+        """历史 Run 的成功空成本汇总应作为已确认零成本参与统计。
+
+        功能说明:
+            Run Query 旧记录可能把无计费调用保存为 null，但公共字段已保存
+            ``cost_collection_status=SUCCESS``；报告聚合应兼容为有效 0。
+
+        返回值:
+            无；聚合状态完整且零成本进入分母即通过。
+
+        异常说明:
+            已确认零成本仍被列入缺失 Query 时测试失败。
+        """
+
+        rows = [
+            {
+                "query_id": "case-priced",
+                "task_fields": {
+                    "total_cost": 0.0065,
+                    "cost_collection_status": "SUCCESS",
+                    "cost_totals_by_currency": [],
+                },
+                "task_processing_errors": [],
+            },
+            {
+                "query_id": "case-cache-hit",
+                "task_fields": {
+                    "total_cost": None,
+                    "cost_collection_status": "SUCCESS",
+                    "cost_totals_by_currency": [],
+                },
+                "task_processing_errors": [],
+            },
+        ]
+
+        aggregate = self.service._metrics_v2_numeric_aggregate(
+            rows,
+            "total_cost",
+        )
+
+        self.assertEqual("COMPLETE", aggregate["status"])
+        self.assertEqual(2, aggregate["value_count"])
+        self.assertEqual(0, aggregate["missing_count"])
+        self.assertEqual(0.0065, aggregate["total"])
+        self.assertEqual(0.0, aggregate["minimum"])
 
     def test_stage3_field_matrix_handles_500_fields_without_n_plus_one(self):
         """500字段矩阵在固定查询次数下完成，验证首版规模基础。"""

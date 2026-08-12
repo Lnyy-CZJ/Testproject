@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}报告 {{ report.metadata.report_id }} · Truthy Search{% endblock %}
+{% block title %}{{ report.metadata.report_name or report.metadata.evaluation_name }} · Truthy Search{% endblock %}
 {% block content %}
   <div class="breadcrumbs">
     <a href="{{ url_for('reports') }}">报告中心</a>

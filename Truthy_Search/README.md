@@ -268,6 +268,10 @@ SEARCH_ADMIN_USERNAME=
 SEARCH_ADMIN_PASSWORD=
 SEARCH_QUERY_LOG_ENABLED=true
 SEARCH_QUERY_LOG_DIR=log
+SEARCH_RETRY_MAX_ATTEMPTS=3
+SEARCH_RETRY_INITIAL_DELAY_SECONDS=2
+SEARCH_NETWORK_FAILURE_THRESHOLD=3
+SEARCH_NETWORK_RECOVERY_PAUSE_SECONDS=30
 ```
 
 `SEARCH_DISPLAY_TIMEZONE` 只控制 Web、静态 HTML 和 processed Excel 的可见
@@ -285,8 +289,17 @@ Admin 公共信息采集在 GetTask 进入终态后等待 1 秒，再依次请�
 原 Search 链路。账号和密码必须通过平台只读 Secret 注入；密码、session_token、
 auth_token、Cookie、认证 Header、Device ID 和 User ID 均不会写入数据库、Raw 或人物日志。
 
-每个输入人物会在 `SEARCH_QUERY_LOG_DIR` 下生成一份不覆盖的可读文本日志，文件名为
-`YYYY-MM-DD_HHmmss_人物名.log`。日志按接口分段展示脱敏请求 JSON 和响应 JSON，包含
+Search Gateway 的只读请求（GetTask、List、Candidate Detail）遇到 DNS、连接/读取
+超时、HTTP 408/429/5xx 时默认最多尝试 3 次，等待时间从 2 秒开始指数递增。
+CreateIntentTask 只在能够明确识别为 DNS 解析失败时重试；读取超时不会自动重放，
+避免服务端已创建任务时重复计费。连续 3 个 Query 因网络问题失败后，Run 默认暂停
+30 秒再继续。每次请求尝试均独立保存到 Raw 和人物日志，可通过上面的四个配置项
+调整次数、初始等待、连续失败阈值与恢复等待时间。
+
+每个输入人物会按 `SEARCH_QUERY_LOG_DIR/YYYY-MM-DD/Run名称/` 分层生成一份不覆盖的
+可读文本日志，文件名为 `YYYY-MM-DD_HHmmss_人物名.log`。Web 执行和 Query 重跑使用
+Run Label 作为目录名；CLI 使用输入 JSONL 文件名。日期、Run 名称和人物名称都会清理
+路径分隔符及路径穿越字符。日志按接口分段展示脱敏请求 JSON 和响应 JSON，包含
 Create、全部 GetTask、脱敏 Login 摘要、Debug、Cost、List、全部 Candidate Detail
 和 Query End。独立 Compose 与测试平台 Compose 均将宿主机 `log/` 挂载到
 `/app/log`；生产平台部署时不得移除此持久化挂载。关闭公共采集或人物日志可分别设置：

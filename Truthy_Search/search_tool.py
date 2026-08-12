@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import Any, Callable, Iterable
+from typing import Any, Callable, Iterable, Mapping
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -60,6 +60,11 @@ ADMIN_TOOL_DEFINITIONS = (
     ("google_vision", "Google Vision"),
     ("social_profile_extraction", "Social Profile Extraction"),
 )
+ADMIN_TOOL_SUCCESS_STATUSES = frozenset({"success", "cache_hit"})
+ADMIN_TOOL_NO_RESULT_STATUSES = frozenset({"no_result"})
+ADMIN_TOOL_FAILURE_STATUSES = frozenset({
+    "failed", "failure", "error", "timeout", "timed_out", "cancelled",
+})
 
 
 def classify_admin_tool(provider: Any, operation: Any) -> str | None:
@@ -85,6 +90,40 @@ def classify_admin_tool(provider: Any, operation: Any) -> str | None:
             else "pdl_person_search"
         )
     return None
+
+
+def classify_admin_call_outcome(call: Any) -> str:
+    """把 Admin 工具调用状态归一为成功、无结果、失败或未知。
+
+    功能说明:
+        ``cache_hit`` 表示调用成功复用缓存，``no_result`` 表示调用正常完成
+        但没有找到数据；两者都不能误记为接口失败。明确错误码、错误消息或
+        失败终态才归为 ``FAILED``。
+
+    参数说明:
+        call: Admin Debug ``agent_tool_calls`` 中的单条调用记录。
+
+    返回值:
+        str: ``SUCCESS``、``NO_RESULT``、``FAILED`` 或 ``UNKNOWN``。
+
+    异常说明:
+        非字典或未知状态不抛出异常，统一返回 ``UNKNOWN`` 供报告显式展示。
+    """
+
+    if not isinstance(call, dict):
+        return "UNKNOWN"
+    status = str(call.get("status") or "").strip().lower()
+    if str(call.get("error_code") or "").strip() or str(
+        call.get("error_message") or ""
+    ).strip():
+        return "FAILED"
+    if status in ADMIN_TOOL_SUCCESS_STATUSES:
+        return "SUCCESS"
+    if status in ADMIN_TOOL_NO_RESULT_STATUSES:
+        return "NO_RESULT"
+    if status in ADMIN_TOOL_FAILURE_STATUSES:
+        return "FAILED"
+    return "UNKNOWN"
 
 
 def extract_admin_tool_usage(
@@ -118,7 +157,9 @@ def extract_admin_tool_usage(
             "label": label,
             "call_count": 0,
             "success_count": 0,
+            "no_result_count": 0,
             "failed_count": 0,
+            "unknown_count": 0,
             "provider_call_count": 0,
             "priced_call_count": 0,
             "non_billable_call_count": 0,
@@ -144,9 +185,14 @@ def extract_admin_tool_usage(
                 continue
             item = tools[key]
             item["call_count"] += 1
-            status = str(call.get("status") or "").strip().lower()
-            item["success_count"] += int(status == "success")
-            item["failed_count"] += int(status not in {"", "success"})
+            outcome = classify_admin_call_outcome(call)
+            outcome_counter = {
+                "SUCCESS": "success_count",
+                "NO_RESULT": "no_result_count",
+                "FAILED": "failed_count",
+                "UNKNOWN": "unknown_count",
+            }[outcome]
+            item[outcome_counter] += 1
             if provider and provider not in item["providers"]:
                 item["providers"].append(provider)
 
@@ -333,6 +379,73 @@ class FlowError(RuntimeError):
         self.public_fields: dict[str, Any] = {}
         self.http_status: int | None = None
         self.duration_ms: int | None = None
+        # 仅标记 HTTP 传输层错误类型；业务失败保持空字符串，避免误重试。
+        self.network_error_kind: str = ""
+
+
+TRANSIENT_HTTP_STATUSES = frozenset({408, 429, *range(500, 600)})
+READ_ONLY_RETRY_STAGES = frozenset(
+    {"GetTask", "ListTaskCandidates", "GetTaskCandidateDetail"}
+)
+
+
+def classify_transport_error(
+    error: BaseException,
+    http_status: int | None = None,
+) -> str:
+    """将 requests 异常归类为安全重试所需的传输层类型。
+
+    参数说明:
+        error: requests 抛出的原始异常。
+        http_status: 已取得的 HTTP 状态；无响应时为 ``None``。
+
+    返回值:
+        ``DNS``、``READ_TIMEOUT``、``CONNECT_TIMEOUT``、``CONNECTION``、
+        ``HTTP_TRANSIENT`` 或空字符串。空字符串表示不得自动重试。
+    """
+
+    if http_status in TRANSIENT_HTTP_STATUSES:
+        return "HTTP_TRANSIENT"
+    if isinstance(error, requests.ReadTimeout):
+        return "READ_TIMEOUT"
+    if isinstance(error, requests.ConnectTimeout):
+        return "CONNECT_TIMEOUT"
+    # urllib3 的 NameResolutionError 通常被 requests.ConnectionError 包裹，
+    # 因此联合检查异常链和文本，且只匹配明确的域名解析失败信号。
+    chain: list[str] = []
+    current: BaseException | None = error
+    visited: set[int] = set()
+    while current is not None and id(current) not in visited:
+        visited.add(id(current))
+        chain.append(f"{type(current).__name__}: {current}")
+        current = current.__cause__ or current.__context__
+    error_text = " ".join(chain).casefold()
+    dns_markers = (
+        "nameresolutionerror",
+        "failed to resolve",
+        "name or service not known",
+        "no address associated with hostname",
+        "temporary failure in name resolution",
+    )
+    if any(marker in error_text for marker in dns_markers):
+        return "DNS"
+    if isinstance(error, requests.ConnectionError):
+        return "CONNECTION"
+    if isinstance(error, requests.Timeout):
+        return "READ_TIMEOUT"
+    return ""
+
+
+def is_network_flow_error(error: FlowError) -> bool:
+    """判断 Query 失败是否来自可恢复网络传输层，而非接口业务响应。"""
+
+    return error.network_error_kind in {
+        "DNS",
+        "READ_TIMEOUT",
+        "CONNECT_TIMEOUT",
+        "CONNECTION",
+        "HTTP_TRANSIENT",
+    }
 
 
 @dataclass(frozen=True)
@@ -345,6 +458,10 @@ class Config:
     poll_interval_seconds: float = 5.0
     max_poll_count: int = 60
     http_timeout_seconds: float = 30.0
+    search_retry_max_attempts: int = 3
+    search_retry_initial_delay_seconds: float = 2.0
+    network_failure_threshold: int = 3
+    network_recovery_pause_seconds: float = 30.0
     platform: str = "ios"
     app_version: str = "1.0.0"
     locale: str = "zh-Hans-CN"
@@ -370,7 +487,11 @@ class Config:
     photo_upload_host_suffixes: tuple[str, ...] = (".myqcloud.com",)
 
     @classmethod
-    def from_env(cls, env_file: Path | None = None) -> "Config":
+    def from_env(
+        cls,
+        env_file: Path | None = None,
+        overrides: Mapping[str, Any] | None = None,
+    ) -> "Config":
         """从最新 Secret 文件与平台环境构造一次性运行配置。
 
         功能说明:
@@ -401,6 +522,12 @@ class Config:
         }
         # 平台环境变量优先，但不修改进程环境，避免一次 Run 污染后续重跑。
         config_values.update(os.environ)
+        # 平台运行快照最后覆盖进程启动值，但不修改全局环境。
+        if overrides:
+            config_values.update({
+                str(key): "" if value is None else str(value)
+                for key, value in overrides.items()
+            })
 
         def setting(name: str, default: str = "") -> str:
             """读取合并后的单项配置，并统一返回字符串。"""
@@ -432,6 +559,18 @@ class Config:
         poll_interval = _positive_float("POLL_INTERVAL_SECONDS", 5.0, setting)
         max_poll_count = _positive_int("MAX_POLL_COUNT", 60, setting)
         http_timeout = _positive_float("HTTP_TIMEOUT_SECONDS", 30.0, setting)
+        search_retry_max_attempts = _positive_int(
+            "SEARCH_RETRY_MAX_ATTEMPTS", 3, setting
+        )
+        search_retry_initial_delay_seconds = _positive_float(
+            "SEARCH_RETRY_INITIAL_DELAY_SECONDS", 2.0, setting
+        )
+        network_failure_threshold = _positive_int(
+            "SEARCH_NETWORK_FAILURE_THRESHOLD", 3, setting
+        )
+        network_recovery_pause_seconds = _positive_float(
+            "SEARCH_NETWORK_RECOVERY_PAUSE_SECONDS", 30.0, setting
+        )
 
         # Admin 配置错误只能关闭公共信息采集，不能阻断原 Search 主链路。
         admin_enabled = _env_bool("SEARCH_ADMIN_ENABLED", False, setting)
@@ -511,6 +650,10 @@ class Config:
             poll_interval_seconds=poll_interval,
             max_poll_count=max_poll_count,
             http_timeout_seconds=http_timeout,
+            search_retry_max_attempts=search_retry_max_attempts,
+            search_retry_initial_delay_seconds=search_retry_initial_delay_seconds,
+            network_failure_threshold=network_failure_threshold,
+            network_recovery_pause_seconds=network_recovery_pause_seconds,
             platform=setting("PLATFORM", "ios").strip() or "ios",
             app_version=setting("APP_VERSION", "1.0.0").strip() or "1.0.0",
             locale=setting("LOCALE", "zh-Hans-CN").strip() or "zh-Hans-CN",
@@ -749,6 +892,10 @@ class SearchClient:
                 response_body=response_body,
             )
             flow_error.http_status = self.last_http_status
+            flow_error.network_error_kind = classify_transport_error(
+                exc,
+                self.last_http_status,
+            )
             raise flow_error from exc
         except (ValueError, TypeError) as exc:
             raise FlowError(method_name, "接口响应不是合法 JSON") from exc
@@ -1198,12 +1345,14 @@ def extract_admin_task_fields(
         cost_body: ``GetProviderCostSummary`` 完整响应；缺失时只处理诊断。
 
     返回值:
-        二元组。第一项是五个标准 ``task_fields``，无法提取的字段为 None；
-        第二项是币种、微单位原值、字段来源、映射状态和非敏感警告。
+        二元组。第一项是五个标准 ``task_fields``；无法提取的字段为 None，
+        Admin 明确确认没有计费调用时成本为 0。第二项是币种、微单位原值、
+        字段来源、映射状态和非敏感警告。
 
     异常说明:
-        本函数不因单字段缺失或格式错误中断主链路；错误会写入映射警告，
-        且不会把缺失值伪造成 0 或 False。
+        本函数不因单字段缺失或格式错误中断主链路；错误会写入映射警告。
+        只有 Debug 明确 ``cost_complete`` 且成本汇总没有 USD、未计价或部分
+        计价记录时，才把无计费结果映射为 0，普通缺失不会伪造成零成本。
     """
 
     fields: dict[str, Any] = {
@@ -1259,15 +1408,24 @@ def extract_admin_task_fields(
 
         return float(Decimal(value) / Decimal(1_000_000)) if value is not None else None
 
+    def count_value(value: Any) -> int:
+        """把计数类接口值转换为非负整数，非法值按 0 处理。"""
+
+        try:
+            return max(0, int(Decimal(str(value or 0))))
+        except (InvalidOperation, TypeError, ValueError):
+            return 0
+
+    diagnosis_cost_complete = False
     debug_data = envelope_data(debug_body)
     debug = debug_data.get("debug")
     if isinstance(debug, dict):
         diagnosis = debug.get("diagnosis")
-        if isinstance(diagnosis, dict) and isinstance(
-            diagnosis.get("pdl_called"), bool
-        ):
-            fields["pdl_called"] = diagnosis["pdl_called"]
-            sources["pdl_called"] = "debug.diagnosis.pdl_called"
+        if isinstance(diagnosis, dict):
+            diagnosis_cost_complete = diagnosis.get("cost_complete") is True
+            if isinstance(diagnosis.get("pdl_called"), bool):
+                fields["pdl_called"] = diagnosis["pdl_called"]
+                sources["pdl_called"] = "debug.diagnosis.pdl_called"
 
         debug_task = debug.get("task")
         if isinstance(debug_task, dict):
@@ -1307,6 +1465,7 @@ def extract_admin_task_fields(
     provider_rows = by_provider if isinstance(by_provider, list) else []
     search_rows = by_search if isinstance(by_search, list) else []
     total_rows = totals if isinstance(totals, list) else []
+    summary_rows = provider_rows + search_rows + total_rows
 
     llm_values: list[int] = []
     third_party_values: list[int] = []
@@ -1372,6 +1531,35 @@ def extract_admin_task_fields(
             if total_microunit is not None:
                 sources["total_cost"] = "cost_summary.totals[currency=USD]"
                 break
+    # 缓存命中或全部非计费时，Admin 会返回完整但没有 USD 行的成本汇总。
+    # 该场景是已确认零成本，不是字段缺失；未计价、部分计价或异常 USD 行
+    # 仍保持 None，避免把未知成本误写成 0。
+    has_usd_row = any(
+        isinstance(row, dict)
+        and str(row.get("currency") or "").strip().upper() == "USD"
+        for row in summary_rows
+    )
+    has_incomplete_cost_row = any(
+        isinstance(row, dict)
+        and (
+            count_value(row.get("unpriced_call_count")) > 0
+            or count_value(row.get("partial_cost_call_count")) > 0
+            or row.get("cost_complete") in {False, 0, "0", "false", "False"}
+        )
+        for row in summary_rows
+    )
+    confirmed_no_charge = (
+        total_microunit is None
+        and diagnosis_cost_complete
+        and isinstance(cost_summary, dict)
+        and not has_usd_row
+        and not has_incomplete_cost_row
+    )
+    if confirmed_no_charge:
+        total_microunit = 0
+        sources["total_cost"] = (
+            "debug.diagnosis.cost_complete + cost_summary[no_usd_charge]"
+        )
     if total_microunit is not None:
         metadata["total_cost_microunit"] = total_microunit
         metadata["cost_currency"] = "USD"
@@ -1608,7 +1796,7 @@ def safe_log_name(value: str) -> str:
 
 
 class QueryChainLogger:
-    """按输入人物追加便于人工阅读的脱敏请求与响应日志。"""
+    """按日期、Run 和输入人物分层保存脱敏请求与响应日志。"""
 
     def __init__(
         self,
@@ -1616,14 +1804,16 @@ class QueryChainLogger:
         enabled: bool,
         directory: Path,
         run_id: str,
+        run_name: str,
         input_id: str,
         person_name: str,
         timezone_name: str = "Asia/Shanghai",
     ) -> None:
-        """安全创建不覆盖的日志文件，目录错误不会中断检索。"""
+        """安全创建日期/Run 分层目录和不覆盖的日志文件。"""
 
         self.enabled = enabled
         self.run_id = run_id
+        self.run_name = run_name or run_id
         self.input_id = input_id
         self.person_name = person_name
         try:
@@ -1637,20 +1827,23 @@ class QueryChainLogger:
         if not enabled:
             return
         try:
-            directory.mkdir(parents=True, exist_ok=True)
             created_at = datetime.now(self.timezone)
             date_text = created_at.strftime("%Y-%m-%d")
             time_text = created_at.strftime("%H%M%S")
             microsecond_text = created_at.strftime("%f")
+            # Run 名称与人物名称共用同一套路径清理规则，避免用户输入的
+            # 分隔符、控制字符或 ``..`` 逃逸日志根目录。
+            run_directory = directory / date_text / safe_log_name(self.run_name)
+            run_directory.mkdir(parents=True, exist_ok=True)
             safe_person = safe_log_name(person_name)
             safe_input = safe_log_name(input_id)
             filename_prefix = f"{date_text}_{time_text}_{safe_person}"
             candidates = [
-                directory / f"{filename_prefix}.log",
-                directory / f"{filename_prefix}_{safe_input}.log",
+                run_directory / f"{filename_prefix}.log",
+                run_directory / f"{filename_prefix}_{safe_input}.log",
             ]
             candidates.append(
-                directory
+                run_directory
                 / f"{filename_prefix}_{safe_input}_{microsecond_text}.log"
             )
             for candidate in candidates:
@@ -1662,7 +1855,7 @@ class QueryChainLogger:
                     continue
             if self.handle is None:
                 for number in range(2, 10000):
-                    candidate = directory / (
+                    candidate = run_directory / (
                         f"{filename_prefix}_{safe_input}_{microsecond_text}_{number:02d}.log"
                     )
                     try:
@@ -1715,6 +1908,7 @@ class QueryChainLogger:
             "sequence_no": self._sequence,
             "api_sequence_no": api_sequence_no,
             "run_id": self.run_id,
+            "run_name": self.run_name,
             "input_id": self.input_id,
             "person_name": self.person_name,
             "task_id": task_id,
@@ -2086,6 +2280,7 @@ def process_one(
     raw_callback: RawCallback | None = None,
     failure_callback: FailureCallback | None = None,
     run_id: str = "",
+    run_name: str = "",
 ) -> dict[str, Any]:
     """顺序执行单条检索流程并生成向后兼容的 v1.3 结果记录。
 
@@ -2097,6 +2292,7 @@ def process_one(
         raw_callback: 可选 Raw 回调，每次接口调用后发送脱敏业务请求与响应。
         failure_callback: 可选候选级失败回调，用于写入 failures.jsonl。
         run_id: 当前运行标识；未提供时为直接调用自动生成。
+        run_name: 日志目录使用的 Run 显示名称；未提供时回退 ``run_id``。
 
     返回值:
         v1.3 结果字典。保留旧的 input/task/count/results 字段，并新增
@@ -2125,6 +2321,7 @@ def process_one(
         enabled=bool(getattr(client.config, "query_log_enabled", False)),
         directory=log_directory,
         run_id=effective_run_id,
+        run_name=run_name or effective_run_id,
         input_id=input_id,
         person_name=extract_person_name(item),
         timezone_name=str(
@@ -2160,60 +2357,102 @@ def process_one(
         service_name: str = SERVICE_NAME,
         attempt: int = 1,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
-        """执行一次接口调用，并在成功或失败后立即生成脱敏 Raw。"""
+        """调用 Search RPC，并按接口幂等性执行有限网络重试。
 
-        try:
-            if service_name == SERVICE_NAME:
-                # 保持旧测试 Client 和普通检索调用签名完全兼容。
-                body = client.call(stage, params)
-            else:
-                body = client.call(stage, params, service_name=service_name)
-        except FlowError as exc:
+        只读接口允许重试全部临时传输错误；Create 只允许重试明确 DNS
+        解析失败。每次失败和最终成功都会分别写入 Raw 与人物日志。
+        """
+
+        configured_attempts = int(
+            getattr(client.config, "search_retry_max_attempts", 3)
+        )
+        max_attempts = (
+            configured_attempts
+            if stage in READ_ONLY_RETRY_STAGES or stage == "CreateIntentTask"
+            else 1
+        )
+        initial_delay = float(
+            getattr(client.config, "search_retry_initial_delay_seconds", 2.0)
+        )
+        current_attempt = attempt
+        final_attempt = attempt + max_attempts - 1
+        while current_attempt <= final_attempt:
+            try:
+                if service_name == SERVICE_NAME:
+                    # 保持旧测试 Client 和普通检索调用签名完全兼容。
+                    body = client.call(stage, params)
+                else:
+                    body = client.call(stage, params, service_name=service_name)
+            except FlowError as exc:
+                record = build_raw_record(
+                    run_id=effective_run_id,
+                    input_id=input_id,
+                    task_id=task_id or exc.task_id,
+                    candidate_id=candidate_id,
+                    stage=stage,
+                    sequence_no=sequence_no,
+                    request_params=params,
+                    response_body=exc.response_body,
+                    error=str(exc),
+                    attempt=current_attempt,
+                    http_status=exc.http_status
+                    or getattr(client, "last_http_status", None),
+                    duration_ms=exc.duration_ms
+                    or getattr(client, "last_duration_ms", None),
+                )
+                raw_records.append(record)
+                emit_callback(raw_callback, record)
+                chain_logger.write_raw(record)
+                retryable = (
+                    stage in READ_ONLY_RETRY_STAGES
+                    and is_network_flow_error(exc)
+                ) or (
+                    stage == "CreateIntentTask"
+                    and exc.network_error_kind == "DNS"
+                )
+                if not retryable or current_attempt >= final_attempt:
+                    raise
+                delay_seconds = initial_delay * (2 ** (current_attempt - attempt))
+                emit_progress(
+                    "request_retry",
+                    stage=stage,
+                    status="RETRYING",
+                    attempt=current_attempt + 1,
+                    message=(
+                        f"{stage} 网络异常，{delay_seconds:g} 秒后重试 "
+                        f"({current_attempt + 1}/{final_attempt})"
+                    ),
+                )
+                sleep_fn(delay_seconds)
+                current_attempt += 1
+                continue
+
+            record_task_id = task_id
+            if stage == "CreateIntentTask" and not record_task_id:
+                create_task_id = body.get("responses", [{}])[0].get("data", {}).get(
+                    "task_id"
+                )
+                if isinstance(create_task_id, str):
+                    record_task_id = create_task_id
             record = build_raw_record(
                 run_id=effective_run_id,
                 input_id=input_id,
-                task_id=task_id or exc.task_id,
+                task_id=record_task_id,
                 candidate_id=candidate_id,
                 stage=stage,
                 sequence_no=sequence_no,
                 request_params=params,
-                response_body=exc.response_body,
-                error=str(exc),
-                attempt=attempt,
-                http_status=exc.http_status
-                or getattr(client, "last_http_status", None),
-                duration_ms=exc.duration_ms
-                or getattr(client, "last_duration_ms", None),
+                response_body=body,
+                attempt=current_attempt,
+                http_status=getattr(client, "last_http_status", None),
+                duration_ms=getattr(client, "last_duration_ms", None),
             )
             raw_records.append(record)
             emit_callback(raw_callback, record)
             chain_logger.write_raw(record)
-            raise
+            return body, record
 
-        record_task_id = task_id
-        if stage == "CreateIntentTask" and not record_task_id:
-            create_task_id = body.get("responses", [{}])[0].get("data", {}).get(
-                "task_id"
-            )
-            if isinstance(create_task_id, str):
-                record_task_id = create_task_id
-        record = build_raw_record(
-            run_id=effective_run_id,
-            input_id=input_id,
-            task_id=record_task_id,
-            candidate_id=candidate_id,
-            stage=stage,
-            sequence_no=sequence_no,
-            request_params=params,
-            response_body=body,
-            attempt=attempt,
-            http_status=getattr(client, "last_http_status", None),
-            duration_ms=getattr(client, "last_duration_ms", None),
-        )
-        raw_records.append(record)
-        emit_callback(raw_callback, record)
-        chain_logger.write_raw(record)
-        return body, record
+        raise AssertionError("Search RPC 重试循环未返回结果")
 
     def emit_admin_login_records() -> list[dict[str, Any]]:
         """把 AdminClient 产生的脱敏 Login 摘要接入统一 Raw 与人物日志。"""
@@ -3318,6 +3557,7 @@ def run_batch(
     progress_callback: ProgressCallback | None = None,
     raw_callback: RawCallback | None = None,
     run_id: str = "",
+    run_name: str = "",
 ) -> tuple[int, int]:
     """顺序执行一个 JSONL 批次并写入 v1.3 结果与失败文件。
 
@@ -3335,6 +3575,7 @@ def run_batch(
         progress_callback: 可选进度事件回调。
         raw_callback: 可选脱敏 Raw 回调。
         run_id: 可选运行标识；为空时为整个批次生成一个标识。
+        run_name: 可选日志目录名称；CLI 默认使用输入文件名（不含扩展名）。
 
     返回值:
         ``(完整成功或无候选人 Query 数, 失败或部分失败 Query 数)``。
@@ -3350,6 +3591,7 @@ def run_batch(
     results_path.write_text("", encoding="utf-8")
     failures_path.write_text("", encoding="utf-8")
     effective_run_id = run_id or f"run_{uuid.uuid4().hex}"
+    effective_run_name = run_name or input_path.stem or effective_run_id
 
     def write_candidate_failure(record: dict[str, Any]) -> None:
         """把候选级失败写入本批次 failures.jsonl。"""
@@ -3377,6 +3619,7 @@ def run_batch(
                 raw_callback=raw_callback,
                 failure_callback=write_candidate_failure,
                 run_id=effective_run_id,
+                run_name=effective_run_name,
             )
             append_jsonl(results_path, result)
             if result["query_status"] == "PARTIAL_DETAIL_FAILED":

@@ -143,10 +143,15 @@
             <span>baseline Process（可选）</span>
             <select name="baseline_process_id">
               <option value="">单 Run 报告</option>
-              {% for other in compatible_processes %}
-                <option value="{{ other.process_id }}">{{ other.run_label }} · {{ other.system_version }} · {{ other.process_id }}</option>
+              {% for evaluation_id, evaluation_processes in compatible_processes|groupby('evaluation_id') %}
+                <optgroup label="{{ evaluation_processes[0].evaluation_name }} · {{ evaluation_id }}{% if evaluation_id == process.evaluation_id %}（当前评测）{% endif %}">
+                  {% for other in evaluation_processes %}
+                    <option value="{{ other.process_id }}">{{ other.run_label }} · {{ other.system_version }} · {{ other.evaluation_phase }} · {{ other.created_at|format_datetime }} · {{ other.process_id }}</option>
+                  {% endfor %}
+                </optgroup>
               {% endfor %}
             </select>
+            <small>可选择任意评测下已完成的 Process；报告归属当前 Candidate Process 所在评测。</small>
           </label>
           <label>
             <span>数据标识</span>
@@ -208,23 +213,96 @@
     <div><span>无候选人</span><strong>{{ classification_progress.no_candidates_count }}</strong></div>
   </div>
   {% if classification_progress['items'] %}
-    <details class="process-result-disclosure">
-      <summary>查看 {{ classification_progress['items']|length }} 条 Query 的身份归类明细</summary>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Query</th><th>人物</th><th>候选人</th><th>身份状态</th><th>操作</th></tr></thead>
-          <tbody>
-            {% for item in classification_progress['items'] %}
-              <tr>
-                <td class="mono">{{ item.query_id }}</td>
-                <td>{{ item.baseline_display_name or item.person_id or '未关联' }}</td>
-                <td>{{ item.candidates|length }}</td>
-                <td><span class="status {{ item.identity_state|status_class }}">{{ item.identity_state }}</span></td>
-                <td><a href="{{ url_for('query_classification', process_id=process.process_id, query_id=item.query_id) }}">查看 / 覆写规则</a></td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
+    <details class="process-result-disclosure identity-evidence-disclosure">
+      <summary>逐候选人查看身份判定证据（{{ classification_progress['items']|length }} 条 Query）</summary>
+      <div class="identity-query-list">
+        {% for item in classification_progress['items'] %}
+          <details class="identity-query-evidence">
+            <summary>
+              <span class="identity-query-heading">
+                <strong class="mono">{{ item.query_id }}</strong>
+                <small>{{ item.baseline_display_name or item.person_id or '未关联基准人物' }}</small>
+              </span>
+              <span class="identity-query-meta">
+                <span>{{ item.candidates|length }} 位候选人</span>
+                <span class="status {{ item.identity_state|status_class }}">{{ item.identity_state }}</span>
+              </span>
+            </summary>
+            <div class="identity-candidate-list">
+              {% for candidate in item.candidates %}
+                {% set evidence = candidate.identity_evidence %}
+                <details class="identity-candidate-evidence">
+                  <summary>
+                    <span class="identity-candidate-heading">
+                      <strong>#{{ candidate.candidate_rank }} · {{ candidate.candidate_id }}</strong>
+                      <small>{{ evidence.reason_label }}</small>
+                    </span>
+                    <span class="identity-candidate-meta">
+                      {% if candidate.is_primary_hit %}<span class="identity-primary-mark">主命中</span>{% endif %}
+                      <span class="status {{ (candidate.judgement or 'PENDING')|status_class }}">{{ candidate.judgement or 'PENDING' }}</span>
+                    </span>
+                  </summary>
+                  <div class="identity-evidence-body">
+                    <div class="identity-evidence-intro">
+                      <div>
+                        <span>判定说明</span>
+                        <strong>{{ evidence.explanation }}</strong>
+                      </div>
+                      <dl>
+                        <div><dt>结论来源</dt><dd>{{ evidence.source_label }}</dd></div>
+                        <div><dt>规则原因</dt><dd class="mono">{{ candidate.reason or '—' }}</dd></div>
+                        <div><dt>照片相似度</dt><dd>{% if evidence.photo_rate is not none %}{{ evidence.photo_rate|round(2) }}%{% else %}未提供{% endif %}</dd></div>
+                      </dl>
+                    </div>
+
+                    <div class="identity-link-groups">
+                      <section class="identity-link-group matched">
+                        <div><strong>精确命中链接</strong><span>{{ evidence.matched_urls|length }} 条</span></div>
+                        {% if evidence.matched_urls %}
+                          <ul>
+                            {% for url in evidence.matched_urls %}
+                              <li>{% if url.href %}<a href="{{ url.href }}" target="_blank" rel="noopener noreferrer">{{ url.text }}</a>{% else %}<span>{{ url.text }}</span>{% endif %}</li>
+                            {% endfor %}
+                          </ul>
+                        {% else %}
+                          <p>没有与基准完全一致的 Social URL。</p>
+                        {% endif %}
+                      </section>
+                      <section class="identity-link-group conflicting">
+                        <div><strong>同平台其他账号</strong><span>{{ evidence.conflicting_urls|length }} 条</span></div>
+                        {% if evidence.conflicting_urls %}
+                          <ul>
+                            {% for url in evidence.conflicting_urls %}
+                              <li>{% if url.href %}<a href="{{ url.href }}" target="_blank" rel="noopener noreferrer">{{ url.text }}</a>{% else %}<span>{{ url.text }}</span>{% endif %}</li>
+                            {% endfor %}
+                          </ul>
+                        {% else %}
+                          <p>没有发现同平台不同账号。</p>
+                        {% endif %}
+                      </section>
+                    </div>
+
+                    {% if evidence.social_rule_error %}
+                      <p class="identity-evidence-warning"><strong>Social 规则错误：</strong>{{ evidence.social_rule_error }}</p>
+                    {% endif %}
+                    {% if evidence.raw_evidence %}
+                      <div class="identity-raw-evidence"><span>补充 / 历史证据</span><p>{{ evidence.raw_evidence }}</p></div>
+                    {% endif %}
+                    {% if candidate.review_note %}
+                      <div class="identity-raw-evidence"><span>复核备注</span><p>{{ candidate.review_note }}</p></div>
+                    {% endif %}
+                    <div class="identity-evidence-actions">
+                      <a href="{{ url_for('candidate_detail', candidate_pk=candidate.candidate_pk, process_id=process.process_id) }}">查看候选人字段</a>
+                      <a href="{{ url_for('query_classification', process_id=process.process_id, query_id=item.query_id) }}">覆写该 Query 的判定</a>
+                    </div>
+                  </div>
+                </details>
+              {% else %}
+                <div class="empty-state compact-empty"><strong>该 Query 没有返回候选人</strong></div>
+              {% endfor %}
+            </div>
+          </details>
+        {% endfor %}
       </div>
     </details>
   {% endif %}
@@ -433,10 +511,14 @@
       <form class="filter-bar compact-filter" method="get">
         <select name="compare_process_id">
           <option value="">选择 baseline Process 进行配对</option>
-          {% for other in compatible_processes %}
-            <option value="{{ other.process_id }}" {% if compare_process_id == other.process_id %}selected{% endif %}>
-              {{ other.run_label }} · {{ other.system_version }} · {{ other.process_id }}
-            </option>
+          {% for evaluation_id, evaluation_processes in compatible_processes|groupby('evaluation_id') %}
+            <optgroup label="{{ evaluation_processes[0].evaluation_name }} · {{ evaluation_id }}{% if evaluation_id == process.evaluation_id %}（当前评测）{% endif %}">
+              {% for other in evaluation_processes %}
+                <option value="{{ other.process_id }}" {% if compare_process_id == other.process_id %}selected{% endif %}>
+                  {{ other.run_label }} · {{ other.system_version }} · {{ other.evaluation_phase }} · {{ other.created_at|format_datetime }} · {{ other.process_id }}
+                </option>
+              {% endfor %}
+            </optgroup>
           {% endfor %}
         </select>
         <button class="button secondary" type="submit">检查配对</button>

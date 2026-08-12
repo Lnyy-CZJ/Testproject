@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import json
+import hmac
 import os
+import uuid
 from html import escape
+from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib import request as urlrequest
 from urllib.parse import urlparse
 
 from trackevents_core import analyze_log_text
@@ -38,6 +42,8 @@ HOST = os.environ.get("TRACKEVENTS_HOST", "127.0.0.1")
 PORT = int(os.environ.get("TRACKEVENTS_PORT", "8000"))
 BASE_PATH = normalize_base_path(os.environ.get("TRACKEVENTS_BASE_PATH"))
 PLATFORM_HOME_URL = os.environ.get("PLATFORM_HOME_URL", "").strip()
+PLATFORM_API_URL = os.environ.get("PLATFORM_API_URL", "").rstrip("/")
+PLATFORM_CLIENT_TOKEN_FILE = os.environ.get("PLATFORM_CLIENT_TOKEN_FILE", "")
 DEFAULT_LOG_PATH = Path(__file__).with_name("default.log")
 FAVICON_PATH = Path(__file__).with_name("favicon.svg")
 
@@ -758,6 +764,12 @@ HTML_TEMPLATE = r"""<!doctype html>
     </div>
   </main>
   <script>
+    // 平台模式写请求使用双提交 CSRF Cookie；独立模式空值保持兼容。
+    function readCookie(name) {
+      const prefix = name + '=';
+      const item = document.cookie.split(';').map(value => value.trim()).find(value => value.startsWith(prefix));
+      return item ? decodeURIComponent(item.slice(prefix.length)) : '';
+    }
     const fileInput = document.getElementById('logFile');
     const logTextInput = document.getElementById('logText');
     const expectedInput = document.getElementById('expectedCounts');
@@ -794,7 +806,7 @@ HTML_TEMPLATE = r"""<!doctype html>
         const logText = hasPastedLog ? pastedLog : (file ? await file.text() : '');
         const response = await fetch('__ANALYZE_URL__', {
           method: 'POST',
-          headers: {'Content-Type': 'application/json'},
+          headers: {'Content-Type': 'application/json', 'X-CSRF-Token': readCookie('tp_csrf')},
           body: JSON.stringify({log_text: logText, expected_counts: expectedCounts})
         });
         const payload = await response.json();
@@ -1157,6 +1169,46 @@ def render_html(
 HTML = render_html("")
 
 
+def _client_token() -> str:
+    """读取只读工具 Client Token；缺失时审计上报安全降级。"""
+
+    if not PLATFORM_CLIENT_TOKEN_FILE:
+        return ""
+    try:
+        return Path(PLATFORM_CLIENT_TOKEN_FILE).read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
+def _report_audit(headers: object, outcome: str, error_code: str | None = None) -> None:
+    """最大尽力上报埋点分析审计，平台异常不改变已完成的分析结果。"""
+
+    token = _client_token()
+    if not PLATFORM_API_URL or not token:
+        return
+    payload = json.dumps({
+        "event_id": f"evt_{uuid.uuid4().hex}",
+        "action": "tool.analysis.submit",
+        "resource_type": "trackevents_analysis",
+        "outcome": outcome,
+        "error_code": error_code,
+        "actor_user_id": headers.get("X-Platform-User-ID"),
+        "actor_username": headers.get("X-Platform-Username"),
+        "metadata": {},
+    }).encode("utf-8")
+    audit_request = urlrequest.Request(
+        f"{PLATFORM_API_URL}/internal/tools/trackevents/audit-events",
+        data=payload,
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urlrequest.urlopen(audit_request, timeout=1):
+            pass
+    except Exception:
+        return
+
+
 class TrackEventsHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         path = urlparse(self.path).path
@@ -1180,6 +1232,10 @@ class TrackEventsHandler(BaseHTTPRequestHandler):
         if path != route_path("/api/analyze", self.server.base_path):
             self.send_error(404)
             return
+        if PLATFORM_API_URL and not self._valid_csrf():
+            self._send_json({"error": "请求安全校验失败"}, status=403)
+            _report_audit(self.headers, "denied", "CSRF_INVALID")
+            return
         try:
             length = int(self.headers.get("Content-Length", "0"))
             payload = json.loads(self.rfile.read(length).decode("utf-8"))
@@ -1191,8 +1247,22 @@ class TrackEventsHandler(BaseHTTPRequestHandler):
             result = analyze_log_text(log_text, normalized_counts)
         except Exception as exc:
             self._send_json({"error": str(exc)}, status=400)
+            _report_audit(self.headers, "failed", "ANALYSIS_FAILED")
             return
         self._send_json(result)
+        _report_audit(self.headers, "success")
+
+    def _valid_csrf(self) -> bool:
+        """比较 Cookie 与 Header 中的 CSRF Token，不记录任何 Token 值。"""
+
+        cookies = SimpleCookie()
+        try:
+            cookies.load(self.headers.get("Cookie", ""))
+        except Exception:
+            return False
+        cookie = cookies.get("tp_csrf")
+        header = self.headers.get("X-CSRF-Token", "")
+        return bool(cookie and header and hmac.compare_digest(cookie.value, header))
 
     def log_message(self, format: str, *args: object) -> None:
         return

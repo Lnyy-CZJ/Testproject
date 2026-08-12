@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import os
 from datetime import date
 from pathlib import Path
 from typing import Any
 
 import pytest
+import requests
 
 from api.gateway_api import GatewayApi
 from utils.custom.api_loader import load_api_definitions
@@ -118,10 +120,46 @@ def gateway_api(
     自动会话只使用 API 定义中的路由；请求参数、断言和提取规则由
     ``GatewayApi`` 的内部会话协议统一管理，不依赖单接口 Cases。
     """
+    session_path: Path | None = PROJECT_ROOT / ".env"
+    session_writer = None
+    if os.getenv("API_AUTOTEST_SESSION_PROVIDER", "dotenv") == "platform":
+        platform_api_url = os.getenv("PLATFORM_API_URL", "").rstrip("/")
+        credential_id = os.getenv("PLATFORM_CREDENTIAL_ID", "")
+        token_path = Path(os.getenv("PLATFORM_CLIENT_TOKEN_FILE", ""))
+        if not platform_api_url or not credential_id or not token_path.is_file():
+            raise RuntimeError("平台会话写回客户端未正确部署")
+        token = token_path.read_text(encoding="utf-8").strip()
+        version = [int(os.getenv("PLATFORM_CREDENTIAL_VERSION", "0"))]
+
+        def write_platform_session(values: dict[str, Any]) -> None:
+            """使用 CAS 将完整会话原子写回当前工具凭证。"""
+
+            payload_values = {
+                env_key: values[runtime_key]
+                for runtime_key, env_key in {
+                    "access_token": "AUTH_TOKEN", "refresh_token": "REFRESH_TOKEN",
+                    "user_id": "USER_ID", "device_id": "DEVICE_ID",
+                    "expires_time": "EXPIRES_TIME", "refresh_expires_time": "REFRESH_EXPIRES_TIME",
+                }.items()
+                if values.get(runtime_key) not in (None, "")
+            }
+            response = requests.put(
+                f"{platform_api_url}/internal/tools/api-autotest/credentials/{credential_id}/session",
+                headers={"Authorization": f"Bearer {token}"},
+                json={"expected_version": version[0], "values": payload_values},
+                timeout=5,
+            )
+            response.raise_for_status()
+            version[0] += 1
+
+        session_path = None
+        session_writer = write_platform_session
+
     return GatewayApi(
         gateway_settings,
         gateway_endpoint,
         runtime_context=gateway_runtime,
         api_definitions=load_api_definitions(PROJECT_ROOT),
-        session_env_path=PROJECT_ROOT / ".env",
+        session_env_path=session_path,
+        session_state_writer=session_writer,
     )

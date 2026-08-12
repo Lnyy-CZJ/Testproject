@@ -5,7 +5,7 @@ from sqlalchemy import engine_from_config, pool
 
 from app.core.config import get_settings
 from app.db.base import Base
-from app.models import Tool
+from app import models  # noqa: F401  # 导入全部模型以填充 Alembic metadata。
 
 
 config = context.config

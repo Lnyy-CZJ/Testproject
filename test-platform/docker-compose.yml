@@ -53,6 +53,21 @@ services:
         condition: service_healthy
     restart: "no"
 
+  platform-bootstrap:
+    build:
+      context: ./backend
+    command: ["python", "-m", "app.bootstrap_clients"]
+    environment:
+      DATABASE_URL: "postgresql+psycopg://${POSTGRES_USER:-platform}:${POSTGRES_PASSWORD:-platform_dev_password}@platform-db:5432/${POSTGRES_DB:-test_platform}"
+      PLATFORM_RUNTIME_ENV: "${PLATFORM_RUNTIME_ENV:-dev}"
+      PLATFORM_CLIENT_TOKEN_DIR: /run/platform-clients
+    volumes:
+      - ./.runtime-secrets:/run/platform-clients:ro
+    depends_on:
+      platform-migrate:
+        condition: service_completed_successfully
+    restart: "no"
+
   platform-api:
     build:
       context: ./backend
@@ -61,10 +76,22 @@ services:
       APP_ENV: "${APP_ENV:-development}"
       LOG_LEVEL: "${LOG_LEVEL:-INFO}"
       TOOL_HEALTH_TIMEOUT_SECONDS: "${TOOL_HEALTH_TIMEOUT_SECONDS:-3}"
+      APP_PUBLIC_URL: "${APP_PUBLIC_URL:-http://localhost:8080}"
+      PLATFORM_RUNTIME_ENV: "${PLATFORM_RUNTIME_ENV:-dev}"
+      COOKIE_SECURE: "${COOKIE_SECURE:-false}"
+      BOOTSTRAP_TOKEN_FILE: /run/secrets/platform-bootstrap-token
+      SECRET_KEK_FILE: /run/secrets/platform-kek.json
+      SESSION_IDLE_HOURS: "${SESSION_IDLE_HOURS:-8}"
+      SESSION_ABSOLUTE_HOURS: "${SESSION_ABSOLUTE_HOURS:-24}"
+      LOGIN_FAILURE_LIMIT: "${LOGIN_FAILURE_LIMIT:-5}"
+      LOGIN_LOCK_MINUTES: "${LOGIN_LOCK_MINUTES:-15}"
+    volumes:
+      - ./.runtime-secrets/bootstrap-token:/run/secrets/platform-bootstrap-token:ro
+      - ./.runtime-secrets/dev-kek.json:/run/secrets/platform-kek.json:ro
     expose:
       - "8000"
     depends_on:
-      platform-migrate:
+      platform-bootstrap:
         condition: service_completed_successfully
     healthcheck:
       test:
@@ -80,6 +107,25 @@ services:
       start_period: 5s
     restart: unless-stopped
 
+  platform-credential-agent:
+    build:
+      context: ./backend
+    command: ["python", "-m", "app.jobs.credential_agent"]
+    environment:
+      DATABASE_URL: "postgresql+psycopg://${POSTGRES_USER:-platform}:${POSTGRES_PASSWORD:-platform_dev_password}@platform-db:5432/${POSTGRES_DB:-test_platform}"
+      APP_ENV: "${APP_ENV:-development}"
+      PLATFORM_RUNTIME_ENV: "${PLATFORM_RUNTIME_ENV:-dev}"
+      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+      SECRET_KEK_FILE: /run/secrets/platform-kek.json
+      CREDENTIAL_REFRESH_WINDOW_SECONDS: "${CREDENTIAL_REFRESH_WINDOW_SECONDS:-3600}"
+      CREDENTIAL_AGENT_INTERVAL_SECONDS: "${CREDENTIAL_AGENT_INTERVAL_SECONDS:-60}"
+    volumes:
+      - ./.runtime-secrets/dev-kek.json:/run/secrets/platform-kek.json:ro
+    depends_on:
+      platform-bootstrap:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
   trackevents-web:
     build:
       context: ../TrackEvents_tess
@@ -88,6 +134,11 @@ services:
       TRACKEVENTS_PORT: 8000
       TRACKEVENTS_BASE_PATH: /trackevents
       PLATFORM_HOME_URL: /
+      PLATFORM_API_URL: http://platform-api:8000/api/v1
+      PLATFORM_CLIENT_TOKEN_FILE: /run/secrets/platform-client-token
+      PLATFORM_RUNTIME_ENV: "${PLATFORM_RUNTIME_ENV:-dev}"
+    volumes:
+      - ./.runtime-secrets/trackevents-client-token:/run/secrets/platform-client-token:ro
     expose:
       - "8000"
     healthcheck:
@@ -107,9 +158,13 @@ services:
       LOG_EXPORT_DIR: /exports
       LOG_EXPORT_DISPLAY_DIR: /Users/admin/Documents/log
       PLATFORM_HOME_URL: /
+      PLATFORM_API_URL: http://platform-api:8000/api/v1
+      PLATFORM_CLIENT_TOKEN_FILE: /run/secrets/platform-client-token
+      PLATFORM_RUNTIME_ENV: "${PLATFORM_RUNTIME_ENV:-dev}"
     volumes:
       # 页面提示使用宿主机路径，容器实际写入对应的 /exports 目录。
       - /Users/admin/Documents/log:/exports
+      - ./.runtime-secrets/log-filter-client-token:/run/secrets/platform-client-token:ro
     expose:
       - "5001"
     healthcheck:
@@ -138,14 +193,19 @@ services:
       SEARCH_OUTPUT_DIR: /app/output
       SEARCH_QUERY_LOG_ENABLED: "true"
       SEARCH_QUERY_LOG_DIR: /app/log
+      PLATFORM_API_URL: http://platform-api:8000/api/v1
+      PLATFORM_CLIENT_TOKEN_FILE: /run/secrets/platform-client-token
+      PLATFORM_RUNTIME_ENV: "${PLATFORM_RUNTIME_ENV:-dev}"
+      # dev 凭证完成导入与验证后由本地 .env 切换为 platform。
+      SEARCH_CONFIG_SOURCE: "${SEARCH_CONFIG_SOURCE:-env}"
     volumes:
       # 平台模式复用独立模式的数据目录；上线前必须先停止独立容器。
-      - ../Truthy_Search/.env:/run/secrets/searchtool.env:ro
       - ../Truthy_Search/data:/app/data
       - ../Truthy_Search/output:/app/output
       - ../Truthy_Search/input:/app/input:ro
       # 人物级逐请求日志必须持久化，且不与容器标准输出混用。
       - ../Truthy_Search/log:/app/log
+      - ./.runtime-secrets/truthy-search-client-token:/run/secrets/platform-client-token:ro
     expose:
       - "5002"
     healthcheck:
@@ -166,13 +226,18 @@ services:
       PLATFORM_HOME_URL: /
       API_AUTOTEST_TASK_TIMEOUT_SECONDS: "${API_AUTOTEST_TASK_TIMEOUT_SECONDS:-1800}"
       API_AUTOTEST_TASKS_RETAIN: "${API_AUTOTEST_TASKS_RETAIN:-50}"
+      PLATFORM_API_URL: http://platform-api:8000/api/v1
+      PLATFORM_CLIENT_TOKEN_FILE: /run/secrets/platform-client-token
+      PLATFORM_RUNTIME_ENV: "${PLATFORM_RUNTIME_ENV:-dev}"
+      # 普通配置与会话写回必须一起切换，避免同一 Token 出现双写。
+      API_AUTOTEST_CONFIG_SOURCE: "${API_AUTOTEST_CONFIG_SOURCE:-env}"
+      API_AUTOTEST_SESSION_PROVIDER: "${API_AUTOTEST_SESSION_PROVIDER:-dotenv}"
     volumes:
-      # 平台侧独立凭证文件，与独立运行的 .env 隔离；缺失时容器降级为不可执行。
-      - ../Truthy_ApiAutoTest2/.env.platform:/app/.env
       - ../Truthy_ApiAutoTest2/data:/app/data:ro
       - ../Truthy_ApiAutoTest2/logs:/app/logs
       - ../Truthy_ApiAutoTest2/reports:/app/reports
       - ../Truthy_ApiAutoTest2/tasks:/app/tasks
+      - ./.runtime-secrets/api-autotest-client-token:/run/secrets/platform-client-token:ro
     expose:
       - "5003"
     healthcheck:

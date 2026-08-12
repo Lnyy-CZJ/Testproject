@@ -15,6 +15,7 @@ from search_tool import (
     FlowError,
     GET_TASK_FAILURE_TERMINAL_STATUSES,
     SearchClient,
+    extract_admin_tool_usage,
     extract_admin_task_fields,
     load_photo_input,
     normalize_result_status,
@@ -109,6 +110,143 @@ def public_info_fixture(name):
 
 
 class SearchToolTests(unittest.TestCase):
+    def test_read_only_request_retries_transient_timeout_and_records_attempts(self):
+        """GetTask 临时超时应短重试，且每次尝试分别进入 Raw。"""
+
+        gateway = FakeSession(
+            [
+                api_body({"task_id": "task-retry-read"}),
+                requests.ReadTimeout("temporary read timeout"),
+                api_body({"status": "NO_RESULT", "candidate_count": 0}),
+            ]
+        )
+        waits = []
+        raw_records = []
+
+        result = process_one(
+            {
+                "input_id": "case-retry-read",
+                "query_stage": "FULL_NAME",
+                "match_strategy": "UNION",
+                "clues": [{"type": "FULL_NAME", "value": "Retry Read"}],
+                "additional_details": [],
+            },
+            SearchClient(config(search_retry_initial_delay_seconds=2), gateway),
+            sleep_fn=waits.append,
+            raw_callback=raw_records.append,
+        )
+
+        self.assertEqual("NO_CANDIDATE", result["query_status"])
+        get_task_records = [
+            record for record in raw_records if record["stage"] == "GetTask"
+        ]
+        self.assertEqual([1, 2], [record["attempt"] for record in get_task_records])
+        self.assertTrue(get_task_records[0]["error"])
+        self.assertFalse(get_task_records[1]["error"])
+        self.assertIn(2, waits)
+
+    def test_create_retries_dns_only_but_does_not_replay_read_timeout(self):
+        """Create 仅在明确 DNS 未送达时重试，读取超时不得自动重放。"""
+
+        dns_gateway = FakeSession(
+            [
+                requests.ConnectionError(
+                    "Failed to resolve gateway.test: No address associated with hostname"
+                ),
+                api_body({"task_id": "task-create-dns"}),
+                api_body({"status": "NO_RESULT", "candidate_count": 0}),
+            ]
+        )
+        dns_raw = []
+        dns_waits = []
+        process_one(
+            {
+                "input_id": "case-create-dns",
+                "query_stage": "FULL_NAME",
+                "match_strategy": "UNION",
+                "clues": [{"type": "FULL_NAME", "value": "DNS Retry"}],
+                "additional_details": [],
+            },
+            SearchClient(config(search_retry_initial_delay_seconds=2), dns_gateway),
+            sleep_fn=dns_waits.append,
+            raw_callback=dns_raw.append,
+        )
+        create_records = [
+            record for record in dns_raw if record["stage"] == "CreateIntentTask"
+        ]
+        self.assertEqual([1, 2], [record["attempt"] for record in create_records])
+        self.assertIn(2, dns_waits)
+
+        timeout_gateway = FakeSession([requests.ReadTimeout("response lost")])
+        timeout_raw = []
+        with self.assertRaises(FlowError):
+            process_one(
+                {
+                    "input_id": "case-create-timeout",
+                    "query_stage": "FULL_NAME",
+                    "match_strategy": "UNION",
+                    "clues": [{"type": "FULL_NAME", "value": "No Replay"}],
+                    "additional_details": [],
+                },
+                SearchClient(config(), timeout_gateway),
+                sleep_fn=lambda _seconds: None,
+                raw_callback=timeout_raw.append,
+            )
+        self.assertEqual(1, len(timeout_gateway.calls))
+        self.assertEqual(
+            [1],
+            [
+                record["attempt"]
+                for record in timeout_raw
+                if record["stage"] == "CreateIntentTask"
+            ],
+        )
+
+    def test_candidate_detail_retries_transient_read_timeout(self):
+        """Candidate Detail 临时读取超时后应重试当前候选人，不影响结果。"""
+
+        gateway = FakeSession(
+            [
+                api_body({"task_id": "task-detail-retry"}),
+                api_body({"status": "SUCCEEDED", "candidate_count": 1}),
+                api_body(
+                    {
+                        "items": [
+                            {
+                                "candidate_id": "candidate-retry",
+                                "rank_score": 0.9,
+                            }
+                        ]
+                    }
+                ),
+                requests.ReadTimeout("temporary candidate detail timeout"),
+                api_body({"ui_sections": {}}),
+            ]
+        )
+        raw_records = []
+        result = process_one(
+            {
+                "input_id": "case-detail-retry",
+                "query_stage": "FULL_NAME",
+                "match_strategy": "UNION",
+                "clues": [{"type": "FULL_NAME", "value": "Detail Retry"}],
+                "additional_details": [],
+            },
+            SearchClient(config(search_retry_initial_delay_seconds=2), gateway),
+            sleep_fn=lambda _seconds: None,
+            raw_callback=raw_records.append,
+        )
+
+        self.assertEqual("SUCCESS", result["query_status"])
+        detail_records = [
+            record
+            for record in raw_records
+            if record["stage"] == "GetTaskCandidateDetail"
+        ]
+        self.assertEqual([1, 2], [record["attempt"] for record in detail_records])
+        self.assertTrue(detail_records[0]["error"])
+        self.assertFalse(detail_records[1]["error"])
+
     def test_social_photo_query_uploads_original_jpeg_and_preserves_social_clue(self):
         """组合 Query 原样上传 JPEG，并把 Social 与运行时 PHOTO 一起提交。"""
 
@@ -438,6 +576,60 @@ class SearchToolTests(unittest.TestCase):
         self.assertEqual(1.39, metadata["pdl_provider_cost"])
         self.assertEqual(1, metadata["wiki_call_count"])
 
+    def test_extract_admin_tool_usage_separates_no_result_and_cache_hit(self):
+        """工具状态应区分成功、无结果和真实失败。
+
+        功能说明:
+            模拟成功、缓存命中、正常无结果与明确失败四种 Debug 状态，防止
+            ``no_result`` 和 ``cache_hit`` 再被报告误标为失败。
+
+        返回值:
+            无；分类计数符合接口语义即通过。
+
+        异常说明:
+            状态映射回退为旧的二分法时测试失败。
+        """
+
+        usage, _ = extract_admin_tool_usage(
+            api_body({
+                "debug": {
+                    "agent_tool_calls": [
+                        {
+                            "provider": "google_vision",
+                            "provider_operation": "web_detection",
+                            "status": "success",
+                        },
+                        {
+                            "provider": "google_vision",
+                            "provider_operation": "web_detection",
+                            "status": "cache_hit",
+                        },
+                        {
+                            "provider": "google_vision",
+                            "provider_operation": "web_detection",
+                            "status": "no_result",
+                        },
+                        {
+                            "provider": "google_vision",
+                            "provider_operation": "web_detection",
+                            "status": "failed",
+                            "error_code": "UPSTREAM_ERROR",
+                        },
+                    ]
+                }
+            }),
+            None,
+        )
+        google_vision = {
+            item["key"]: item for item in usage
+        }["google_vision"]
+
+        self.assertEqual(4, google_vision["call_count"])
+        self.assertEqual(2, google_vision["success_count"])
+        self.assertEqual(1, google_vision["no_result_count"])
+        self.assertEqual(1, google_vision["failed_count"])
+        self.assertEqual(0, google_vision["unknown_count"])
+
     def test_extract_admin_task_fields_keeps_all_provider_costs_for_single_pdl_mode(self):
         """单独调用 PDL Identify 时，Provider 总额和第三方成本都不得丢失。"""
 
@@ -584,6 +776,56 @@ class SearchToolTests(unittest.TestCase):
         )
         self.assertTrue(all(value is None for value in missing_fields.values()))
         self.assertEqual("NOT_MAPPED", missing_metadata["field_mapping_status"])
+
+    def test_extract_admin_task_fields_maps_confirmed_no_charge_to_zero(self):
+        """Admin 已确认成本完整且无计费记录时应映射为真实零成本。
+
+        功能说明:
+            覆盖缓存命中和全部非计费调用的共同接口语义：成本接口成功
+            返回完整汇总，但没有 USD 计费行，此时三个成本字段应为 0。
+
+        返回值:
+            无；成本字段与微单位均为 0 且映射状态完整即通过。
+
+        异常说明:
+            空汇总仍被误判为字段未接入时测试失败。
+        """
+
+        task_fields, metadata = extract_admin_task_fields(
+            task_id="task-confirmed-free",
+            debug_body=api_body({
+                "debug": {
+                    "task": {
+                        "start_time": "2026-08-11T03:18:43.215Z",
+                        "finish_time": "2026-08-11T03:18:43.224Z",
+                    },
+                    "diagnosis": {
+                        "cost_complete": True,
+                        "pdl_called": False,
+                    },
+                    "agent_tool_calls": [],
+                }
+            }),
+            cost_body=api_body({
+                "cost_summary": {
+                    "by_provider": [],
+                    "by_search": [],
+                    "by_worker": [],
+                    "calls": [],
+                    "totals": [],
+                }
+            }),
+        )
+
+        self.assertEqual(0.0, task_fields["llm_cost"])
+        self.assertEqual(0.0, task_fields["third_party_cost"])
+        self.assertEqual(0.0, task_fields["total_cost"])
+        self.assertIs(task_fields["pdl_called"], False)
+        self.assertEqual(9, task_fields["search_duration_ms"])
+        self.assertEqual(0, metadata["llm_cost_microunit"])
+        self.assertEqual(0, metadata["third_party_cost_microunit"])
+        self.assertEqual(0, metadata["total_cost_microunit"])
+        self.assertEqual("COMPLETE", metadata["field_mapping_status"])
 
     def test_normalize_result_status_uses_candidate_count_before_detail_status(self):
         """规范化状态区分有结果、无结果和执行失败。"""
@@ -1744,12 +1986,20 @@ class SearchToolTests(unittest.TestCase):
                     client,
                     sleep_fn=lambda _: None,
                     run_id="run-log",
+                    run_name="Regression Run / v1",
                 )
 
-            log_paths = sorted(root.glob("*.log"))
+            log_paths = sorted(root.glob("*/*/*.log"))
             self.assertEqual(2, len(log_paths))
             self.assertNotEqual(log_paths[0].name, log_paths[1].name)
             self.assertTrue(all(".." not in path.name for path in log_paths))
+            self.assertTrue(
+                all(re.fullmatch(r"\d{4}-\d{2}-\d{2}", path.parent.parent.name)
+                    for path in log_paths)
+            )
+            self.assertTrue(
+                all(path.parent.name == "Regression_Run___v1" for path in log_paths)
+            )
             self.assertTrue(
                 all(
                     re.match(r"^\d{4}-\d{2}-\d{2}_\d{6}_.+\.log$", path.name)
@@ -1802,7 +2052,7 @@ class SearchToolTests(unittest.TestCase):
                 sleep_fn=lambda _: None,
             )
 
-            log_path = next(Path(temp_dir).glob("*.log"))
+            log_path = next(Path(temp_dir).glob("*/*/*.log"))
             content = log_path.read_text(encoding="utf-8")
 
         for stage in (
@@ -1848,7 +2098,7 @@ class SearchToolTests(unittest.TestCase):
                 sleep_fn=lambda _: None,
             )
 
-            log_path = next(Path(temp_dir).glob("*.log"))
+            log_path = next(Path(temp_dir).glob("*/*/*.log"))
             content = log_path.read_text(encoding="utf-8")
 
         for stage in (

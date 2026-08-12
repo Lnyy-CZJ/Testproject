@@ -86,6 +86,8 @@ CREATE TABLE IF NOT EXISTS runs (
     finished_at TEXT,
     message TEXT NOT NULL DEFAULT '',
     evaluation_phase TEXT NOT NULL DEFAULT 'UNSPECIFIED',
+    platform_release_id TEXT,
+    platform_credential_version INTEGER,
     created_at TEXT NOT NULL,
     FOREIGN KEY (evaluation_id) REFERENCES evaluations(evaluation_id),
     FOREIGN KEY (dataset_id) REFERENCES datasets(dataset_id)
@@ -664,6 +666,18 @@ class AnalysisStore:
             "is_primary_hit INTEGER NOT NULL DEFAULT 0",
         )
         cls._execute_schema_sql(connection)
+        cls._add_column_if_missing(
+            connection,
+            "runs",
+            "platform_release_id",
+            "platform_release_id TEXT",
+        )
+        cls._add_column_if_missing(
+            connection,
+            "runs",
+            "platform_credential_version",
+            "platform_credential_version INTEGER",
+        )
 
         connection.execute(
             """
@@ -797,6 +811,15 @@ class AnalysisStore:
                 self._migrate_v3_to_v4(connection)
                 return
             self._execute_schema_sql(connection)
+            # 第二阶段平台元数据为兼容性增量列，不改变独立模式 Schema 语义。
+            self._add_column_if_missing(
+                connection, "runs", "platform_release_id",
+                "platform_release_id TEXT",
+            )
+            self._add_column_if_missing(
+                connection, "runs", "platform_credential_version",
+                "platform_credential_version INTEGER",
+            )
 
     def schema_version(self) -> int:
         """读取已初始化数据库的 Schema 版本。"""

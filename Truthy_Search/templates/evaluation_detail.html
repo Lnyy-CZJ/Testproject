@@ -127,7 +127,7 @@
         <tbody>
           {% for report in reports %}
             <tr>
-              <td><a class="mono" href="{{ url_for('report_detail', report_id=report.report_id) }}">{{ report.report_id }}</a></td>
+              <td><a href="{{ url_for('report_detail', report_id=report.report_id) }}"><strong>{{ report.report_name or evaluation.name }}</strong><small class="mono">{{ report.report_id }}</small></a></td>
               <td>{{ report.run_label }}</td>
               <td>{{ report.system_version }}</td>
               <td>{{ report.report_type }}</td>

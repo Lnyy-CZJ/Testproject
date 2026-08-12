@@ -11,11 +11,16 @@
 import json
 import os
 import unittest
+from http.cookiejar import CookieJar
+from pathlib import Path
 from urllib.parse import urlencode
-from urllib.request import Request, urlopen
+from urllib.error import HTTPError
+from urllib.request import HTTPRedirectHandler, HTTPCookieProcessor, Request, build_opener
 
 
 BASE_URL = os.environ.get("PLATFORM_BASE_URL", "http://127.0.0.1:8080").rstrip("/")
+COOKIE_JAR = CookieJar()
+OPENER = build_opener(HTTPCookieProcessor(COOKIE_JAR))
 
 
 def request(path, data=None, content_type=None):
@@ -23,13 +28,58 @@ def request(path, data=None, content_type=None):
     headers = {"Accept": "*/*"}
     if content_type:
         headers["Content-Type"] = content_type
+    if data is not None:
+        csrf = next((cookie.value for cookie in COOKIE_JAR if cookie.name == "tp_csrf"), None)
+        if csrf:
+            headers["X-CSRF-Token"] = csrf
     request_object = Request(f"{BASE_URL}{path}", data=data, headers=headers)
-    with urlopen(request_object, timeout=15) as response:
+    with OPENER.open(request_object, timeout=15) as response:
         return response.status, response.headers, response.read().decode("utf-8")
+
+
+class NoRedirect(HTTPRedirectHandler):
+    """保留原始 302，验证匿名工具入口确实由网关关闭。"""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def anonymous_status(path):
+    """使用无 Cookie、无重定向客户端读取原始状态码。"""
+
+    try:
+        build_opener(NoRedirect()).open(f"{BASE_URL}{path}", timeout=15)
+    except HTTPError as error:
+        return error.code, error.headers
+    raise AssertionError("匿名请求意外成功")
 
 
 class PlatformSmokeTest(unittest.TestCase):
     """从用户统一入口验证平台和四个独立工具的核心连通性。"""
+
+    @classmethod
+    def setUpClass(cls):
+        """使用本地临时管理员完成统一登录，密码不会写入测试输出。"""
+
+        password = os.environ.get("PLATFORM_SMOKE_PASSWORD")
+        if not password:
+            password = Path(".runtime-secrets/initial-admin-password").read_text(encoding="utf-8").strip()
+        payload = json.dumps({
+            "username": os.environ.get("PLATFORM_SMOKE_USERNAME", "admin"),
+            "password": password,
+        }).encode("utf-8")
+        status, _, _ = request("/api/v1/auth/login", payload, "application/json")
+        if status != 200:
+            raise AssertionError("平台冒烟账号登录失败")
+
+    def test_anonymous_tool_and_catalog_access_fail_closed(self):
+        """匿名页面跳登录，匿名目录 API 返回 401。"""
+
+        page_status, page_headers = anonymous_status("/truthy-search/")
+        api_status, _ = anonymous_status("/api/v1/tools")
+        self.assertEqual(page_status, 302)
+        self.assertTrue(page_headers["Location"].startswith("/login"))
+        self.assertEqual(api_status, 401)
 
     def test_platform_home_and_dynamic_tool_catalog_are_available(self):
         status, _, body = request("/")

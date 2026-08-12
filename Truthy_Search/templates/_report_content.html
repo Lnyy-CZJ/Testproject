@@ -44,6 +44,26 @@
   }.get(value, value or '状态未知') }}
 {%- endmacro %}
 
+{% macro report_heading(title, report_id, static_export) -%}
+  <div class="report-title-heading">
+    <h1>{{ title }}</h1>
+    {% if not static_export %}
+      <details class="report-name-editor">
+        <summary>修改名称</summary>
+        <form method="post" action="{{ url_for('report_rename', report_id=report_id) }}">
+          <label>
+            <span>报告名称</span>
+            <input name="report_name" value="{{ title }}" maxlength="100" required autocomplete="off">
+          </label>
+          <small>只修改报告显示名称，不影响 Evaluation、Run、Process 和指标数据。</small>
+          <button class="button primary" type="submit">保存名称</button>
+        </form>
+      </details>
+    {% endif %}
+  </div>
+{%- endmacro %}
+
+{% set report_title = report.metadata.report_name or report.metadata.evaluation_name %}
 {% set is_compare_v6 = report.metadata.report_model_version == 'report-model-v6-compare' %}
 {% set is_report_v5 = report.metadata.report_model_version == 'report-model-v5' %}
 {% if is_compare_v6 %}
@@ -52,13 +72,13 @@
   <section class="compare-v6-hero">
     <div>
       <p class="eyebrow">{{ report.metadata.data_marker }} · PROCESS COMPARISON</p>
-      <h1>{{ report.metadata.evaluation_name }}</h1>
+      {{ report_heading(report_title, report.metadata.report_id, static_export) }}
       <p>同一检索条件下的优化前后差异。单次结果明细请使用对应的单 Run 报告。</p>
     </div>
     <div class="compare-v6-route" aria-label="对比版本">
-      <div><small>优化前</small><strong>{{ phase.baseline.run_label or phase.baseline.system_version }}</strong><span class="mono">{{ phase.baseline.process_id }}</span></div>
+      <div><small>优化前 · {{ phase.baseline.evaluation_name or phase.baseline.evaluation_id }}</small><strong>{{ phase.baseline.run_label or phase.baseline.system_version }}</strong><span class="mono">{{ phase.baseline.process_id }}</span></div>
       <b aria-hidden="true">→</b>
-      <div><small>优化后</small><strong>{{ phase.candidate.run_label or phase.candidate.system_version }}</strong><span class="mono">{{ phase.candidate.process_id }}</span></div>
+      <div><small>优化后 · {{ phase.candidate.evaluation_name or phase.candidate.evaluation_id }}</small><strong>{{ phase.candidate.run_label or phase.candidate.system_version }}</strong><span class="mono">{{ phase.candidate.process_id }}</span></div>
     </div>
   </section>
 
@@ -173,7 +193,7 @@
   <section class="report-v5-hero">
     <div>
       <p class="eyebrow">{{ report.metadata.data_marker }} · {{ '版本对比报告' if report.metadata.report_type == 'COMPARE' else '单次检索评测' }}</p>
-      <h1>{{ report.metadata.evaluation_name }}</h1>
+      {{ report_heading(report_title, report.metadata.report_id, static_export) }}
       <p class="report-v5-subtitle">{{ overview.conclusion.description }}</p>
     </div>
     <div class="report-v5-hero-meta">
@@ -257,17 +277,27 @@
         <article><span>平均成本 / Query</span><strong>{{ money(economics.average_cost_per_query) }}</strong><small>LLM {{ money(economics.llm_cost) }} · 第三方 {{ money(economics.third_party_cost) }}</small></article>
         <article><span>Provider 调用</span><strong>{{ economics.total_provider_calls }}</strong><small>{{ economics.provider_rows|length }} 个 Provider · 工具覆盖 {{ economics.tool_collected_query_count }} / {{ economics.query_count }} Query</small></article>
         <article class="report-v5-cost-warning"><span>需要关注</span><strong>{{ economics.unpriced_call_count }} 次未计价</strong><small>另有 {{ economics.non_billable_call_count }} 次非计费调用</small></article>
-        <article><span>平均检索耗时</span><strong>{{ (economics.average_duration_ms|round(1) ~ ' ms') if economics.average_duration_ms is not none else '未采集' }}</strong><small>{% if economics.most_expensive_provider %}最高成本：{{ economics.most_expensive_provider.provider }}{% else %}暂无已计价 Provider{% endif %}</small></article>
+        <article><span>平均检索耗时</span><strong>{{ (economics.average_duration_ms|round(1) ~ ' ms') if economics.average_duration_ms is not none else '未采集' }}</strong><small>{{ economics.duration_query_count|default(0) }} 个有耗时 Query 的算术平均</small></article>
       </div>
       <h3>工具调用与成本矩阵</h3>
-      <div class="table-wrap"><table class="report-v5-cost-table"><thead><tr><th>工具</th><th>调用</th><th>成功 / 失败</th><th>覆盖 Query</th><th>成本</th><th>计价状态</th></tr></thead><tbody>
-        {% for tool in economics.tool_rows %}<tr><td><strong>{{ tool.label }}</strong><small class="mono">{{ tool.providers|join(', ') if tool.providers else tool.key }}</small></td><td>{{ tool.call_count }}<small>Cost 侧 {{ tool.provider_call_count }} 次</small></td><td>{{ tool.success_count }} / {{ tool.failed_count }}</td><td>{{ tool.query_count }}</td><td>{{ money(tool.cost) }}</td><td><span class="report-v5-cost-status is-{{ tool.cost_status|lower }}">{{ cost_status_text(tool.cost_status) }}</span>{% if tool.key in ['pdl_person_identify', 'pdl_person_search'] and tool.cost is none %}<small>成本可能仅能在 PDL Provider 层汇总</small>{% endif %}</td></tr>{% endfor %}
+      <div class="table-wrap"><table class="report-v5-cost-table"><thead><tr><th>工具</th><th>调用</th><th>成功 / 无结果 / 失败</th><th>覆盖 Query</th><th>成本</th><th>计价状态</th></tr></thead><tbody>
+        {% for tool in economics.tool_rows %}<tr><td><strong>{{ tool.label }}</strong><small class="mono">{{ tool.providers|join(', ') if tool.providers else tool.key }}</small></td><td>{{ tool.call_count }}<small>Cost 侧 {{ tool.provider_call_count }} 次</small></td><td>{{ tool.success_count }} / {{ tool.no_result_count|default(0) }} / {{ tool.failed_count }}{% if tool.unknown_count|default(0) %}<small>未知状态 {{ tool.unknown_count }} 次</small>{% endif %}</td><td>{{ tool.query_count }}</td><td>{{ money(tool.cost) }}</td><td><span class="report-v5-cost-status is-{{ tool.cost_status|lower }}">{{ cost_status_text(tool.cost_status) }}</span>{% if tool.key in ['pdl_person_identify', 'pdl_person_search'] and tool.cost is none %}<small>成本可能仅能在 PDL Provider 层汇总</small>{% endif %}</td></tr>{% endfor %}
       </tbody></table></div>
       <div class="report-v5-cost-details">
         <details><summary><span>Provider 成本明细</span><small>{{ economics.provider_rows|length }} 个 Provider · 按成本与调用量排序</small></summary><div class="table-wrap"><table><thead><tr><th>Provider</th><th>Query</th><th>调用</th><th>已计价</th><th>未计价</th><th>非计费</th><th>成本</th></tr></thead><tbody>{% for provider in economics.provider_rows %}<tr><td class="mono">{{ provider.provider }}</td><td>{{ provider.query_count }}</td><td>{{ provider.call_count }}</td><td>{{ provider.priced_call_count }}</td><td>{{ provider.unpriced_call_count }}</td><td>{{ provider.non_billable_call_count }}</td><td>{{ money(provider.cost) }}<small>{{ cost_status_text(provider.cost_status) }} · {{ provider.currency }}</small></td></tr>{% else %}<tr><td colspan="7">尚未采集 Provider 成本明细。</td></tr>{% endfor %}</tbody></table></div></details>
         <details><summary><span>Query 成本明细</span><small>{{ economics.query_rows|length }} 个任务</small></summary><div class="table-wrap"><table><thead><tr><th>Query / Task</th><th>LLM</th><th>第三方</th><th>总成本</th><th>耗时</th><th>PDL</th></tr></thead><tbody>{% for item in economics.query_rows %}<tr><td>{{ item.display_name or item.query_id }}<small class="mono">{{ item.query_id }} · {{ item.task_id }}</small></td><td>{{ money(item.llm_cost) }}</td><td>{{ money(item.third_party_cost) }}</td><td>{{ money(item.total_cost) }}</td><td>{{ (item.search_duration_ms ~ ' ms') if item.search_duration_ms is not none else '未采集' }}</td><td>{{ item.pdl_label }}</td></tr>{% endfor %}</tbody></table></div></details>
         {% set query_providers = economics.query_provider_rows|default([]) %}
         <details><summary><span>按 Query / Provider 成本明细</span><small>{{ query_providers|length }} 条 · 不向候选人分摊</small></summary><div class="table-wrap"><table><thead><tr><th>Query / Task</th><th>Provider</th><th>调用</th><th>已计价 / 未计价 / 非计费</th><th>成本</th></tr></thead><tbody>{% for provider in query_providers %}<tr><td>{{ provider.display_name or provider.query_id }}<small class="mono">{{ provider.query_id }} · {{ provider.task_id }}</small></td><td class="mono">{{ provider.provider }}</td><td>{{ provider.call_count }}</td><td>{{ provider.priced_call_count }} / {{ provider.unpriced_call_count }} / {{ provider.non_billable_call_count }}</td><td>{{ money(provider.cost) }}<small>{{ cost_status_text(provider.cost_status) }} · {{ provider.currency or 'UNSPECIFIED' }}</small></td></tr>{% else %}<tr><td colspan="5">未采集 Query 级 Provider 成本明细。</td></tr>{% endfor %}</tbody></table></div></details>
+        {% set timing_groups = economics.query_tool_timing_groups|default([]) %}
+        <details class="report-v5-tool-timing"><summary><span>逐 Query / 工具耗时明细</span><small>{{ timing_groups|length }} 个 Query · 工具可能并行，不累加为 Query 总耗时</small></summary><div class="report-v5-tool-timing-list">
+          {% for group in timing_groups %}
+            <details class="report-v5-tool-timing-query"><summary><span>{{ group.display_name or group.query_id }}<small class="mono">{{ group.query_id }} · {{ group.task_id }}</small></span><span><strong>{{ (group.query_duration_ms ~ ' ms') if group.query_duration_ms is not none else '未采集总耗时' }}</strong><small>{{ group.call_count }} 次工具调用 · {{ group.timed_call_count }} 次有耗时</small></span></summary>
+              <div class="table-wrap"><table><thead><tr><th>#</th><th>工具 / Provider</th><th>Operation</th><th>结果</th><th>工具耗时</th><th>HTTP / 错误</th></tr></thead><tbody>
+                {% for call in group.calls %}<tr><td>{{ call.sequence_no }}</td><td><strong>{{ call.tool_label }}</strong><small class="mono">{{ call.provider }}</small></td><td class="mono">{{ call.operation }}</td><td><span class="report-v5-call-outcome is-{{ call.outcome|lower }}">{{ call.outcome_label }}</span><small class="mono">{{ call.raw_status or '未记录状态' }}</small></td><td>{{ (call.duration_ms|round(3) ~ ' ms') if call.duration_ms is not none else '未采集' }}<small>{% if call.start_time and call.finish_time %}{{ call.start_time|format_datetime }} → {{ call.finish_time|format_datetime }}{% endif %}</small></td><td>{{ call.http_status if call.http_status not in [none, 0] else '—' }}{% if call.error %}<small class="danger-text">{{ call.error }}</small>{% endif %}</td></tr>{% else %}<tr><td colspan="6">{% if group.admin_debug_collected and group.cache_hit %}Admin Debug 已采集；本次检索命中缓存，未产生外部工具调用明细，因此仅展示 Query 任务耗时。{% elif group.admin_debug_collected %}Admin Debug 已采集，但未返回逐工具调用明细，因此仅展示 Query 任务耗时。{% else %}该 Query 未采集 Admin Debug 数据，因此仅展示 Query 任务耗时。{% endif %}</td></tr>{% endfor %}
+              </tbody></table></div>
+            </details>
+          {% else %}<div class="empty-state compact-empty"><strong>未采集逐 Query 工具耗时</strong></div>{% endfor %}
+        </div></details>
       </div>
     </section>
   {% endif %}
@@ -542,7 +572,7 @@
   <div class="page-heading split">
     <div>
       <p class="eyebrow">{{ report.metadata.data_marker }} · {{ report.metadata.report_type }}</p>
-      <h1>{{ report.metadata.evaluation_name }}</h1>
+      {{ report_heading(report_title, report.metadata.report_id, static_export) }}
       <p>
         Candidate {{ report.metadata.candidate_system_version }}
         {% if report.metadata.baseline_system_version %}· Baseline {{ report.metadata.baseline_system_version }}{% endif %}

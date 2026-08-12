@@ -9,10 +9,14 @@
 from __future__ import annotations
 
 import json
+import hmac
 import os
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Mapping
+
+import requests
 
 from flask import (
     Blueprint,
@@ -83,6 +87,9 @@ def load_web_settings(env: Mapping[str, str] | None = None) -> dict[str, Any]:
         "timeout_seconds": int(env.get("API_AUTOTEST_TASK_TIMEOUT_SECONDS", "1800")),
         "tasks_retain": int(env.get("API_AUTOTEST_TASKS_RETAIN", "50")),
         "report_dir": env.get("API_AUTOTEST_REPORT_DIR", "reports/allure-current"),
+        "config_source": env.get("API_AUTOTEST_CONFIG_SOURCE", "env"),
+        "platform_api_url": env.get("PLATFORM_API_URL", "").rstrip("/"),
+        "platform_client_token_file": env.get("PLATFORM_CLIENT_TOKEN_FILE", ""),
     }
 
 
@@ -104,11 +111,56 @@ def create_app(
     root = Path(project_root) if project_root else DEFAULT_PROJECT_ROOT
     settings = settings or load_web_settings()
     store = TaskStore(root / "tasks", root / "reports")
+
+    def platform_runtime_environment() -> tuple[dict[str, str], dict[str, Any]]:
+        """为新任务获取一次不可变平台配置快照，仅通过内存注入子进程。"""
+
+        token_path = Path(settings.get("platform_client_token_file", ""))
+        platform_api_url = str(settings.get("platform_api_url", "")).rstrip("/")
+        if not platform_api_url or not token_path.is_file():
+            raise SubmissionError(503, "PLATFORM_CONFIG_UNAVAILABLE", "平台运行配置客户端未正确部署")
+        token = token_path.read_text(encoding="utf-8").strip()
+        try:
+            response = requests.get(
+                f"{platform_api_url}/internal/tools/api-autotest/runtime-config",
+                headers={"Authorization": f"Bearer {token}"}, timeout=5,
+            )
+            response.raise_for_status()
+            payload = response.json()
+        except (requests.RequestException, ValueError) as exc:
+            raise SubmissionError(503, "PLATFORM_CONFIG_UNAVAILABLE", "平台运行配置暂时不可用") from exc
+        if not isinstance(payload, dict) or payload.get("tool_id") != "api-autotest" or not payload.get("release_id"):
+            raise SubmissionError(503, "PLATFORM_CONFIG_UNAVAILABLE", "平台未发布可用的接口自动化配置")
+        normal = payload.get("normal") if isinstance(payload.get("normal"), dict) else {}
+        secrets = payload.get("secrets") if isinstance(payload.get("secrets"), dict) else {}
+        credential = payload.get("credential_metadata") if isinstance(payload.get("credential_metadata"), dict) else {}
+        environment = {
+            str(key): str(value) for key, value in {**normal, **secrets}.items()
+            if value is not None
+        }
+        environment.update({
+            "API_AUTOTEST_SESSION_PROVIDER": "platform",
+            "PLATFORM_API_URL": platform_api_url,
+            "PLATFORM_CLIENT_TOKEN_FILE": str(token_path),
+            "PLATFORM_CREDENTIAL_ID": str(credential.get("credential_id") or ""),
+            "PLATFORM_CREDENTIAL_VERSION": str(credential.get("credential_version") or 0),
+        })
+        return environment, {
+            "release_id": payload.get("release_id"),
+            "release_version": payload.get("release_version"),
+            "credential_version": credential.get("credential_version"),
+        }
+
     manager = task_manager or TaskManager(
         root,
         store,
         timeout_seconds=settings["timeout_seconds"],
         retain=settings["tasks_retain"],
+        runtime_environment_provider=(
+            platform_runtime_environment
+            if settings.get("config_source") == "platform"
+            else None
+        ),
     )
     if task_manager is None:
         manager.recover_on_startup()
@@ -118,6 +170,52 @@ def create_app(
     app.config["AUTOTEST_SETTINGS"] = settings
     app.config["AUTOTEST_MANAGER"] = manager
     app.config["JSON_AS_ASCII"] = False
+
+    @app.before_request
+    def validate_platform_csrf():
+        """平台模式校验所有写请求的双提交 CSRF Token。"""
+
+        if not settings.get("platform_api_url") or request.method in {"GET", "HEAD", "OPTIONS"}:
+            return None
+        cookie = request.cookies.get("tp_csrf", "")
+        submitted = request.headers.get("X-CSRF-Token", "") or request.form.get("_csrf", "")
+        if not cookie or not submitted or not hmac.compare_digest(cookie, submitted):
+            return jsonify({"error": "请求安全校验失败", "error_code": "CSRF_INVALID"}), 403
+        return None
+
+    @app.after_request
+    def platform_response_hooks(response):
+        """为 HTML 注入 CSRF fetch 包装，并最大尽力上报写操作审计。"""
+
+        platform_api_url = str(settings.get("platform_api_url", "")).rstrip("/")
+        if platform_api_url and response.content_type and response.content_type.startswith("text/html"):
+            script = """<script>
+function platformCsrf(){const p='tp_csrf=';const v=document.cookie.split(';').map(x=>x.trim()).find(x=>x.startsWith(p));return v?decodeURIComponent(v.slice(p.length)):'';}
+const platformFetch=window.fetch.bind(window);window.fetch=function(resource,options){const next=Object.assign({},options||{});const method=String(next.method||'GET').toUpperCase();if(!['GET','HEAD','OPTIONS'].includes(method)){next.headers=Object.assign({},next.headers||{}, {'X-CSRF-Token':platformCsrf()});}return platformFetch(resource,next);};
+</script>"""
+            response.set_data(response.get_data(as_text=True).replace("</head>", f"{script}</head>"))
+        if request.method in {"GET", "HEAD", "OPTIONS"} or not platform_api_url:
+            return response
+        try:
+            token_path = Path(settings.get("platform_client_token_file", ""))
+            token = token_path.read_text(encoding="utf-8").strip()
+            requests.post(
+                f"{platform_api_url}/internal/tools/api-autotest/audit-events",
+                headers={"Authorization": f"Bearer {token}"},
+                json={
+                    "event_id": f"evt_{uuid.uuid4().hex}",
+                    "action": f"tool.{request.endpoint or 'write'}",
+                    "resource_type": "api_autotest_task",
+                    "outcome": "success" if response.status_code < 400 else ("denied" if response.status_code == 403 else "failed"),
+                    "error_code": "CSRF_INVALID" if response.status_code == 403 else None,
+                    "actor_user_id": request.headers.get("X-Platform-User-ID"),
+                    "actor_username": request.headers.get("X-Platform-Username"),
+                    "metadata": {},
+                }, timeout=1,
+            )
+        except (OSError, requests.RequestException):
+            pass
+        return response
 
     blueprint = Blueprint(
         "apiautotest",

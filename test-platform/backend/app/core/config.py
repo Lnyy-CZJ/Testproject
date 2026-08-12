@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -19,8 +20,37 @@ class Settings(BaseSettings):
     app_env: str = "development"
     log_level: str = "INFO"
     tool_health_timeout_seconds: float = 3.0
+    app_public_url: str = "http://localhost:8080"
+    platform_runtime_env: str = "dev"
+    session_idle_hours: int = 8
+    session_absolute_hours: int = 24
+    session_touch_interval_seconds: int = 300
+    login_failure_limit: int = 5
+    login_failure_window_minutes: int = 15
+    login_lock_minutes: int = 15
+    cookie_secure: bool = False
+    bootstrap_token: str = ""
+    bootstrap_token_file: str = ""
+    secret_kek_file: str = ""
+    audit_retention_days: int = 180
+    credential_refresh_window_seconds: int = 3600
+    credential_agent_interval_seconds: int = 60
 
     model_config = SettingsConfigDict(case_sensitive=False)
+
+    def read_bootstrap_token(self) -> str:
+        """
+        读取一次性管理员引导 Token。
+
+        返回值:
+            str: 文件或环境变量中的 Token；未配置时返回空字符串。
+        异常说明:
+            OSError: 配置了文件但文件不可读取时继续抛出，阻止不安全初始化。
+        """
+
+        if self.bootstrap_token_file:
+            return Path(self.bootstrap_token_file).read_text(encoding="utf-8").strip()
+        return self.bootstrap_token.strip()
 
 
 @lru_cache

@@ -1,21 +1,27 @@
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.api.deps import AuthContext, current_auth_context
 from app.core.config import Settings, get_settings
+from app.core.errors import PlatformError
 from app.db.session import get_db
 from app.models.tool import Tool
 from app.schemas.tool import ToolHealthResponse, ToolListResponse
 from app.services.tool_health import probe_tool_health
+from app.services.authorization import has_tool_permission
 
 
 router = APIRouter(prefix="/tools", tags=["tools"])
 
 
 @router.get("", response_model=ToolListResponse)
-def list_tools(database: Session = Depends(get_db)) -> ToolListResponse:
+def list_tools(
+    context: AuthContext = Depends(current_auth_context),
+    database: Session = Depends(get_db),
+) -> ToolListResponse:
     """
     获取已启用的工具目录。
 
@@ -30,12 +36,17 @@ def list_tools(database: Session = Depends(get_db)) -> ToolListResponse:
         .where(Tool.is_enabled.is_(True))
         .order_by(Tool.sort_order.asc(), Tool.name.asc())
     )
-    return ToolListResponse(items=list(database.scalars(statement).all()))
+    rows = [
+        tool for tool in database.scalars(statement).all()
+        if has_tool_permission(database, context.user.id, "tool.view", tool.id)
+    ]
+    return ToolListResponse(items=rows)
 
 
 @router.get("/{tool_id}/health", response_model=ToolHealthResponse)
 def tool_health(
     tool_id: str,
+    context: AuthContext = Depends(current_auth_context),
     database: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> ToolHealthResponse:
@@ -54,7 +65,9 @@ def tool_health(
 
     tool = database.get(Tool, tool_id)
     if tool is None or not tool.is_enabled:
-        raise HTTPException(status_code=404, detail="工具不存在")
+        raise PlatformError(404, "NOT_FOUND", "工具不存在")
+    if not has_tool_permission(database, context.user.id, "tool.view", tool_id):
+        raise PlatformError(403, "PERMISSION_DENIED", "无权访问该工具")
 
     is_healthy = probe_tool_health(tool.health_url, settings.tool_health_timeout_seconds)
     return ToolHealthResponse(

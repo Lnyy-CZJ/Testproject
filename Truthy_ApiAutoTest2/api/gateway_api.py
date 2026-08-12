@@ -126,6 +126,7 @@ class GatewayApi:
         api_definitions: dict[str, dict[str, Any]] | None = None,
         now_ms: Callable[[], int] | None = None,
         session_env_path: Path | None = None,
+        session_state_writer: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
         """保存 Gateway 调用及自动会话所需配置。
 
@@ -148,6 +149,7 @@ class GatewayApi:
         self.api_definitions = api_definitions or {}
         self.now_ms = now_ms or (lambda: int(time.time() * 1000))
         self.session_env_path = session_env_path
+        self.session_state_writer = session_state_writer
 
     def execute(self, case: dict[str, Any]):
         """执行请求、完成分层断言并将 YAML 声明的字段写入运行时上下文。
@@ -323,5 +325,10 @@ class GatewayApi:
 
     def _persist_session_state(self) -> None:
         """将本次成功提取的会话值写入 .env，避免下次运行重复创建会话。"""
-        if self.runtime_context and self.session_env_path:
-            persist_session_to_dotenv(self.session_env_path, self.runtime_context.as_dict())
+        if not self.runtime_context:
+            return
+        values = self.runtime_context.as_dict()
+        if self.session_state_writer is not None:
+            self.session_state_writer(values)
+        elif self.session_env_path:
+            persist_session_to_dotenv(self.session_env_path, values)

@@ -162,7 +162,12 @@ def load_settings(
     if not isinstance(comm, dict):
         raise ConfigError("comm 配置必须是对象")
 
-    env_values = load_dotenv_values(root / ".env")
+    # 平台模式仅使用任务内存快照，不读取旧 .env.platform。
+    env_values = (
+        {}
+        if os.getenv("API_AUTOTEST_SESSION_PROVIDER", "dotenv") == "platform"
+        else load_dotenv_values(root / ".env")
+    )
     managed_env_keys = (*SESSION_ENV_MAPPING.values(), *ADMIN_ENV_MAPPING.values())
     env_values.update(
         {key: value for key in managed_env_keys if (value := os.getenv(key))}

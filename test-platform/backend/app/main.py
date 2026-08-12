@@ -10,8 +10,9 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
-from app.api import health, tools
+from app.api import admin, audit, auth, configuration, health, internal, tools
 from app.core.config import get_settings
+from app.core.errors import PlatformError
 
 
 settings = get_settings()
@@ -72,7 +73,19 @@ def error_response(request: Request, status_code: int, code: str, message: str) 
 app = FastAPI(title="测试开发平台 API", version="1.0.0")
 app.add_middleware(RequestIdMiddleware)
 app.include_router(health.router, prefix="/api/v1")
+app.include_router(auth.router, prefix="/api/v1")
 app.include_router(tools.router, prefix="/api/v1")
+app.include_router(admin.router, prefix="/api/v1")
+app.include_router(configuration.router, prefix="/api/v1")
+app.include_router(audit.router, prefix="/api/v1")
+app.include_router(internal.router, prefix="/api/v1")
+
+
+@app.exception_handler(PlatformError)
+async def platform_exception_handler(request: Request, exc: PlatformError) -> JSONResponse:
+    """将稳定业务错误码转换为统一响应，不暴露内部异常。"""
+
+    return error_response(request, exc.status_code, exc.code, exc.message)
 
 
 @app.exception_handler(StarletteHTTPException)

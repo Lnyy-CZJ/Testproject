@@ -6,6 +6,33 @@
   <title>{% block title %}Truthy Search{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
   <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+  {% if config.PLATFORM_API_URL %}
+  <script>
+    // 平台模式统一为 fetch 和普通表单注入双提交 CSRF Token。
+    function platformCsrfToken() {
+      const prefix = 'tp_csrf=';
+      const item = document.cookie.split(';').map(value => value.trim()).find(value => value.startsWith(prefix));
+      return item ? decodeURIComponent(item.slice(prefix.length)) : '';
+    }
+    const platformFetch = window.fetch.bind(window);
+    window.fetch = function(resource, options) {
+      const next = Object.assign({}, options || {});
+      const method = String(next.method || 'GET').toUpperCase();
+      if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+        next.headers = Object.assign({}, next.headers || {}, {'X-CSRF-Token': platformCsrfToken()});
+      }
+      return platformFetch(resource, next);
+    };
+    document.addEventListener('DOMContentLoaded', function() {
+      document.querySelectorAll('form').forEach(function(form) {
+        if (String(form.method || 'GET').toUpperCase() === 'GET') return;
+        const input = document.createElement('input');
+        input.type = 'hidden'; input.name = '_csrf'; input.value = platformCsrfToken();
+        form.appendChild(input);
+      });
+    });
+  </script>
+  {% endif %}
 </head>
 <body data-app-base-path="{{ request.script_root }}">
   <header class="topbar">

@@ -1106,6 +1106,68 @@ class WebAppTests(unittest.TestCase):
             )["count"],
         )
 
+    def test_process_page_expands_identity_evidence_for_every_candidate(self):
+        """Process 页面应逐候选人展示自动判定结论及完整链接证据。
+
+        功能说明:
+            构造一条同时包含精确命中链接和同平台其他账号的规则证据，验证
+            Process 详情页可展开查看结论、原因、两类链接与照片相似度。
+
+        返回值:
+            无；页面结构和证据文本均存在即代表展示契约成立。
+
+        异常说明:
+            身份证据未解析、模板漏渲染或链接被错误丢弃时测试失败。
+        """
+
+        run_id, candidate_pk, _ = self.seed_imported_result()
+        schema = self.store.fetch_one(
+            "SELECT schema_version FROM field_schemas WHERE is_active = 1"
+        )
+        self.client.post(
+            f"/runs/{run_id}/process",
+            data={"schema_version": schema["schema_version"]},
+        )
+        process = self.store.fetch_one(
+            """
+            SELECT process_id FROM process_runs
+            WHERE run_id = ? ORDER BY created_at DESC LIMIT 1
+            """,
+            (run_id,),
+        )
+        evidence = {
+            "matched_social_urls": ["https://x.com/history-person"],
+            "conflicting_social_urls": ["https://x.com/history-person-alt"],
+            "photo_identity_match_rate": 87.5,
+            "social_rule_error": None,
+        }
+        with self.store.transaction() as connection:
+            connection.execute(
+                """
+                UPDATE reviews
+                SET judgement = 'HIT', reason = 'SOCIAL_MATCH', evidence = ?,
+                    classification_source = 'RULE', reviewed_at = ?,
+                    is_primary_hit = 1
+                WHERE process_id = ? AND candidate_pk = ?
+                """,
+                (
+                    json.dumps(evidence, ensure_ascii=False),
+                    "2026-08-11T08:00:00+00:00",
+                    process["process_id"],
+                    candidate_pk,
+                ),
+            )
+
+        page = self.client.get(f"/processes/{process['process_id']}")
+        html = page.get_data(as_text=True)
+
+        self.assertEqual(200, page.status_code)
+        self.assertIn("逐候选人查看身份判定证据", html)
+        self.assertIn("存在与基准完全一致的 Social URL", html)
+        self.assertIn("https://x.com/history-person", html)
+        self.assertIn("https://x.com/history-person-alt", html)
+        self.assertIn("87.5%", html)
+
     def test_invalid_field_schema_is_rejected_without_overwriting_active(self):
         """非法路径配置返回可读错误，当前活跃版本保持不变。"""
 
@@ -1463,6 +1525,72 @@ class WebAppTests(unittest.TestCase):
             empty_version_page.get_data(as_text=True),
         )
 
+    def test_report_baseline_process_options_are_grouped_across_evaluations(self):
+        """报告表单应按 Evaluation 分组展示全部已完成 Process History。"""
+
+        schema_version = self.service.ensure_default_field_schema_v3()
+        run_id, _candidate_pk, _raw_id = self.seed_imported_result()
+        candidate_process = self.service.process_run(
+            run_id=run_id,
+            schema_version=schema_version,
+            process_id="process-current-evaluation",
+        )
+        self.service.process_run(
+            run_id=run_id,
+            schema_version=schema_version,
+            process_id="process-current-evaluation-history",
+        )
+
+        self.store.create_evaluation(
+            "eval-web-history",
+            "历史评测列表",
+        )
+        history_path = self.root / "cross-evaluation-results.jsonl"
+        history_path.write_bytes(
+            jsonl_bytes([
+                {
+                    "result_schema_version": "1.3.2",
+                    "input_id": "query-cross-evaluation",
+                    "person_id": "person-history",
+                    "query_stage": "FULL_NAME",
+                    "task_id": "task-cross-evaluation",
+                    "query_status": "NO_CANDIDATE",
+                    "result_status": "NO_CANDIDATES",
+                    "candidate_count_total": 0,
+                    "candidate_count_listed": 0,
+                    "detail_success_count": 0,
+                    "detail_failure_count": 0,
+                    "task_fields": {},
+                    "public_fields": {},
+                    "results": [],
+                }
+            ])
+        )
+        history_run = self.service.import_results_jsonl(
+            history_path,
+            evaluation_id="eval-web-history",
+            run_label="历史 Process",
+            system_version="history-v2",
+            evaluation_phase="PHASE_1_BASELINE",
+            run_id="run-cross-evaluation",
+        )
+        history_process = self.service.process_run(
+            run_id=history_run.object_id,
+            schema_version=schema_version,
+            process_id="process-cross-evaluation",
+        )
+
+        page = self.client.get(
+            f"/processes/{candidate_process.process_id}"
+        )
+        html = page.get_data(as_text=True)
+
+        self.assertEqual(200, page.status_code)
+        self.assertIn("历史评测列表 · eval-web-history", html)
+        self.assertIn("Web 阶段3 · eval-web（当前评测）", html)
+        self.assertIn(history_process.process_id, html)
+        self.assertIn("可选择任意评测下已完成的 Process", html)
+
     def test_stage6_report_web_static_html_download_and_drilldown(self):
         """报告快照可在 Web 查看、下钻并安全导出独立静态 HTML。"""
 
@@ -1705,6 +1833,14 @@ class WebAppTests(unittest.TestCase):
         report = self.store.fetch_one(
             "SELECT report_id, metrics_json FROM reports ORDER BY created_at DESC LIMIT 1"
         )
+        rename_response = self.client.post(
+            f"/reports/{report['report_id']}/name",
+            data={"report_name": "知名人物检索阶段一报告"},
+        )
+        report = self.store.fetch_one(
+            "SELECT report_id, metrics_json FROM reports WHERE report_id = ?",
+            (report["report_id"],),
+        )
         page = self.client.get(f"/reports/{report['report_id']}")
         static_download = self.client.get(
             f"/downloads/report-html/{report['report_id']}"
@@ -1714,12 +1850,29 @@ class WebAppTests(unittest.TestCase):
         static_html = static_download.get_data(as_text=True)
 
         self.assertEqual(302, response.status_code, response.get_data(as_text=True))
+        self.assertEqual(302, rename_response.status_code)
         self.assertEqual("report-model-v5", model["metadata"]["report_model_version"])
+        self.assertEqual(
+            "知名人物检索阶段一报告",
+            model["metadata"]["report_name"],
+        )
         self.assertEqual(200, page.status_code)
+        self.assertIn("知名人物检索阶段一报告", html)
+        self.assertIn("修改名称", html)
         self.assertIn("核心评测结果", html)
         self.assertIn("02 · Execution & cost", html)
         self.assertIn("执行、工具调用与成本", html)
         self.assertIn("工具调用与成本矩阵", html)
+        self.assertIn("成功 / 无结果 / 失败", html)
+        self.assertIn("逐 Query / 工具耗时明细", html)
+        self.assertIn("工具可能并行，不累加为 Query 总耗时", html)
+        self.assertIn("该 Query 未采集 Admin Debug 数据", html)
+        self.assertNotIn("未采集 Admin Debug 工具调用", html)
+        self.assertNotIn(
+            "系统返回内容仅用于检索能力测试，不代表已经核实的事实",
+            html,
+        )
+        self.assertNotIn("成本与 PDL 数据未完整接入", html)
         self.assertIn("PDL Person Identify", html)
         self.assertIn("衡量系统能否在全部有效 Query 中找到目标人物", html)
         self.assertIn("本次数据处理范围", html)
@@ -1749,6 +1902,8 @@ class WebAppTests(unittest.TestCase):
         self.assertNotIn("参考线判断", html)
         self.assertNotIn("风险与口径说明", html)
         self.assertEqual(200, static_download.status_code)
+        self.assertIn("知名人物检索阶段一报告", static_html)
+        self.assertNotIn("修改名称", static_html)
         self.assertIn("核心评测结果", static_html)
         self.assertIn("执行、工具调用与成本", static_html)
         self.assertIn("Provider 成本明细", static_html)

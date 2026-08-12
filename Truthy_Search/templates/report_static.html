@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ report.metadata.evaluation_name }} · {{ report.metadata.report_id }}</title>
+  <title>{{ report.metadata.report_name or report.metadata.evaluation_name }} · {{ report.metadata.report_id }}</title>
   <style>
     :root { color-scheme: light; font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #17212b; background: #f5f7f8; }
     * { box-sizing: border-box; }

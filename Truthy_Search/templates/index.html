@@ -67,7 +67,7 @@
         <tbody>
           {% for report in recent_reports %}
             <tr>
-              <td><a class="mono" href="{{ url_for('report_detail', report_id=report.report_id) }}">{{ report.report_id }}</a></td>
+              <td><a href="{{ url_for('report_detail', report_id=report.report_id) }}"><strong>{{ report.report_name or report.evaluation_name }}</strong><small class="mono">{{ report.report_id }}</small></a></td>
               <td>{{ report.evaluation_name }}<small class="mono">{{ report.evaluation_id }}</small></td>
               <td class="mono">{{ report.system_version }}</td>
               <td class="mono">{{ report.evaluation_phase }}</td>

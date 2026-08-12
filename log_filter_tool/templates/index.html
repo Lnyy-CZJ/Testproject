@@ -367,6 +367,7 @@
       {% endif %}
 
       <form method="post" action="{{ url_for('tool.index') }}">
+        <input type="hidden" name="_csrf" value="{{ request.cookies.get('tp_csrf', '') }}">
         <section>
           <div class="field-header">
             <label for="log_text">日志内容</label>
@@ -648,7 +649,7 @@
         var exportUrl = {{ url_for('tool.export_log')|tojson }};
         fetch(exportUrl, {
           method: 'POST',
-          headers: {'Content-Type': 'application/json'},
+          headers: {'Content-Type': 'application/json', 'X-CSRF-Token': readCookie('tp_csrf')},
           body: JSON.stringify({export_type: exportType, content: content})
         })
           .then(function(response) {
@@ -669,6 +670,14 @@
             button.disabled = false;
             button.textContent = originalText;
           });
+      }
+
+      /** 读取平台 CSRF Cookie，仅用于同源写请求 Header。 */
+      function readCookie(name) {
+        var prefix = name + '=';
+        var item = document.cookie.split(';').map(function(value) { return value.trim(); })
+          .find(function(value) { return value.indexOf(prefix) === 0; });
+        return item ? decodeURIComponent(item.slice(prefix.length)) : '';
       }
 
       /** 根据关键词重新渲染过滤结果中的全部匹配项，并定位到第一项。 */

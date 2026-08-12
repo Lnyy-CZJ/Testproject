@@ -25,10 +25,15 @@ from openpyxl import load_workbook
 
 from analysis_store import AnalysisStore, utc_now_text
 from search_tool import (
+    ADMIN_TOOL_DEFINITIONS,
     RESULT_SCHEMA_VERSION,
     FlowError,
+    build_raw_record,
+    classify_admin_call_outcome,
+    classify_admin_tool,
     extract_admin_task_fields,
     extract_admin_tool_usage,
+    is_network_flow_error,
     normalize_result_status,
     process_one,
     sanitize_raw,
@@ -2293,6 +2298,127 @@ def _candidate_identity_rule(
     if photo_rate is not None and photo_rate < 80:
         return "NOT_HIT", "PHOTO_BELOW_THRESHOLD", evidence
     return "NOT_HIT", "NO_STRONG_FIELD", evidence
+
+
+def _identity_evidence_view(
+    judgement: Any,
+    reason: Any,
+    evidence: Any,
+    classification_source: Any,
+) -> dict[str, Any]:
+    """把已保存的身份判定证据转换为 Process 页面可直接展示的结构。
+
+    功能说明:
+        只解析 reviews.evidence，不重新执行身份判定。当前规则生成的 JSON
+        会拆为精确命中链接、冲突链接、照片分数和规则错误；历史人工文本
+        则原样保留，保证旧 Process 也能说明结论来源。
+
+    参数说明:
+        judgement: 已保存的 HIT、NOT_HIT 或 SUSPECTED 结论。
+        reason: 已保存的规则原因枚举。
+        evidence: JSON 字符串、字典或历史纯文本证据。
+        classification_source: RULE 或 MANUAL 等结论来源。
+
+    返回值:
+        dict[str, Any]: 模板展示所需的中文说明和结构化证据字段。
+
+    异常说明:
+        evidence 不是合法 JSON 时不抛出异常，而是作为历史文本证据展示；
+        非数组链接字段会被忽略，避免损坏的旧数据导致整个页面失败。
+    """
+
+    reason_text = str(reason or "").strip()
+    reason_labels = {
+        "SOCIAL_MATCH": "存在与基准完全一致的 Social URL",
+        "SOCIAL_CONFLICT": "未精确命中，且存在同平台不同账号",
+        "PHOTO_MATCH": "照片身份相似度达到命中阈值",
+        "PHOTO_BELOW_THRESHOLD": "照片身份相似度低于命中阈值",
+        "NO_STRONG_FIELD": "缺少可自动确认身份的强证据",
+        "MANUAL": "人工复核结论",
+    }
+    source_labels = {
+        "RULE": "自动规则",
+        "MANUAL": "人工复核",
+    }
+    parsed: dict[str, Any] = {}
+    raw_evidence = ""
+    if isinstance(evidence, dict):
+        parsed = evidence
+    elif evidence not in (None, ""):
+        evidence_text = str(evidence).strip()
+        try:
+            loaded = json.loads(evidence_text)
+        except (TypeError, json.JSONDecodeError):
+            raw_evidence = evidence_text
+        else:
+            if isinstance(loaded, dict):
+                parsed = loaded
+            else:
+                raw_evidence = evidence_text
+
+    def url_items(value: Any) -> list[dict[str, Any]]:
+        """过滤链接数组，并仅允许 HTTP(S) 证据生成可点击地址。"""
+
+        if not isinstance(value, list):
+            return []
+        items = []
+        for item in value:
+            text = str(item).strip()
+            if not text:
+                continue
+            scheme = urlsplit(text).scheme.lower()
+            items.append({
+                "text": text,
+                "href": text if scheme in {"http", "https"} else "",
+            })
+        return items
+
+    matched_urls = url_items(parsed.get("matched_social_urls"))
+    conflicting_urls = url_items(parsed.get("conflicting_social_urls"))
+    photo_rate = parsed.get("photo_identity_match_rate")
+    if not isinstance(photo_rate, (int, float)) or isinstance(photo_rate, bool):
+        photo_rate = None
+    social_rule_error = str(parsed.get("social_rule_error") or "").strip()
+    explanations = {
+        "SOCIAL_MATCH": (
+            (
+                f"找到 {len(matched_urls)} 条与基准完全一致的 Social URL，"
+                "按最高优先级规则判定为命中。"
+            )
+            if matched_urls
+            else "保存的规则原因为 Social 精确命中，但历史证据未提供结构化链接清单。"
+        ),
+        "SOCIAL_CONFLICT": (
+            (
+                "未找到与基准完全一致的 Social URL，且发现 "
+                f"{len(conflicting_urls)} 条同平台不同账号，判定为不命中。"
+            )
+            if conflicting_urls
+            else "保存的规则原因为 Social 账号冲突，但历史证据未提供结构化链接清单。"
+        ),
+        "PHOTO_MATCH": "Social Link 未形成结论，照片相似度达到 80%，判定为命中。",
+        "PHOTO_BELOW_THRESHOLD": (
+            "Social Link 未形成命中，照片相似度低于 80%，判定为不命中。"
+        ),
+        "NO_STRONG_FIELD": "未获得精确 Social Link 或满足阈值的照片证据。",
+        "MANUAL": "该结论由人工复核保存，以下内容为复核人员填写的证据。",
+    }
+    return {
+        "reason_label": reason_labels.get(reason_text, reason_text or "未记录原因"),
+        "source_label": source_labels.get(
+            str(classification_source or "").strip(),
+            str(classification_source or "未记录来源").strip(),
+        ),
+        "explanation": explanations.get(
+            reason_text,
+            f"当前保存结论为 {str(judgement or '待判定')}。",
+        ),
+        "matched_urls": matched_urls,
+        "conflicting_urls": conflicting_urls,
+        "photo_rate": photo_rate,
+        "social_rule_error": social_rule_error,
+        "raw_evidence": raw_evidence,
+    }
 
 
 def _suggested_field_scores(
@@ -4699,7 +4825,7 @@ class AnalysisService:
         candidates: list[dict[str, Any]] = []
         try:
             for row in rows:
-                candidates.append({
+                candidate = {
                     **dict(row),
                     "fields": json.loads(row["fields_json"] or "{}"),
                     "empty_fields": json.loads(
@@ -4712,7 +4838,16 @@ class AnalysisService:
                         row["field_scores_json"] or "{}"
                     ),
                     "is_primary_hit": bool(row["is_primary_hit"]),
-                })
+                }
+                # 身份结论仍以 reviews 快照为准；这里只生成只读展示结构，
+                # 避免 Process 页面复制判定逻辑后与正式指标发生分歧。
+                candidate["identity_evidence"] = _identity_evidence_view(
+                    candidate.get("judgement"),
+                    candidate.get("reason"),
+                    candidate.get("evidence"),
+                    candidate.get("classification_source"),
+                )
+                candidates.append(candidate)
             baseline_fields = json.loads(
                 query["baseline_fields_json"] or "{}"
             )
@@ -5750,21 +5885,84 @@ class AnalysisService:
         }
 
     @staticmethod
+    def _normalize_confirmed_zero_costs(
+        task_fields: dict[str, Any],
+    ) -> dict[str, Any]:
+        """把 Admin 已确认的无计费结果规范化为三个零成本字段。
+
+        功能说明:
+            兼容旧 Run 将缓存命中或全部非计费结果保存为 null 的情况。
+            仅当成本采集状态成功、汇总数组存在且没有未计价、部分计价或
+            不完整标记时补 0；普通缺失与未知成本保持原值。
+
+        参数说明:
+            task_fields: Query 的任务公共字段及成本汇总证据。
+
+        返回值:
+            dict[str, Any]: 不修改输入对象的规范化副本。
+
+        异常说明:
+            非法计数按未知处理，不会阻断指标计算或误补零。
+        """
+
+        normalized = dict(task_fields)
+        cost_rows = normalized.get("cost_totals_by_currency")
+        if (
+            str(normalized.get("cost_collection_status") or "")
+            .strip().upper() != "SUCCESS"
+            or not isinstance(cost_rows, list)
+        ):
+            return normalized
+
+        def count_value(value: Any) -> int | None:
+            """安全读取非负计数，非法值返回 None。"""
+
+            try:
+                parsed = int(Decimal(str(value or 0)))
+            except (InvalidOperation, TypeError, ValueError):
+                return None
+            return parsed if parsed >= 0 else None
+
+        for item in cost_rows:
+            if not isinstance(item, dict):
+                return normalized
+            unpriced = count_value(item.get("unpriced_call_count"))
+            partial = count_value(item.get("partial_cost_call_count"))
+            if (
+                unpriced is None
+                or partial is None
+                or unpriced > 0
+                or partial > 0
+                or item.get("cost_complete")
+                in {False, 0, "0", "false", "False"}
+            ):
+                return normalized
+        for field_key in ("llm_cost", "third_party_cost", "total_cost"):
+            if normalized.get(field_key) in (None, ""):
+                normalized[field_key] = 0.0
+        return normalized
+
+    @staticmethod
     def _metrics_v2_numeric_aggregate(
         query_rows: list[dict[str, Any]],
         field_key: str,
     ) -> dict[str, Any]:
-        """独立汇总一个成本或耗时字段，缺失和非法值都不按0补齐。
+        """独立汇总一个成本或耗时字段，并兼容已确认的零成本。
 
         负数、布尔值、非数字和非有限数值记为类型错误，不进入汇总；
-        合法的0仍是有效值。
+        合法的0仍是有效值。历史 Run 若成本接口采集成功且汇总中不存在
+        未计价或部分计价调用，则成本 null 表示已确认无计费，按有效 0 汇总。
         """
 
         values: list[float] = []
         missing_query_ids: list[str] = []
         invalid_query_ids: list[str] = []
+
         for row in query_rows:
-            value = row["task_fields"].get(field_key)
+            task_fields = AnalysisService._normalize_confirmed_zero_costs(
+                row["task_fields"]
+            )
+            value = task_fields.get(field_key)
             if value is None or value == "":
                 has_processing_error = any(
                     isinstance(error, dict)
@@ -6016,6 +6214,7 @@ class AnalysisService:
                    rq.candidate_count_listed, rq.detail_failure_count,
                    rq.llm_cost, rq.third_party_cost, rq.total_cost,
                    rq.search_duration_ms, rq.pdl_called,
+                   rq.public_fields_json,
                    pq.result_status, pq.fields_json,
                    pq.empty_fields_json, pq.processing_errors_json
             FROM run_queries AS rq
@@ -6055,6 +6254,19 @@ class AnalysisService:
                     native_task_fields["pdl_called"]
                 )
             item["task_fields"].update(native_task_fields)
+            try:
+                public_fields = json.loads(row["public_fields_json"] or "{}")
+            except (TypeError, json.JSONDecodeError):
+                public_fields = {}
+            if isinstance(public_fields, dict):
+                for field_key in (
+                    "cost_collection_status", "cost_totals_by_currency",
+                ):
+                    if field_key in public_fields:
+                        item["task_fields"][field_key] = public_fields[field_key]
+            item["task_fields"] = self._normalize_confirmed_zero_costs(
+                item["task_fields"]
+            )
             try:
                 task_processing_errors = json.loads(
                     row["processing_errors_json"]
@@ -7014,6 +7226,7 @@ class AnalysisService:
                    rq.detail_success_count, rq.detail_failure_count,
                    rq.llm_cost, rq.third_party_cost, rq.total_cost,
                    rq.search_duration_ms, rq.pdl_called,
+                   rq.public_fields_json,
                    pq.result_status, pq.fields_json,
                    pq.empty_fields_json, pq.processing_errors_json
             FROM run_queries AS rq
@@ -7051,6 +7264,19 @@ class AnalysisService:
                     native_task_fields["pdl_called"]
                 )
             item["task_fields"].update(native_task_fields)
+            try:
+                public_fields = json.loads(row["public_fields_json"] or "{}")
+            except (TypeError, json.JSONDecodeError):
+                public_fields = {}
+            if isinstance(public_fields, dict):
+                for field_key in (
+                    "cost_collection_status", "cost_totals_by_currency",
+                ):
+                    if field_key in public_fields:
+                        item["task_fields"][field_key] = public_fields[field_key]
+            item["task_fields"] = self._normalize_confirmed_zero_costs(
+                item["task_fields"]
+            )
             query_rows.append(item)
 
         raw_candidates = self.store.fetch_all(
@@ -7855,11 +8081,10 @@ class AnalysisService:
                 raise ReviewValidationError(f"处理结果不存在: {process_id}")
             processes.append(row)
         baseline_process, candidate_process = processes
-        compatibility_fields = (
-            "evaluation_id",
-            "baseline_version",
-            "rule_version",
-        )
+        # Evaluation 与 Baseline 版本属于两侧报告上下文，不再作为硬性阻断。
+        # 跨评测仍按 person_id + query_stage + 输入签名配对；字段差异交给
+        # FieldSchema 兼容矩阵处理。只有指标规则版本不同会造成口径不可比。
+        compatibility_fields = ("rule_version",)
         differences = [
             field
             for field in compatibility_fields
@@ -8315,6 +8540,20 @@ class AnalysisService:
         return {
             "baseline_process_id": baseline_process_id,
             "candidate_process_id": candidate_process_id,
+            "process_context": {
+                "baseline_evaluation_id": baseline_process["evaluation_id"],
+                "candidate_evaluation_id": candidate_process["evaluation_id"],
+                "baseline_version": baseline_process["baseline_version"],
+                "candidate_baseline_version": candidate_process["baseline_version"],
+                "cross_evaluation": (
+                    baseline_process["evaluation_id"]
+                    != candidate_process["evaluation_id"]
+                ),
+                "cross_baseline_version": (
+                    baseline_process["baseline_version"]
+                    != candidate_process["baseline_version"]
+                ),
+            },
             "formal_ready": (
                 same_condition_ready
                 and not blocking_not_comparable
@@ -9765,6 +10004,12 @@ class AnalysisService:
                     native_task_fields["pdl_called"]
                 )
             task_fields.update(native_task_fields)
+            for field_key in (
+                "cost_collection_status", "cost_totals_by_currency",
+            ):
+                if field_key in public_task_fields:
+                    task_fields[field_key] = public_task_fields[field_key]
+            task_fields = self._normalize_confirmed_zero_costs(task_fields)
             # 新 Schema 已将标准化明细处理进 fields_json；历史 Process 则从
             # 已保存的原始 Provider 汇总回退生成，保证报告口径连续。
             provider_cost_details = task_fields.get("provider_cost_details")
@@ -9952,6 +10197,141 @@ class AnalysisService:
             ),
         )
 
+    @staticmethod
+    def _build_report_v5_query_tool_timing_details(
+        query_explorer: dict[str, Any],
+        raw_by_query: dict[str, dict[str, dict[str, Any]]],
+    ) -> list[dict[str, Any]]:
+        """生成逐 Query、逐工具的执行耗时审计快照。
+
+        功能说明:
+            Query 总耗时沿用任务级 ``search_duration_ms``；工具耗时读取 Admin
+            Debug 的 ``start_time`` 与 ``finish_time/create_time``。工具可能并行，
+            因此只展示原始持续时间，不把各工具耗时相加为 Query 总耗时。
+
+        参数说明:
+            query_explorer: 已冻结的 Query 工作台快照。
+            raw_by_query: 当前 Run 按 Query、Admin 阶段索引的原始响应。
+
+        返回值:
+            list[dict[str, Any]]: 每个 Query 一组任务总耗时及工具调用明细。
+
+        异常说明:
+            时间缺失或格式非法时该调用的 duration_ms 返回 None；单条坏数据
+            不影响其他 Query 和工具明细生成。
+        """
+
+        labels = dict(ADMIN_TOOL_DEFINITIONS)
+        outcome_labels = {
+            "SUCCESS": "成功",
+            "NO_RESULT": "无结果",
+            "FAILED": "失败",
+            "UNKNOWN": "未知",
+        }
+
+        def response_debug(body: Any) -> dict[str, Any]:
+            """读取 Admin 响应中的 debug 对象，非法信封返回空字典。"""
+
+            responses = body.get("responses") if isinstance(body, dict) else None
+            response = responses[0] if isinstance(responses, list) and responses else None
+            data = response.get("data") if isinstance(response, dict) else None
+            debug = data.get("debug") if isinstance(data, dict) else None
+            return debug if isinstance(debug, dict) else {}
+
+        def duration_ms(call: dict[str, Any]) -> float | None:
+            """计算单次工具调用持续时间，无法计算时返回 None。"""
+
+            start_text = str(call.get("start_time") or "").strip()
+            finish_text = str(
+                call.get("finish_time") or call.get("create_time") or ""
+            ).strip()
+            if not start_text or not finish_text:
+                return None
+            try:
+                start = datetime.fromisoformat(start_text.replace("Z", "+00:00"))
+                finish = datetime.fromisoformat(finish_text.replace("Z", "+00:00"))
+            except ValueError:
+                return None
+            value = (finish - start).total_seconds() * 1000
+            return round(value, 3) if value >= 0 else None
+
+        def debug_cache_hit(debug: dict[str, Any]) -> bool:
+            """判断本次任务是否命中缓存，兼容任务与 Provider 两类证据。"""
+
+            task = debug.get("task") if isinstance(debug, dict) else None
+            task_value = task.get("cache_hit") if isinstance(task, dict) else None
+            if task_value is True or task_value == 1:
+                return True
+            if str(task_value or "").strip().casefold() in {"true", "yes"}:
+                return True
+            requests = debug.get("provider_requests")
+            return any(
+                isinstance(item, dict)
+                and str(item.get("status") or "").strip().casefold() == "cache_hit"
+                for item in (requests if isinstance(requests, list) else [])
+            )
+
+        groups: list[dict[str, Any]] = []
+        for task in AnalysisService._build_report_v5_task_cost_details(
+            query_explorer
+        ):
+            debug_body = raw_by_query.get(task["query_id"], {}).get(
+                "GetSearchTaskDebug"
+            )
+            debug = response_debug(debug_body)
+            calls = debug.get("agent_tool_calls")
+            details = []
+            for index, call in enumerate(
+                calls if isinstance(calls, list) else [],
+                start=1,
+            ):
+                if not isinstance(call, dict):
+                    continue
+                provider = str(call.get("provider") or "未记录 Provider").strip()
+                operation = str(
+                    call.get("provider_operation") or "未记录 Operation"
+                ).strip()
+                tool_key = classify_admin_tool(provider, operation)
+                outcome = classify_admin_call_outcome(call)
+                error_parts = [
+                    str(call.get("error_code") or "").strip(),
+                    str(call.get("error_message") or "").strip(),
+                ]
+                details.append({
+                    "sequence_no": index,
+                    "tool_key": tool_key or provider,
+                    "tool_label": labels.get(tool_key, provider),
+                    "provider": provider,
+                    "operation": operation,
+                    "raw_status": str(call.get("status") or "").strip(),
+                    "outcome": outcome,
+                    "outcome_label": outcome_labels[outcome],
+                    "duration_ms": duration_ms(call),
+                    "start_time": str(call.get("start_time") or "").strip(),
+                    "finish_time": str(
+                        call.get("finish_time") or call.get("create_time") or ""
+                    ).strip(),
+                    "http_status": call.get("http_status"),
+                    "error": " · ".join(part for part in error_parts if part),
+                })
+            groups.append({
+                "side": task["side"],
+                "query_id": task["query_id"],
+                "display_name": task["display_name"],
+                "task_id": task["task_id"],
+                "query_status": task["query_status"],
+                "result_status": task["result_status"],
+                "query_duration_ms": task["search_duration_ms"],
+                "admin_debug_collected": bool(debug),
+                "cache_hit": debug_cache_hit(debug),
+                "call_count": len(details),
+                "timed_call_count": sum(
+                    item["duration_ms"] is not None for item in details
+                ),
+                "calls": details,
+            })
+        return groups
+
     def _build_report_execution_economics(
         self,
         process: sqlite3.Row,
@@ -10047,13 +10427,18 @@ class AnalysisService:
                     )
                     target[target_key] += value
 
-            tool_usage = public_fields.get("tool_usage_summary")
-            if not isinstance(tool_usage, list):
-                query_raw = raw_by_query.get(query["query_id"], {})
+            query_raw = raw_by_query.get(query["query_id"], {})
+            # 报告生成时优先按当前口径重放已归档的 Admin Debug/Cost；历史
+            # public_fields 中的 tool_usage_summary 可能仍使用“非 success 即
+            # 失败”的旧二分法，只在 Raw 不存在时才作为兼容兜底。
+            if query_raw:
                 tool_usage, _ = extract_admin_tool_usage(
                     query_raw.get("GetSearchTaskDebug"),
                     query_raw.get("GetProviderCostSummary"),
                 )
+            else:
+                tool_usage = public_fields.get("tool_usage_summary")
+                tool_usage = tool_usage if isinstance(tool_usage, list) else []
             has_tool_collection = any(
                 item.get("cost_status") != "NOT_COLLECTED"
                 or item.get("call_count", 0)
@@ -10070,7 +10455,9 @@ class AnalysisService:
                     "query_ids": set(),
                     "call_count": 0,
                     "success_count": 0,
+                    "no_result_count": 0,
                     "failed_count": 0,
+                    "unknown_count": 0,
                     "provider_call_count": 0,
                     "priced_call_count": 0,
                     "non_billable_call_count": 0,
@@ -10082,7 +10469,8 @@ class AnalysisService:
                 })
                 target["query_ids"].add(query["query_id"])
                 for count_key in (
-                    "call_count", "success_count", "failed_count",
+                    "call_count", "success_count", "no_result_count",
+                    "failed_count", "unknown_count",
                     "provider_call_count", "priced_call_count",
                     "non_billable_call_count", "unpriced_call_count",
                 ):
@@ -10181,6 +10569,11 @@ class AnalysisService:
             "average_duration_ms": cost_snapshot["metrics"].get(
                 "search_duration_ms", {}
             ).get("average"),
+            "duration_query_count": int(
+                cost_snapshot["metrics"].get(
+                    "search_duration_ms", {}
+                ).get("value_count") or 0
+            ),
             "pdl": cost_snapshot["pdl"],
             "total_provider_calls": total_provider_calls,
             "unpriced_call_count": unpriced_calls,
@@ -10194,6 +10587,12 @@ class AnalysisService:
             ),
             "query_provider_rows": (
                 self._build_report_v5_query_provider_cost_details(query_explorer)
+            ),
+            "query_tool_timing_groups": (
+                self._build_report_v5_query_tool_timing_details(
+                    query_explorer,
+                    raw_by_query,
+                )
             ),
         }
 
@@ -11749,19 +12148,38 @@ class AnalysisService:
         formal_ready = candidate_metrics["formal_ready"] and (
             comparison is None or comparison["formal_ready"]
         )
-        warnings = [
-            "系统返回内容仅用于检索能力测试，不代表已经核实的事实。"
-        ]
+        warnings: list[str] = []
         if not formal_ready:
             warnings.append(
                 "部分质量指标尚未就绪；本报告保留可计算的预览值，"
                 "具体原因和修复入口见下方说明。"
             )
-        if candidate_metrics["cost_status"]["status"] != "COMPLETE":
+        cost_connected = (
+            candidate_metrics["cost_status"]["status"] == "COMPLETE"
+        )
+        pdl_metrics = candidate_metrics.get("pdl_metrics", {})
+        pdl_connected = (
+            pdl_metrics.get("known_count", 0)
+            == candidate_metrics["cost_status"].get("task_count", 0)
+        )
+        if not cost_connected:
             warnings.append(
-                "成本与 PDL 数据未完整接入，缺失值未按0计算。"
+                "部分 Query 成本采集不完整，无法确认的缺失值未按0计算。"
             )
+        if not pdl_connected:
+            warnings.append("部分 Query 未采集 PDL 调用状态。")
         if comparison is not None:
+            process_context = comparison.get("process_context", {})
+            if process_context.get("cross_evaluation"):
+                warnings.append(
+                    "本报告对比来自两个不同 Evaluation；报告归属 Candidate "
+                    "Evaluation，人物与检索条件仍按稳定配对键对齐。"
+                )
+            if process_context.get("cross_baseline_version"):
+                warnings.append(
+                    "两侧 Process 使用不同 Baseline 版本；身份与字段指标分别"
+                    "沿用各自处理快照，仅共同人物和可比字段进入变化分析。"
+                )
             field_compatibility = comparison.get("field_compatibility", {})
             if field_compatibility.get("status") == "PARTIAL":
                 warnings.append(
@@ -11830,7 +12248,8 @@ class AnalysisService:
                         "reason": str(reason),
                         "details": [str(item) for item in reasons],
                     })
-            if candidate_metrics["cost_status"]["status"] != "COMPLETE":
+            disconnected_fields: list[str] = []
+            if not cost_connected:
                 disconnected_fields = [
                     field_key
                     for field_key, item in candidate_metrics.get(
@@ -11839,17 +12258,13 @@ class AnalysisService:
                     ).items()
                     if item.get("status") != "COMPLETE"
                 ]
-                pdl_metrics = candidate_metrics.get("pdl_metrics", {})
-                if pdl_metrics.get("unknown_count", 0):
-                    disconnected_fields.append("pdl_called")
+            if not pdl_connected:
+                disconnected_fields.append("pdl_called")
+            if disconnected_fields:
                 not_ready_reasons.append({
                     "metric": "task_public_fields",
                     "reason_code": "FIELD_NOT_CONNECTED",
-                    "reason": (
-                        "成本、耗时或 PDL 公共字段尚未完整接入"
-                        if candidate_metrics["cost_status"]["status"] == "PARTIAL"
-                        else "成本、耗时和 PDL 公共字段尚未接入"
-                    ),
+                    "reason": "部分任务公共字段尚未完整采集",
                     "details": sorted(set(disconnected_fields)),
                 })
         field_alignment_summary = None
@@ -11903,6 +12318,14 @@ class AnalysisService:
                 "report_type": "COMPARE" if comparison else "SINGLE",
                 "evaluation_id": candidate_process["evaluation_id"],
                 "evaluation_name": candidate_process["evaluation_name"],
+                "baseline_evaluation_id": (
+                    baseline_process["evaluation_id"]
+                    if baseline_process else None
+                ),
+                "baseline_evaluation_name": (
+                    baseline_process["evaluation_name"]
+                    if baseline_process else None
+                ),
                 "threshold_profile_id": candidate_process[
                     "threshold_profile_id"
                 ],
@@ -12199,6 +12622,8 @@ class AnalysisService:
                 model["comparison_report"] = {
                     "phase_summary": {
                         "baseline": {
+                            "evaluation_id": baseline_process["evaluation_id"],
+                            "evaluation_name": baseline_process["evaluation_name"],
                             "process_id": baseline_process_id,
                             "run_id": baseline_process["run_id"],
                             "run_label": baseline_process["run_label"],
@@ -12207,6 +12632,8 @@ class AnalysisService:
                             "schema_version": baseline_process["schema_version"],
                         },
                         "candidate": {
+                            "evaluation_id": candidate_process["evaluation_id"],
+                            "evaluation_name": candidate_process["evaluation_name"],
                             "process_id": candidate_process_id,
                             "run_id": candidate_process["run_id"],
                             "run_label": candidate_process["run_label"],
@@ -12611,6 +13038,70 @@ class AnalysisService:
         temporary.replace(target)
         return row["html_file"]
 
+    def rename_report(self, report_id: str, report_name: str) -> dict[str, Any]:
+        """修改报告显示名称，同时保留 Evaluation 与指标快照身份。
+
+        功能说明:
+            报告名称属于用户维护的展示元数据，只写入 ReportModel 的
+            ``metadata.report_name``。Evaluation、Run、Process、指标结果和
+            报告文件路径均保持不变；历史报告未设置名称时仍回退到原
+            Evaluation 名称。
+
+        参数说明:
+            report_id: 已存在的报告标识。
+            report_name: 用户输入的报告名称；连续空白会规范为一个空格。
+
+        返回值:
+            dict[str, Any]: 已更新、可直接重新渲染 Web/静态 HTML 的报告模型。
+
+        异常说明:
+            ReviewValidationError: 报告不存在、模型损坏、名称为空或超过
+            100 个字符时抛出；不会修改原报告数据。
+        """
+
+        object_id = validate_storage_id(report_id, "report_id")
+        normalized_name = " ".join(str(report_name or "").split())
+        if not normalized_name:
+            raise ReviewValidationError("报告名称不能为空")
+        if len(normalized_name) > 100:
+            raise ReviewValidationError("报告名称不能超过 100 个字符")
+        row = self.store.fetch_one(
+            "SELECT * FROM reports WHERE report_id = ?",
+            (object_id,),
+        )
+        if row is None:
+            raise ReviewValidationError(f"报告不存在: {object_id}")
+        try:
+            model = json.loads(row["metrics_json"])
+        except (TypeError, json.JSONDecodeError) as exc:
+            raise ReviewValidationError("报告模型不是合法 JSON") from exc
+        if not isinstance(model, dict) or not isinstance(
+            model.get("metadata"), dict
+        ):
+            raise ReviewValidationError("报告模型缺少 metadata")
+
+        model["metadata"]["report_name"] = normalized_name
+        model_json = json_text(model)
+        with self.store.transaction() as connection:
+            connection.execute(
+                "UPDATE reports SET metrics_json = ? WHERE report_id = ?",
+                (model_json, object_id),
+            )
+
+        # 应用生成的报告目录中保留同一份模型文件，供后续 Excel 导出使用。
+        # 历史手工导入报告可能没有该文件，此时数据库快照仍是权威来源。
+        model_path = self._report_directory(
+            row["evaluation_id"], object_id
+        ) / "report_model.json"
+        if model_path.is_file():
+            temporary = model_path.with_suffix(".json.tmp")
+            temporary.write_text(
+                json.dumps(model, ensure_ascii=False, indent=2, sort_keys=True),
+                encoding="utf-8",
+            )
+            temporary.replace(model_path)
+        return model
+
     def export_report_excel(
         self,
         report_id: str,
@@ -12722,6 +13213,8 @@ class AnalysisService:
         system_version: str,
         evaluation_phase: str,
         run_id: str | None = None,
+        platform_release_id: str | None = None,
+        platform_credential_version: int | None = None,
     ) -> str:
         """创建一个等待后台执行的 Run 和全部 PENDING Query。
 
@@ -12736,6 +13229,8 @@ class AnalysisService:
             system_version: 被测系统版本。
             evaluation_phase: 明确的评估阶段；新执行不允许 UNSPECIFIED。
             run_id: 测试或外部编排可显式提供的唯一标识。
+            platform_release_id: 平台模式本次任务锁定的配置 Release；独立模式为空。
+            platform_credential_version: 平台模式本次任务使用的凭证版本；独立模式为空。
 
         返回值:
             新创建的 Run ID。
@@ -12803,7 +13298,8 @@ class AnalysisService:
                         system_version, source_type, status,
                         result_schema_version, total_queries, success_queries,
                         failed_queries, message, evaluation_phase, created_at
-                    ) VALUES (?, ?, ?, ?, ?, 'EXECUTION', 'PENDING', ?, ?, 0, 0, ?, ?, ?)
+                        , platform_release_id, platform_credential_version
+                    ) VALUES (?, ?, ?, ?, ?, 'EXECUTION', 'PENDING', ?, ?, 0, 0, ?, ?, ?, ?, ?)
                     """,
                     (
                         object_id,
@@ -12816,6 +13312,8 @@ class AnalysisService:
                         "等待后台执行",
                         evaluation_phase,
                         now,
+                        platform_release_id,
+                        platform_credential_version,
                     ),
                 )
                 for query in dataset_queries:
@@ -13850,6 +14348,7 @@ class AnalysisService:
                 raw_callback=raw_records.append,
                 failure_callback=candidate_failures.append,
                 run_id=run_id,
+                run_name=str(run["run_label"] or run_id),
             )
             result["person_id"] = query["person_id"]
             self._persist_execution_success(
@@ -13951,7 +14450,15 @@ class AnalysisService:
         )
         success_count = 0
         failed_count = 0
-        for query in queries:
+        consecutive_network_failures = 0
+        client_config = getattr(client, "config", None)
+        network_failure_threshold = int(
+            getattr(client_config, "network_failure_threshold", 3)
+        )
+        network_recovery_pause_seconds = float(
+            getattr(client_config, "network_recovery_pause_seconds", 30.0)
+        )
+        for query_index, query in enumerate(queries):
             query_id = query["query_id"]
             started_at = utc_now_text()
             with self.store.transaction() as connection:
@@ -13988,6 +14495,7 @@ class AnalysisService:
                     raw_callback=raw_records.append,
                     failure_callback=candidate_failures.append,
                     run_id=run_id,
+                    run_name=str(run["run_label"] or run_id),
                 )
                 result["person_id"] = query["person_id"]
                 self._persist_execution_success(
@@ -14003,6 +14511,7 @@ class AnalysisService:
                     success_count += 1
                 else:
                     failed_count += 1
+                consecutive_network_failures = 0
             except FlowError as exc:
                 failure = self._persist_execution_failure(
                     run_id=run_id,
@@ -14011,6 +14520,10 @@ class AnalysisService:
                 )
                 self._append_jsonl(failures_path, failure)
                 failed_count += 1
+                if is_network_flow_error(exc):
+                    consecutive_network_failures += 1
+                else:
+                    consecutive_network_failures = 0
             with self.store.transaction() as connection:
                 connection.execute(
                     """
@@ -14026,6 +14539,47 @@ class AnalysisService:
                         run_id,
                     ),
                 )
+            if (
+                consecutive_network_failures >= network_failure_threshold
+                and query_index < len(queries) - 1
+            ):
+                pause_record = build_raw_record(
+                    run_id=run_id,
+                    input_id=query_id,
+                    task_id="",
+                    candidate_id="",
+                    stage="NetworkRecoveryPause",
+                    sequence_no=1,
+                    request_params={
+                        "consecutive_network_failures": consecutive_network_failures,
+                        "failure_threshold": network_failure_threshold,
+                    },
+                    response_body={
+                        "pause_seconds": network_recovery_pause_seconds,
+                        "next_action": "CONTINUE_NEXT_QUERY",
+                    },
+                )
+                with self.store.transaction() as connection:
+                    self._insert_raw(
+                        connection,
+                        run_id=run_id,
+                        query_id=query_id,
+                        candidate_pk=None,
+                        stage="NetworkRecoveryPause",
+                        sequence_no=1,
+                        payload=pause_record,
+                        collected_at=pause_record.get("collected_at"),
+                    )
+                    connection.execute(
+                        "UPDATE runs SET message = ? WHERE run_id = ?",
+                        (
+                            f"连续 {consecutive_network_failures} 个 Query 网络失败，"
+                            f"暂停 {network_recovery_pause_seconds:g} 秒后继续",
+                            run_id,
+                        ),
+                    )
+                sleep_fn(network_recovery_pause_seconds)
+                consecutive_network_failures = 0
         if failed_count == len(queries):
             final_status = "FAILED"
         elif failed_count:

@@ -16,7 +16,7 @@ import sys
 import threading
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from web import credentials
 from web.junit_report import parse_junit_file
@@ -84,6 +84,7 @@ class TaskManager:
         retain: int = 50,
         python: str | None = None,
         cancel_grace_seconds: float = 10.0,
+        runtime_environment_provider: Callable[[], tuple[dict[str, str], dict[str, Any]]] | None = None,
     ) -> None:
         self._project_root = Path(project_root)
         self._store = store
@@ -91,6 +92,7 @@ class TaskManager:
         self._retain = int(retain)
         self._python = python or sys.executable
         self._cancel_grace_seconds = float(cancel_grace_seconds)
+        self._runtime_environment_provider = runtime_environment_provider
         self._lock = threading.Lock()
         self._active_id: str | None = None
         self._procs: dict[str, subprocess.Popen[bytes]] = {}
@@ -290,10 +292,19 @@ class TaskManager:
         junit_path.parent.mkdir(parents=True, exist_ok=True)
 
         args = self._build_command(record["input"], junit_path)
+        task_environment = os.environ.copy()
+        if self._runtime_environment_provider is not None:
+            runtime_values, snapshot_metadata = self._runtime_environment_provider()
+            task_environment.update(runtime_values)
+            record["config_release_id"] = snapshot_metadata.get("release_id")
+            record["config_release_version"] = snapshot_metadata.get("release_version")
+            record["credential_version"] = snapshot_metadata.get("credential_version")
+            self._store.save(record)
         with console_path.open("w", encoding="utf-8") as console_file:
             proc = subprocess.Popen(
                 args,
                 cwd=self._project_root,
+                env=task_environment,
                 stdout=console_file,
                 stderr=subprocess.STDOUT,
                 start_new_session=True,
