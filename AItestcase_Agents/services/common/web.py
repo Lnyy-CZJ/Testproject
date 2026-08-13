@@ -12,6 +12,7 @@ from typing import Any, Callable
 
 from flask import Flask, Response, g, jsonify, render_template, request, send_file
 from jinja2 import ChoiceLoader, FileSystemLoader
+from pydantic import ValidationError
 
 from services.common.artifacts import load_registry, resolve_artifact
 from services.common.audit import emit_audit
@@ -38,6 +39,34 @@ from services.common.uploads import (
     sha256_bytes,
     validate_review_json,
 )
+
+
+def safe_public_tasks(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """
+    将任务记录逐条转换为公开渲染载荷,跳过 schema 不兼容的记录。
+
+    功能说明:
+        正常任务照常经 public_task 转换;若某条记录因缺少必填字段
+        (例如手工测试残留的最小 schema 数据)未通过 Pydantic 校验,
+        仅跳过该条记录,避免单条坏数据导致整个任务列表返回 500。
+
+    参数说明:
+        items (list[dict]): TaskStore.list 返回的原始任务记录列表。
+
+    返回值:
+        list[dict]: 校验通过的公开任务载荷列表,保持原有顺序。
+
+    异常说明:
+        内部捕获 pydantic.ValidationError,不向调用方传播。
+    """
+    payloads: list[dict[str, Any]] = []
+    for record in items:
+        try:
+            payloads.append(public_task(record))
+        except ValidationError:
+            # 跳过不兼容记录,防止单条坏数据打挂整个列表页。
+            continue
+    return payloads
 
 
 def _new_record(task_id: str, settings: ServiceSettings, identity, form: dict[str, Any]) -> dict[str, Any]:
@@ -213,7 +242,7 @@ def create_agent_app(
     def index():
         identity = current_identity()
         require_permission(identity, "tool.view")
-        records = [public_task(item) for item in store.list() if item.get("created_by_user_id") == identity.user_id or "task.view.all" in identity.permissions]
+        records = safe_public_tasks([item for item in store.list() if item.get("created_by_user_id") == identity.user_id or "task.view.all" in identity.permissions])
         return render_template(
             "index.html", title=title, description=description, settings=settings,
             tasks=records[:20], agent_type=settings.agent_type,
@@ -339,7 +368,7 @@ def create_agent_app(
         if operation:
             visible = [item for item in visible if item.get("operation") == operation]
         start = (page - 1) * page_size
-        return jsonify({"items": [public_task(item) for item in visible[start:start + page_size]], "total": len(visible), "page": page, "page_size": page_size})
+        return jsonify({"items": safe_public_tasks(visible[start:start + page_size]), "total": len(visible), "page": page, "page_size": page_size})
 
     @app.get(f"{settings.base_path}/api/v1/tasks/<task_id>")
     def task_detail(task_id: str):

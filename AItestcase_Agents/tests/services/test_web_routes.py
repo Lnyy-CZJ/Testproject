@@ -406,3 +406,52 @@ def test_online_case_review_ai_and_confirm_publish(tmp_path: Path) -> None:
     )
     assert retried.status_code == 200
     assert retried.get_json()["case_review"]["version"] == confirmed.get_json()["case_review"]["version"]
+
+
+def test_admin_task_list_survives_schema_incompatible_records(tmp_path: Path) -> None:
+    """
+    手工写入的最小 schema 任务记录不得打挂管理员任务列表。
+
+    功能说明:
+        复现线上故障:S2 安全评审曾在运行时目录手工构造仅含少数字段的
+        任务记录(缺 PublicTaskModel 大部分必填字段)。管理员持有
+        task.view.all 权限会遍历全部可见记录,public_task() 校验抛
+        ValidationError 导致首页与列表接口整体 500,网关再误报为
+        AUTH_SERVICE_UNAVAILABLE。加固后列表渲染应跳过这类
+        schema 不兼容记录,而不是让整个页面崩溃。
+
+    验证点:
+        - 管理员首页 HTML 渲染返回 200
+        - 管理员列表 API 返回 200,且正常任务仍在、坏记录被跳过
+    """
+    client, app = make_client(tmp_path, "api")
+    store = app.extensions["task_store"]
+    # 先经生产路由创建一个正常任务,保证列表中存在合法数据。
+    created = client.post(
+        "/api-test-agent/api/v1/tasks",
+        headers=headers(),
+        data={
+            "operation": "generate_api_cases", "project_name": "项目 A", "module_name": "登录", "environment": "dev",
+            "document_file": (io.BytesIO(b"openapi: 3.0.0"), "openapi.yaml"),
+        },
+        content_type="multipart/form-data",
+    )
+    assert created.status_code == 202
+    good_task_id = created.get_json()["id"]
+    # 写入一条缺 PublicTaskModel 必填字段的最小 schema 记录,模拟 S2 测试残留。
+    bad_task_id = "task_20260813_" + "0" * 20
+    store.task_dir(bad_task_id, create=True)
+    store.save({
+        "id": bad_task_id, "schema_version": 2, "status": "waiting_execution_confirmation",
+        "stage": "execution_confirmation", "created_by_user_id": "s2_tester",
+        "environment": "dev", "current_versions": {}, "completed_stages": [],
+    })
+    admin_headers = headers("admin", "tool.view,tool.result.view,task.view.all")
+    # 首页 HTML 与列表 JSON 接口都不得被坏记录打挂。
+    page = client.get("/api-test-agent/", headers=admin_headers)
+    assert page.status_code == 200
+    listing = client.get("/api-test-agent/api/v1/tasks", headers=admin_headers)
+    assert listing.status_code == 200
+    listed_ids = {item["id"] for item in listing.get_json()["items"]}
+    assert good_task_id in listed_ids
+    assert bad_task_id not in listed_ids
