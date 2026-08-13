@@ -117,8 +117,13 @@ def runtime_config(
     database: Annotated[Session, Depends(get_db)],
     settings: Annotated[Settings, Depends(get_settings)],
     response: Response,
+    include_secrets: bool = True,
 ) -> RuntimeConfigResponse:
-    """返回工具/环境绑定的当前不可变配置与 Secret 快照，禁止缓存。"""
+    """返回工具/环境绑定的配置快照。
+
+    参数说明:
+        include_secrets: false 时只返回普通配置和已配置 Secret 键名，供提交前安全读取容量限制。
+    """
 
     _assert_client_scope(context, tool_id)
     _require_capability(context, "config.read")
@@ -130,6 +135,7 @@ def runtime_config(
     ))
     normal: dict[str, Any] = {}
     secret_values: dict[str, str] = {}
+    configured_secret_keys: set[str] = set()
     release = database.get(ConfigRelease, activation.active_release_id) if activation else None
     definitions = {
         row.id: row for row in database.scalars(select(ConfigDefinition).where(
@@ -151,6 +157,9 @@ def runtime_config(
                     Secret.definition_id == definition.id,
                 ))
                 if secret is not None:
+                    configured_secret_keys.add(definition.key)
+                    if not include_secrets:
+                        continue
                     try:
                         secret_values[definition.key] = decrypt_secret_version(
                             database, load_secret_cipher(settings), secret, item.secret_version_id,
@@ -167,7 +176,8 @@ def runtime_config(
     ).order_by(Credential.updated_at.desc())).all())
     metadata: dict[str, Any] = {}
     provider_metadata: dict[str, Any] = {}
-    cipher = load_secret_cipher(settings) if credentials else None
+    # 安全配置查询只返回 Secret 键名，不应加载 KEK 或触碰密文解密路径。
+    cipher = load_secret_cipher(settings) if credentials and include_secrets else None
     for credential in credentials:
         credential_items = database.scalars(
             select(CredentialItem).where(
@@ -180,6 +190,9 @@ def runtime_config(
                 secret_version = database.get(SecretVersion, item.secret_version_id)
                 secret = database.get(Secret, secret_version.secret_id) if secret_version else None
                 if secret is not None and (secret.environment_id, secret.owner_type, secret.owner_id) == (environment_id, "tool", tool_id):
+                    configured_secret_keys.add(item.key)
+                    if not include_secrets:
+                        continue
                     try:
                         assert cipher is not None
                         secret_values[item.key] = decrypt_secret_version(database, cipher, secret, item.secret_version_id)
@@ -220,6 +233,7 @@ def runtime_config(
         normal=normal,
         secrets=secret_values,
         credential_metadata=metadata,
+        configured_secret_keys=sorted(configured_secret_keys),
     )
 
 

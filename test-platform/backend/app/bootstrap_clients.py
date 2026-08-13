@@ -18,6 +18,8 @@ CLIENT_CAPABILITIES = {
         "config.read", "config.ack", "audit.write",
         "credential.status.write", "credential.session.write",
     ],
+    "functional-test-agent": ["config.read", "config.ack", "audit.write"],
+    "api-test-agent": ["config.read", "config.ack", "audit.write"],
 }
 
 
@@ -28,7 +30,9 @@ def main() -> None:
     token_directory = Path(os.getenv("PLATFORM_CLIENT_TOKEN_DIR", "/run/platform-clients"))
     with SessionLocal() as database:
         for tool_id, capabilities in CLIENT_CAPABILITIES.items():
-            token_path = token_directory / f"{tool_id}-client-token"
+            # 新接入工具按环境分目录隔离 Token；既有工具继续兼容原平铺路径。
+            scoped_path = token_directory / environment_id / f"{tool_id}-client-token"
+            token_path = scoped_path if scoped_path.exists() else token_directory / f"{tool_id}-client-token"
             raw_token = token_path.read_text(encoding="utf-8").strip()
             if len(raw_token) < 32:
                 raise RuntimeError(f"工具 Client Token 无效: {tool_id}")

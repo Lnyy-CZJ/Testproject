@@ -101,6 +101,7 @@ def _validate_value(definition: ConfigDefinition, value: Any) -> None:
     valid = (
         (expected in {"string", "url", "logical_path", "enum"} and isinstance(value, str))
         or (expected == "int" and isinstance(value, int) and not isinstance(value, bool))
+        or (expected == "float" and isinstance(value, (int, float)) and not isinstance(value, bool))
         or (expected == "bool" and isinstance(value, bool))
         or (expected == "json" and isinstance(value, (dict, list)))
     )
@@ -114,6 +115,11 @@ def _validate_value(definition: ConfigDefinition, value: Any) -> None:
             raise PlatformError(422, "CONFIG_VALIDATION_FAILED", f"{definition.display_name} 长度超限")
         if expected == "url" and not value.startswith(("http://", "https://")):
             raise PlatformError(422, "CONFIG_VALIDATION_FAILED", f"{definition.display_name} 必须是 HTTP(S) URL")
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        if schema.get("minimum") is not None and value < schema["minimum"]:
+            raise PlatformError(422, "CONFIG_VALIDATION_FAILED", f"{definition.display_name} 小于允许值")
+        if schema.get("maximum") is not None and value > schema["maximum"]:
+            raise PlatformError(422, "CONFIG_VALIDATION_FAILED", f"{definition.display_name} 超过允许值")
 
 
 @router.get("/config/definitions", response_model=list[ConfigDefinitionResponse])

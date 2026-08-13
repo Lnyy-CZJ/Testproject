@@ -9,6 +9,8 @@ services:
       - log-filter-tool
       - truthy-search
       - api-autotest
+      - functional-test-agent
+      - api-test-agent
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/"]
       interval: 15s
@@ -16,6 +18,8 @@ services:
       retries: 3
       start_period: 3s
     restart: unless-stopped
+    networks:
+      - default
 
   platform-db:
     image: postgres:17-alpine
@@ -86,8 +90,8 @@ services:
       LOGIN_FAILURE_LIMIT: "${LOGIN_FAILURE_LIMIT:-5}"
       LOGIN_LOCK_MINUTES: "${LOGIN_LOCK_MINUTES:-15}"
     volumes:
-      - ./.runtime-secrets/bootstrap-token:/run/secrets/platform-bootstrap-token:ro
-      - ./.runtime-secrets/dev-kek.json:/run/secrets/platform-kek.json:ro
+      - ./.runtime-secrets/${PLATFORM_RUNTIME_ENV:-dev}/bootstrap-token:/run/secrets/platform-bootstrap-token:ro
+      - ./.runtime-secrets/${PLATFORM_RUNTIME_ENV:-dev}-kek.json:/run/secrets/platform-kek.json:ro
     expose:
       - "8000"
     depends_on:
@@ -120,7 +124,7 @@ services:
       CREDENTIAL_REFRESH_WINDOW_SECONDS: "${CREDENTIAL_REFRESH_WINDOW_SECONDS:-3600}"
       CREDENTIAL_AGENT_INTERVAL_SECONDS: "${CREDENTIAL_AGENT_INTERVAL_SECONDS:-60}"
     volumes:
-      - ./.runtime-secrets/dev-kek.json:/run/secrets/platform-kek.json:ro
+      - ./.runtime-secrets/${PLATFORM_RUNTIME_ENV:-dev}-kek.json:/run/secrets/platform-kek.json:ro
     depends_on:
       platform-bootstrap:
         condition: service_completed_successfully
@@ -156,14 +160,15 @@ services:
       LOG_FILTER_BASE_PATH: /log-filter
       # 将导出文件保存到宿主机固定目录，避免容器重建后临时文件丢失。
       LOG_EXPORT_DIR: /exports
-      LOG_EXPORT_DISPLAY_DIR: /Users/admin/Documents/log
+      # 宿主机导出目录按环境配置：本机默认 /Users/admin/Documents/log，服务器通过 .env 覆盖。
+      LOG_EXPORT_DISPLAY_DIR: ${LOG_EXPORT_HOST_DIR:-/Users/admin/Documents/log}
       PLATFORM_HOME_URL: /
       PLATFORM_API_URL: http://platform-api:8000/api/v1
       PLATFORM_CLIENT_TOKEN_FILE: /run/secrets/platform-client-token
       PLATFORM_RUNTIME_ENV: "${PLATFORM_RUNTIME_ENV:-dev}"
     volumes:
       # 页面提示使用宿主机路径，容器实际写入对应的 /exports 目录。
-      - /Users/admin/Documents/log:/exports
+      - ${LOG_EXPORT_HOST_DIR:-/Users/admin/Documents/log}:/exports
       - ./.runtime-secrets/log-filter-client-token:/run/secrets/platform-client-token:ro
     expose:
       - "5001"
@@ -248,6 +253,178 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  functional-test-agent:
+    build:
+      context: ../AItestcase_Agents
+      dockerfile: Dockerfile.functional-agent
+    environment:
+      AGENT_TOOL_ID: functional-test-agent
+      AGENT_BASE_PATH: /functional-test-agent
+      AGENT_WEB_HOST: 0.0.0.0
+      AGENT_WEB_PORT: "5004"
+      AGENT_DATA_DIR: "/app/runtime/${PLATFORM_RUNTIME_ENV:-dev}/functional"
+      PLATFORM_HOME_URL: /
+      PLATFORM_API_URL: http://platform-api:8000/api/v1
+      PLATFORM_CLIENT_TOKEN_FILE: /run/secrets/platform-client-token
+      PLATFORM_RUNTIME_ENV: "${PLATFORM_RUNTIME_ENV:-dev}"
+      APP_REVISION: "${APP_REVISION:-local}"
+    volumes:
+      - ../AItestcase_Agents/runtime/${PLATFORM_RUNTIME_ENV:-dev}/functional:/app/runtime/${PLATFORM_RUNTIME_ENV:-dev}/functional
+      - ./.runtime-secrets/${PLATFORM_RUNTIME_ENV:-dev}/functional-test-agent-client-token:/run/secrets/platform-client-token:ro
+    expose:
+      - "5004"
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5004/functional-test-agent/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      platform-api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  api-test-agent:
+    build:
+      context: ../AItestcase_Agents
+      dockerfile: Dockerfile.api-agent
+    environment:
+      AGENT_TOOL_ID: api-test-agent
+      AGENT_BASE_PATH: /api-test-agent
+      AGENT_WEB_HOST: 0.0.0.0
+      AGENT_WEB_PORT: "5005"
+      AGENT_DATA_DIR: "/app/runtime/${PLATFORM_RUNTIME_ENV:-dev}/api"
+      PLATFORM_HOME_URL: /
+      PLATFORM_API_URL: http://platform-api:8000/api/v1
+      PLATFORM_CLIENT_TOKEN_FILE: /run/secrets/platform-client-token
+      PLATFORM_RUNTIME_ENV: "${PLATFORM_RUNTIME_ENV:-dev}"
+      APP_REVISION: "${APP_REVISION:-local}"
+      # 默认关闭；仅本机无生产数据试点可通过显式环境变量开启。
+      API_EXECUTION_ENABLED: "${API_EXECUTION_ENABLED:-false}"
+      API_EXECUTION_CONTROLLER_URL: http://api-execution-controller:5010
+      API_EXECUTION_CONTROLLER_TOKEN_FILE: /run/secrets/controller-token
+      API_EXECUTION_TARGETS: '${API_EXECUTION_TARGETS:-[{"target_id":"local-platform-dev","environment":"dev","internal_base_url":"http://platform-gateway","masked_base_url":"http://127.0.0.1:8080","allow_write_methods":true}]}'
+      DATABASE_PERSIST_ENABLED: "false"
+      ALLOWED_TARGETS: "[]"
+    volumes:
+      - ../AItestcase_Agents/runtime/${PLATFORM_RUNTIME_ENV:-dev}/api:/app/runtime/${PLATFORM_RUNTIME_ENV:-dev}/api
+      - ./.runtime-secrets/${PLATFORM_RUNTIME_ENV:-dev}/api-test-agent-client-token:/run/secrets/platform-client-token:ro
+      - ./.runtime-secrets/${PLATFORM_RUNTIME_ENV:-dev}/api-execution-controller-token:/run/secrets/controller-token:ro
+    expose:
+      - "5005"
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5005/api-test-agent/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      platform-api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # 独立 Controller 是唯一可访问 Docker Socket 的服务；Web 服务不会继承该挂载。
+  api-execution-controller:
+    profiles: ["s2-execution"]
+    build:
+      context: ../AItestcase_Agents
+      dockerfile: Dockerfile.execution-controller
+    environment:
+      CONTROLLER_TOKEN_FILE: /run/secrets/controller-token
+      CONTROLLER_RUNS_ROOT: "${API_AGENT_RUNTIME_HOST_ROOT:-/Users/admin/Testproject/AItestcase_Agents/runtime/dev/api}/tasks"
+      EXECUTOR_IMAGE: "api-test-executor:${APP_REVISION:-local}"
+      EXECUTOR_NETWORK: "test-platform-${PLATFORM_RUNTIME_ENV:-dev}-api-executor"
+      EXECUTOR_PROXY_URL: http://api-egress-proxy:5011
+      RESOURCE_POLICY_ID: local-restricted-v1
+      EGRESS_POLICY_ID: local-platform-v1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - "${API_AGENT_RUNTIME_HOST_ROOT:-/Users/admin/Testproject/AItestcase_Agents/runtime/dev/api}:${API_AGENT_RUNTIME_HOST_ROOT:-/Users/admin/Testproject/AItestcase_Agents/runtime/dev/api}"
+      - ./.runtime-secrets/${PLATFORM_RUNTIME_ENV:-dev}/api-execution-controller-token:/run/secrets/controller-token:ro
+    # Docker Socket 本身等同宿主高权限；只允许此隔离服务以 root 访问，Web/Executor 均保持非 root。
+    user: "0:0"
+    expose:
+      - "5010"
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 128
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5010/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      api-egress-proxy:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # 出口代理同时连接 Executor 隔离网和平台默认网，只允许登记的本机测试目标。
+  api-egress-proxy:
+    profiles: ["s2-execution"]
+    build:
+      context: ../AItestcase_Agents
+      dockerfile: Dockerfile.egress-proxy
+    environment:
+      REGISTERED_TARGETS: '${API_EGRESS_TARGETS:-[{"target_id":"local-platform-dev","schemes":["http"],"hosts":["platform-gateway"],"ports":[80],"path_prefixes":["/api/v1/"],"allowed_cidrs":["172.16.0.0/12"]}]}'
+    expose:
+      - "5011"
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 64
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s=socket.create_connection(('127.0.0.1',5011),3); s.close()"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    networks:
+      - default
+      - api-executor
+    restart: unless-stopped
+
+  # 仅用于构建固定 Executor 镜像，不作为常驻服务启动。
+  api-test-executor-image:
+    profiles: ["s2-build"]
+    image: "api-test-executor:${APP_REVISION:-local}"
+    build:
+      context: ../AItestcase_Agents
+      dockerfile: Dockerfile.api-executor
+    network_mode: none
+
 volumes:
   platform-db-data:
-    name: platform-db-data
+    # 环境名进入宿主机卷名，避免同一 Compose 文件切换 prod 时复用 dev PostgreSQL。
+    name: "test-platform-${PLATFORM_RUNTIME_ENV:-dev}-db-data"
+
+networks:
+  api-executor:
+    name: "test-platform-${PLATFORM_RUNTIME_ENV:-dev}-api-executor"
+    internal: true

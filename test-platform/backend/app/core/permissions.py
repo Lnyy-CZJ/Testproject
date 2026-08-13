@@ -18,6 +18,12 @@ TOOL_PERMISSIONS = {
     "tool.result.view",
     "tool.config.manage",
     "tool.secret.manage",
+    "task.cancel",
+    "task.view.all",
+    "api-test-agent.execute",
+    "api-test-agent.contract.review",
+    "api-test-agent.case.review",
+    "api-test-agent.defect.create",
 }
 
 
@@ -34,6 +40,18 @@ def required_tool_permission(tool_id: str, method: str, original_uri: str) -> st
     """
 
     path = urlsplit(original_uri).path
+    if tool_id == "api-test-agent":
+        write_method = method.upper() in {"POST", "PUT", "PATCH", "DELETE"}
+        if write_method and (path.endswith("/execute") or "/runs/" in path):
+            return "api-test-agent.execute"
+        if write_method and path.endswith("/contracts/review"):
+            return "api-test-agent.contract.review"
+        if write_method and (path.endswith("/cases/review") or path.endswith("/cases/generate") or path.endswith("/executable-cases/generate")):
+            return "api-test-agent.case.review"
+        if write_method and "/defect-drafts" in path:
+            return "api-test-agent.defect.create"
+    if method.upper() == "POST" and path.endswith("/cancel"):
+        return "task.cancel"
     if method.upper() not in {"GET", "HEAD", "OPTIONS"}:
         return "tool.execute"
 
@@ -45,6 +63,8 @@ def required_tool_permission(tool_id: str, method: str, original_uri: str) -> st
         "api-autotest": (
             "/tasks/", "/api/tasks", "/reports/", "/api/report/",
         ),
+        "functional-test-agent": ("/tasks/", "/api/v1/tasks", "/artifacts", "/logs"),
+        "api-test-agent": ("/tasks/", "/api/v1/tasks", "/artifacts", "/logs"),
         "trackevents": (),
         "log-filter": (),
     }

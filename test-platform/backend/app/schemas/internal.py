@@ -51,3 +51,4 @@ class RuntimeConfigResponse(BaseModel):
     normal: dict[str, Any]
     secrets: dict[str, str]
     credential_metadata: dict[str, Any]
+    configured_secret_keys: list[str] = Field(default_factory=list)

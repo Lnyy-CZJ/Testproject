@@ -319,13 +319,20 @@ function ConfigPage() {
 
   function inputValue(definition: ConfigDefinition): string | number {
     const value = values[definition.id] ?? definition.default_value ?? "";
+    if (definition.value_type === "json" && typeof value !== "string") return JSON.stringify(value);
     return typeof value === "number" ? value : String(value);
   }
   function updateValue(definition: ConfigDefinition, rawValue: string) {
     let value: unknown = rawValue;
-    if (definition.value_type === "integer") value = rawValue === "" ? null : Number(rawValue);
-    if (definition.value_type === "boolean") value = rawValue === "true";
+    if (["int", "integer", "float"].includes(definition.value_type)) value = rawValue === "" ? null : Number(rawValue);
+    if (["bool", "boolean"].includes(definition.value_type)) value = rawValue === "true";
     setValues((current) => ({ ...current, [definition.id]: value }));
+  }
+  function payloadValue(definition: ConfigDefinition): unknown {
+    const value = values[definition.id] ?? definition.default_value;
+    if (definition.value_type !== "json" || typeof value !== "string") return value;
+    try { return JSON.parse(value); }
+    catch { throw new Error(`${definition.display_name} 必须是有效 JSON。`); }
   }
   async function createDraft() {
     setError(""); setMessage("");
@@ -339,7 +346,7 @@ function ConfigPage() {
     if (!draft) return;
     setError(""); setMessage("");
     try {
-      const updated = await apiJson<ConfigRelease>(`/config/releases/${draft.id}/items`, { method: "PUT", body: JSON.stringify({ revision: draft.revision, items: ownerItems.map((item) => ({ definition_id: item.id, value: values[item.id] ?? item.default_value })) }) });
+      const updated = await apiJson<ConfigRelease>(`/config/releases/${draft.id}/items`, { method: "PUT", body: JSON.stringify({ revision: draft.revision, items: ownerItems.map((item) => ({ definition_id: item.id, value: payloadValue(item) })) }) });
       setDraft(updated); setMessage(`v${updated.version} 草稿已保存。`); await loadReleases(owner);
     } catch (requestError) { setError(requestError instanceof Error ? requestError.message : "保存失败"); }
   }
@@ -371,7 +378,7 @@ function ConfigPage() {
     } catch (requestError) { setError(requestError instanceof Error ? requestError.message : "提升失败"); }
   }
 
-  return <WorkspaceShell><section className="workspace-page"><PageHeader eyebrow={`${environment.toUpperCase()} / CONFIGURATION`} title="配置控制面" copy="只有已登记的键可以在 Web 修改；发布与回滚始终保留可追溯版本。" actions={<label className="compact-field">工具<select value={owner} onChange={(event) => { setOwner(event.target.value); setConfirmPublish(false); }}>{owners.map((item) => <option key={item}>{item}</option>)}</select></label>} /><SettingsNav />{message && <InlineMessage kind="success">{message}</InlineMessage>}{error && <InlineMessage kind="error">{error}</InlineMessage>}{ownerItems.length === 0 ? <EmptyState title="没有可管理的配置" copy="请检查当前角色的工具配置权限。" /> : <><div className="config-toolbar"><div><strong>{owner}</strong><span>{draft ? `v${draft.version} 草稿 · revision ${draft.revision}` : "当前没有草稿"}</span></div><div className="dialog-actions">{!draft ? <button className="primary-button" onClick={() => void createDraft()}>创建草稿</button> : <><button className="secondary-button" onClick={() => void saveDraft()}>保存草稿</button><button className="secondary-button" onClick={() => void releaseAction("validate")}>校验</button><button className="primary-button" onClick={() => void releaseAction("publish")}>{environment === "prod" && confirmPublish ? "确认发布 PROD" : "发布"}</button></>}</div></div><div className="config-grid">{ownerItems.map((item) => <label className="config-field" key={item.id}><span>{item.display_name}<small>{item.key} · {item.apply_mode}</small></span>{item.value_type === "boolean" ? <select disabled={!draft} value={String(values[item.id] ?? item.default_value ?? false)} onChange={(event) => updateValue(item, event.target.value)}><option value="true">true</option><option value="false">false</option></select> : <input disabled={!draft} type={item.value_type === "integer" ? "number" : "text"} value={inputValue(item)} onChange={(event) => updateValue(item, event.target.value)} required={item.required} />}</label>)}</div><section className="release-history" aria-labelledby="release-history-title"><h2 id="release-history-title">版本历史</h2>{releases.length === 0 ? <EmptyState title="尚无版本" copy="创建首个草稿后，版本记录会显示在这里。" /> : releases.map((release) => <div className="release-row" key={release.id}><div><strong>v{release.version}</strong><span>revision {release.revision} · {new Date(release.created_at).toLocaleString()}</span></div><StatusBadge value={release.status} /><div className="row-actions">{release.status === "active" || release.status === "superseded" ? <button className="secondary-button" onClick={() => void rollback(release)}>回滚到此版本</button> : null}{environment === "dev" && release.status === "active" ? <button className="secondary-button" onClick={() => void promote(release)}>提升为 PROD 草稿</button> : null}</div></div>)}</section></>}</section></WorkspaceShell>;
+  return <WorkspaceShell><section className="workspace-page"><PageHeader eyebrow={`${environment.toUpperCase()} / CONFIGURATION`} title="配置控制面" copy="只有已登记的键可以在 Web 修改；发布与回滚始终保留可追溯版本。" actions={<label className="compact-field">工具<select value={owner} onChange={(event) => { setOwner(event.target.value); setConfirmPublish(false); }}>{owners.map((item) => <option key={item}>{item}</option>)}</select></label>} /><SettingsNav />{message && <InlineMessage kind="success">{message}</InlineMessage>}{error && <InlineMessage kind="error">{error}</InlineMessage>}{ownerItems.length === 0 ? <EmptyState title="没有可管理的配置" copy="请检查当前角色的工具配置权限。" /> : <><div className="config-toolbar"><div><strong>{owner}</strong><span>{draft ? `v${draft.version} 草稿 · revision ${draft.revision}` : "当前没有草稿"}</span></div><div className="dialog-actions">{!draft ? <button className="primary-button" onClick={() => void createDraft()}>创建草稿</button> : <><button className="secondary-button" onClick={() => void saveDraft()}>保存草稿</button><button className="secondary-button" onClick={() => void releaseAction("validate")}>校验</button><button className="primary-button" onClick={() => void releaseAction("publish")}>{environment === "prod" && confirmPublish ? "确认发布 PROD" : "发布"}</button></>}</div></div><div className="config-grid">{ownerItems.map((item) => <label className="config-field" key={item.id}><span>{item.display_name}<small>{item.key} · {item.apply_mode}</small></span>{["bool", "boolean"].includes(item.value_type) ? <select disabled={!draft} value={String(values[item.id] ?? item.default_value ?? false)} onChange={(event) => updateValue(item, event.target.value)}><option value="true">true</option><option value="false">false</option></select> : <input disabled={!draft} type={["int", "integer", "float"].includes(item.value_type) ? "number" : "text"} step={item.value_type === "float" ? "any" : undefined} value={inputValue(item)} onChange={(event) => updateValue(item, event.target.value)} required={item.required} />}</label>)}</div><section className="release-history" aria-labelledby="release-history-title"><h2 id="release-history-title">版本历史</h2>{releases.length === 0 ? <EmptyState title="尚无版本" copy="创建首个草稿后，版本记录会显示在这里。" /> : releases.map((release) => <div className="release-row" key={release.id}><div><strong>v{release.version}</strong><span>revision {release.revision} · {new Date(release.created_at).toLocaleString()}</span></div><StatusBadge value={release.status} /><div className="row-actions">{release.status === "active" || release.status === "superseded" ? <button className="secondary-button" onClick={() => void rollback(release)}>回滚到此版本</button> : null}{environment === "dev" && release.status === "active" ? <button className="secondary-button" onClick={() => void promote(release)}>提升为 PROD 草稿</button> : null}</div></div>)}</section></>}</section></WorkspaceShell>;
 }
 
 function SecretsPage() {

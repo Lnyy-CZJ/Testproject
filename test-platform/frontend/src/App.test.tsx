@@ -52,6 +52,23 @@ describe("第二阶段平台", () => {
     expect(screen.getByRole("link", { name: /打开工具/ })).toHaveAttribute("href", "/trackevents/");
   });
 
+  it("渲染两个独立 AI 测试智能体卡片和入口", async () => {
+    const agents = [
+      { ...tool, id: "functional-test-agent", name: "功能测试智能体", entry_url: "/functional-test-agent/", short_code: "FT AI", icon_key: "functional-ai" },
+      { ...tool, id: "api-test-agent", name: "API 测试智能体", entry_url: "/api-test-agent/", short_code: "API AI", icon_key: "api-ai" },
+    ];
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const url = String(input);
+      if (url.endsWith("/auth/me")) return jsonResponse(auth);
+      if (url.endsWith("/tools")) return jsonResponse({ items: agents });
+      return jsonResponse({ tool_id: agents[0].id, status: "healthy", checked_at: "2026-08-12T00:00:00Z" });
+    });
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: "功能测试智能体" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "API 测试智能体" })).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: /打开工具/ })[0]).toHaveAttribute("href", "/functional-test-agent/");
+  });
+
   it("工具目录异常时失败关闭，不恢复静态入口", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation((input) => String(input).endsWith("/auth/me") ? jsonResponse(auth) : jsonResponse({ code: "DATABASE_UNAVAILABLE", message: "数据库不可用" }, 503));
     render(<App />);

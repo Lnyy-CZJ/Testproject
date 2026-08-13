@@ -55,7 +55,7 @@ def anonymous_status(path):
 
 
 class PlatformSmokeTest(unittest.TestCase):
-    """从用户统一入口验证平台和四个独立工具的核心连通性。"""
+    """从用户统一入口验证平台和六个独立工具的核心连通性。"""
 
     @classmethod
     def setUpClass(cls):
@@ -92,7 +92,10 @@ class PlatformSmokeTest(unittest.TestCase):
         tool_ids = [item["id"] for item in json.loads(api_body)["items"]]
         self.assertEqual(
             tool_ids,
-            ["trackevents", "log-filter", "truthy-search", "api-autotest"],
+            [
+                "trackevents", "log-filter", "truthy-search", "api-autotest",
+                "functional-test-agent", "api-test-agent",
+            ],
         )
 
     def test_platform_health_endpoints_are_available(self):
@@ -171,6 +174,23 @@ class PlatformSmokeTest(unittest.TestCase):
         self.assertIn("flows", catalog)
         self.assertEqual(tasks_status, 200)
         self.assertIn("items", json.loads(tasks_body))
+
+    def test_two_ai_agent_pages_health_and_task_lists_are_available(self):
+        """只读验证两个 AI 智能体的独立页面、健康状态和任务列表。"""
+
+        for base_path, expected_text in (
+            ("/functional-test-agent", "功能测试智能体"),
+            ("/api-test-agent", "API 测试智能体"),
+        ):
+            page_status, _, page = request(f"{base_path}/")
+            health_status, _, health_body = request(f"{base_path}/health")
+            tasks_status, _, tasks_body = request(f"{base_path}/api/v1/tasks")
+            self.assertEqual(page_status, 200)
+            self.assertIn(expected_text, page)
+            self.assertEqual(health_status, 200)
+            self.assertEqual(json.loads(health_body)["status"], "ok")
+            self.assertEqual(tasks_status, 200)
+            self.assertIn("items", json.loads(tasks_body))
 
 
 if __name__ == "__main__":

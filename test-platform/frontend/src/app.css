@@ -332,6 +332,10 @@
 .status-badge-danger { color: var(--color-danger); background: var(--color-danger-bg); }
 .status-badge-neutral { color: var(--color-text-secondary); background: var(--color-canvas); }
 
+/* 两个智能体只扩展现有工具图标色阶，不引入第二套视觉系统。 */
+.tool-icon-functional-ai { color: #075985; background: #e0f2fe; }
+.tool-icon-api-ai { color: #3730a3; background: #e0e7ff; }
+
 .empty-state {
   padding: 56px 28px;
 }

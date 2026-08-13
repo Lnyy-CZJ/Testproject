@@ -1,11 +1,13 @@
 # 测试开发平台
 
-测试开发平台是 QA、研发和测试工程师的统一身份与配置控制面。平台使用 React + TypeScript + Vite、FastAPI、PostgreSQL、Alembic、Nginx 和 Docker Compose，当前聚合四个独立工具：
+测试开发平台是 QA、研发和测试工程师的统一身份与配置控制面。平台使用 React + TypeScript + Vite、FastAPI、PostgreSQL、Alembic、Nginx 和 Docker Compose，当前聚合六个独立工具：
 
 - `TrackEvents_tess`：埋点日志分析；
 - `log_filter_tool`：日志筛选、统计与导出；
 - `Truthy_Search`：检索执行、字段对比与评测报告；
 - `Truthy_ApiAutoTest2`：Gateway 接口自动化与 Allure 报告。
+- `AItestcase_Agents/functional-test-agent`：需求拆解、测试点 Review 和功能用例生成；
+- `AItestcase_Agents/api-test-agent`：API 文档解析和文件化用例生成，真实执行默认关闭。
 
 第二阶段由平台统一负责登录会话、RBAC、网关强制鉴权、审计日志、普通配置、加密 Secret 和凭证续期。工具仍保留独立源码、容器和独立运行模式。平台或数据库异常时鉴权失败关闭，不提供匿名回退。
 
@@ -38,8 +40,9 @@ Compose 会依次运行 PostgreSQL、`alembic upgrade head`、工具 Client Toke
 
 - `dev-kek.json`：dev Secret KEK；
 - `prod-kek.json`：prod 准备使用的独立 KEK，不在 dev Compose 挂载；
-- `bootstrap-token`：仅用于数据库无用户时的 `/setup`；
-- `*-client-token`：每个工具独立的启动身份；
+- `<environment>/bootstrap-token`：仅用于对应环境数据库无用户时的 `/setup`；
+- `<environment>/*-client-token`：两个 AI 智能体按环境和工具独立的启动身份；
+- `*-client-token`：既有工具的独立启动身份；
 - `initial-admin-password`：自动初始化后的临时管理员密码。
 
 当前 dev 管理员用户名为 `admin`。首次登录可在本机读取临时密码，登录后应立即修改：
@@ -64,7 +67,7 @@ cat /Users/admin/Testproject/test-platform/.runtime-secrets/initial-admin-passwo
 | 审计保留目标 | 180 天 |
 | 凭证提前刷新 | 60 分钟 |
 
-Nginx 对四个工具前缀执行 `auth_request`。匿名页面请求重定向 `/login`，API 请求返回 401；无权限返回 403；身份服务异常返回 503。浏览器提供的 `X-Platform-*` 会被清除，只有授权成功后由网关注入可信身份和权限。
+Nginx 对全部六个工具前缀执行 `auth_request`。匿名页面请求重定向 `/login`，API 请求返回 401；无权限返回 403；身份服务异常返回 503。浏览器提供的 `X-Platform-*` 会被清除，只有授权成功后由网关注入可信身份和权限。
 
 ## 配置、Secret 与 Credential
 
@@ -79,7 +82,7 @@ Web 配置控制面只允许修改迁移中登记的白名单键：
 
 配置生效模式为 `immediate`、`next_task`、`restart` 或 `deployment`。平台不挂载 Docker Socket；`restart/deployment` 只显示待操作状态，由管理员执行文档化的 Compose 命令。
 
-`dev/prod` 的配置、Secret、Credential、Client Token 和 KEK 必须隔离。普通配置可人工提升为 prod 草稿，Secret 不自动复制。
+`dev/prod` 的 PostgreSQL 卷、任务目录、配置、Secret、Credential、Client Token 和 KEK 必须隔离。Compose 默认使用 `test-platform-<environment>-db-data`，普通配置可人工提升为 prod 草稿，Secret 不自动复制。
 
 ## 真实凭证迁移门禁
 
@@ -108,6 +111,65 @@ docker compose exec -T platform-gateway nginx -t
 curl -i http://127.0.0.1:8080/api/v1/health/live
 curl -i http://127.0.0.1:8080/api/v1/health/ready
 ```
+
+## 两个 AI 测试智能体
+
+两个服务使用独立任务根和按环境隔离的 Tool Client Token：
+
+```text
+AItestcase_Agents/runtime/<environment>/functional
+AItestcase_Agents/runtime/<environment>/api
+test-platform/.runtime-secrets/<environment>/functional-test-agent-client-token
+test-platform/.runtime-secrets/<environment>/api-test-agent-client-token
+```
+
+管理员需要分别为两个工具创建并发布配置 Release，分别写入各自的 `LLM_API_KEY`。API 工具初始值必须保持：
+
+```text
+API_EXECUTION_ENABLED=false
+DATABASE_PERSIST_ENABLED=false
+ALLOWED_TARGETS=[]
+```
+
+任务摘要默认保留 180 天，输入、日志和产物保留 90 天，每个智能体最多保留 500 个终态任务。旧 `AItestcase_Agents/output/` 不挂载、不迁移且不作为新服务的写目录。
+
+功能智能体在线测试点 Review 使用任务目录中的 JSON 文件作为权威数据，不建立测试点业务表。模型原稿、可变草稿、AI 建议和不可变确认版本分别保存；正式用例生成只读取确认版本。普通用户在任务详情页使用结构化表格，原 JSON 下载/上传保留在“高级操作”。
+
+```text
+ONLINE_REVIEW_ENABLED=false
+REVIEW_AI_ENABLED=false
+REVIEW_AI_TIMEOUT_SECONDS=600
+REVIEW_AI_MAX_SELECTED_POINTS=100
+REVIEW_AI_MAX_SUGGESTIONS=200
+REVIEW_AI_MAX_CONTEXT_POINTS=500
+REVIEW_AI_MAX_INSTRUCTION_CHARACTERS=2000
+```
+
+配置目录默认关闭两个功能。迁移 `20260813_0010` 会克隆当前 dev Release 并显式开启在线 Review 与 AI Review；prod 不自动开启。AI 辅助和正式生成共享功能智能体的单运行槽位及 FIFO，AI 失败、取消、超时或重启中断会返回 `waiting_review`，不会删除草稿。
+
+回滚时先关闭 `REVIEW_AI_ENABLED`；仍需回退时再关闭 `ONLINE_REVIEW_ENABLED`，页面恢复旧 JSON 流程。不要删除任务卷中的 `review-draft.json`、`review-test-points-vN.json` 或 `review-ai/`。数据库通常保留 0010；确需降级时先关闭开关，再降到 `20260812_0009`。
+
+功能智能体在线测试用例 Review 复用测试点 Review 的文件事务、CAS、权限和单槽 FIFO，但使用独立用例校验、AI Prompt 和“列表 + 详情”桌面工作台。用例模型原稿、草稿、AI 建议、确认版本分别保存；`actual_result` 本期只读。确认时不会再次调用模型，而是从不可变确认 JSON 同源生成最终 JSON/XLSX。
+
+```text
+ONLINE_CASE_REVIEW_ENABLED=false
+CASE_REVIEW_AI_ENABLED=false
+CASE_REVIEW_AI_TIMEOUT_SECONDS=600
+CASE_REVIEW_AI_MAX_SELECTED_CASES=50
+CASE_REVIEW_AI_MAX_SUGGESTIONS=100
+CASE_REVIEW_AI_MAX_CONTEXT_CASES=300
+CASE_REVIEW_AI_MAX_CONTEXT_POINTS=300
+CASE_REVIEW_AI_MAX_INSTRUCTION_CHARACTERS=2000
+CASE_REVIEW_MAX_CASES=2000
+CASE_REVIEW_MAX_BYTES=10485760
+CASE_REVIEW_MAX_CHARACTERS=1000000
+```
+
+迁移 `20260814_0012` 下接 `20260813_0011`：配置定义默认关闭，dev Release 显式开启，prod 不自动开启。用例 AI 失败、取消、超时或服务重启后回到 `waiting_case_review`，不会修改草稿或删除已有产物。发布失败时任务保持可恢复 Review 状态，artifact registry 不登记半成品。
+
+用例 Review 回滚按三层执行：先关闭 `CASE_REVIEW_AI_ENABLED`，再关闭 `ONLINE_CASE_REVIEW_ENABLED`，必要时恢复上一版功能智能体镜像并保留任务卷。通常保留 0012；确需降级时先关闭开关，再执行 `alembic downgrade 20260813_0011`。不得删除 `case-review-draft.json`、`review-test-cases-vN.json`、`case-review-ai/` 或 `published/test-cases/vN/`。
+
+部署或回滚时可单独启动、停止两个服务；常规回滚不得删除任务目录。只有在已备份平台数据库并确认接受删除新工具配置数据时，才执行 Alembic downgrade 到 `20260811_0008`。
 
 数据库备份、SQLite 一致性备份和工具产物备份放在 Git 忽略的 `backups/`。不要只复制正在运行的 SQLite 主文件，应使用 SQLite Backup API。
 

@@ -244,6 +244,16 @@ def test_tool_path_policy_separates_view_result_and_execute() -> None:
     assert required_tool_permission("truthy-search", "GET", "/truthy-search/runs/run_1") == "tool.result.view"
     assert required_tool_permission("api-autotest", "GET", "/api-autotest/api/tasks") == "tool.result.view"
     assert required_tool_permission("trackevents", "POST", "/trackevents/api/analyze") == "tool.execute"
+    assert required_tool_permission("functional-test-agent", "GET", "/functional-test-agent/api/v1/tasks") == "tool.result.view"
+    assert required_tool_permission("functional-test-agent", "POST", "/functional-test-agent/api/v1/tasks/task_1/cancel") == "task.cancel"
+    assert required_tool_permission("functional-test-agent", "POST", "/functional-test-agent/api/v1/tasks/task_1/review-ai/cancel") == "task.cancel"
+    assert required_tool_permission("functional-test-agent", "POST", "/functional-test-agent/api/v1/tasks/task_1/case-review-ai/cancel") == "task.cancel"
+    assert required_tool_permission("api-test-agent", "POST", "/api-test-agent/api/v1/tasks/task_1/execute") == "api-test-agent.execute"
+    assert required_tool_permission("api-test-agent", "PUT", "/api-test-agent/api/v1/tasks/task_1/contracts/review") == "api-test-agent.contract.review"
+    assert required_tool_permission("api-test-agent", "POST", "/api-test-agent/api/v1/tasks/task_1/cases/generate") == "api-test-agent.case.review"
+    assert required_tool_permission("api-test-agent", "POST", "/api-test-agent/api/v1/tasks/task_1/defect-drafts") == "api-test-agent.defect.create"
+    assert required_tool_permission("api-test-agent", "POST", "/api-test-agent/api/v1/tasks/task_1/runs/run_1/retry") == "api-test-agent.execute"
+    assert required_tool_permission("api-test-agent", "POST", "/api-test-agent/api/v1/tasks/task_1/runs/run_1/cancel") == "api-test-agent.execute"
 
 
 def test_credential_expiry_accepts_gateway_milliseconds_and_admin_iso() -> None:
