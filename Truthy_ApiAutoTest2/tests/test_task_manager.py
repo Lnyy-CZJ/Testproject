@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import DOTENV_WITHOUT_ADMIN, junit_xml, patch_command
+from conftest import BASE_DOTENV, DOTENV_WITHOUT_ADMIN, junit_xml, patch_command
 from web.task_manager import SubmissionError, TaskManager
 
 # 终端状态集合，与实现保持一致。
@@ -178,6 +178,55 @@ class TestCredentialPrecheck:
         record = manager.submit(env="test", run_type="all", tag="nosuchtag")
         finished = wait_terminal(manager, record["id"])
         assert finished["status"] == "succeeded"
+
+    def test_platform_mode_admin_ready_from_platform_keys(
+        self, fake_project, make_manager, monkeypatch
+    ):
+        # 平台模式：以平台 Secret 键名清单为准，本地 .env 无 Admin 凭证也放行。
+        (fake_project / ".env").write_text(DOTENV_WITHOUT_ADMIN, encoding="utf-8")
+        manager = make_manager(
+            fake_project,
+            platform_secret_keys_provider=lambda: {
+                "ADMIN_SESSION_TOKEN",
+                "ADMIN_OPERATOR_ID",
+                "ADMIN_OPERATOR_NAME",
+            },
+        )
+        patch_command(monkeypatch, manager, "print('ok')")
+        record = manager.submit(env="test", run_type="flow", flow="AdminFlow")
+        finished = wait_terminal(manager, record["id"])
+        assert finished["status"] == "succeeded"
+
+    def test_platform_mode_admin_partial_keys_rejected(
+        self, fake_project, make_manager
+    ):
+        # 本地 .env 含全部 Admin 凭证，但平台清单只配了一个键 → 以平台清单为准拒绝。
+        (fake_project / ".env").write_text(BASE_DOTENV, encoding="utf-8")
+        manager = make_manager(
+            fake_project,
+            platform_secret_keys_provider=lambda: {"ADMIN_SESSION_TOKEN"},
+        )
+        with pytest.raises(SubmissionError) as exc_info:
+            manager.submit(env="test", run_type="flow", flow="AdminFlow")
+        assert exc_info.value.status_code == 400
+        assert exc_info.value.error_code == "ADMIN_CREDENTIALS_MISSING"
+        # 缺失明细只列平台未配置的键。
+        assert "ADMIN_OPERATOR_ID" in exc_info.value.message
+        assert "ADMIN_OPERATOR_NAME" in exc_info.value.message
+        assert "ADMIN_SESSION_TOKEN" not in exc_info.value.message
+
+    def test_platform_mode_provider_unavailable_rejected(
+        self, fake_project, make_manager
+    ):
+        # 平台运行配置提供器返回 None（不可达）→ 503 PLATFORM_CONFIG_UNAVAILABLE。
+        (fake_project / ".env").write_text(BASE_DOTENV, encoding="utf-8")
+        manager = make_manager(
+            fake_project, platform_secret_keys_provider=lambda: None
+        )
+        with pytest.raises(SubmissionError) as exc_info:
+            manager.submit(env="test", run_type="flow", flow="AdminFlow")
+        assert exc_info.value.status_code == 503
+        assert exc_info.value.error_code == "PLATFORM_CONFIG_UNAVAILABLE"
 
 
 class TestBuildCommand:

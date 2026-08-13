@@ -1,0 +1,305 @@
+CreateIntentTask 脱敏请求数据:
+{
+  "client_request_id": "crid_f06_0000000000000001",
+  "match_strategy": "UNION",
+  "clues": [
+    {
+      "type": "FULL_NAME",
+      "full_name_query": {
+        "full_name": "Carol Fixture"
+      }
+    },
+    {
+      "type": "SOCIAL_LINK",
+      "social_link_query": {
+        "url": "https://www.instagram.com/carol.fixture/"
+      }
+    },
+    {
+      "type": "EMAIL",
+      "email_query": {
+        "email": "carol@example.com"
+      }
+    }
+  ]
+}
+CreateIntentTask 响应数据: HTTP 200 elapsed_ms=320
+{
+  "task_id": "task_f0600000000000000000000aa",
+  "query_id": "query_f06000000000000000000a",
+  "status": "CREATED"
+}
+GetTask 脱敏请求数据:
+{
+  "task_id": "task_f0600000000000000000000aa"
+}
+GetTask 响应数据: HTTP 200 elapsed_ms=1011
+{
+  "task_id": "task_f0600000000000000000000aa",
+  "status": "SUCCEEDED",
+  "candidate_count": 2,
+  "candidate_confidence_scores": [
+    88,
+    30
+  ],
+  "top_confidence_score": 88,
+  "result_type": "multiple",
+  "stop_reason": "COMPLETED",
+  "provider_summary": {
+    "primary_provider": "social_profile_primary"
+  }
+}
+ListTaskCandidates 响应数据: HTTP 200 elapsed_ms=210
+{
+  "task_id": "task_f0600000000000000000000aa",
+  "total": 2,
+  "items": [
+    {
+      "candidate_id": "cand_f06_001",
+      "person_id": "pdl_p_000006a",
+      "confidence_level": "HIGH",
+      "match_score": 88,
+      "matched_clue_types": [
+        "SOCIAL_LINK",
+        "EMAIL",
+        "FULL_NAME"
+      ],
+      "match_reasons": [
+        "instagram_profile_name_match",
+        "email_verified_match"
+      ],
+      "is_top_result": true,
+      "is_best_match": true,
+      "display_name": "Carol Fixture",
+      "avatar_url": "https://cdn.example.com/avatars/cand_f06_001.png",
+      "social_links": [
+        "https://www.instagram.com/carol.fixture/",
+        "https://x.com/carolfixture"
+      ],
+      "source_provider": "social_profile_primary",
+      "rank_score": 88,
+      "rank_version": "rank_v1"
+    },
+    {
+      "candidate_id": "cand_f06_002",
+      "person_id": "pdl_p_000006b",
+      "confidence_level": "LOW",
+      "match_score": 30,
+      "matched_clue_types": [
+        "EMAIL"
+      ],
+      "match_reasons": [
+        "email_partial_match"
+      ],
+      "is_top_result": false,
+      "is_best_match": false,
+      "display_name": "Carol F.",
+      "avatar_url": "https://cdn.example.com/avatars/cand_f06_002.png",
+      "social_links": [],
+      "source_provider": "people_data_labs",
+      "rank_score": 30,
+      "rank_version": "rank_v1"
+    }
+  ]
+}
+GetTaskCandidateDetail 响应数据: HTTP 200 elapsed_ms=96
+{
+  "task_id": "task_f0600000000000000000000aa",
+  "candidate_id": "cand_f06_001",
+  "person_id": "pdl_p_000006a",
+  "candidate": {
+    "candidate_id": "cand_f06_001",
+    "display_name": "Carol Fixture",
+    "confidence_level": "HIGH",
+    "match_score": 88,
+    "matched_clue_types": [
+      "SOCIAL_LINK",
+      "EMAIL",
+      "FULL_NAME"
+    ],
+    "source_provider": "social_profile_primary"
+  },
+  "disclaimers": [
+    "邮箱与社交账号仅用于身份核验展示。"
+  ],
+  "entitlement_decision": "ALLOWED",
+  "evidence": [
+    {
+      "type": "social_profile_match",
+      "provider": "social_profile_primary",
+      "description": "Instagram 主页昵称与输入姓名一致"
+    },
+    {
+      "type": "email_match",
+      "provider": "people_data_labs",
+      "description": "邮箱 carol@example.com 与资料记录一致"
+    }
+  ],
+  "social_accounts": [
+    {
+      "platform": "instagram",
+      "url": "https://www.instagram.com/carol.fixture/",
+      "status": "success"
+    },
+    {
+      "platform": "x",
+      "url": "https://x.com/carolfixture",
+      "status": "success"
+    }
+  ],
+  "face_comparison": {
+    "status": "not_performed",
+    "reason": "provider_not_connected"
+  }
+}
+GetSearchTaskDebug 响应数据: HTTP 200 elapsed_ms=88
+{
+  "debug": {
+    "task_id": "task_f0600000000000000000000aa",
+    "policy_version": "people_image_v1",
+    "agent_run_id": "run_f06_00000000000000000000001",
+    "agent_tool_calls": [
+      {
+        "provider": "social_profile_primary",
+        "operation": "profile_fetch",
+        "status": "success",
+        "start_time": "2026-08-13T10:06:10+08:00",
+        "finish_time": "2026-08-13T10:06:12+08:00",
+        "http_status": 200,
+        "cache_hit": false,
+        "candidate_count": 1,
+        "error_code": "",
+        "cost_status": "CALCULATED",
+        "estimated_cost_microunit": 20000,
+        "url": "https://www.instagram.com/carol.fixture/"
+      },
+      {
+        "provider": "social_profile_primary",
+        "operation": "profile_fetch",
+        "status": "success",
+        "start_time": "2026-08-13T10:06:20+08:00",
+        "finish_time": "2026-08-13T10:06:22+08:00",
+        "http_status": 200,
+        "cache_hit": false,
+        "candidate_count": 1,
+        "error_code": "",
+        "cost_status": "CALCULATED",
+        "estimated_cost_microunit": 20000,
+        "url": "https://x.com/carolfixture"
+      },
+      {
+        "provider": "people_data_labs",
+        "operation": "person_identify",
+        "status": "success",
+        "start_time": "2026-08-13T10:06:30+08:00",
+        "finish_time": "2026-08-13T10:06:34+08:00",
+        "http_status": 200,
+        "cache_hit": false,
+        "candidate_count": 2,
+        "error_code": "",
+        "cost_status": "CALCULATED",
+        "estimated_cost_microunit": 550000,
+        "query_type": "email"
+      }
+    ],
+    "candidates": [
+      {
+        "candidate_id": "cand_f06_001",
+        "provider": "social_profile_primary",
+        "decision": "SELECTED",
+        "selected": true,
+        "matched_clue_types": [
+          "SOCIAL_LINK",
+          "EMAIL",
+          "FULL_NAME"
+        ],
+        "person_id": "pdl_p_000006a"
+      },
+      {
+        "candidate_id": "cand_f06_002",
+        "provider": "people_data_labs",
+        "decision": "REJECTED",
+        "selected": false,
+        "matched_clue_types": [
+          "EMAIL"
+        ],
+        "person_id": "pdl_p_000006b"
+      }
+    ],
+    "social_url_queue": [
+      {
+        "url": "https://www.instagram.com/carol.fixture/",
+        "origin": "user_input",
+        "canonical_url": "instagram.com/carol.fixture",
+        "decision": "CALLED",
+        "skip_reason": "",
+        "call_count": 1
+      },
+      {
+        "url": "https://instagram.com/carol.fixture",
+        "origin": "user_input",
+        "canonical_url": "instagram.com/carol.fixture",
+        "decision": "DEDUPED",
+        "skip_reason": "canonical_duplicate",
+        "call_count": 0
+      },
+      {
+        "url": "https://x.com/carolfixture",
+        "origin": "provider_discovery",
+        "canonical_url": "x.com/carolfixture",
+        "decision": "CALLED",
+        "skip_reason": "",
+        "call_count": 1
+      },
+      {
+        "url": "https://myspace.com/carolfixture",
+        "origin": "provider_discovery",
+        "canonical_url": "myspace.com/carolfixture",
+        "decision": "SKIPPED",
+        "skip_reason": "unsupported_platform",
+        "call_count": 0
+      }
+    ],
+    "diagnosis": {
+      "final_status": "SUCCEEDED",
+      "stop_reason": "COMPLETED",
+      "llm_search_call_count": 0,
+      "llm_result_status": "not_called",
+      "public_figure_local_hit": false,
+      "public_figure_remote_usable_count": 0,
+      "public_figure_remote_ambiguous": false,
+      "pdl_identify_call_count": 1,
+      "pdl_person_search_call_count": 0,
+      "pdl_external_request_count": 1,
+      "social_profile_merged_candidate_count": 1,
+      "face_comparison_status": "not_performed"
+    },
+    "report": {
+      "stop_reason": "COMPLETED"
+    }
+  }
+}
+GetProviderCostSummary 响应数据: HTTP 200 elapsed_ms=45
+{
+  "cost_summary": {
+    "task_id": "task_f0600000000000000000000aa",
+    "currency": "USD",
+    "total_estimated_cost_microunit": 590000,
+    "items": [
+      {
+        "provider": "social_profile_primary",
+        "operation": "profile_fetch",
+        "call_count": 2,
+        "cost_status": "CALCULATED",
+        "estimated_cost_microunit": 40000
+      },
+      {
+        "provider": "people_data_labs",
+        "operation": "person_identify",
+        "call_count": 1,
+        "cost_status": "CALCULATED",
+        "estimated_cost_microunit": 550000
+      }
+    ]
+  }
+}

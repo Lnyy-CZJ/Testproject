@@ -121,7 +121,12 @@ def fake_project(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def make_manager():
-    """TaskManager 工厂；测试结束统一等待等待线程退出。"""
+    """TaskManager 工厂；测试结束统一等待等待线程退出。
+
+    功能说明:
+        除常用参数外的其余关键字参数原样透传给 TaskManager 构造器，
+        便于注入平台模式提供器等可选依赖。
+    """
     managers: list[TaskManager] = []
 
     def _make(root: Path, **kwargs) -> TaskManager:
@@ -132,6 +137,7 @@ def make_manager():
             timeout_seconds=kwargs.pop("timeout_seconds", 30),
             retain=kwargs.pop("retain", 50),
             cancel_grace_seconds=kwargs.pop("cancel_grace_seconds", 0.5),
+            **kwargs,
         )
         managers.append(manager)
         return manager

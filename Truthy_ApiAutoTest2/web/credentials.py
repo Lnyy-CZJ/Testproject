@@ -1,19 +1,21 @@
 """凭证与配置预检。
 
 功能说明:
-    任务提交前完成两级预检（均为本地检查，不发请求）：
+    任务提交前完成两级预检：
     1. 配置合并级：只读调用框架 ``load_settings(env)``，复用其对
        ``config/settings.yaml``、``config/env/<env>.yaml``、``.env`` 与
        进程环境变量的真实合并逻辑；不额外要求 DEVICE_ID 必须来自 .env。
     2. 任务级：解析实际选择的 Flow，目标包含 Admin 审计步骤时校验
        ``ADMIN_SESSION_TOKEN``、``ADMIN_OPERATOR_ID``、``ADMIN_OPERATOR_NAME``，
        缺失时只返回字段名，不返回字段值。
+    平台模式下本地 .env 不参与凭证合并，任务级校验改以平台 Secret 管理
+    已配置的 Secret 键名清单为准（只读键名，Secret 值不进壳服务内存）。
 """
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from utils.custom.config_loader import (
     ADMIN_ENV_MAPPING,
@@ -74,15 +76,27 @@ def check_base_config(
     return settings, None, ""
 
 
-def missing_admin_keys(settings: dict[str, Any]) -> list[str]:
-    """从合并后配置中找出缺失的 Admin 凭证字段名。
+def missing_admin_keys(
+    settings: dict[str, Any],
+    platform_secret_keys: set[str] | None = None,
+) -> list[str]:
+    """找出缺失的 Admin 凭证字段名。
 
     参数说明:
         settings: ``load_settings`` 返回的合并配置。
+        platform_secret_keys: 平台模式下 Secret 管理已配置的键名集合；
+            提供时以平台清单为判定依据，不再读取本地合并配置中的
+            ``runtime_variables``（平台模式本地 .env 不参与凭证合并）。
 
     返回值:
         缺失的环境变量名列表（如 ADMIN_SESSION_TOKEN）；全部就绪返回空列表。
     """
+    if platform_secret_keys is not None:
+        return [
+            env_key
+            for env_key in ADMIN_ENV_MAPPING.values()
+            if env_key not in platform_secret_keys
+        ]
     provided = settings.get("runtime_variables") or {}
     return [
         env_key
@@ -167,12 +181,19 @@ def credential_status(
     flow: str | None,
     tag: str | None,
     project_root: Path,
+    platform_secret_keys_provider: Callable[[], set[str] | None] | None = None,
 ) -> dict[str, Any]:
     """汇总页面展示的凭证就绪状态（只含状态与字段名，不含值）。
+
+    参数说明:
+        platform_secret_keys_provider: 平台模式注入的 Secret 键名清单读取器，
+            返回已配置键名集合；平台配置不可用时返回 None。提供时 Admin
+            就绪状态以平台清单判定，不再读取本地凭证来源。
 
     返回值:
         ``{"base_config": {"ready": bool, "message": str},
            "admin": {"required": bool, "ready": bool, "missing_fields": [...]}}``
+        平台清单不可读时降级为基础配置未就绪，避免误报具体缺失字段。
     """
     settings, error_code, message = check_base_config(env, project_root)
     base_ready = error_code is None
@@ -181,7 +202,25 @@ def credential_status(
     if base_ready and settings is not None:
         admin_required = target_requires_admin(project_root, run_type, flow, tag)
         if admin_required:
-            missing_fields = missing_admin_keys(settings)
+            if platform_secret_keys_provider is not None:
+                secret_keys = platform_secret_keys_provider()
+                if secret_keys is None:
+                    return {
+                        "base_config": {
+                            "ready": False,
+                            "message": "平台运行配置暂时不可用，无法校验 Secret 配置",
+                        },
+                        "admin": {
+                            "required": admin_required,
+                            "ready": False,
+                            "missing_fields": [],
+                        },
+                    }
+                missing_fields = missing_admin_keys(
+                    settings, platform_secret_keys=secret_keys
+                )
+            else:
+                missing_fields = missing_admin_keys(settings)
     return {
         "base_config": {
             "ready": base_ready,

@@ -1,0 +1,483 @@
+{
+  "analyzer_version": "people-search-v1",
+  "ruleset_version": "2026-08-13",
+  "policy_baseline": {
+    "source": "优化后检索功能测试报告",
+    "url": "https://kcnarqdur71j.feishu.cn/wiki/MAtnwS5ZdiK5TWk5ORUcZV6lnlg",
+    "report_date": "2026-08-11",
+    "policy_version_sample": "people_image_v1",
+    "note": "当前正式生效的 Public Figure、PDL、Social Profile 和图片策略版本以该报告为准（评审确认）。"
+  },
+  "review_confirmations": {
+    "llm_endpoint": "测试环境允许使用的 LLM 端点、模型与功能测试智能体使用的 LLM 一致。",
+    "ai_default": "AI 功能默认关闭，配置完成后开启。",
+    "email_phone_to_model_allowed": true,
+    "report_markdown_export_dir": "Report Markdown 默认导出目录继续复用现有配置。",
+    "face_comparison_not_connected": "Face Comparison 未接入期间作为“已知能力缺失”展示，不计为任务异常。"
+  },
+  "supported_methods": [
+    "CreateIntentTask",
+    "RefineTask",
+    "StartTask",
+    "GetTask",
+    "ListTaskCandidates",
+    "GetTaskCandidateDetail",
+    "ListTaskPublicSources",
+    "GetSearchTaskDebug",
+    "GetProviderCostSummary"
+  ],
+  "outcome_values": ["PASS", "FAIL", "WARN", "UNKNOWN", "NOT_APPLICABLE"],
+  "verdict_values": [
+    "NORMAL",
+    "ISSUES_FOUND",
+    "NEEDS_CONFIRMATION",
+    "INCOMPLETE_EVIDENCE",
+    "UNSUPPORTED_LOG"
+  ],
+  "rules": [
+    {
+      "rule_id": "STATE-001",
+      "category": "state",
+      "severity": "P0",
+      "title": "GetTask 终态与 diagnosis.final_status 一致",
+      "required_evidence": ["GetTask", "GetSearchTaskDebug"]
+    },
+    {
+      "rule_id": "STATE-002",
+      "category": "state",
+      "severity": "P0",
+      "title": "全部 Provider 技术失败不能归类为普通 NO_MATCH",
+      "required_evidence": ["GetTask", "GetSearchTaskDebug"]
+    },
+    {
+      "rule_id": "ROUTE-001",
+      "category": "routing",
+      "severity": "P0",
+      "title": "Local 可用命中后跳过 LLM、Wiki、PDL",
+      "required_evidence": ["GetSearchTaskDebug"]
+    },
+    {
+      "rule_id": "ROUTE-002",
+      "category": "routing",
+      "severity": "P0",
+      "title": "Public Figure 条件成立且主结果不足时 Wiki 在 PDL 前",
+      "required_evidence": ["GetSearchTaskDebug"]
+    },
+    {
+      "rule_id": "ROUTE-003",
+      "category": "routing",
+      "severity": "P0",
+      "title": "Wiki 唯一可靠结果后跳过 PDL",
+      "required_evidence": ["GetSearchTaskDebug"]
+    },
+    {
+      "rule_id": "ROUTE-004",
+      "category": "routing",
+      "severity": "P0",
+      "title": "Wiki 歧义后允许 PDL，且歧义信息不应静默丢失",
+      "required_evidence": ["GetSearchTaskDebug", "ListTaskCandidates"]
+    },
+    {
+      "rule_id": "LLM-001",
+      "category": "llm",
+      "severity": "P0",
+      "title": "LLM 完整、截断、失败和无结果分类一致",
+      "required_evidence": ["GetSearchTaskDebug"]
+    },
+    {
+      "rule_id": "LLM-002",
+      "category": "llm",
+      "severity": "P0",
+      "title": "截断时存在 finish_reason、token、可恢复候选和重试诊断",
+      "required_evidence": ["GetSearchTaskDebug"]
+    },
+    {
+      "rule_id": "PDL-001",
+      "category": "pdl",
+      "severity": "P0",
+      "title": "显示实际调用 Identify 或 Search，不混用统计字段",
+      "required_evidence": ["GetSearchTaskDebug", "GetProviderCostSummary"]
+    },
+    {
+      "rule_id": "PDL-002",
+      "category": "pdl",
+      "severity": "P1",
+      "title": "PDL 候选 decision/selected 与最终候选质量一致",
+      "required_evidence": ["GetSearchTaskDebug", "ListTaskCandidates"]
+    },
+    {
+      "rule_id": "SOCIAL-001",
+      "category": "social",
+      "severity": "P0",
+      "title": "输入 Social Link 有 CALLED 或明确 skip reason",
+      "required_evidence": ["CreateIntentTask", "GetSearchTaskDebug"]
+    },
+    {
+      "rule_id": "SOCIAL-002",
+      "category": "social",
+      "severity": "P1",
+      "title": "Provider 新发现受支持 URL 有调用或明确跳过原因",
+      "required_evidence": ["GetSearchTaskDebug"]
+    },
+    {
+      "rule_id": "SOCIAL-003",
+      "category": "social",
+      "severity": "P0",
+      "title": "同一 canonical URL 最多一次真实调用",
+      "required_evidence": ["GetSearchTaskDebug"]
+    },
+    {
+      "rule_id": "SOCIAL-004",
+      "category": "social",
+      "severity": "P0",
+      "title": "Social 成功结果与候选合并统计和最终来源一致",
+      "required_evidence": ["GetSearchTaskDebug", "ListTaskCandidates", "GetTaskCandidateDetail"]
+    },
+    {
+      "rule_id": "IMAGE-001",
+      "category": "image",
+      "severity": "P1",
+      "title": "用户图片触发反查或存在明确未规划原因",
+      "required_evidence": ["CreateIntentTask", "GetSearchTaskDebug"]
+    },
+    {
+      "rule_id": "IMAGE-002",
+      "category": "image",
+      "severity": "P0",
+      "title": "Reverse Image 主工具和 fallback 顺序一致",
+      "required_evidence": ["GetSearchTaskDebug"]
+    },
+    {
+      "rule_id": "FACE-001",
+      "category": "face",
+      "severity": "P0",
+      "title": "未执行 Face Comparison 不解释为 0% 或不匹配；未接入期间展示为“已知能力缺失”，不计为任务异常",
+      "required_evidence": ["GetTaskCandidateDetail", "GetSearchTaskDebug"]
+    },
+    {
+      "rule_id": "CAND-001",
+      "category": "candidate",
+      "severity": "P0",
+      "title": "candidate_count、top score 与候选列表一致",
+      "required_evidence": ["GetTask", "ListTaskCandidates"]
+    },
+    {
+      "rule_id": "CAND-002",
+      "category": "candidate",
+      "severity": "P0",
+      "title": "score/confidence/decision/selected 不矛盾",
+      "required_evidence": ["GetSearchTaskDebug", "ListTaskCandidates", "GetTaskCandidateDetail"]
+    },
+    {
+      "rule_id": "CAND-003",
+      "category": "candidate",
+      "severity": "P1",
+      "title": "matched_clue_types 在 Debug、List、Detail 中一致",
+      "required_evidence": ["GetSearchTaskDebug", "ListTaskCandidates", "GetTaskCandidateDetail"]
+    },
+    {
+      "rule_id": "CAND-004",
+      "category": "candidate",
+      "severity": "P1",
+      "title": "相同稳定标识的跨 Provider 候选不重复",
+      "required_evidence": ["ListTaskCandidates", "GetTaskCandidateDetail"]
+    },
+    {
+      "rule_id": "COST-001",
+      "category": "cost",
+      "severity": "P0",
+      "title": "分项成本与任务总成本一致",
+      "required_evidence": ["GetSearchTaskDebug", "GetProviderCostSummary"]
+    },
+    {
+      "rule_id": "COST-002",
+      "category": "cost",
+      "severity": "P0",
+      "title": "UNPRICED 不作为免费，缓存调用不重复计费",
+      "required_evidence": ["GetSearchTaskDebug", "GetProviderCostSummary"]
+    },
+    {
+      "rule_id": "STOP-001",
+      "category": "stop",
+      "severity": "P0",
+      "title": "result、diagnosis 和 Report 的 stop_reason 一致",
+      "required_evidence": ["GetTask", "GetSearchTaskDebug"]
+    }
+  ],
+  "evidence_packet": {
+    "top_level_fields": [
+      "analyzer_version",
+      "task_summary",
+      "coverage",
+      "timeline",
+      "candidate_summary",
+      "diagnosis_summary",
+      "cost_summary",
+      "checks",
+      "parse_warnings"
+    ],
+    "task_summary_fields": [
+      "task_id",
+      "query_id",
+      "trace_ids",
+      "request_ids",
+      "full_name",
+      "clue_types",
+      "social_links",
+      "photo_count",
+      "final_status",
+      "candidate_count",
+      "top_confidence_score"
+    ],
+    "coverage_fields": [
+      "create_task",
+      "get_task",
+      "candidate_list",
+      "candidate_detail",
+      "debug",
+      "cost_summary",
+      "source_truncated",
+      "parse_warnings"
+    ],
+    "timeline_fields": [
+      "provider",
+      "operation",
+      "status",
+      "start_time",
+      "finish_time",
+      "http_status",
+      "cache_hit",
+      "candidate_count",
+      "error_code",
+      "cost_status",
+      "estimated_cost_microunit",
+      "source"
+    ],
+    "timeline_source_fields": ["method", "json_path", "line_start", "line_end"],
+    "check_fields": [
+      "rule_id",
+      "category",
+      "outcome",
+      "severity",
+      "title",
+      "actual",
+      "expected",
+      "evidence"
+    ],
+    "evidence_fields": ["method", "json_path", "value", "line_start", "line_end"],
+    "limits": {
+      "max_candidate_summary": 20,
+      "max_timeline_calls": 100,
+      "max_social_url_decisions": 100,
+      "max_cost_calls": 100,
+      "max_free_text_chars": 2000,
+      "max_packet_bytes": 524288
+    }
+  },
+  "fixtures": [
+    {
+      "name": "f01_public_figure_local_hit",
+      "file": "f01_public_figure_local_hit.log",
+      "format": "gateway",
+      "title": "Public Figure Local 命中：跳过 LLM、Wiki、PDL，成本为缓存不计费",
+      "expected_verdict": "NORMAL",
+      "expected_methods": [
+        "CreateIntentTask",
+        "GetTask",
+        "ListTaskCandidates",
+        "GetSearchTaskDebug",
+        "GetProviderCostSummary"
+      ],
+      "expected_rules": {
+        "ROUTE-001": "PASS",
+        "STATE-001": "PASS",
+        "STOP-001": "PASS",
+        "CAND-001": "PASS",
+        "COST-001": "PASS",
+        "COST-002": "PASS"
+      }
+    },
+    {
+      "name": "f02_wiki_unique_hit_skip_pdl",
+      "file": "f02_wiki_unique_hit_skip_pdl.log",
+      "format": "gateway",
+      "title": "LLM 弱结果后 Wiki 唯一可靠命中：Wiki 在 PDL 前且 PDL 被跳过",
+      "expected_verdict": "NORMAL",
+      "expected_methods": [
+        "CreateIntentTask",
+        "GetTask",
+        "ListTaskCandidates",
+        "GetSearchTaskDebug",
+        "GetProviderCostSummary"
+      ],
+      "expected_rules": {
+        "ROUTE-002": "PASS",
+        "ROUTE-003": "PASS",
+        "LLM-001": "PASS",
+        "STATE-001": "PASS",
+        "CAND-001": "PASS",
+        "COST-001": "PASS",
+        "STOP-001": "PASS"
+      }
+    },
+    {
+      "name": "f03_wiki_unique_but_pdl_called",
+      "file": "f03_wiki_unique_but_pdl_called.log",
+      "format": "gateway",
+      "title": "历史 Bug 回归：Wiki 唯一可靠命中后仍调用高成本 PDL；agent_tool_calls 倒序返回",
+      "expected_verdict": "ISSUES_FOUND",
+      "expected_methods": [
+        "CreateIntentTask",
+        "GetTask",
+        "ListTaskCandidates",
+        "GetSearchTaskDebug",
+        "GetProviderCostSummary"
+      ],
+      "expected_rules": {
+        "ROUTE-003": "FAIL",
+        "STATE-001": "PASS",
+        "CAND-001": "PASS",
+        "COST-001": "PASS"
+      }
+    },
+    {
+      "name": "f04_wiki_ambiguous_then_pdl_weak",
+      "file": "f04_wiki_ambiguous_then_pdl_weak.log",
+      "format": "gateway",
+      "title": "Wiki 同名歧义后允许 PDL fallback；PDL 多个弱候选不解释为可靠命中",
+      "expected_verdict": "NORMAL",
+      "expected_methods": [
+        "CreateIntentTask",
+        "GetTask",
+        "ListTaskCandidates",
+        "GetSearchTaskDebug",
+        "GetProviderCostSummary"
+      ],
+      "expected_rules": {
+        "ROUTE-004": "PASS",
+        "PDL-001": "PASS",
+        "PDL-002": "PASS",
+        "CAND-002": "PASS",
+        "STATE-001": "PASS"
+      }
+    },
+    {
+      "name": "f05_llm_truncated",
+      "file": "f05_llm_truncated.log",
+      "format": "gateway",
+      "title": "LLM 达到 max_tokens 截断：finish_reason、token、可恢复候选和重试诊断完整",
+      "expected_verdict": "NORMAL",
+      "expected_methods": [
+        "CreateIntentTask",
+        "GetTask",
+        "ListTaskCandidates",
+        "GetSearchTaskDebug",
+        "GetProviderCostSummary"
+      ],
+      "expected_rules": {
+        "LLM-001": "PASS",
+        "LLM-002": "PASS",
+        "STATE-001": "PASS"
+      }
+    },
+    {
+      "name": "f06_social_link_queue_dedupe",
+      "file": "f06_social_link_queue_dedupe.log",
+      "format": "query_chain_logger",
+      "title": "姓名加输入 Link：队列、canonical 去重、调用和合并一致；邮箱按评审结论保留原值",
+      "expected_verdict": "NORMAL",
+      "expected_methods": [
+        "CreateIntentTask",
+        "GetTask",
+        "ListTaskCandidates",
+        "GetTaskCandidateDetail",
+        "GetSearchTaskDebug",
+        "GetProviderCostSummary"
+      ],
+      "expected_rules": {
+        "SOCIAL-001": "PASS",
+        "SOCIAL-002": "PASS",
+        "SOCIAL-003": "PASS",
+        "SOCIAL-004": "PASS",
+        "CAND-003": "PASS",
+        "CAND-004": "PASS",
+        "PDL-001": "PASS"
+      }
+    },
+    {
+      "name": "f07_social_success_not_merged",
+      "file": "f07_social_success_not_merged.log",
+      "format": "gateway",
+      "title": "历史 Bug 回归：Social Profile 成功但未与候选合并，诊断计数不一致",
+      "expected_verdict": "ISSUES_FOUND",
+      "expected_methods": [
+        "CreateIntentTask",
+        "GetTask",
+        "ListTaskCandidates",
+        "GetSearchTaskDebug",
+        "GetProviderCostSummary"
+      ],
+      "expected_rules": {
+        "SOCIAL-004": "FAIL",
+        "SOCIAL-001": "PASS",
+        "SOCIAL-003": "PASS"
+      }
+    },
+    {
+      "name": "f08_image_lens_vision_face_not_connected",
+      "file": "f08_image_lens_vision_face_not_connected.log",
+      "format": "gateway",
+      "title": "姓名加照片：Lens 无结果 fallback Vision 成功；Face Comparison 未接入展示为已知能力缺失",
+      "expected_verdict": "NORMAL",
+      "expected_methods": [
+        "CreateIntentTask",
+        "GetTask",
+        "ListTaskCandidates",
+        "GetTaskCandidateDetail",
+        "GetSearchTaskDebug",
+        "GetProviderCostSummary"
+      ],
+      "expected_rules": {
+        "IMAGE-001": "PASS",
+        "IMAGE-002": "PASS",
+        "FACE-001": "PASS"
+      }
+    },
+    {
+      "name": "f09_cost_mismatch_unpriced",
+      "file": "f09_cost_mismatch_unpriced.log",
+      "format": "gateway",
+      "title": "成本异常：分项与总成本不一致；UNPRICED 明确标注且不解释为免费",
+      "expected_verdict": "ISSUES_FOUND",
+      "expected_methods": [
+        "CreateIntentTask",
+        "GetTask",
+        "ListTaskCandidates",
+        "GetSearchTaskDebug",
+        "GetProviderCostSummary"
+      ],
+      "expected_rules": {
+        "COST-001": "FAIL",
+        "COST-002": "PASS"
+      }
+    },
+    {
+      "name": "f10_technical_failure_misclassified",
+      "file": "f10_technical_failure_misclassified.log",
+      "format": "gateway",
+      "title": "历史 Bug 回归：全部 Provider 技术失败被归类为普通 NO_MATCH；stop_reason 不一致",
+      "expected_verdict": "ISSUES_FOUND",
+      "expected_methods": [
+        "CreateIntentTask",
+        "GetTask",
+        "GetSearchTaskDebug",
+        "GetProviderCostSummary"
+      ],
+      "expected_rules": {
+        "STATE-002": "FAIL",
+        "STOP-001": "FAIL",
+        "STATE-001": "PASS"
+      }
+    }
+  ]
+}

@@ -41,6 +41,7 @@ TASK_NOT_FOUND = "TASK_NOT_FOUND"
 TASK_TERMINATED = "TASK_TERMINATED"
 TASK_TIMEOUT = "TASK_TIMEOUT"
 ALL_TESTS_SKIPPED = "ALL_TESTS_SKIPPED"
+PLATFORM_CONFIG_UNAVAILABLE = "PLATFORM_CONFIG_UNAVAILABLE"
 
 # 终态集合：进入后不可再次迁移。
 TERMINAL_STATUSES = ("succeeded", "failed", "cancelled")
@@ -74,6 +75,10 @@ class TaskManager:
         retain: 任务记录保留条数。
         python: 子进程解释器，默认当前解释器；测试可注入。
         cancel_grace_seconds: SIGTERM 后等待退出的宽限秒数，超过则 SIGKILL。
+        runtime_environment_provider: 平台模式的运行时配置快照提供器。
+        platform_secret_keys_provider: 平台模式的 Secret 键名清单读取器，
+            返回已配置键名集合，平台配置不可用时返回 None；仅供提交前
+            Admin 凭证预检使用，Secret 值不进入壳服务内存。
     """
 
     def __init__(
@@ -85,6 +90,7 @@ class TaskManager:
         python: str | None = None,
         cancel_grace_seconds: float = 10.0,
         runtime_environment_provider: Callable[[], tuple[dict[str, str], dict[str, Any]]] | None = None,
+        platform_secret_keys_provider: Callable[[], set[str] | None] | None = None,
     ) -> None:
         self._project_root = Path(project_root)
         self._store = store
@@ -93,6 +99,7 @@ class TaskManager:
         self._python = python or sys.executable
         self._cancel_grace_seconds = float(cancel_grace_seconds)
         self._runtime_environment_provider = runtime_environment_provider
+        self._platform_secret_keys_provider = platform_secret_keys_provider
         self._lock = threading.Lock()
         self._active_id: str | None = None
         self._procs: dict[str, subprocess.Popen[bytes]] = {}
@@ -165,9 +172,14 @@ class TaskManager:
     def _precheck_credentials(self, task_input: dict[str, Any]) -> None:
         """配置合并级与任务级凭证预检。
 
+        功能说明:
+            平台模式下本地 .env 不参与凭证合并，任务级 Admin 校验改以
+            平台 Secret 管理已配置的键名清单为准（只读键名，不取值）。
+
         异常说明:
             SubmissionError: 400 + CREDENTIAL_FILE_INVALID/CREDENTIALS_MISSING/
             ADMIN_CREDENTIALS_MISSING；Admin 缺失时消息只列字段名不含值。
+            平台清单不可读时抛 503 + PLATFORM_CONFIG_UNAVAILABLE。
         """
         settings, error_code, message = credentials.check_base_config(
             task_input["env"], self._project_root
@@ -182,7 +194,19 @@ class TaskManager:
             task_input["flow"],
             task_input["tag"],
         ):
-            missing = credentials.missing_admin_keys(settings)
+            if self._platform_secret_keys_provider is not None:
+                secret_keys = self._platform_secret_keys_provider()
+                if secret_keys is None:
+                    raise SubmissionError(
+                        503,
+                        PLATFORM_CONFIG_UNAVAILABLE,
+                        "平台运行配置暂时不可用，无法校验 Secret 配置",
+                    )
+                missing = credentials.missing_admin_keys(
+                    settings, platform_secret_keys=secret_keys
+                )
+            else:
+                missing = credentials.missing_admin_keys(settings)
             if missing:
                 raise SubmissionError(
                     400,

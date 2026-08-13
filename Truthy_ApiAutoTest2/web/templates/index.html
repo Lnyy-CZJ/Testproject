@@ -109,9 +109,12 @@
         : '<span class="badge bad">基础配置缺失</span> ' + data.base_config.message;
       let admin = "";
       if (data.admin.required) {
+        // missing_fields 为空且未就绪表示平台清单暂不可读，避免渲染空的"缺少"徽标。
         admin = data.admin.ready
           ? ' <span class="badge ok">Admin 凭证就绪</span>'
-          : ' <span class="badge bad">缺少 Admin 凭证: ' + data.admin.missing_fields.join(", ") + "</span>";
+          : data.admin.missing_fields.length
+            ? ' <span class="badge bad">缺少 Admin 凭证: ' + data.admin.missing_fields.join(", ") + "</span>"
+            : ' <span class="badge warn">Admin 凭证状态未知</span>';
       }
       el.innerHTML = "凭证状态：" + base + admin;
     } catch (e) { /* 状态展示失败不影响提交 */ }

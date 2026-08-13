@@ -7,7 +7,7 @@ step_data:
       clues:
         - type: FULL_NAME
           full_name_query:
-            full_name: Ali Abdaal
+            full_name: JOJO CCQQ MOCK
       additional_details: []
     assert:
       http_status: 200

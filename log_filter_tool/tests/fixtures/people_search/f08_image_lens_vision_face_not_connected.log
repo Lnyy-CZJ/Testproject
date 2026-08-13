@@ -1,0 +1,392 @@
+默认	10:08:00.012345+0800	Runner	flutter: ┌────
+默认	10:08:00.024690+0800	Runner	flutter: │ [HTTP] --> POST https://api.example.com/gateway/invoke service=tool.people_insight.SearchService method=CreateIntentTask
+默认	10:08:00.037035+0800	Runner	flutter: └────
+默认	10:08:00.049380+0800	Runner	flutter: ┌────
+默认	10:08:00.061725+0800	Runner	flutter: │ [HTTP] request:
+默认	10:08:00.074070+0800	Runner	flutter: │ {
+默认	10:08:00.086415+0800	Runner	flutter: │   "comm": {
+默认	10:08:00.098760+0800	Runner	flutter: │     "auth_token": "***",
+默认	10:08:00.111105+0800	Runner	flutter: │     "user_id": "user_example_f08",
+默认	10:08:00.123450+0800	Runner	flutter: │     "device_id": "device_example_f08",
+默认	10:08:00.135795+0800	Runner	flutter: │     "client_request_id": "crid_f08_0000000000000001",
+默认	10:08:00.148140+0800	Runner	flutter: │     "platform": "ios",
+默认	10:08:00.160485+0800	Runner	flutter: │     "app_version": "1.0.0",
+默认	10:08:00.172830+0800	Runner	flutter: │     "locale": "zh-Hans",
+默认	10:08:00.185175+0800	Runner	flutter: │     "country": "CN",
+默认	10:08:00.197520+0800	Runner	flutter: │     "timezone": "UTC+08:00"
+默认	10:08:00.209865+0800	Runner	flutter: │   },
+默认	10:08:00.222210+0800	Runner	flutter: │   "requests": [
+默认	10:08:00.234555+0800	Runner	flutter: │     {
+默认	10:08:00.246900+0800	Runner	flutter: │       "id": "req_0",
+默认	10:08:00.259245+0800	Runner	flutter: │       "service_name": "tool.people_insight.SearchService",
+默认	10:08:00.271590+0800	Runner	flutter: │       "method_name": "CreateIntentTask",
+默认	10:08:00.283935+0800	Runner	flutter: │       "params": {
+默认	10:08:00.296280+0800	Runner	flutter: │         "client_request_id": "crid_f08_0000000000000001",
+默认	10:08:00.308625+0800	Runner	flutter: │         "match_strategy": "UNION",
+默认	10:08:00.320970+0800	Runner	flutter: │         "clues": [
+默认	10:08:00.333315+0800	Runner	flutter: │           {
+默认	10:08:00.345660+0800	Runner	flutter: │             "type": "FULL_NAME",
+默认	10:08:00.358005+0800	Runner	flutter: │             "full_name_query": {
+默认	10:08:00.370350+0800	Runner	flutter: │               "full_name": "Grace Mock"
+默认	10:08:00.382695+0800	Runner	flutter: │             }
+默认	10:08:00.395040+0800	Runner	flutter: │           },
+默认	10:08:00.407385+0800	Runner	flutter: │           {
+默认	10:08:00.419730+0800	Runner	flutter: │             "type": "PHOTO",
+默认	10:08:00.432075+0800	Runner	flutter: │             "photo_query": {
+默认	10:08:00.444420+0800	Runner	flutter: │               "photo_url": "https://cdn.example.com/photos/grace_mock_photo.jpg"
+默认	10:08:00.456765+0800	Runner	flutter: │             }
+默认	10:08:00.469110+0800	Runner	flutter: │           }
+默认	10:08:00.481455+0800	Runner	flutter: │         ]
+默认	10:08:00.493800+0800	Runner	flutter: │       }
+默认	10:08:00.506145+0800	Runner	flutter: │     }
+默认	10:08:00.518490+0800	Runner	flutter: │   ]
+默认	10:08:00.530835+0800	Runner	flutter: │ }
+默认	10:08:00.543180+0800	Runner	flutter: └────
+默认	10:08:00.555525+0800	Runner	flutter: ┌────
+默认	10:08:00.567870+0800	Runner	flutter: │ [HTTP] <-- 200 POST https://api.example.com/gateway/invoke service=tool.people_insight.SearchService method=CreateIntentTask
+默认	10:08:00.580215+0800	Runner	flutter: └────
+默认	10:08:00.592560+0800	Runner	flutter: ┌────
+默认	10:08:00.604905+0800	Runner	flutter: │ [HTTP] response:
+默认	10:08:00.617250+0800	Runner	flutter: │ {
+默认	10:08:00.629595+0800	Runner	flutter: │   "code": 0,
+默认	10:08:00.641940+0800	Runner	flutter: │   "message": "ok",
+默认	10:08:00.654285+0800	Runner	flutter: │   "request_id": "gw_req_f08_00000000000000000000000001",
+默认	10:08:00.666630+0800	Runner	flutter: │   "trace_id": "trace_f08_00000000000000000000000001",
+默认	10:08:00.678975+0800	Runner	flutter: │   "responses": [
+默认	10:08:00.691320+0800	Runner	flutter: │     {
+默认	10:08:00.703665+0800	Runner	flutter: │       "id": "req_0",
+默认	10:08:00.716010+0800	Runner	flutter: │       "success": true,
+默认	10:08:00.728355+0800	Runner	flutter: │       "code": 0,
+默认	10:08:00.740700+0800	Runner	flutter: │       "message": "ok",
+默认	10:08:00.753045+0800	Runner	flutter: │       "data": {
+默认	10:08:00.765390+0800	Runner	flutter: │         "task_id": "task_f0800000000000000000000aa",
+默认	10:08:00.777735+0800	Runner	flutter: │         "query_id": "query_f08000000000000000000a",
+默认	10:08:00.790080+0800	Runner	flutter: │         "status": "CREATED"
+默认	10:08:00.802425+0800	Runner	flutter: │       }
+默认	10:08:00.814770+0800	Runner	flutter: │     }
+默认	10:08:00.827115+0800	Runner	flutter: │   ]
+默认	10:08:00.839460+0800	Runner	flutter: │ }
+默认	10:08:00.851805+0800	Runner	flutter: └────
+默认	10:08:00.864150+0800	Runner	flutter: ┌────
+默认	10:08:00.876495+0800	Runner	flutter: │ [HTTP] --> POST https://api.example.com/gateway/invoke service=tool.people_insight.SearchService method=GetTask
+默认	10:08:00.888840+0800	Runner	flutter: └────
+默认	10:08:00.901185+0800	Runner	flutter: ┌────
+默认	10:08:00.913530+0800	Runner	flutter: │ [HTTP] request:
+默认	10:08:00.925875+0800	Runner	flutter: │ {
+默认	10:08:00.938220+0800	Runner	flutter: │   "comm": {
+默认	10:08:00.950565+0800	Runner	flutter: │     "auth_token": "***",
+默认	10:08:00.962910+0800	Runner	flutter: │     "user_id": "user_example_f08",
+默认	10:08:00.975255+0800	Runner	flutter: │     "device_id": "device_example_f08",
+默认	10:08:00.987600+0800	Runner	flutter: │     "client_request_id": "crid_f08_0000000000000001",
+默认	10:08:00.999945+0800	Runner	flutter: │     "platform": "ios",
+默认	10:08:01.012290+0800	Runner	flutter: │     "app_version": "1.0.0",
+默认	10:08:01.024635+0800	Runner	flutter: │     "locale": "zh-Hans",
+默认	10:08:01.036980+0800	Runner	flutter: │     "country": "CN",
+默认	10:08:01.049325+0800	Runner	flutter: │     "timezone": "UTC+08:00"
+默认	10:08:01.061670+0800	Runner	flutter: │   },
+默认	10:08:01.074015+0800	Runner	flutter: │   "requests": [
+默认	10:08:01.086360+0800	Runner	flutter: │     {
+默认	10:08:01.098705+0800	Runner	flutter: │       "id": "req_0",
+默认	10:08:01.111050+0800	Runner	flutter: │       "service_name": "tool.people_insight.SearchService",
+默认	10:08:01.123395+0800	Runner	flutter: │       "method_name": "GetTask",
+默认	10:08:01.135740+0800	Runner	flutter: │       "params": {
+默认	10:08:01.148085+0800	Runner	flutter: │         "task_id": "task_f0800000000000000000000aa"
+默认	10:08:01.160430+0800	Runner	flutter: │       }
+默认	10:08:01.172775+0800	Runner	flutter: │     }
+默认	10:08:01.185120+0800	Runner	flutter: │   ]
+默认	10:08:01.197465+0800	Runner	flutter: │ }
+默认	10:08:01.209810+0800	Runner	flutter: └────
+默认	10:08:01.222155+0800	Runner	flutter: ┌────
+默认	10:08:01.234500+0800	Runner	flutter: │ [HTTP] <-- 200 POST https://api.example.com/gateway/invoke service=tool.people_insight.SearchService method=GetTask
+默认	10:08:01.246845+0800	Runner	flutter: └────
+默认	10:08:01.259190+0800	Runner	flutter: ┌────
+默认	10:08:01.271535+0800	Runner	flutter: │ [HTTP] response:
+默认	10:08:01.283880+0800	Runner	flutter: │ {
+默认	10:08:01.296225+0800	Runner	flutter: │   "code": 0,
+默认	10:08:01.308570+0800	Runner	flutter: │   "message": "ok",
+默认	10:08:01.320915+0800	Runner	flutter: │   "request_id": "gw_req_f08_00000000000000000000000001",
+默认	10:08:01.333260+0800	Runner	flutter: │   "trace_id": "trace_f08_00000000000000000000000001",
+默认	10:08:01.345605+0800	Runner	flutter: │   "responses": [
+默认	10:08:01.357950+0800	Runner	flutter: │     {
+默认	10:08:01.370295+0800	Runner	flutter: │       "id": "req_0",
+默认	10:08:01.382640+0800	Runner	flutter: │       "success": true,
+默认	10:08:01.394985+0800	Runner	flutter: │       "code": 0,
+默认	10:08:01.407330+0800	Runner	flutter: │       "message": "ok",
+默认	10:08:01.419675+0800	Runner	flutter: │       "data": {
+默认	10:08:01.432020+0800	Runner	flutter: │         "task_id": "task_f0800000000000000000000aa",
+默认	10:08:01.444365+0800	Runner	flutter: │         "status": "SUCCEEDED",
+默认	10:08:01.456710+0800	Runner	flutter: │         "candidate_count": 1,
+默认	10:08:01.469055+0800	Runner	flutter: │         "candidate_confidence_scores": [
+默认	10:08:01.481400+0800	Runner	flutter: │           76
+默认	10:08:01.493745+0800	Runner	flutter: │         ],
+默认	10:08:01.506090+0800	Runner	flutter: │         "top_confidence_score": 76,
+默认	10:08:01.518435+0800	Runner	flutter: │         "result_type": "single",
+默认	10:08:01.530780+0800	Runner	flutter: │         "stop_reason": "COMPLETED",
+默认	10:08:01.543125+0800	Runner	flutter: │         "provider_summary": {
+默认	10:08:01.555470+0800	Runner	flutter: │           "primary_provider": "google_vision"
+默认	10:08:01.567815+0800	Runner	flutter: │         }
+默认	10:08:01.580160+0800	Runner	flutter: │       }
+默认	10:08:01.592505+0800	Runner	flutter: │     }
+默认	10:08:01.604850+0800	Runner	flutter: │   ]
+默认	10:08:01.617195+0800	Runner	flutter: │ }
+默认	10:08:01.629540+0800	Runner	flutter: └────
+默认	10:08:01.641885+0800	Runner	flutter: ┌────
+默认	10:08:01.654230+0800	Runner	flutter: │ [HTTP] --> POST https://api.example.com/gateway/invoke service=tool.people_insight.SearchService method=ListTaskCandidates
+默认	10:08:01.666575+0800	Runner	flutter: └────
+默认	10:08:01.678920+0800	Runner	flutter: ┌────
+默认	10:08:01.691265+0800	Runner	flutter: │ [HTTP] request:
+默认	10:08:01.703610+0800	Runner	flutter: │ {
+默认	10:08:01.715955+0800	Runner	flutter: │   "comm": {
+默认	10:08:01.728300+0800	Runner	flutter: │     "auth_token": "***",
+默认	10:08:01.740645+0800	Runner	flutter: │     "user_id": "user_example_f08",
+默认	10:08:01.752990+0800	Runner	flutter: │     "device_id": "device_example_f08",
+默认	10:08:01.765335+0800	Runner	flutter: │     "client_request_id": "crid_f08_0000000000000001",
+默认	10:08:01.777680+0800	Runner	flutter: │     "platform": "ios",
+默认	10:08:01.790025+0800	Runner	flutter: │     "app_version": "1.0.0",
+默认	10:08:01.802370+0800	Runner	flutter: │     "locale": "zh-Hans",
+默认	10:08:01.814715+0800	Runner	flutter: │     "country": "CN",
+默认	10:08:01.827060+0800	Runner	flutter: │     "timezone": "UTC+08:00"
+默认	10:08:01.839405+0800	Runner	flutter: │   },
+默认	10:08:01.851750+0800	Runner	flutter: │   "requests": [
+默认	10:08:01.864095+0800	Runner	flutter: │     {
+默认	10:08:01.876440+0800	Runner	flutter: │       "id": "req_0",
+默认	10:08:01.888785+0800	Runner	flutter: │       "service_name": "tool.people_insight.SearchService",
+默认	10:08:01.901130+0800	Runner	flutter: │       "method_name": "ListTaskCandidates",
+默认	10:08:01.913475+0800	Runner	flutter: │       "params": {
+默认	10:08:01.925820+0800	Runner	flutter: │         "task_id": "task_f0800000000000000000000aa",
+默认	10:08:01.938165+0800	Runner	flutter: │         "page_size": 20
+默认	10:08:01.950510+0800	Runner	flutter: │       }
+默认	10:08:01.962855+0800	Runner	flutter: │     }
+默认	10:08:01.975200+0800	Runner	flutter: │   ]
+默认	10:08:01.987545+0800	Runner	flutter: │ }
+默认	10:08:01.999890+0800	Runner	flutter: └────
+默认	10:08:02.012235+0800	Runner	flutter: ┌────
+默认	10:08:02.024580+0800	Runner	flutter: │ [HTTP] <-- 200 POST https://api.example.com/gateway/invoke service=tool.people_insight.SearchService method=ListTaskCandidates
+默认	10:08:02.036925+0800	Runner	flutter: └────
+默认	10:08:02.049270+0800	Runner	flutter: ┌────
+默认	10:08:02.061615+0800	Runner	flutter: │ [HTTP] response:
+默认	10:08:02.073960+0800	Runner	flutter: │ {
+默认	10:08:02.086305+0800	Runner	flutter: │   "code": 0,
+默认	10:08:02.098650+0800	Runner	flutter: │   "message": "ok",
+默认	10:08:02.110995+0800	Runner	flutter: │   "request_id": "gw_req_f08_00000000000000000000000001",
+默认	10:08:02.123340+0800	Runner	flutter: │   "trace_id": "trace_f08_00000000000000000000000001",
+默认	10:08:02.135685+0800	Runner	flutter: │   "responses": [
+默认	10:08:02.148030+0800	Runner	flutter: │     {
+默认	10:08:02.160375+0800	Runner	flutter: │       "id": "req_0",
+默认	10:08:02.172720+0800	Runner	flutter: │       "success": true,
+默认	10:08:02.185065+0800	Runner	flutter: │       "code": 0,
+默认	10:08:02.197410+0800	Runner	flutter: │       "message": "ok",
+默认	10:08:02.209755+0800	Runner	flutter: │       "data": {
+默认	10:08:02.222100+0800	Runner	flutter: │         "task_id": "task_f0800000000000000000000aa",
+默认	10:08:02.234445+0800	Runner	flutter: │         "total": 1,
+默认	10:08:02.246790+0800	Runner	flutter: │         "items": [
+默认	10:08:02.259135+0800	Runner	flutter: │           {
+默认	10:08:02.271480+0800	Runner	flutter: │             "candidate_id": "cand_f08_001",
+默认	10:08:02.283825+0800	Runner	flutter: │             "person_id": "vision_g_00000000000000001",
+默认	10:08:02.296170+0800	Runner	flutter: │             "confidence_level": "MEDIUM",
+默认	10:08:02.308515+0800	Runner	flutter: │             "match_score": 76,
+默认	10:08:02.320860+0800	Runner	flutter: │             "matched_clue_types": [
+默认	10:08:02.333205+0800	Runner	flutter: │               "PHOTO",
+默认	10:08:02.345550+0800	Runner	flutter: │               "FULL_NAME"
+默认	10:08:02.357895+0800	Runner	flutter: │             ],
+默认	10:08:02.370240+0800	Runner	flutter: │             "match_reasons": [
+默认	10:08:02.382585+0800	Runner	flutter: │               "reverse_image_hit",
+默认	10:08:02.394930+0800	Runner	flutter: │               "name_match"
+默认	10:08:02.407275+0800	Runner	flutter: │             ],
+默认	10:08:02.419620+0800	Runner	flutter: │             "is_top_result": true,
+默认	10:08:02.431965+0800	Runner	flutter: │             "is_best_match": true,
+默认	10:08:02.444310+0800	Runner	flutter: │             "display_name": "Grace Mock",
+默认	10:08:02.456655+0800	Runner	flutter: │             "avatar_url": "https://cdn.example.com/avatars/cand_f08_001.png",
+默认	10:08:02.469000+0800	Runner	flutter: │             "social_links": [],
+默认	10:08:02.481345+0800	Runner	flutter: │             "source_provider": "google_vision",
+默认	10:08:02.493690+0800	Runner	flutter: │             "rank_score": 76,
+默认	10:08:02.506035+0800	Runner	flutter: │             "rank_version": "rank_v1"
+默认	10:08:02.518380+0800	Runner	flutter: │           }
+默认	10:08:02.530725+0800	Runner	flutter: │         ]
+默认	10:08:02.543070+0800	Runner	flutter: │       }
+默认	10:08:02.555415+0800	Runner	flutter: │     }
+默认	10:08:02.567760+0800	Runner	flutter: │   ]
+默认	10:08:02.580105+0800	Runner	flutter: │ }
+默认	10:08:02.592450+0800	Runner	flutter: └────
+默认	10:08:02.604795+0800	Runner	flutter: ┌────
+默认	10:08:02.617140+0800	Runner	flutter: │ [HTTP] --> POST https://api.example.com/gateway/invoke service=tool.people_insight.SearchService method=GetTaskCandidateDetail
+默认	10:08:02.629485+0800	Runner	flutter: └────
+默认	10:08:02.641830+0800	Runner	flutter: ┌────
+默认	10:08:02.654175+0800	Runner	flutter: │ [HTTP] request:
+默认	10:08:02.666520+0800	Runner	flutter: │ {
+默认	10:08:02.678865+0800	Runner	flutter: │   "comm": {
+默认	10:08:02.691210+0800	Runner	flutter: │     "auth_token": "***",
+默认	10:08:02.703555+0800	Runner	flutter: │     "user_id": "user_example_f08",
+默认	10:08:02.715900+0800	Runner	flutter: │     "device_id": "device_example_f08",
+默认	10:08:02.728245+0800	Runner	flutter: │     "client_request_id": "crid_f08_0000000000000001",
+默认	10:08:02.740590+0800	Runner	flutter: │     "platform": "ios",
+默认	10:08:02.752935+0800	Runner	flutter: │     "app_version": "1.0.0",
+默认	10:08:02.765280+0800	Runner	flutter: │     "locale": "zh-Hans",
+默认	10:08:02.777625+0800	Runner	flutter: │     "country": "CN",
+默认	10:08:02.789970+0800	Runner	flutter: │     "timezone": "UTC+08:00"
+默认	10:08:02.802315+0800	Runner	flutter: │   },
+默认	10:08:02.814660+0800	Runner	flutter: │   "requests": [
+默认	10:08:02.827005+0800	Runner	flutter: │     {
+默认	10:08:02.839350+0800	Runner	flutter: │       "id": "req_0",
+默认	10:08:02.851695+0800	Runner	flutter: │       "service_name": "tool.people_insight.SearchService",
+默认	10:08:02.864040+0800	Runner	flutter: │       "method_name": "GetTaskCandidateDetail",
+默认	10:08:02.876385+0800	Runner	flutter: │       "params": {
+默认	10:08:02.888730+0800	Runner	flutter: │         "task_id": "task_f0800000000000000000000aa",
+默认	10:08:02.901075+0800	Runner	flutter: │         "candidate_id": "cand_f08_001"
+默认	10:08:02.913420+0800	Runner	flutter: │       }
+默认	10:08:02.925765+0800	Runner	flutter: │     }
+默认	10:08:02.938110+0800	Runner	flutter: │   ]
+默认	10:08:02.950455+0800	Runner	flutter: │ }
+默认	10:08:02.962800+0800	Runner	flutter: └────
+默认	10:08:02.975145+0800	Runner	flutter: ┌────
+默认	10:08:02.987490+0800	Runner	flutter: │ [HTTP] <-- 200 POST https://api.example.com/gateway/invoke service=tool.people_insight.SearchService method=GetTaskCandidateDetail
+默认	10:08:02.999835+0800	Runner	flutter: └────
+默认	10:08:03.012180+0800	Runner	flutter: ┌────
+默认	10:08:03.024525+0800	Runner	flutter: │ [HTTP] response:
+默认	10:08:03.036870+0800	Runner	flutter: │ {
+默认	10:08:03.049215+0800	Runner	flutter: │   "code": 0,
+默认	10:08:03.061560+0800	Runner	flutter: │   "message": "ok",
+默认	10:08:03.073905+0800	Runner	flutter: │   "request_id": "gw_req_f08_00000000000000000000000001",
+默认	10:08:03.086250+0800	Runner	flutter: │   "trace_id": "trace_f08_00000000000000000000000001",
+默认	10:08:03.098595+0800	Runner	flutter: │   "responses": [
+默认	10:08:03.110940+0800	Runner	flutter: │     {
+默认	10:08:03.123285+0800	Runner	flutter: │       "id": "req_0",
+默认	10:08:03.135630+0800	Runner	flutter: │       "success": true,
+默认	10:08:03.147975+0800	Runner	flutter: │       "code": 0,
+默认	10:08:03.160320+0800	Runner	flutter: │       "message": "ok",
+默认	10:08:03.172665+0800	Runner	flutter: │       "data": {
+默认	10:08:03.185010+0800	Runner	flutter: │         "task_id": "task_f0800000000000000000000aa",
+默认	10:08:03.197355+0800	Runner	flutter: │         "candidate_id": "cand_f08_001",
+默认	10:08:03.209700+0800	Runner	flutter: │         "person_id": "vision_g_00000000000000001",
+默认	10:08:03.222045+0800	Runner	flutter: │         "candidate": {
+默认	10:08:03.234390+0800	Runner	flutter: │           "candidate_id": "cand_f08_001",
+默认	10:08:03.246735+0800	Runner	flutter: │           "display_name": "Grace Mock",
+默认	10:08:03.259080+0800	Runner	flutter: │           "confidence_level": "MEDIUM",
+默认	10:08:03.271425+0800	Runner	flutter: │           "match_score": 76,
+默认	10:08:03.283770+0800	Runner	flutter: │           "matched_clue_types": [
+默认	10:08:03.296115+0800	Runner	flutter: │             "PHOTO",
+默认	10:08:03.308460+0800	Runner	flutter: │             "FULL_NAME"
+默认	10:08:03.320805+0800	Runner	flutter: │           ],
+默认	10:08:03.333150+0800	Runner	flutter: │           "source_provider": "google_vision"
+默认	10:08:03.345495+0800	Runner	flutter: │         },
+默认	10:08:03.357840+0800	Runner	flutter: │         "disclaimers": [
+默认	10:08:03.370185+0800	Runner	flutter: │           "Face Comparison 未接入：本任务未执行人脸相似度比对（已知能力缺失，不计为任务异常）。",
+默认	10:08:03.382530+0800	Runner	flutter: │           "found_online 不等于身份一致，也不等于盗图。"
+默认	10:08:03.394875+0800	Runner	flutter: │         ],
+默认	10:08:03.407220+0800	Runner	flutter: │         "entitlement_decision": "ALLOWED",
+默认	10:08:03.419565+0800	Runner	flutter: │         "evidence": [
+默认	10:08:03.431910+0800	Runner	flutter: │           {
+默认	10:08:03.444255+0800	Runner	flutter: │             "type": "reverse_image_hit",
+默认	10:08:03.456600+0800	Runner	flutter: │             "provider": "google_vision",
+默认	10:08:03.468945+0800	Runner	flutter: │             "description": "图片反查命中相似公开图片"
+默认	10:08:03.481290+0800	Runner	flutter: │           }
+默认	10:08:03.493635+0800	Runner	flutter: │         ],
+默认	10:08:03.505980+0800	Runner	flutter: │         "social_accounts": [],
+默认	10:08:03.518325+0800	Runner	flutter: │         "face_comparison": {
+默认	10:08:03.530670+0800	Runner	flutter: │           "status": "not_performed",
+默认	10:08:03.543015+0800	Runner	flutter: │           "reason": "provider_not_connected"
+默认	10:08:03.555360+0800	Runner	flutter: │         }
+默认	10:08:03.567705+0800	Runner	flutter: │       }
+默认	10:08:03.580050+0800	Runner	flutter: │     }
+默认	10:08:03.592395+0800	Runner	flutter: │   ]
+默认	10:08:03.604740+0800	Runner	flutter: │ }
+默认	10:08:03.617085+0800	Runner	flutter: └────
+
+{
+  "debug": {
+    "task_id": "task_f0800000000000000000000aa",
+    "policy_version": "people_image_v1",
+    "agent_run_id": "run_f08_00000000000000000000001",
+    "agent_tool_calls": [
+      {
+        "provider": "searchapi_google_lens",
+        "operation": "reverse_image_search",
+        "status": "success",
+        "start_time": "2026-08-13T10:08:04+08:00",
+        "finish_time": "2026-08-13T10:08:08+08:00",
+        "http_status": 200,
+        "cache_hit": false,
+        "candidate_count": 0,
+        "error_code": "",
+        "cost_status": "CALCULATED",
+        "estimated_cost_microunit": 10000,
+        "result_class": "no_result"
+      },
+      {
+        "provider": "google_vision",
+        "operation": "reverse_image_search",
+        "status": "success",
+        "start_time": "2026-08-13T10:08:12+08:00",
+        "finish_time": "2026-08-13T10:08:16+08:00",
+        "http_status": 200,
+        "cache_hit": false,
+        "candidate_count": 1,
+        "error_code": "",
+        "cost_status": "CALCULATED",
+        "estimated_cost_microunit": 12000
+      }
+    ],
+    "candidates": [
+      {
+        "candidate_id": "cand_f08_001",
+        "provider": "google_vision",
+        "decision": "SELECTED",
+        "selected": true,
+        "matched_clue_types": [
+          "PHOTO",
+          "FULL_NAME"
+        ]
+      }
+    ],
+    "social_url_queue": [],
+    "diagnosis": {
+      "final_status": "SUCCEEDED",
+      "stop_reason": "COMPLETED",
+      "llm_search_call_count": 0,
+      "llm_result_status": "not_called",
+      "public_figure_local_hit": false,
+      "public_figure_remote_usable_count": 0,
+      "public_figure_remote_ambiguous": false,
+      "pdl_identify_call_count": 0,
+      "pdl_person_search_call_count": 0,
+      "pdl_external_request_count": 0,
+      "social_profile_merged_candidate_count": 0,
+      "face_comparison_status": "not_performed",
+      "reverse_image": {
+        "planned": true,
+        "primary_tool": "searchapi_google_lens",
+        "fallback_tool": "google_vision",
+        "fallback_reason": "primary_no_result"
+      },
+      "face_comparison_enabled": false,
+      "face_comparison_skip_reason": "provider_not_connected"
+    },
+    "report": {
+      "stop_reason": "COMPLETED"
+    }
+  }
+}
+
+{
+  "cost_summary": {
+    "task_id": "task_f0800000000000000000000aa",
+    "currency": "USD",
+    "total_estimated_cost_microunit": 22000,
+    "items": [
+      {
+        "provider": "searchapi_google_lens",
+        "operation": "reverse_image_search",
+        "call_count": 1,
+        "cost_status": "CALCULATED",
+        "estimated_cost_microunit": 10000
+      },
+      {
+        "provider": "google_vision",
+        "operation": "reverse_image_search",
+        "call_count": 1,
+        "cost_status": "CALCULATED",
+        "estimated_cost_microunit": 12000
+      }
+    ]
+  }
+}

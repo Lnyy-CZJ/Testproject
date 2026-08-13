@@ -14,7 +14,7 @@ import os
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 import requests
 
@@ -151,15 +151,51 @@ def create_app(
             "credential_version": credential.get("credential_version"),
         }
 
+    def platform_configured_secret_keys() -> set[str] | None:
+        """读取平台 Secret 管理已配置的 Secret 键名清单（只读键名不取值）。
+
+        功能说明:
+            以 ``include_secrets=false`` 调用平台运行配置接口，供提交前
+            Admin 凭证预检与页面凭证状态判定；Secret 值不进入壳服务内存。
+
+        返回值:
+            已配置 Secret 键名集合；客户端未部署、请求失败或响应非法时
+            返回 None，由调用方决定降级策略。
+        """
+        token_path = Path(settings.get("platform_client_token_file", ""))
+        platform_api_url = str(settings.get("platform_api_url", "")).rstrip("/")
+        if not platform_api_url or not token_path.is_file():
+            return None
+        try:
+            token = token_path.read_text(encoding="utf-8").strip()
+            response = requests.get(
+                f"{platform_api_url}/internal/tools/api-autotest/runtime-config",
+                headers={"Authorization": f"Bearer {token}"},
+                params={"include_secrets": "false"},
+                timeout=5,
+            )
+            response.raise_for_status()
+            payload = response.json()
+        except (OSError, requests.RequestException, ValueError):
+            return None
+        if not isinstance(payload, dict) or payload.get("tool_id") != "api-autotest":
+            return None
+        keys = payload.get("configured_secret_keys")
+        if not isinstance(keys, list):
+            return None
+        return {str(key) for key in keys}
+
+    platform_mode = settings.get("config_source") == "platform"
     manager = task_manager or TaskManager(
         root,
         store,
         timeout_seconds=settings["timeout_seconds"],
         retain=settings["tasks_retain"],
         runtime_environment_provider=(
-            platform_runtime_environment
-            if settings.get("config_source") == "platform"
-            else None
+            platform_runtime_environment if platform_mode else None
+        ),
+        platform_secret_keys_provider=(
+            platform_configured_secret_keys if platform_mode else None
         ),
     )
     if task_manager is None:
@@ -169,6 +205,9 @@ def create_app(
     app.config["AUTOTEST_ROOT"] = root
     app.config["AUTOTEST_SETTINGS"] = settings
     app.config["AUTOTEST_MANAGER"] = manager
+    app.config["AUTOTEST_SECRET_KEYS_PROVIDER"] = (
+        platform_configured_secret_keys if platform_mode else None
+    )
     app.config["JSON_AS_ASCII"] = False
 
     @app.before_request
@@ -255,6 +294,13 @@ def _get_settings() -> dict[str, Any]:
     from flask import current_app
 
     return current_app.config["AUTOTEST_SETTINGS"]
+
+
+def _get_secret_keys_provider() -> Callable[[], set[str] | None] | None:
+    """取出平台 Secret 键名清单读取器；独立模式为 None。"""
+    from flask import current_app
+
+    return current_app.config.get("AUTOTEST_SECRET_KEYS_PROVIDER")
 
 
 def _parse_page_args() -> tuple[int, int]:
@@ -463,6 +509,7 @@ def _register_routes(blueprint: Blueprint) -> None:
                 flow=request.args.get("flow") or None,
                 tag=request.args.get("tag") or None,
                 project_root=root,
+                platform_secret_keys_provider=_get_secret_keys_provider(),
             )
         )
 

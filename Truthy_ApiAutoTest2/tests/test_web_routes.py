@@ -439,6 +439,148 @@ class TestCatalogCredentialsReportRoutes:
         assert "allure report" in page.get_data(as_text=True)
 
 
+class _FakeRuntimeConfigResponse:
+    """模拟平台 runtime-config 响应对象。"""
+
+    def __init__(self, payload: dict):
+        self._payload = payload
+
+    def raise_for_status(self) -> None:
+        return None
+
+    def json(self) -> dict:
+        return self._payload
+
+
+class TestPlatformCredentialStatus:
+    """平台模式凭证状态：以平台 Secret 键名清单判定，不读本地凭证。"""
+
+    def _build_client(
+        self,
+        fake_project: Path,
+        make_manager,
+        monkeypatch,
+        configured_keys: set[str] | None = None,
+        request_error: Exception | None = None,
+    ):
+        """构造平台模式应用与测试客户端，并打桩平台 HTTP 调用。
+
+        返回值:
+            ``(test_client, calls)``；calls 记录打桩收到的 (url, kwargs)。
+        """
+        settings = make_settings()
+        settings["config_source"] = "platform"
+        settings["platform_api_url"] = "http://platform-api.invalid/api/v1"
+        token_file = fake_project / "client-token"
+        token_file.write_text("test-client-token", encoding="utf-8")
+        settings["platform_client_token_file"] = str(token_file)
+
+        calls: list[tuple[str, dict]] = []
+
+        def fake_get(url, **kwargs):
+            calls.append((url, kwargs))
+            if request_error is not None:
+                raise request_error
+            return _FakeRuntimeConfigResponse(
+                {
+                    "tool_id": "api-autotest",
+                    "release_id": "rel_test",
+                    "configured_secret_keys": sorted(configured_keys or set()),
+                }
+            )
+
+        monkeypatch.setattr("web.app.requests.get", fake_get)
+
+        app = create_app(
+            project_root=fake_project,
+            settings=settings,
+            task_manager=make_manager(fake_project),
+        )
+        app.config["TESTING"] = True
+        return app.test_client(), calls
+
+    def test_admin_ready_when_platform_keys_configured(
+        self, fake_project, make_manager, monkeypatch
+    ):
+        # 本地 .env 之外，平台清单齐备即应就绪；且只以键名查询不下发 Secret 值。
+        client, calls = self._build_client(
+            fake_project,
+            make_manager,
+            monkeypatch,
+            configured_keys={
+                "ADMIN_SESSION_TOKEN",
+                "ADMIN_OPERATOR_ID",
+                "ADMIN_OPERATOR_NAME",
+            },
+        )
+        body = client.get(
+            "/api/credentials/status?env=test&run_type=flow&flow=AdminFlow"
+        ).get_json()
+        assert body["base_config"]["ready"] is True
+        assert body["admin"]["required"] is True
+        assert body["admin"]["ready"] is True
+        assert body["admin"]["missing_fields"] == []
+
+        assert len(calls) == 1
+        url, kwargs = calls[0]
+        assert url.endswith("/internal/tools/api-autotest/runtime-config")
+        assert kwargs["params"] == {"include_secrets": "false"}
+        assert kwargs["headers"]["Authorization"] == "Bearer test-client-token"
+
+    def test_admin_missing_fields_follow_platform_keys(
+        self, fake_project, make_manager, monkeypatch
+    ):
+        # fake_project 本地 .env 含全部 Admin 凭证，但平台清单缺两项时，
+        # 应以平台清单为准报告缺失（平台模式本地凭证不参与合并）。
+        client, _ = self._build_client(
+            fake_project,
+            make_manager,
+            monkeypatch,
+            configured_keys={"ADMIN_SESSION_TOKEN"},
+        )
+        body = client.get(
+            "/api/credentials/status?env=test&run_type=flow&flow=AdminFlow"
+        ).get_json()
+        assert body["admin"]["ready"] is False
+        assert body["admin"]["missing_fields"] == [
+            "ADMIN_OPERATOR_ID",
+            "ADMIN_OPERATOR_NAME",
+        ]
+
+    def test_platform_unavailable_degrades_gracefully(
+        self, fake_project, make_manager, monkeypatch
+    ):
+        # 平台接口异常时状态接口不得 500，降级为基础配置未就绪且不误报字段。
+        client, _ = self._build_client(
+            fake_project,
+            make_manager,
+            monkeypatch,
+            request_error=ConnectionError("platform unreachable"),
+        )
+        response = client.get(
+            "/api/credentials/status?env=test&run_type=flow&flow=AdminFlow"
+        )
+        assert response.status_code == 200
+        body = response.get_json()
+        assert body["base_config"]["ready"] is False
+        assert "平台运行配置暂时不可用" in body["base_config"]["message"]
+        assert body["admin"]["ready"] is False
+        assert body["admin"]["missing_fields"] == []
+
+    def test_non_admin_target_skips_platform_lookup(
+        self, fake_project, make_manager, monkeypatch
+    ):
+        # 目标不含 Admin 步骤时不应调用平台接口。
+        client, calls = self._build_client(
+            fake_project, make_manager, monkeypatch, configured_keys=set()
+        )
+        body = client.get(
+            "/api/credentials/status?env=test&run_type=single"
+        ).get_json()
+        assert body["admin"]["required"] is False
+        assert calls == []
+
+
 class TestStartupRecovery:
     """应用工厂自建引擎时执行启动恢复。"""
 
