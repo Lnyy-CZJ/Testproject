@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="page-heading">
+  <div><p class="eyebrow">AI TESTING / {{ settings.runtime_environment|upper }}</p><h1>{{ title }}</h1><p>{{ description }}</p></div>
+  <span class="service-state"><span aria-hidden="true"></span>服务在线</span>
+</section>
+<section class="panel" aria-labelledby="new-task-title">
+  <div class="section-heading"><div><p class="eyebrow">NEW TASK</p><h2 id="new-task-title">新建任务</h2></div></div>
+  <form id="task-form" enctype="multipart/form-data">
+    <div class="form-grid">
+      <label>项目名称<input name="project_name" maxlength="128" required></label>
+      <label>模块名称<input name="module_name" maxlength="128" required></label>
+      <label>操作类型<select name="operation" required>{% if agent_type == 'functional' %}<option value="full_pipeline">完整流程（含 Review）</option><option value="generate_test_points">生成测试点</option><option value="generate_test_cases">生成测试用例</option><option value="decompose_requirement">需求拆解</option>{% else %}<option value="generate_api_cases">生成 API 测试用例</option><option value="parse_api_document">仅解析 API 文档</option>{% endif %}</select></label>
+      <label>当前环境<input name="environment" value="{{ settings.runtime_environment }}" readonly></label>
+    </div>
+    <label class="file-field">主文档<input type="file" name="document_file" {% if agent_type == 'functional' %}accept=".md,.txt"{% else %}accept=".md,.txt,.json,.yaml,.yml"{% endif %}><small>也可在下方粘贴文本；两种方式二选一。单文件最大 5 MiB。</small></label>
+    {% if agent_type == 'functional' %}<label class="file-field">已评审测试点 JSON（仅“生成测试用例”）<input type="file" name="test_points_file" accept=".json"><small>如使用此文件，请勿同时上传或粘贴主文档；文件将执行 Review Schema 校验。</small></label>{% endif %}
+    <label>粘贴文档<textarea name="document_text" rows="7" maxlength="500000"></textarea></label>
+    <label>补充说明<textarea name="additional_context" rows="3" maxlength="4000"></textarea></label>
+    {% if agent_type == 'functional' %}<label>功能名称（可选）<input name="feature_name" maxlength="128"></label>{% endif %}
+    {% if agent_type == 'api' %}<div class="notice"><strong>安全默认值</strong><p>真实 API 执行未启用，目标允许列表为空；数据库写入默认关闭，生成文件不受影响。</p></div>{% endif %}
+    <div id="form-message" class="inline-message" aria-live="polite"></div>
+    <button class="primary-button" type="submit">创建任务</button>
+  </form>
+</section>
+<section class="task-section" aria-labelledby="recent-title">
+  <div class="section-heading"><div><p class="eyebrow">RECENT</p><h2 id="recent-title">最近任务</h2></div></div>
+  {% if tasks %}<div class="task-table" role="table"><div class="task-row task-header" role="row"><span>任务</span><span>项目 / 模块</span><span>状态 / 阶段</span><span>创建时间</span><span>操作</span></div>{% for item in tasks %}<div class="task-row" role="row"><code>{{ item.id }}</code><span>{{ item.project_name }}<small>{{ item.module_name }}</small></span><span><strong class="status-pill status-{{ item.status }}">{{ item.status }}</strong><small>{{ item.stage }}</small></span><time>{{ item.created_at }}</time><a href="{{ settings.base_path }}/tasks/{{ item.id }}">查看详情</a></div>{% endfor %}</div>{% else %}<div class="empty-state"><h3>还没有任务</h3><p>上传文档创建第一个任务，状态与产物会显示在这里。</p></div>{% endif %}
+</section>
+{% endblock %}

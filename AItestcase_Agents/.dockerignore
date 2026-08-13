@@ -1,0 +1,12 @@
+.git
+.env
+.env.*
+output
+runtime
+**/__pycache__
+**/.pytest_cache
+*.pyc
+tests
+PRD
+docs
+

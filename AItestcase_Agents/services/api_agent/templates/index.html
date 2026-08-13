@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="page-heading">
+  <div><p class="eyebrow">API TESTING / DEVELOPMENT</p><h1>{{ title }}</h1><p>从接口文档到可 Review 契约、测试用例、静态执行定义和本地 Bug 草稿。</p></div>
+  <span class="service-state"><span aria-hidden="true"></span>开发期验证</span>
+</section>
+<section class="panel" aria-labelledby="new-task-title">
+  <div class="section-heading"><div><p class="eyebrow">NEW ANALYSIS</p><h2 id="new-task-title">导入 HTTP API 文档</h2></div><span class="boundary-badge">生产执行关闭</span></div>
+  <form id="task-form" enctype="multipart/form-data">
+    <div class="form-grid">
+      <label>项目名称<input name="project_name" maxlength="128" autocomplete="off" required></label>
+      <label>模块名称<input name="module_name" maxlength="128" autocomplete="off" required></label>
+      <label>任务目标<select name="operation" required><option value="generate_api_cases">完整生成闭环</option><option value="parse_api_document">仅解析并 Review 契约</option></select></label>
+      <label>当前环境<input name="environment" value="{{ settings.runtime_environment }}" readonly></label>
+    </div>
+    <label class="file-field">接口文档<input type="file" name="document_file" accept=".md,.txt,.json,.yaml,.yml"><small>支持 OpenAPI 2.0/3.x、Swagger 和普通 HTTP API 文本；不支持 Postman、gRPC、WebSocket、GraphQL。</small></label>
+    <label>或粘贴文档<textarea name="document_text" rows="7" maxlength="500000" placeholder="粘贴 HTTP API 文档；上传与粘贴二选一"></textarea></label>
+    <label>测试关注点<textarea name="additional_context" rows="3" maxlength="4000" placeholder="例如：重点检查鉴权、幂等和错误码"></textarea></label>
+    <div class="notice"><strong>S2 安全边界</strong><p>仅显式启用的本机非生产环境可访问已登记目标；每个 Run 使用独立受限容器。文档 Server 不会自动成为目标，也不会向外部缺陷系统提交内容。</p></div>
+    <div id="form-message" class="inline-message" aria-live="polite"></div>
+    <button class="primary-button" type="submit">开始分析</button>
+  </form>
+</section>
+<section class="task-section" aria-labelledby="recent-title">
+  <div class="section-heading"><div><p class="eyebrow">RECENT</p><h2 id="recent-title">最近任务</h2></div></div>
+  {% if tasks %}<div class="task-table" role="table"><div class="task-row task-header" role="row"><span>任务</span><span>项目 / 模块</span><span>状态 / 阶段</span><span>创建时间</span><span>操作</span></div>{% for item in tasks %}<div class="task-row" role="row"><code>{{ item.id }}</code><span>{{ item.project_name }}<small>{{ item.module_name }}</small></span><span><strong class="status-pill status-{{ item.status }}">{{ item.status }}</strong><small>{{ item.stage }}</small></span><time>{{ item.created_at }}</time><a href="{{ settings.base_path }}/tasks/{{ item.id }}">进入工作台</a></div>{% endfor %}</div>{% else %}<div class="empty-state"><h3>还没有 API 分析任务</h3><p>上传一份 HTTP API 文档开始确定性解析。</p></div>{% endif %}
+</section>
+{% endblock %}
+{% block styles %}<link rel="stylesheet" href="{{ settings.base_path }}/static/api-v2-workbench.css">{% endblock %}

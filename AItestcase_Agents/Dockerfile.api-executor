@@ -1,0 +1,9 @@
+# 固定 API Executor：不包含模型、数据库、平台 SDK、Shell 入口或凭证。
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+WORKDIR /app
+RUN useradd --no-create-home --uid 10003 executor
+COPY --chown=executor:executor executor/runner.py /app/runner.py
+USER executor
+ENTRYPOINT ["python", "/app/runner.py"]

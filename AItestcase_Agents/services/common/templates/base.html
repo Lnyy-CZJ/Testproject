@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }}</title>
+  <link rel="stylesheet" href="{{ settings.base_path }}/static/agent-workbench.css">
+  {% block styles %}{% endblock %}
+</head>
+<body data-base-path="{{ settings.base_path }}" data-csrf="{{ csrf_token }}">
+  <header class="topbar">
+    <a class="platform-link" href="{{ platform_home_url }}">‹ 返回测试开发平台</a>
+    <span class="environment-badge">{{ settings.runtime_environment|upper }}</span>
+  </header>
+  <main class="workspace">{% block content %}{% endblock %}</main>
+  <script src="{{ settings.base_path }}/static/agent-workbench.js" defer></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

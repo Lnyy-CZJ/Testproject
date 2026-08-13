@@ -1,0 +1,22 @@
+[project]
+name = "aitestcase-agents-rkm"
+version = "0.1.0"
+description = "RKM requirement knowledge model module for function_test workflows."
+requires-python = ">=3.9"
+dependencies = [
+    "pydantic>=2.0",
+    "PyYAML>=6.0",
+    "Flask>=3.1,<3.2",
+    "PyMySQL>=1.1,<1.2",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
+
+[tool.setuptools.packages.find]
+include = ["rkm*", "agents*", "requirement_decomposition*", "services*"]
+exclude = ["PRD*", "datas*", "output*", "LightRAG*"]
