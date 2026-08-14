@@ -1,0 +1,112 @@
+{\rtf1\ansi\ansicpg936\cocoartf2870
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fswiss\fcharset0 Helvetica;\f1\fnil\fcharset0 Menlo-Regular;}
+{\colortbl;\red255\green255\blue255;\red188\green127\blue6;\red255\green255\blue255;\red37\green40\blue44;
+\red0\green0\blue0;\red64\green153\blue26;\red112\green128\blue146;}
+{\*\expandedcolortbl;;\cssrgb\c78824\c56863\c0;\cssrgb\c100000\c100000\c100000;\cssrgb\c19216\c20784\c22745;
+\cssrgb\c0\c0\c0;\cssrgb\c30196\c65098\c12941;\cssrgb\c51373\c57647\c63922;}
+\paperw11900\paperh16840\margl1440\margr1440\vieww11520\viewh8400\viewkind0
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf0 Truthy_Search\uc0\u30340 env\
+\
+\pard\pardeftab720\partightenfactor0
+
+\f1\fs26 \cf2 \cb3 \expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 SEARCH_API_URL\cf4 \strokec5 =\strokec4 http://gateway.spark-jam.top/gateway/invoke\cb1 \
+\cf2 \cb3 \strokec2 SEARCH_HTTP_HEADERS_JSON\cf4 \strokec5 =\cf6 \strokec6 '\{"Content-Type": "application/json","Accept": "*/*","Host": "gateway.spark-jam.top","Connection": "keep-alive"\}'\cf4 \cb1 \strokec4 \
+\cf2 \cb3 \strokec2 AUTH_TOKEN\cf4 \strokec5 =\cf6 \strokec6 "anon.dXNlcl81NjBjMmEwZWFjMmM1ZTA2NzQ0ODkzZDQ.c041920de909bda4556de300d68625d2"\cf4 \cb1 \strokec4 \
+\cf2 \cb3 \strokec2 AUTH_EXPIRES_TIME\cf4 \strokec5 =\strokec4 1786524829758\cb1 \
+\cf2 \cb3 \strokec2 REFRESH_TOKEN\cf4 \strokec5 =\cf6 \strokec6 "refresh.sZBbPMLvxhmkw3Gd-mRw7uHdDQNlJ5gn5pY0xxKoQm8"\cf4 \cb1 \strokec4 \
+\cf2 \cb3 \strokec2 REFRESH_EXPIRES_TIME\cf4 \strokec5 =\strokec4 1801472029758\cb1 \
+\cf2 \cb3 \strokec2 DEVICE_ID\cf4 \strokec5 =\cf6 \strokec6 "ewettrtretrteyrththb"\cf4 \cb1 \strokec4 \
+\cf2 \cb3 \strokec2 USER_ID\cf4 \strokec5 =\cf6 \strokec6 "user_560c2a0eac2c5e06744893d4"\cf4 \cb1 \strokec4 \
+\cf2 \cb3 \strokec2 POLL_INTERVAL_SECONDS\cf4 \strokec5 =\strokec4 5\cb1 \
+\cf2 \cb3 \strokec2 MAX_POLL_COUNT\cf4 \strokec5 =\strokec4 60\cb1 \
+\cf2 \cb3 \strokec2 HTTP_TIMEOUT_SECONDS\cf4 \strokec5 =\strokec4 30\cb1 \
+\cf2 \cb3 \strokec2 PLATFORM\cf4 \strokec5 =\strokec4 ios\cb1 \
+\cf2 \cb3 \strokec2 APP_VERSION\cf4 \strokec5 =\strokec4 1.0.3\cb1 \
+\cf2 \cb3 \strokec2 LOCALE\cf4 \strokec5 =\strokec4 zh-Hans-CN\cb1 \
+\cf2 \cb3 \strokec2 TIMEZONE\cf4 \strokec5 =\strokec4 UTC+08:00\cb1 \
+\
+\pard\pardeftab720\partightenfactor0
+\cf7 \cb3 \strokec7 # Admin \uc0\u20844 \u20849 \u20449 \u24687 \u37319 \u38598 \u65288 \u36134 \u21495 \u23494 \u30721 \u30001 \u24179 \u21488  Secret \u31649 \u29702 \u65289 \u12290 \cf4 \cb1 \strokec4 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb3 \strokec2 SEARCH_ADMIN_ENABLED\cf4 \strokec5 =\strokec4 true\cb1 \
+\cf2 \cb3 \strokec2 SEARCH_ADMIN_LOGIN_API_URL\cf4 \strokec5 =\strokec4 http://admin-staging.spark-jam.top/admin/invoke\cb1 \
+\cf2 \cb3 \strokec2 SEARCH_ADMIN_API_URL\cf4 \strokec5 =\strokec4 http://admin-staging.spark-jam.top/gateway/invoke\cb1 \
+\cf2 \cb3 \strokec2 SEARCH_ADMIN_HTTP_HEADERS_JSON\cf4 \strokec5 =\strokec4 \{\cf6 \strokec6 "Content-Type":"application/json","Accept":"*/*"\cf4 \strokec4 \}\cb1 \
+\cf2 \cb3 \strokec2 SEARCH_ADMIN_USERNAME\cf4 \strokec5 =\cf6 \strokec6 'zhaojian'\cf4 \cb1 \strokec4 \
+\cf2 \cb3 \strokec2 SEARCH_ADMIN_PASSWORD\cf4 \strokec5 =\cf6 \strokec6 '123123'\cf4 \cb1 \strokec4 \
+\cf2 \cb3 \strokec2 SEARCH_ADMIN_REASON\cf4 \strokec5 =\strokec4 \uc0\u26680 \u23545  searchTool \u26816 \u32034 \u38142 \u36335 \cb1 \
+\pard\pardeftab720\partightenfactor0
+\cf7 \cb3 \strokec7 # \uc0\u21487 \u36873 \u37197 \u32622 \cf4 \cb1 \strokec4 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb3 \strokec2 SEARCH_ADMIN_DEBUG_SERVICE\cf4 \strokec5 =\strokec4 worker\cb1 \
+\cf2 \cb3 \strokec2 SEARCH_ADMIN_COST_LIMIT\cf4 \strokec5 =\strokec4 100\cb1 \
+\cf2 \cb3 \strokec2 SEARCH_QUERY_LOG_ENABLED\cf4 \strokec5 =\strokec4 true\cb1 \
+\cf2 \cb3 \strokec2 SEARCH_QUERY_LOG_DIR\cf4 \strokec5 =\strokec4 log\cb1 \
+\
+\pard\pardeftab720\partightenfactor0
+\cf7 \cb3 \strokec7 # \uc0\u26412 \u22320  Web\u65292 \u20165 \u30417 \u21548 \u24403 \u21069 \u30005 \u33041 \u12290 \cf4 \cb1 \strokec4 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb3 \strokec2 SEARCH_WEB_HOST\cf4 \strokec5 =\strokec4 127.0.0.1\cb1 \
+\cf2 \cb3 \strokec2 SEARCH_WEB_PORT\cf4 \strokec5 =\strokec4 5002\cb1 \
+\
+\pard\pardeftab720\partightenfactor0
+\cf7 \cb3 \strokec7 # \uc0\u36755 \u20837 \u12289 \u36755 \u20986 \u19982 \u21516 \u26085 \u37325 \u22797 \u36816 \u34892 \u31574 \u30053 \cf4 \cb1 \strokec4 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb3 \strokec2 SEARCH_INPUT_FILE\cf4 \strokec5 =\strokec4 input/tasks_v00.jsonl\cb1 \
+\cf2 \cb3 \strokec2 SEARCH_OUTPUT_DIR\cf4 \strokec5 =\strokec4 output\cb1 \
+\cf2 \cb3 \strokec2 ALLOW_DUPLICATE_RUN\cf4 \strokec5 =\strokec4 false\cb1 \
+\
+\pard\pardeftab720\partightenfactor0
+\cf7 \cb3 \strokec7 # Excel \uc0\u21333  Run \u23548 \u20986 \u37197 \u32622 \u65307 \u26174 \u24335  CLI \u21442 \u25968 \u20248 \u20808 \cf4 \cb1 \strokec4 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb3 \strokec2 EXCEL_RESULTS_FILE\cf4 \strokec5 =\strokec4 output/20260723_tasks_v00_results.jsonl\cb1 \
+\cf2 \cb3 \strokec2 EXCEL_FAILURES_FILE\cf4 \strokec5 =\strokec4 output/20260723_tasks_v00_failures.jsonl\cb1 \
+\cf2 \cb3 \strokec2 EXCEL_OUTPUT_FILE\cf4 \strokec5 =\strokec4 outputs/results_comparison_20260723.xlsx\cb1 \
+\cf2 \cb3 \strokec2 EXCEL_RUN_LABEL\cf4 \strokec5 =\strokec4 candidate\cb1 \
+\cf2 \cb3 \strokec2 EXCEL_SYSTEM_VERSION\cf4 \strokec5 =\strokec4 v1.0\cb1 \
+\cf2 \cb3 \strokec2 EXCEL_EVALUATION_ID\cf4 \strokec5 =\strokec4 eval_20260723\cb1 \
+\cf2 \cb3 \strokec2 EXCEL_METADATA_FILE\cf4 \strokec5 =\cb1 \strokec4 \
+\
+\pard\pardeftab720\partightenfactor0
+\cf7 \cb3 \strokec7 # Excel baseline/candidate \uc0\u23545 \u27604 \u37197 \u32622 \cf4 \cb1 \strokec4 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb3 \strokec2 EXCEL_BASELINE_RESULTS_FILE\cf4 \strokec5 =\cb1 \strokec4 \
+\cf2 \cb3 \strokec2 EXCEL_BASELINE_FAILURES_FILE\cf4 \strokec5 =\cb1 \strokec4 \
+\cf2 \cb3 \strokec2 EXCEL_BASELINE_VERSION\cf4 \strokec5 =\cb1 \strokec4 \
+\cf2 \cb3 \strokec2 EXCEL_CANDIDATE_RESULTS_FILE\cf4 \strokec5 =\cb1 \strokec4 \
+\cf2 \cb3 \strokec2 EXCEL_CANDIDATE_FAILURES_FILE\cf4 \strokec5 =\cb1 \strokec4 \
+\cf2 \cb3 \strokec2 EXCEL_CANDIDATE_VERSION\cf4 \strokec5 =\cb1 \strokec4 \
+\
+\
+\pard\pardeftab720\partightenfactor0
+\cf7 \cb3 \strokec7 # \uc0\u29031 \u29255 \u26816 \u32034 \u25191 \u34892 \u32447 \u12290 \u24179 \u21488 \u29031 \u29255 \u30446 \u24405 \u36890 \u36807 \u29616 \u26377  /app/input \u21482 \u35835 \u25346 \u36733 \u25552 \u20379 \u12290 \cf4 \cb1 \strokec4 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb3 \strokec2 SEARCH_PHOTO_ENABLED\cf4 \strokec5 =\strokec4 true\cb1 \
+\cf2 \cb3 \strokec2 SEARCH_PHOTO_INPUT_DIR\cf4 \strokec5 =\strokec4 input/input_photos\cb1 \
+\cf2 \cb3 \strokec2 SEARCH_PHOTO_UPLOAD_HOST_SUFFIXES\cf4 \strokec5 =\strokec4 .myqcloud.com\
+\
+\
+Truthy_ApiAutoTest2\uc0\u30340 env\
+\pard\pardeftab720\partightenfactor0
+\cf7 \strokec7 # \uc0\u35831 \u22312  shell \u25110 \u26412 \u22320 \u29615 \u22659 \u31649 \u29702 \u24037 \u20855 \u20013 \u35774 \u32622 \u65292 \u31105 \u27490 \u25552 \u20132 \u30495 \u23454 \u20540 \u12290 \cf4 \cb1 \strokec4 \
+\cf2 \cb3 \strokec2 AUTH_TOKEN\cf4 \strokec5 =\strokec4 anon.dXNlcl9mMDU0MGExZjk3NzFjN2FhMWY1MGE1Y2M.29522482e34f918464bc70d2e5d2f35f\cb1 \
+\cf2 \cb3 \strokec2 EXPIRES_TIME\cf4 \strokec5 =\strokec4 1786970564892\cb1 \
+\
+\cf2 \cb3 \strokec2 REFRESH_TOKEN\cf4 \strokec5 =\strokec4 refresh.w3UbqTgbF-Z5pI8Bu9ur91FxrMoP2E2P872xikmj64g\cb1 \
+\cf2 \cb3 \strokec2 REFRESH_EXPIRES_TIME\cf4 \strokec5 =\strokec4 1801917764892\cb1 \
+\
+\cf2 \cb3 \strokec2 USER_ID\cf4 \strokec5 =\strokec4 user_f0540a1f9771c7aa1f50a5cc\cb1 \
+\cf2 \cb3 \strokec2 DEVICE_ID\cf4 \strokec5 =\strokec4 39d42779-2dcf-4759-9275-699eed5db695\cb1 \
+\
+\
+\cf2 \cb3 \strokec2 ADMIN_SESSION_TOKEN\cf4 \strokec5 =\strokec4 adm_sess_90dccfc61752929426e52dabf41e99a933908439421a80cd453a37b848f0845c\cb1 \
+\cf2 \cb3 \strokec2 ADMIN_OPERATOR_ID\cf4 \strokec5 =\strokec4 admin_user_ebe98ba4de4542fa3982aa46\cb1 \
+\cf2 \cb3 \strokec2 ADMIN_OPERATOR_NAME\cf4 \strokec5 =\strokec4 zhaojian\cb1 \
+\
+\pard\pardeftab720\partightenfactor0
+\cf4 \
+\
+}

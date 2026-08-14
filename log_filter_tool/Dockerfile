@@ -6,7 +6,11 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app.py .
+COPY people_search_analyzer.py .
+COPY people_search_rules.py .
+COPY people_search_ai.py .
 COPY templates/ templates/
+COPY skills/ skills/
 COPY log_default.log .
 
 EXPOSE 5001

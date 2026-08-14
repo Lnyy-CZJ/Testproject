@@ -1,0 +1,4431 @@
+2026-08-11 12:46:31,175 | INFO | search_tool.QueryChainLogger | QueryStart 事件:
+{
+  "sequence_no": 1,
+  "api_sequence_no": null,
+  "run_id": "run_1d70edb93a664d539c9c5dcc0f2d9742",
+  "input_id": "case-080",
+  "person_name": "Alfred Carl",
+  "task_id": "",
+  "candidate_id": "",
+  "stage": "QueryStart",
+  "attempt": 1,
+  "business_success": true
+}
+2026-08-11 12:46:31,175 | INFO | search_tool.QueryChainLogger | QueryStart 脱敏请求数据: attempt=1
+{
+  "input_id": "case-080",
+  "query_stage": "FULL_NAME",
+  "match_strategy": "UNION",
+  "clues": [
+    {
+      "full_name_query": {
+        "full_name": "Alfred Carl"
+      },
+      "type": "FULL_NAME"
+    }
+  ],
+  "additional_details": []
+}
+
+2026-08-11 12:46:32,162 | INFO | search_tool.QueryChainLogger | CreateIntentTask 事件:
+{
+  "sequence_no": 2,
+  "api_sequence_no": 1,
+  "run_id": "run_1d70edb93a664d539c9c5dcc0f2d9742",
+  "input_id": "case-080",
+  "person_name": "Alfred Carl",
+  "task_id": "task_eee1995517bacaf98257e738",
+  "candidate_id": "",
+  "stage": "CreateIntentTask",
+  "attempt": 1,
+  "business_success": true
+}
+2026-08-11 12:46:32,162 | INFO | search_tool.QueryChainLogger | CreateIntentTask 脱敏请求数据: attempt=1
+{
+  "match_strategy": "UNION",
+  "clues": [
+    {
+      "full_name_query": {
+        "full_name": "Alfred Carl"
+      },
+      "type": "FULL_NAME"
+    }
+  ],
+  "additional_details": []
+}
+2026-08-11 12:46:32,162 | INFO | search_tool.QueryChainLogger | CreateIntentTask 响应数据: HTTP 200 elapsed_ms=984
+{
+  "code": 0,
+  "message": "ok",
+  "request_id": "gw_req_40de65d3bb0e00428022cf36695d0d9d",
+  "trace_id": "trace_2725af55d315d2de7436213d031df04c",
+  "responses": [
+    {
+      "id": "req_0",
+      "success": true,
+      "code": 0,
+      "message": "ok",
+      "data": {
+        "accepted_query_type": "FULL_NAME",
+        "additional_details": [],
+        "cache_hit": false,
+        "can_start_real_search": true,
+        "clue_types": [
+          "FULL_NAME"
+        ],
+        "entitlement_decision": "ALLOW",
+        "expires_time": 1789015592707,
+        "match_strategy": "UNION",
+        "status": "QUEUED",
+        "task_id": "task_eee1995517bacaf98257e738"
+      }
+    }
+  ]
+}
+
+2026-08-11 12:46:38,234 | INFO | search_tool.QueryChainLogger | GetTask 事件:
+{
+  "sequence_no": 3,
+  "api_sequence_no": 1,
+  "run_id": "run_1d70edb93a664d539c9c5dcc0f2d9742",
+  "input_id": "case-080",
+  "person_name": "Alfred Carl",
+  "task_id": "task_eee1995517bacaf98257e738",
+  "candidate_id": "",
+  "stage": "GetTask",
+  "attempt": 1,
+  "business_success": true
+}
+2026-08-11 12:46:38,234 | INFO | search_tool.QueryChainLogger | GetTask 脱敏请求数据: attempt=1
+{
+  "task_id": "task_eee1995517bacaf98257e738"
+}
+2026-08-11 12:46:38,234 | INFO | search_tool.QueryChainLogger | GetTask 响应数据: HTTP 200 elapsed_ms=1061
+{
+  "code": 0,
+  "message": "ok",
+  "request_id": "gw_req_26e51c16af4a6d0457e2d39bb0eee2c4",
+  "trace_id": "trace_85df8298f8cb698820f7c615f71dcfa2",
+  "responses": [
+    {
+      "id": "req_0",
+      "success": true,
+      "code": 0,
+      "message": "ok",
+      "data": {
+        "cache_hit": false,
+        "candidate_confidence_scores": [],
+        "candidate_count": 0,
+        "error_code": "",
+        "failure_reason": "",
+        "has_additional_clues": false,
+        "is_initial_search": true,
+        "no_result_reason": "",
+        "progress": {
+          "display_message": "Searching public sources",
+          "display_percent": 45,
+          "stage": "provider_search"
+        },
+        "provider_execution": "PENDING",
+        "provider_summary": {
+          "cache_hit": false,
+          "primary_provider": "",
+          "provider_execution": "PENDING",
+          "providers": [],
+          "public_sources": false,
+          "source_provider": "",
+          "source_providers": []
+        },
+        "result_type": "",
+        "status": "SEARCHING",
+        "task_id": "task_eee1995517bacaf98257e738",
+        "top_confidence_score": 0,
+        "update_time": 1786423594215
+      }
+    }
+  ]
+}
+
+2026-08-11 12:46:44,612 | INFO | search_tool.QueryChainLogger | GetTask 事件:
+{
+  "sequence_no": 4,
+  "api_sequence_no": 2,
+  "run_id": "run_1d70edb93a664d539c9c5dcc0f2d9742",
+  "input_id": "case-080",
+  "person_name": "Alfred Carl",
+  "task_id": "task_eee1995517bacaf98257e738",
+  "candidate_id": "",
+  "stage": "GetTask",
+  "attempt": 1,
+  "business_success": true
+}
+2026-08-11 12:46:44,612 | INFO | search_tool.QueryChainLogger | GetTask 脱敏请求数据: attempt=1
+{
+  "task_id": "task_eee1995517bacaf98257e738"
+}
+2026-08-11 12:46:44,612 | INFO | search_tool.QueryChainLogger | GetTask 响应数据: HTTP 200 elapsed_ms=1352
+{
+  "code": 0,
+  "message": "ok",
+  "request_id": "gw_req_6bd6fefc1efd0d888e91d345579a1cdf",
+  "trace_id": "trace_eb94a73aef0e3e3b3262c50c2cc7d35b",
+  "responses": [
+    {
+      "id": "req_0",
+      "success": true,
+      "code": 0,
+      "message": "ok",
+      "data": {
+        "cache_hit": false,
+        "candidate_confidence_scores": [],
+        "candidate_count": 0,
+        "error_code": "",
+        "failure_reason": "",
+        "has_additional_clues": false,
+        "is_initial_search": true,
+        "no_result_reason": "",
+        "progress": {
+          "display_message": "Searching public sources",
+          "display_percent": 45,
+          "stage": "provider_search"
+        },
+        "provider_execution": "PENDING",
+        "provider_summary": {
+          "cache_hit": false,
+          "primary_provider": "",
+          "provider_execution": "PENDING",
+          "providers": [],
+          "public_sources": false,
+          "source_provider": "",
+          "source_providers": []
+        },
+        "result_type": "",
+        "status": "SEARCHING",
+        "task_id": "task_eee1995517bacaf98257e738",
+        "top_confidence_score": 0,
+        "update_time": 1786423594215
+      }
+    }
+  ]
+}
+
+2026-08-11 12:46:50,612 | INFO | search_tool.QueryChainLogger | GetTask 事件:
+{
+  "sequence_no": 5,
+  "api_sequence_no": 3,
+  "run_id": "run_1d70edb93a664d539c9c5dcc0f2d9742",
+  "input_id": "case-080",
+  "person_name": "Alfred Carl",
+  "task_id": "task_eee1995517bacaf98257e738",
+  "candidate_id": "",
+  "stage": "GetTask",
+  "attempt": 1,
+  "business_success": true
+}
+2026-08-11 12:46:50,612 | INFO | search_tool.QueryChainLogger | GetTask 脱敏请求数据: attempt=1
+{
+  "task_id": "task_eee1995517bacaf98257e738"
+}
+2026-08-11 12:46:50,612 | INFO | search_tool.QueryChainLogger | GetTask 响应数据: HTTP 200 elapsed_ms=986
+{
+  "code": 0,
+  "message": "ok",
+  "request_id": "gw_req_fe20d54914ac181847effdff71ddc106",
+  "trace_id": "trace_a7076092405e6de824e5d549f7c39359",
+  "responses": [
+    {
+      "id": "req_0",
+      "success": true,
+      "code": 0,
+      "message": "ok",
+      "data": {
+        "cache_hit": false,
+        "candidate_confidence_scores": [],
+        "candidate_count": 0,
+        "error_code": "",
+        "failure_reason": "",
+        "has_additional_clues": false,
+        "is_initial_search": true,
+        "no_result_reason": "",
+        "progress": {
+          "display_message": "Searching public sources",
+          "display_percent": 45,
+          "stage": "provider_search"
+        },
+        "provider_execution": "PENDING",
+        "provider_summary": {
+          "cache_hit": false,
+          "primary_provider": "",
+          "provider_execution": "PENDING",
+          "providers": [],
+          "public_sources": false,
+          "source_provider": "",
+          "source_providers": []
+        },
+        "result_type": "",
+        "status": "SEARCHING",
+        "task_id": "task_eee1995517bacaf98257e738",
+        "top_confidence_score": 0,
+        "update_time": 1786423594215
+      }
+    }
+  ]
+}
+
+2026-08-11 12:46:56,637 | INFO | search_tool.QueryChainLogger | GetTask 事件:
+{
+  "sequence_no": 6,
+  "api_sequence_no": 4,
+  "run_id": "run_1d70edb93a664d539c9c5dcc0f2d9742",
+  "input_id": "case-080",
+  "person_name": "Alfred Carl",
+  "task_id": "task_eee1995517bacaf98257e738",
+  "candidate_id": "",
+  "stage": "GetTask",
+  "attempt": 1,
+  "business_success": true
+}
+2026-08-11 12:46:56,637 | INFO | search_tool.QueryChainLogger | GetTask 脱敏请求数据: attempt=1
+{
+  "task_id": "task_eee1995517bacaf98257e738"
+}
+2026-08-11 12:46:56,637 | INFO | search_tool.QueryChainLogger | GetTask 响应数据: HTTP 200 elapsed_ms=1013
+{
+  "code": 0,
+  "message": "ok",
+  "request_id": "gw_req_54d27d24b74ddd1af15cdcedc57f8b64",
+  "trace_id": "trace_a511395cea0669c27157ecbf11bbb31f",
+  "responses": [
+    {
+      "id": "req_0",
+      "success": true,
+      "code": 0,
+      "message": "ok",
+      "data": {
+        "cache_hit": false,
+        "candidate_confidence_scores": [
+          35,
+          35,
+          35
+        ],
+        "candidate_count": 3,
+        "error_code": "",
+        "failure_reason": "",
+        "has_additional_clues": false,
+        "is_initial_search": true,
+        "no_result_reason": "",
+        "progress": {
+          "display_message": "Report ready",
+          "display_percent": 100,
+          "stage": "report_ready"
+        },
+        "provider_execution": "REAL_PROVIDER",
+        "provider_summary": {
+          "cache_hit": false,
+          "primary_provider": "agent_people",
+          "provider_execution": "REAL_PROVIDER",
+          "providers": [
+            "agent_people",
+            "social_profile",
+            "image_materializer",
+            "people_data_labs",
+            "search_agent"
+          ],
+          "public_sources": false,
+          "source_provider": "people_data_labs",
+          "source_providers": [
+            "people_data_labs",
+            "scrapecreators"
+          ]
+        },
+        "result_type": "multiple",
+        "status": "SUCCEEDED",
+        "task_id": "task_eee1995517bacaf98257e738",
+        "top_confidence_score": 35,
+        "update_time": 1786423612212
+      }
+    }
+  ]
+}
+
+2026-08-11 12:46:59,114 | INFO | search_tool.QueryChainLogger | GetSearchTaskDebug 事件:
+{
+  "sequence_no": 7,
+  "api_sequence_no": 1,
+  "run_id": "run_1d70edb93a664d539c9c5dcc0f2d9742",
+  "input_id": "case-080",
+  "person_name": "Alfred Carl",
+  "task_id": "task_eee1995517bacaf98257e738",
+  "candidate_id": "",
+  "stage": "GetSearchTaskDebug",
+  "attempt": 1,
+  "business_success": true
+}
+2026-08-11 12:46:59,114 | INFO | search_tool.QueryChainLogger | GetSearchTaskDebug 脱敏请求数据: attempt=1
+{
+  "task_id": "task_eee1995517bacaf98257e738",
+  "service": "worker"
+}
+2026-08-11 12:46:59,114 | INFO | search_tool.QueryChainLogger | GetSearchTaskDebug 响应数据: HTTP 200 elapsed_ms=1448
+{
+  "code": 0,
+  "message": "ok",
+  "request_id": "gw_req_985f0e5495721f4baa0e99dae21ce5e2",
+  "trace_id": "trace_2bcd22a46c5c408c9dd686a8ff60bfc1",
+  "responses": [
+    {
+      "id": "req_0",
+      "success": true,
+      "code": 0,
+      "message": "ok",
+      "data": {
+        "debug": {
+          "task": {
+            "cache_hit": 0,
+            "client_request_id": "crid-1786423591177-aadf691d43",
+            "create_time": "2026-08-11T04:46:32.707Z",
+            "entitlement_decision": "ALLOW",
+            "error_code": "",
+            "expire_time": "2026-09-10T04:46:32.707Z",
+            "finish_time": "2026-08-11T04:46:52.212Z",
+            "id": 1660,
+            "no_result_reason": "",
+            "progress_message": "Report ready",
+            "progress_percent": 100,
+            "progress_stage": "report_ready",
+            "query_type": "FULL_NAME",
+            "refine_feedback_id": "",
+            "report_id": "report_08a17a5eeb87a1ebc3c3e02c",
+            "source_report_id": "",
+            "source_task_id": "",
+            "start_time": "2026-08-11T04:46:34.215Z",
+            "status": "SUCCEEDED",
+            "task_id": "task_eee1995517bacaf98257e738",
+            "update_time": "2026-08-11T04:46:52.212Z"
+          },
+          "query": {
+            "additional_details_json": null,
+            "city": "",
+            "clues_json": [
+              {
+                "full_name": "Alfred Carl",
+                "type": "FULL_NAME"
+              }
+            ],
+            "country": "",
+            "create_time": "2026-08-11T04:46:32.707Z",
+            "extra_hint": "",
+            "full_name": "Alfred Carl",
+            "id": 1659,
+            "location_json": null,
+            "location_text": "",
+            "match_strategy": "UNION",
+            "media_asset_id": "",
+            "photo_type_hint": "",
+            "platform_hint": "",
+            "query_id": "query_66f290538dfde887e1f045d2",
+            "query_type": "FULL_NAME",
+            "raw_query": {
+              "additional_details": [],
+              "clues": [
+                {
+                  "full_name_query": {
+                    "full_name": "Alfred Carl"
+                  },
+                  "type": "FULL_NAME"
+                }
+              ],
+              "match_strategy": "UNION"
+            },
+            "task_id": "task_eee1995517bacaf98257e738",
+            "update_time": "2026-08-11T12:46:32.715Z",
+            "url": ""
+          },
+          "diagnosis": {
+            "agent_tool_call_count": 10,
+            "config_estimate_call_count": 0,
+            "conflict_resolution": "",
+            "conflict_warning": "",
+            "conflicting_clue_types": [],
+            "cost_complete": true,
+            "cost_consistent": true,
+            "estimated_cost_microunit": 843912,
+            "estimated_cost_scope": "TASK_TOTAL_ALL_PROVIDER_CALLS",
+            "failed_call_count": 0,
+            "fallback_reason": "LLM_NO_RESULT",
+            "fallback_resolution": "",
+            "fallback_used": true,
+            "final_reason": "",
+            "final_status": "SUCCEEDED",
+            "identity_conflict": false,
+            "identity_resolution_status": "NOT_EVALUATED",
+            "llm_content_bytes": 459,
+            "llm_http_attempt_count": 1,
+            "llm_output_status": "LLM_OUTPUT_COMPLETE",
+            "llm_partial_candidates": 0,
+            "llm_partial_response": false,
+            "llm_partial_result_usable": false,
+            "llm_partial_sources": 0,
+            "llm_reasoning_bytes": 0,
+            "llm_recoverable_candidates": 0,
+            "llm_repair_retry_used": false,
+            "llm_truncation_detected": false,
+            "no_result_call_count": 4,
+            "partial_cost_call_count": 0,
+            "pdl_billing_unit_count": 3,
+            "pdl_called": true,
+            "pdl_candidates": [
+              {
+                "candidate_id": "pdl:cY3D9O7eAvKc6FXKhbhfqA_0000",
+                "decision": "ELIGIBLE",
+                "display_name": "alfred carl",
+                "match_score": 35,
+                "matched_clue_types": [
+                  "FULL_NAME"
+                ],
+                "profile_fetch_called": false,
+                "profile_fetch_cost_microunit": 0,
+                "rejection_reason": "",
+                "selected": true,
+                "social_links": [
+                  "https://linkedin.com/in/alcarl",
+                  "https://twitter.com/alfredcarl"
+                ],
+                "stage": "person_search"
+              },
+              {
+                "candidate_id": "pdl:DZghHxeenE6PBgVXbDbPRQ_0000",
+                "decision": "ELIGIBLE",
+                "display_name": "alfred carl",
+                "match_score": 35,
+                "matched_clue_types": [
+                  "FULL_NAME"
+                ],
+                "profile_fetch_called": false,
+                "profile_fetch_cost_microunit": 0,
+                "rejection_reason": "",
+                "selected": true,
+                "social_links": [
+                  "https://linkedin.com/in/alfred-carl-9786b1117"
+                ],
+                "stage": "person_search"
+              },
+              {
+                "candidate_id": "pdl:nvxlsfo4JyiBpiDDc8bZug_0000",
+                "decision": "ELIGIBLE",
+                "display_name": "alfred carl",
+                "match_score": 35,
+                "matched_clue_types": [
+                  "FULL_NAME"
+                ],
+                "profile_fetch_called": false,
+                "profile_fetch_cost_microunit": 0,
+                "rejection_reason": "",
+                "selected": true,
+                "social_links": [
+                  "https://linkedin.com/in/alfred-carl-742b3336a"
+                ],
+                "stage": "person_search"
+              }
+            ],
+            "pdl_decision": "called",
+            "pdl_estimated_cost_microunit": 840000,
+            "pdl_external_request_count": 1,
+            "pdl_identify_call_count": 0,
+            "pdl_identify_called": false,
+            "pdl_identify_candidate_count": 0,
+            "pdl_not_called_reason": "",
+            "pdl_person_search_call_count": 1,
+            "pdl_person_search_called": true,
+            "pdl_person_search_returned_profile_count": 3,
+            "pdl_pipeline_stages": [
+              {
+                "api_request_count": 1,
+                "billed_quantity": 3,
+                "billing_operation": "person_search_profile",
+                "candidate_count": 3,
+                "operation": "person_search",
+                "status": "success",
+                "unit_type": "returned_profile"
+              }
+            ],
+            "pdl_profile_fetch_count": 0,
+            "pdl_rejected_candidate_count": 0,
+            "pdl_rejection_reasons": [],
+            "pdl_skip_reason": "",
+            "pdl_skipped": false,
+            "pdl_usable_candidate_count": 3,
+            "people_fallback_reason": "LLM_NO_RESULT",
+            "people_fallback_used": true,
+            "pre_pdl_estimated_cost_microunit": 152,
+            "provider_request_count": 1,
+            "public_figure_eligibility": "eligible",
+            "public_figure_eligible": true,
+            "public_figure_evaluated": true,
+            "public_figure_local": "hit",
+            "public_figure_local_known": true,
+            "public_figure_remote": "not_evaluated",
+            "public_figure_remote_ambiguous": false,
+            "public_figure_remote_called": false,
+            "public_figure_remote_total": 0,
+            "public_figure_remote_usable": "not_evaluated",
+            "public_figure_remote_usable_count": 0,
+            "public_figure_selected_wikidata_id": "",
+            "public_figure_skip_reason": "LOCAL_NEGATIVE_CACHE",
+            "report_estimated_cost_microunit": 843912,
+            "result_confidence_level": "LOW",
+            "result_pdl_skip_reason": "",
+            "result_pdl_skipped": false,
+            "result_provider": "people_data_labs",
+            "result_source_provider": "",
+            "result_stop_reason": "completed",
+            "reverse_image_estimated_cost_microunit": 0,
+            "reverse_image_fallback_reasons": [],
+            "reverse_image_fallback_used": false,
+            "reverse_image_final_provider": "",
+            "reverse_image_primary_provider": "",
+            "reverse_image_provider_attempt_count": 0,
+            "reverse_image_status": "NOT_PLANNED",
+            "reverse_image_stop_reason": "NOT_PLANNED",
+            "search_result_cache": "miss",
+            "social_identity_support": "",
+            "social_link_owner_names": [],
+            "social_profile_attempted_count": 4,
+            "social_profile_depth_skipped_count": 0,
+            "social_profile_duplicate_count": 11,
+            "social_profile_error_count": 0,
+            "social_profile_execution_skipped_count": 0,
+            "social_profile_limit_skipped_count": 0,
+            "social_profile_merged_candidate_count": 1,
+            "social_profile_no_result_count": 2,
+            "social_profile_planned_count": 4,
+            "social_profile_queue_decision_truncated_count": 0,
+            "social_profile_queue_decisions": [
+              {
+                "canonical_url": "https://linkedin.com/in/alcarl",
+                "decision": "CALLED",
+                "depth": 1,
+                "discovered_by": "PDL",
+                "error_code": "",
+                "no_result_reason": "",
+                "outcome": "SUCCESS",
+                "parent_candidate_id": "pdl:cY3D9O7eAvKc6FXKhbhfqA_0000",
+                "parent_evidence_id": "",
+                "parent_provider": "people_data_labs",
+                "parent_url": "",
+                "platform": "linkedin",
+                "raw_url": "linkedin.com/in/alcarl",
+                "skip_reason": ""
+              },
+              {
+                "canonical_url": "https://linkedin.com/in/alcarl",
+                "decision": "SKIPPED",
+                "depth": 1,
+                "discovered_by": "PDL",
+                "error_code": "",
+                "no_result_reason": "",
+                "outcome": "",
+                "parent_candidate_id": "pdl:cY3D9O7eAvKc6FXKhbhfqA_0000",
+                "parent_evidence_id": "",
+                "parent_provider": "people_data_labs",
+                "parent_url": "",
+                "platform": "linkedin",
+                "raw_url": "linkedin.com/in/alcarl",
+                "skip_reason": "DUPLICATE"
+              },
+              {
+                "canonical_url": "https://x.com/alfredcarl",
+                "decision": "CALLED",
+                "depth": 1,
+                "discovered_by": "PDL",
+                "error_code": "",
+                "no_result_reason": "",
+                "outcome": "SUCCESS",
+                "parent_candidate_id": "pdl:cY3D9O7eAvKc6FXKhbhfqA_0000",
+                "parent_evidence_id": "",
+                "parent_provider": "people_data_labs",
+                "parent_url": "",
+                "platform": "x",
+                "raw_url": "twitter.com/alfredcarl",
+                "skip_reason": ""
+              },
+              {
+                "canonical_url": "https://linkedin.com/in/alfred-carl-9786b1117",
+                "decision": "CALLED",
+                "depth": 1,
+                "discovered_by": "PDL",
+                "error_code": "",
+                "no_result_reason": "PROFILE_PRIVATE_OR_UNAVAILABLE",
+                "outcome": "NO_RESULT",
+                "parent_candidate_id": "pdl:DZghHxeenE6PBgVXbDbPRQ_0000",
+                "parent_evidence_id": "",
+                "parent_provider": "people_data_labs",
+                "parent_url": "",
+                "platform": "linkedin",
+                "raw_url": "linkedin.com/in/alfred-carl-9786b1117",
+                "skip_reason": ""
+              },
+              {
+                "canonical_url": "https://linkedin.com/in/alfred-carl-9786b1117",
+                "decision": "SKIPPED",
+                "depth": 1,
+                "discovered_by": "PDL",
+                "error_code": "",
+                "no_result_reason": "",
+                "outcome": "",
+                "parent_candidate_id": "pdl:DZghHxeenE6PBgVXbDbPRQ_0000",
+                "parent_evidence_id": "",
+                "parent_provider": "people_data_labs",
+                "parent_url": "",
+                "platform": "linkedin",
+                "raw_url": "linkedin.com/in/alfred-carl-9786b1117",
+                "skip_reason": "DUPLICATE"
+              },
+              {
+                "canonical_url": "https://linkedin.com/in/alfred-carl-742b3336a",
+                "decision": "CALLED",
+                "depth": 1,
+                "discovered_by": "PDL",
+                "error_code": "",
+                "no_result_reason": "PROFILE_PRIVATE_OR_UNAVAILABLE",
+                "outcome": "NO_RESULT",
+                "parent_candidate_id": "pdl:nvxlsfo4JyiBpiDDc8bZug_0000",
+                "parent_evidence_id": "",
+                "parent_provider": "people_data_labs",
+                "parent_url": "",
+                "platform": "linkedin",
+                "raw_url": "linkedin.com/in/alfred-carl-742b3336a",
+                "skip_reason": ""
+              },
+              {
+                "canonical_url": "https://linkedin.com/in/alfred-carl-742b3336a",
+                "decision": "SKIPPED",
+                "depth": 1,
+                "discovered_by": "PDL",
+                "error_code": "",
+                "no_result_reason": "",
+                "outcome": "",
+                "parent_candidate_id": "pdl:nvxlsfo4JyiBpiDDc8bZug_0000",
+                "parent_evidence_id": "",
+                "parent_provider": "people_data_labs",
+                "parent_url": "",
+                "platform": "linkedin",
+                "raw_url": "linkedin.com/in/alfred-carl-742b3336a",
+                "skip_reason": "DUPLICATE"
+              },
+              {
+                "canonical_url": "https://linkedin.com/in/alcarl",
+                "decision": "SKIPPED",
+                "depth": 1,
+                "discovered_by": "PDL",
+                "error_code": "",
+                "no_result_reason": "",
+                "outcome": "",
+                "parent_candidate_id": "",
+                "parent_evidence_id": "",
+                "parent_provider": "people_data_labs",
+                "parent_url": "",
+                "platform": "linkedin",
+                "raw_url": "linkedin.com/in/alcarl",
+                "skip_reason": "DUPLICATE"
+              },
+              {
+                "canonical_url": "https://x.com/alfredcarl",
+                "decision": "SKIPPED",
+                "depth": 1,
+                "discovered_by": "PDL",
+                "error_code": "",
+                "no_result_reason": "",
+                "outcome": "",
+                "parent_candidate_id": "",
+                "parent_evidence_id": "",
+                "parent_provider": "people_data_labs",
+                "parent_url": "",
+                "platform": "x",
+                "raw_url": "twitter.com/alfredcarl",
+                "skip_reason": "DUPLICATE"
+              },
+              {
+                "canonical_url": "https://linkedin.com/in/alfred-carl-9786b1117",
+                "decision": "SKIPPED",
+                "depth": 1,
+                "discovered_by": "PDL",
+                "error_code": "",
+                "no_result_reason": "",
+                "outcome": "",
+                "parent_candidate_id": "",
+                "parent_evidence_id": "",
+                "parent_provider": "people_data_labs",
+                "parent_url": "",
+                "platform": "linkedin",
+                "raw_url": "linkedin.com/in/alfred-carl-9786b1117",
+                "skip_reason": "DUPLICATE"
+              },
+              {
+                "canonical_url": "https://linkedin.com/in/alfred-carl-742b3336a",
+                "decision": "SKIPPED",
+                "depth": 1,
+                "discovered_by": "PDL",
+                "error_code": "",
+                "no_result_reason": "",
+                "outcome": "",
+                "parent_candidate_id": "",
+                "parent_evidence_id": "",
+                "parent_provider": "people_data_labs",
+                "parent_url": "",
+                "platform": "linkedin",
+                "raw_url": "linkedin.com/in/alfred-carl-742b3336a",
+                "skip_reason": "DUPLICATE"
+              },
+              {
+                "canonical_url": "https://linkedin.com/in/alcarl",
+                "decision": "SKIPPED",
+                "depth": 2,
+                "discovered_by": "SOCIAL_PROFILE",
+                "error_code": "",
+                "no_result_reason": "",
+                "outcome": "",
+                "parent_candidate_id": "",
+                "parent_evidence_id": "",
+                "parent_provider": "scrapecreators",
+                "parent_url": "https://linkedin.com/in/alcarl",
+                "platform": "linkedin",
+                "raw_url": "https://linkedin.com/in/alcarl",
+                "skip_reason": "DUPLICATE"
+              },
+              {
+                "canonical_url": "https://linkedin.com/in/alcarl",
+                "decision": "SKIPPED",
+                "depth": 2,
+                "discovered_by": "SOCIAL_PROFILE",
+                "error_code": "",
+                "no_result_reason": "",
+                "outcome": "",
+                "parent_candidate_id": "",
+                "parent_evidence_id": "",
+                "parent_provider": "scrapecreators",
+                "parent_url": "https://linkedin.com/in/alcarl",
+                "platform": "linkedin",
+                "raw_url": "https://linkedin.com/in/alcarl",
+                "skip_reason": "DUPLICATE"
+              },
+              {
+                "canonical_url": "https://x.com/alfredcarl",
+                "decision": "SKIPPED",
+                "depth": 2,
+                "discovered_by": "SOCIAL_PROFILE",
+                "error_code": "",
+                "no_result_reason": "",
+                "outcome": "",
+                "parent_candidate_id": "",
+                "parent_evidence_id": "",
+                "parent_provider": "scrapecreators",
+                "parent_url": "https://x.com/alfredcarl",
+                "platform": "x",
+                "raw_url": "https://x.com/alfredcarl",
+                "skip_reason": "DUPLICATE"
+              },
+              {
+                "canonical_url": "https://x.com/alfredcarl",
+                "decision": "SKIPPED",
+                "depth": 2,
+                "discovered_by": "SOCIAL_PROFILE",
+                "error_code": "",
+                "no_result_reason": "",
+                "outcome": "",
+                "parent_candidate_id": "",
+                "parent_evidence_id": "",
+                "parent_provider": "scrapecreators",
+                "parent_url": "https://x.com/alfredcarl",
+                "platform": "x",
+                "raw_url": "https://x.com/alfredcarl",
+                "skip_reason": "DUPLICATE"
+              }
+            ],
+            "social_profile_requested_identity_matched": false,
+            "social_profile_skip_reason": "",
+            "social_profile_status": "PARTIAL",
+            "social_profile_success_count": 2,
+            "social_profile_unmatched_profile_count": 0,
+            "social_profile_unsupported_count": 0,
+            "status_consistent": true,
+            "stop_reason": "FALLBACK_RESULT_USABLE",
+            "successful_call_count": 6,
+            "task_total_estimated_cost_microunit": 843912,
+            "unmatched_clue_types": [],
+            "unpriced_call_count": 0,
+            "unverified_requested_social_identity": false,
+            "warnings": []
+          },
+          "provider_requests": [
+            {
+              "create_time": "2026-08-11T04:46:52.161Z",
+              "error_code": "",
+              "error_message": "",
+              "finish_time": "2026-08-11T04:46:52.161Z",
+              "id": 1712,
+              "idempotency_key": "task_eee1995517bacaf98257e738:search_agent:full_name",
+              "provider": "search_agent",
+              "provider_request_id": "provider_req_task_eee1995517bacaf98257e738_sear_5894d197308b99e5",
+              "request_payload": {
+                "clue_types": [
+                  "FULL_NAME"
+                ],
+                "max_depth": 1,
+                "max_estimated_cost_microunit": 0,
+                "max_photo_inputs": 5,
+                "max_social_urls": 6,
+                "max_tool_steps": 20,
+                "policy_version": "v1",
+                "provider": "search_agent",
+                "providers": [
+                  "agent_people",
+                  "social_profile",
+                  "image_materializer"
+                ],
+                "query_id": "query_66f290538dfde887e1f045d2",
+                "query_type": "FULL_NAME",
+                "task_id": "task_eee1995517bacaf98257e738",
+                "timeout_ms": 90000
+              },
+              "request_type": "FULL_NAME",
+              "response_ref": "cos://tool-srv-people-insight-1349591044/provider-responses/search_agent/20260811/task_eee1995517bacaf98257e738/gw_req_40de65d3bb0e00428022cf36695d0d9d/succeeded-9fd613e00c2e4d79.json",
+              "start_time": "2026-08-11T04:46:34.224Z",
+              "status": "succeeded",
+              "task_id": "task_eee1995517bacaf98257e738",
+              "update_time": "2026-08-11T04:46:52.161Z"
+            }
+          ],
+          "agent_tool_calls": [
+            {
+              "billable_units": 0,
+              "billing_currency": "",
+              "billing_unit": "",
+              "billing_usage_json": [],
+              "cache_hit": 0,
+              "call_id": "atc_20546d4b7c783084285a4df1b506fdaa",
+              "cost_breakdown_json": [],
+              "cost_status": "NON_BILLABLE",
+              "create_time": "2026-08-11T04:46:51.746Z",
+              "error_code": "",
+              "error_message": "",
+              "estimated_cost_microunit": 0,
+              "finish_time": "2026-08-11T04:46:51.746Z",
+              "http_status": 404,
+              "non_billable_reason": "provider_reported_zero_usage",
+              "policy_version": "v1",
+              "pricing_rule_id": "",
+              "pricing_version": "",
+              "provider": "social_profile",
+              "provider_operation": "scrapecreators_linkedin_profile",
+              "query_id": "query_66f290538dfde887e1f045d2",
+              "request_fingerprint": "30b992a8707653332d0f7d100d94f0c1b69d8705e873bec13e481fe74d07f2af",
+              "request_summary": {
+                "canonical_url": "https://linkedin.com/in/alfred-carl-742b3336a",
+                "clue_types": [
+                  "FULL_NAME"
+                ],
+                "detail_count": 0,
+                "has_location": false,
+                "has_media": false,
+                "has_name": true,
+                "has_url": true,
+                "input_url": "https://linkedin.com/in/alfred-carl-742b3336a",
+                "platform": "linkedin",
+                "policy_version": "v1",
+                "query_type": "SOCIAL_LINK"
+              },
+              "request_type": "SOCIAL_LINK",
+              "response_ref": "cos://tool-srv-people-insight-1349591044/provider-responses/social_profile/20260811/task_eee1995517bacaf98257e738/gw_req_40de65d3bb0e00428022cf36695d0d9d/no_result-61cb154137e984b5.json",
+              "response_summary": {
+                "cache_hit": false,
+                "confidence_level": "",
+                "evidence_count": 0,
+                "found": false,
+                "no_result_reason": "PROFILE_PRIVATE_OR_UNAVAILABLE",
+                "profile_count": 0,
+                "provider": "social_profile",
+                "social_account_count": 0
+              },
+              "start_time": "2026-08-11T04:46:48.298Z",
+              "status": "no_result",
+              "task_id": "task_eee1995517bacaf98257e738",
+              "worker_id": "worker-79f769d947-8gq88"
+            },
+            {
+              "billable_units": 0,
+              "billing_currency": "",
+              "billing_unit": "",
+              "billing_usage_json": [],
+              "cache_hit": 0,
+              "call_id": "atc_330874d5633af97780dba7bcb8166f9c",
+              "cost_breakdown_json": [],
+              "cost_status": "NON_BILLABLE",
+              "create_time": "2026-08-11T04:46:48.276Z",
+              "error_code": "",
+              "error_message": "",
+              "estimated_cost_microunit": 0,
+              "finish_time": "2026-08-11T04:46:48.276Z",
+              "http_status": 404,
+              "non_billable_reason": "provider_reported_zero_usage",
+              "policy_version": "v1",
+              "pricing_rule_id": "",
+              "pricing_version": "",
+              "provider": "social_profile",
+              "provider_operation": "scrapecreators_linkedin_profile",
+              "query_id": "query_66f290538dfde887e1f045d2",
+              "request_fingerprint": "f47c7d891e70993296ab460f6a8f76bff277101640ebe068be96ef395d702ffb",
+              "request_summary": {
+                "canonical_url": "https://linkedin.com/in/alfred-carl-9786b1117",
+                "clue_types": [
+                  "FULL_NAME"
+                ],
+                "detail_count": 0,
+                "has_location": false,
+                "has_media": false,
+                "has_name": true,
+                "has_url": true,
+                "input_url": "https://linkedin.com/in/alfred-carl-9786b1117",
+                "platform": "linkedin",
+                "policy_version": "v1",
+                "query_type": "SOCIAL_LINK"
+              },
+              "request_type": "SOCIAL_LINK",
+              "response_ref": "cos://tool-srv-people-insight-1349591044/provider-responses/social_profile/20260811/task_eee1995517bacaf98257e738/gw_req_40de65d3bb0e00428022cf36695d0d9d/no_result-61cb154137e984b5.json",
+              "response_summary": {
+                "cache_hit": false,
+                "confidence_level": "",
+                "evidence_count": 0,
+                "found": false,
+                "no_result_reason": "PROFILE_PRIVATE_OR_UNAVAILABLE",
+                "profile_count": 0,
+                "provider": "social_profile",
+                "social_account_count": 0
+              },
+              "start_time": "2026-08-11T04:46:44.448Z",
+              "status": "no_result",
+              "task_id": "task_eee1995517bacaf98257e738",
+              "worker_id": "worker-79f769d947-8gq88"
+            },
+            {
+              "billable_units": 1,
+              "billing_currency": "USD",
+              "billing_unit": "credit",
+              "billing_usage_json": [
+                {
+                  "operation": "scrapecreators_x_profile",
+                  "quantity": 1,
+                  "unit_type": "credit"
+                }
+              ],
+              "cache_hit": 0,
+              "call_id": "atc_9a522eb998652099a3676e326a37b1e5",
+              "cost_breakdown_json": [
+                {
+                  "billing_model": "PER_UNIT",
+                  "currency": "USD",
+                  "estimated_cost_microunit": 1880,
+                  "operation": "scrapecreators_x_profile",
+                  "pricing_rule_id": "price_scrapecreators_x_freelance_20260810",
+                  "pricing_version": "2026-08-scrapecreators-freelance-conservative",
+                  "quantity": 1,
+                  "status": "CALCULATED",
+                  "unit_type": "credit"
+                }
+              ],
+              "cost_status": "CALCULATED",
+              "create_time": "2026-08-11T04:46:44.386Z",
+              "error_code": "",
+              "error_message": "",
+              "estimated_cost_microunit": 1880,
+              "finish_time": "2026-08-11T04:46:44.386Z",
+              "http_status": 200,
+              "non_billable_reason": "",
+              "policy_version": "v1",
+              "pricing_rule_id": "price_scrapecreators_x_freelance_20260810",
+              "pricing_version": "2026-08-scrapecreators-freelance-conservative",
+              "provider": "social_profile",
+              "provider_operation": "scrapecreators_x_profile",
+              "query_id": "query_66f290538dfde887e1f045d2",
+              "request_fingerprint": "8dcc00b8af6f7e3f89f2c8f19e6ac19c9456a4b363c1a7bdcf98bc45cec634ee",
+              "request_summary": {
+                "canonical_url": "https://x.com/alfredcarl",
+                "clue_types": [
+                  "FULL_NAME"
+                ],
+                "detail_count": 0,
+                "has_location": false,
+                "has_media": false,
+                "has_name": true,
+                "has_url": true,
+                "input_url": "https://x.com/alfredcarl",
+                "platform": "x",
+                "policy_version": "v1",
+                "query_type": "SOCIAL_LINK"
+              },
+              "request_type": "SOCIAL_LINK",
+              "response_ref": "cos://tool-srv-people-insight-1349591044/provider-responses/social_profile/20260811/task_eee1995517bacaf98257e738/gw_req_40de65d3bb0e00428022cf36695d0d9d/success-18c54577e2713119.json",
+              "response_summary": {
+                "cache_hit": false,
+                "confidence_level": "MEDIUM",
+                "evidence_count": 1,
+                "found": true,
+                "no_result_reason": "",
+                "profile_count": 1,
+                "provider": "social_profile",
+                "provider_cache_hit": false,
+                "social_account_count": 1
+              },
+              "start_time": "2026-08-11T04:46:40.835Z",
+              "status": "success",
+              "task_id": "task_eee1995517bacaf98257e738",
+              "worker_id": "worker-79f769d947-8gq88"
+            },
+            {
+              "billable_units": 1,
+              "billing_currency": "USD",
+              "billing_unit": "credit",
+              "billing_usage_json": [
+                {
+                  "operation": "scrapecreators_linkedin_profile",
+                  "quantity": 1,
+                  "unit_type": "credit"
+                }
+              ],
+              "cache_hit": 0,
+              "call_id": "atc_bb649cbd55a79d6ac3a85aba6bfe4c3f",
+              "cost_breakdown_json": [
+                {
+                  "billing_model": "PER_UNIT",
+                  "currency": "USD",
+                  "estimated_cost_microunit": 1880,
+                  "operation": "scrapecreators_linkedin_profile",
+                  "pricing_rule_id": "price_scrapecreators_linkedin_freelance_20260810",
+                  "pricing_version": "2026-08-scrapecreators-freelance-conservative",
+                  "quantity": 1,
+                  "status": "CALCULATED",
+                  "unit_type": "credit"
+                }
+              ],
+              "cost_status": "CALCULATED",
+              "create_time": "2026-08-11T04:46:40.803Z",
+              "error_code": "",
+              "error_message": "",
+              "estimated_cost_microunit": 1880,
+              "finish_time": "2026-08-11T04:46:40.803Z",
+              "http_status": 200,
+              "non_billable_reason": "",
+              "policy_version": "v1",
+              "pricing_rule_id": "price_scrapecreators_linkedin_freelance_20260810",
+              "pricing_version": "2026-08-scrapecreators-freelance-conservative",
+              "provider": "social_profile",
+              "provider_operation": "scrapecreators_linkedin_profile",
+              "query_id": "query_66f290538dfde887e1f045d2",
+              "request_fingerprint": "ddd2d4d560cff215c955606d0254fd74a24a22eaf92269916a744dba646af933",
+              "request_summary": {
+                "canonical_url": "https://linkedin.com/in/alcarl",
+                "clue_types": [
+                  "FULL_NAME"
+                ],
+                "detail_count": 0,
+                "has_location": false,
+                "has_media": false,
+                "has_name": true,
+                "has_url": true,
+                "input_url": "https://linkedin.com/in/alcarl",
+                "platform": "linkedin",
+                "policy_version": "v1",
+                "query_type": "SOCIAL_LINK"
+              },
+              "request_type": "SOCIAL_LINK",
+              "response_ref": "cos://tool-srv-people-insight-1349591044/provider-responses/social_profile/20260811/task_eee1995517bacaf98257e738/gw_req_40de65d3bb0e00428022cf36695d0d9d/success-8774ef5bf09b9ebf.json",
+              "response_summary": {
+                "cache_hit": false,
+                "confidence_level": "MEDIUM",
+                "evidence_count": 1,
+                "found": true,
+                "no_result_reason": "",
+                "profile_count": 1,
+                "provider": "social_profile",
+                "provider_cache_hit": false,
+                "social_account_count": 1
+              },
+              "start_time": "2026-08-11T04:46:38.299Z",
+              "status": "success",
+              "task_id": "task_eee1995517bacaf98257e738",
+              "worker_id": "worker-79f769d947-8gq88"
+            },
+            {
+              "billable_units": 0,
+              "billing_currency": "",
+              "billing_unit": "",
+              "billing_usage_json": [],
+              "cache_hit": 0,
+              "call_id": "atc_28854e8a8def8ab624fd8987690512da",
+              "cost_breakdown_json": [],
+              "cost_status": "NON_BILLABLE",
+              "create_time": "2026-08-11T04:46:38.293Z",
+              "error_code": "",
+              "error_message": "",
+              "estimated_cost_microunit": 0,
+              "finish_time": "2026-08-11T04:46:38.293Z",
+              "http_status": 0,
+              "non_billable_reason": "aggregated_by_child_calls",
+              "policy_version": "v1",
+              "pricing_rule_id": "",
+              "pricing_version": "",
+              "provider": "agent_people",
+              "provider_operation": "request",
+              "query_id": "query_66f290538dfde887e1f045d2",
+              "request_fingerprint": "7266c2d3b5c14af91e895d3d76dffee1971315e8b04394120df668fda23929d2",
+              "request_summary": {
+                "clue_types": [
+                  "FULL_NAME"
+                ],
+                "detail_count": 0,
+                "has_location": false,
+                "has_media": false,
+                "has_name": true,
+                "has_url": false,
+                "policy_version": "v1",
+                "query_type": "FULL_NAME"
+              },
+              "request_type": "FULL_NAME",
+              "response_ref": "",
+              "response_summary": {
+                "cache_hit": false,
+                "confidence_level": "LOW",
+                "evidence_count": 9,
+                "fallback_reason": "LLM_NO_RESULT",
+                "found": true,
+                "no_result_reason": "",
+                "pdl_billing_unit_count": 3,
+                "pdl_candidates": [
+                  {
+                    "candidate_id": "pdl:cY3D9O7eAvKc6FXKhbhfqA_0000",
+                    "decision": "ELIGIBLE",
+                    "display_name": "alfred carl",
+                    "match_score": 35,
+                    "matched_clue_types": [
+                      "FULL_NAME"
+                    ],
+                    "profile_fetch_called": false,
+                    "profile_fetch_cost_microunit": 0,
+                    "rejection_reason": "",
+                    "selected": true,
+                    "social_links": [
+                      "https://linkedin.com/in/alcarl",
+                      "https://twitter.com/alfredcarl"
+                    ],
+                    "stage": "person_search"
+                  },
+                  {
+                    "candidate_id": "pdl:DZghHxeenE6PBgVXbDbPRQ_0000",
+                    "decision": "ELIGIBLE",
+                    "display_name": "alfred carl",
+                    "match_score": 35,
+                    "matched_clue_types": [
+                      "FULL_NAME"
+                    ],
+                    "profile_fetch_called": false,
+                    "profile_fetch_cost_microunit": 0,
+                    "rejection_reason": "",
+                    "selected": true,
+                    "social_links": [
+                      "https://linkedin.com/in/alfred-carl-9786b1117"
+                    ],
+                    "stage": "person_search"
+                  },
+                  {
+                    "candidate_id": "pdl:nvxlsfo4JyiBpiDDc8bZug_0000",
+                    "decision": "ELIGIBLE",
+                    "display_name": "alfred carl",
+                    "match_score": 35,
+                    "matched_clue_types": [
+                      "FULL_NAME"
+                    ],
+                    "profile_fetch_called": false,
+                    "profile_fetch_cost_microunit": 0,
+                    "rejection_reason": "",
+                    "selected": true,
+                    "social_links": [
+                      "https://linkedin.com/in/alfred-carl-742b3336a"
+                    ],
+                    "stage": "person_search"
+                  }
+                ],
+                "pdl_cost_scope": "PDL_PROVIDER_CALL_ALL_STAGES",
+                "pdl_estimated_cost_microunit": 840000,
+                "pdl_external_request_count": 1,
+                "pdl_identify_call_count": 0,
+                "pdl_identify_called": false,
+                "pdl_identify_candidate_count": 0,
+                "pdl_person_search_call_count": 1,
+                "pdl_person_search_called": true,
+                "pdl_person_search_returned_profile_count": 3,
+                "pdl_pipeline_stages": [
+                  {
+                    "api_request_count": 1,
+                    "billed_quantity": 3,
+                    "billing_operation": "person_search_profile",
+                    "candidate_count": 3,
+                    "operation": "person_search",
+                    "status": "success",
+                    "unit_type": "returned_profile"
+                  }
+                ],
+                "pdl_profile_fetch_count": 0,
+                "pdl_rejected_candidate_count": 0,
+                "pdl_rejection_reasons": [],
+                "pdl_usable_candidate_count": 3,
+                "people_pipeline_cost_scope": "LLM_PUBLIC_FIGURE_AND_PDL",
+                "people_pipeline_estimated_cost_microunit": 840152,
+                "pre_pdl_estimated_cost_microunit": 152,
+                "profile_count": 3,
+                "provider": "agent_people",
+                "provider_runs": [
+                  {
+                    "found": false,
+                    "no_result_reason": "NO_STRONG_IDENTIFIER",
+                    "provider": "person_entity_store"
+                  },
+                  {
+                    "found": false,
+                    "no_result_reason": "NO_MATCH",
+                    "provider": "llm_search"
+                  },
+                  {
+                    "found": true,
+                    "provider": "people_data_labs"
+                  }
+                ],
+                "social_account_count": 4,
+                "stop_reason": "FALLBACK_RESULT_USABLE"
+              },
+              "start_time": "2026-08-11T04:46:34.224Z",
+              "status": "success",
+              "task_id": "task_eee1995517bacaf98257e738",
+              "worker_id": "worker-79f769d947-8gq88"
+            },
+            {
+              "billable_units": 3,
+              "billing_currency": "USD",
+              "billing_unit": "returned_profile",
+              "billing_usage_json": [
+                {
+                  "operation": "person_search_profile",
+                  "quantity": 3,
+                  "unit_type": "returned_profile"
+                }
+              ],
+              "cache_hit": 0,
+              "call_id": "atc_3f6bb9f6ea56f017c3c734db9878b1fe",
+              "cost_breakdown_json": [
+                {
+                  "billing_model": "PER_UNIT",
+                  "currency": "USD",
+                  "estimated_cost_microunit": 840000,
+                  "operation": "person_search_profile",
+                  "pricing_rule_id": "price_pdl_search_tier1_20260729",
+                  "pricing_version": "2026-07-29-pdl-self-serve-tier1",
+                  "quantity": 3,
+                  "status": "CALCULATED",
+                  "unit_type": "returned_profile"
+                }
+              ],
+              "cost_status": "CALCULATED",
+              "create_time": "2026-08-11T04:46:38.253Z",
+              "error_code": "",
+              "error_message": "",
+              "estimated_cost_microunit": 840000,
+              "finish_time": "2026-08-11T04:46:38.253Z",
+              "http_status": 0,
+              "non_billable_reason": "",
+              "policy_version": "v1",
+              "pricing_rule_id": "price_pdl_search_tier1_20260729",
+              "pricing_version": "2026-07-29-pdl-self-serve-tier1",
+              "provider": "people_data_labs",
+              "provider_operation": "person_search_profile",
+              "query_id": "query_66f290538dfde887e1f045d2",
+              "request_fingerprint": "6536f6b4359ddaa376b53f91b3b1deafafc96f0dd1446d8a9c98e4c2c9b9ffc1",
+              "request_summary": {
+                "clue_types": [
+                  "FULL_NAME"
+                ],
+                "detail_count": 0,
+                "has_location": false,
+                "has_media": false,
+                "has_name": true,
+                "has_url": false,
+                "policy_version": "v1",
+                "query_type": "FULL_NAME"
+              },
+              "request_type": "FULL_NAME",
+              "response_ref": "cos://tool-srv-people-insight-1349591044/provider-responses/people_data_labs/20260811/task_eee1995517bacaf98257e738/gw_req_40de65d3bb0e00428022cf36695d0d9d/success-c5adfb72004191f6.json",
+              "response_summary": {
+                "cache_hit": false,
+                "confidence_level": "LOW",
+                "evidence_count": 9,
+                "found": true,
+                "no_result_reason": "",
+                "pdl_billing_unit_count": 3,
+                "pdl_candidates": [
+                  {
+                    "candidate_id": "pdl:cY3D9O7eAvKc6FXKhbhfqA_0000",
+                    "decision": "ELIGIBLE",
+                    "display_name": "alfred carl",
+                    "match_score": 35,
+                    "matched_clue_types": [
+                      "FULL_NAME"
+                    ],
+                    "profile_fetch_called": false,
+                    "profile_fetch_cost_microunit": 0,
+                    "rejection_reason": "",
+                    "selected": true,
+                    "social_links": [
+                      "https://linkedin.com/in/alcarl",
+                      "https://twitter.com/alfredcarl"
+                    ],
+                    "stage": "person_search"
+                  },
+                  {
+                    "candidate_id": "pdl:DZghHxeenE6PBgVXbDbPRQ_0000",
+                    "decision": "ELIGIBLE",
+                    "display_name": "alfred carl",
+                    "match_score": 35,
+                    "matched_clue_types": [
+                      "FULL_NAME"
+                    ],
+                    "profile_fetch_called": false,
+                    "profile_fetch_cost_microunit": 0,
+                    "rejection_reason": "",
+                    "selected": true,
+                    "social_links": [
+                      "https://linkedin.com/in/alfred-carl-9786b1117"
+                    ],
+                    "stage": "person_search"
+                  },
+                  {
+                    "candidate_id": "pdl:nvxlsfo4JyiBpiDDc8bZug_0000",
+                    "decision": "ELIGIBLE",
+                    "display_name": "alfred carl",
+                    "match_score": 35,
+                    "matched_clue_types": [
+                      "FULL_NAME"
+                    ],
+                    "profile_fetch_called": false,
+                    "profile_fetch_cost_microunit": 0,
+                    "rejection_reason": "",
+                    "selected": true,
+                    "social_links": [
+                      "https://linkedin.com/in/alfred-carl-742b3336a"
+                    ],
+                    "stage": "person_search"
+                  }
+                ],
+                "pdl_cost_scope": "PDL_PROVIDER_CALL_ALL_STAGES",
+                "pdl_estimated_cost_microunit": 840000,
+                "pdl_external_request_count": 1,
+                "pdl_identify_call_count": 0,
+                "pdl_identify_called": false,
+                "pdl_identify_candidate_count": 0,
+                "pdl_person_search_call_count": 1,
+                "pdl_person_search_called": true,
+                "pdl_person_search_returned_profile_count": 3,
+                "pdl_pipeline_stages": [
+                  {
+                    "api_request_count": 1,
+                    "billed_quantity": 3,
+                    "billing_operation": "person_search_profile",
+                    "candidate_count": 3,
+                    "operation": "person_search",
+                    "status": "success",
+                    "unit_type": "returned_profile"
+                  }
+                ],
+                "pdl_profile_fetch_count": 0,
+                "pdl_rejected_candidate_count": 0,
+                "pdl_rejection_reasons": [],
+                "pdl_usable_candidate_count": 3,
+                "profile_count": 3,
+                "provider": "people_data_labs",
+                "social_account_count": 4
+              },
+              "start_time": "2026-08-11T04:46:38Z",
+              "status": "success",
+              "task_id": "task_eee1995517bacaf98257e738",
+              "worker_id": "worker-79f769d947-8gq88"
+            },
+            {
+              "billable_units": 0,
+              "billing_currency": "",
+              "billing_unit": "",
+              "billing_usage_json": [],
+              "cache_hit": 0,
+              "call_id": "atc_ad74fcdc5fe0d158d0063b97ad4a5c06",
+              "cost_breakdown_json": [],
+              "cost_status": "NON_BILLABLE",
+              "create_time": "2026-08-11T04:46:37.999Z",
+              "error_code": "",
+              "error_message": "",
+              "estimated_cost_microunit": 0,
+              "finish_time": "2026-08-11T04:46:37.999Z",
+              "http_status": 0,
+              "non_billable_reason": "public_source_no_direct_cost",
+              "policy_version": "v1",
+              "pricing_rule_id": "",
+              "pricing_version": "",
+              "provider": "public_figure",
+              "provider_operation": "route_decision",
+              "query_id": "query_66f290538dfde887e1f045d2",
+              "request_fingerprint": "3eb7b7bbda2158edbf22c842d06ff4ab928aea9b23abcf3a977afb4c3a7edc5c",
+              "request_summary": {
+                "clue_types": [
+                  "FULL_NAME"
+                ],
+                "detail_count": 0,
+                "has_location": false,
+                "has_media": false,
+                "has_name": true,
+                "has_url": false,
+                "policy_version": "v1",
+                "query_type": "FULL_NAME",
+                "stage": "route_decision"
+              },
+              "request_type": "FULL_NAME",
+              "response_ref": "",
+              "response_summary": {
+                "cache_hit": false,
+                "confidence_level": "LOW",
+                "decision_reason": "LOCAL_NEGATIVE_CACHE",
+                "eligible": true,
+                "evidence_count": 0,
+                "found": false,
+                "local_known": true,
+                "no_result_reason": "NO_MATCH",
+                "profile_count": 0,
+                "provider": "llm_search",
+                "remote_called": false,
+                "remote_enabled": true,
+                "social_account_count": 0,
+                "stage": "route_decision"
+              },
+              "start_time": "2026-08-11T04:46:37.999Z",
+              "status": "success",
+              "task_id": "task_eee1995517bacaf98257e738",
+              "worker_id": "worker-79f769d947-8gq88"
+            },
+            {
+              "billable_units": 0,
+              "billing_currency": "",
+              "billing_unit": "",
+              "billing_usage_json": [],
+              "cache_hit": 0,
+              "call_id": "atc_776dda4b7a6f88bd5051827df0cc4d62",
+              "cost_breakdown_json": [],
+              "cost_status": "NON_BILLABLE",
+              "create_time": "2026-08-11T04:46:37.997Z",
+              "error_code": "",
+              "error_message": "",
+              "estimated_cost_microunit": 0,
+              "finish_time": "2026-08-11T04:46:37.997Z",
+              "http_status": 0,
+              "non_billable_reason": "aggregated_by_backend_attempts",
+              "policy_version": "v1",
+              "pricing_rule_id": "",
+              "pricing_version": "",
+              "provider": "llm_search",
+              "provider_operation": "request",
+              "query_id": "query_66f290538dfde887e1f045d2",
+              "request_fingerprint": "08722c72a5a292d6a1647d481074dd9d598b041e0bdb010d0e2b3ae152fa1968",
+              "request_summary": {
+                "clue_types": [
+                  "FULL_NAME"
+                ],
+                "detail_count": 0,
+                "has_location": false,
+                "has_media": false,
+                "has_name": true,
+                "has_url": false,
+                "policy_version": "v1",
+                "query_type": "FULL_NAME"
+              },
+              "request_type": "FULL_NAME",
+              "response_ref": "",
+              "response_summary": {
+                "cache_hit": false,
+                "confidence_level": "LOW",
+                "evidence_count": 0,
+                "found": false,
+                "no_result_reason": "NO_MATCH",
+                "profile_count": 0,
+                "provider": "llm_search",
+                "social_account_count": 0
+              },
+              "start_time": "2026-08-11T04:46:34.23Z",
+              "status": "no_result",
+              "task_id": "task_eee1995517bacaf98257e738",
+              "worker_id": "worker-79f769d947-8gq88"
+            },
+            {
+              "billable_units": 966,
+              "billing_currency": "USD",
+              "billing_unit": "token",
+              "billing_usage_json": [
+                {
+                  "input_tokens": 855,
+                  "operation": "chat_completions/deepseek-v4-flash-202605",
+                  "output_tokens": 111,
+                  "unit_type": "token"
+                }
+              ],
+              "cache_hit": 0,
+              "call_id": "atc_703668709df2c2aae159ff90c44680ad",
+              "cost_breakdown_json": [
+                {
+                  "billing_model": "TOKEN",
+                  "currency": "USD",
+                  "estimated_cost_microunit": 152,
+                  "input_tokens": 855,
+                  "operation": "chat_completions/deepseek-v4-flash-202605",
+                  "output_tokens": 111,
+                  "pricing_rule_id": "price_tencent_deepseek_v4_flash_20260729",
+                  "pricing_version": "2026-07-29-tencent-intl-public",
+                  "status": "CALCULATED",
+                  "unit_type": "token"
+                }
+              ],
+              "cost_status": "CALCULATED",
+              "create_time": "2026-08-11T04:46:37.968Z",
+              "error_code": "",
+              "error_message": "",
+              "estimated_cost_microunit": 152,
+              "finish_time": "2026-08-11T04:46:37.968Z",
+              "http_status": 200,
+              "non_billable_reason": "",
+              "policy_version": "v1",
+              "pricing_rule_id": "price_tencent_deepseek_v4_flash_20260729",
+              "pricing_version": "2026-07-29-tencent-intl-public",
+              "provider": "llm_search:deepseek",
+              "provider_operation": "chat_completions/deepseek-v4-flash-202605",
+              "query_id": "query_66f290538dfde887e1f045d2",
+              "request_fingerprint": "0bb21a284d47d0c8f4164598e00ad578903f63a7213bb64b17fe08ddd7ccda37",
+              "request_summary": {
+                "attempt_index": 1,
+                "backend": "openai_compatible",
+                "decode_retry": false,
+                "max_tokens": 4096,
+                "model": "deepseek-v4-flash-202605",
+                "provider": "deepseek",
+                "reasoning_effort": "",
+                "thinking": "disabled"
+              },
+              "request_type": "FULL_NAME",
+              "response_ref": "cos://tool-srv-people-insight-1349591044/provider-responses/llm_search_deepseek/20260811/task_eee1995517bacaf98257e738/gw_req_40de65d3bb0e00428022cf36695d0d9d/no_result-6fa50a43af42c8f9.json",
+              "response_summary": {
+                "attempt_index": 1,
+                "cache_hit": false,
+                "cached_prompt_tokens": 0,
+                "completion_tokens": 111,
+                "confidence_level": "LOW",
+                "content_bytes": 459,
+                "decode_failure_position": 0,
+                "decode_retry": false,
+                "estimated_cost_microunit": 0,
+                "evidence_count": 0,
+                "finish_reason": "stop",
+                "found": false,
+                "http_attempt_count": 1,
+                "max_tokens": 4096,
+                "max_tokens_reached": false,
+                "no_result_reason": "NO_MATCH",
+                "output_status": "LLM_OUTPUT_COMPLETE",
+                "partial_candidate_count": 0,
+                "partial_response_present": false,
+                "partial_result_usable": false,
+                "partial_source_count": 0,
+                "profile_count": 0,
+                "prompt_tokens": 855,
+                "provider": "llm_search",
+                "reasoning_bytes": 0,
+                "recoverable_candidate_count": 0,
+                "social_account_count": 0,
+                "total_tokens": 966
+              },
+              "start_time": "2026-08-11T04:46:34.232Z",
+              "status": "no_result",
+              "task_id": "task_eee1995517bacaf98257e738",
+              "worker_id": "worker-79f769d947-8gq88"
+            },
+            {
+              "billable_units": 0,
+              "billing_currency": "",
+              "billing_unit": "",
+              "billing_usage_json": [],
+              "cache_hit": 1,
+              "call_id": "atc_e291eddbeacff690064a2a47af008172",
+              "cost_breakdown_json": [],
+              "cost_status": "NON_BILLABLE",
+              "create_time": "2026-08-11T04:46:34.228Z",
+              "error_code": "",
+              "error_message": "",
+              "estimated_cost_microunit": 0,
+              "finish_time": "2026-08-11T04:46:34.228Z",
+              "http_status": 0,
+              "non_billable_reason": "public_source_no_direct_cost",
+              "policy_version": "v1",
+              "pricing_rule_id": "",
+              "pricing_version": "",
+              "provider": "public_figure",
+              "provider_operation": "local_lookup",
+              "query_id": "query_66f290538dfde887e1f045d2",
+              "request_fingerprint": "a72cf2c3cb906802547cd2de9cbb5e4eacc599c164d9b22fb82b9a0a8d058c93",
+              "request_summary": {
+                "clue_types": [
+                  "FULL_NAME"
+                ],
+                "detail_count": 0,
+                "has_location": false,
+                "has_media": false,
+                "has_name": true,
+                "has_url": false,
+                "policy_version": "v1",
+                "query_type": "FULL_NAME",
+                "stage": "local_lookup"
+              },
+              "request_type": "FULL_NAME",
+              "response_ref": "",
+              "response_summary": {
+                "ambiguous": false,
+                "cache_hit": true,
+                "confidence_level": "HIGH",
+                "decision_reason": "LOCAL_CACHE_HIT",
+                "eligible": true,
+                "evidence_count": 10,
+                "found": true,
+                "local_known": true,
+                "no_result_reason": "",
+                "profile_count": 5,
+                "provider": "public_figure",
+                "remote_called": false,
+                "remote_enabled": true,
+                "result_usable": false,
+                "social_account_count": 0,
+                "stage": "local_lookup",
+                "total_profile_count": 5,
+                "usable_profile_count": 0
+              },
+              "start_time": "2026-08-11T04:46:34.224Z",
+              "status": "success",
+              "task_id": "task_eee1995517bacaf98257e738",
+              "worker_id": "worker-79f769d947-8gq88"
+            }
+          ],
+          "reports": [
+            {
+              "confidence_level": "LOW",
+              "create_time": "2026-08-11T04:46:52.212Z",
+              "disclaimers": [
+                "People Data Labs Person Search returns candidate profiles; review candidates or add stronger clues before relying on an identity match.",
+                "Social profile fields were extracted from public page data and remain subject to source availability and platform changes."
+              ],
+              "evidence": [
+                {
+                  "display_name": "alfred carl",
+                  "matched_on": [
+                    "name"
+                  ],
+                  "person_id": "pdl:cY3D9O7eAvKc6FXKhbhfqA_0000",
+                  "provider": "people_data_labs",
+                  "provider_person_id": "cY3D9O7eAvKc6FXKhbhfqA_0000",
+                  "subject_profile_url": "linkedin.com/in/alcarl",
+                  "type": "pdl_matched_on"
+                },
+                {
+                  "display_name": "alfred carl",
+                  "field": "linkedin_url",
+                  "person_id": "pdl:cY3D9O7eAvKc6FXKhbhfqA_0000",
+                  "provider": "people_data_labs",
+                  "provider_person_id": "cY3D9O7eAvKc6FXKhbhfqA_0000",
+                  "subject_profile_url": "linkedin.com/in/alcarl",
+                  "type": "pdl_profile_url",
+                  "url": "linkedin.com/in/alcarl"
+                },
+                {
+                  "display_name": "alfred carl",
+                  "field": "twitter_url",
+                  "person_id": "pdl:cY3D9O7eAvKc6FXKhbhfqA_0000",
+                  "provider": "people_data_labs",
+                  "provider_person_id": "cY3D9O7eAvKc6FXKhbhfqA_0000",
+                  "subject_profile_url": "linkedin.com/in/alcarl",
+                  "type": "pdl_profile_url",
+                  "url": "twitter.com/alfredcarl"
+                },
+                {
+                  "display_name": "alfred carl",
+                  "field": "job_company_website",
+                  "person_id": "pdl:cY3D9O7eAvKc6FXKhbhfqA_0000",
+                  "provider": "people_data_labs",
+                  "provider_person_id": "cY3D9O7eAvKc6FXKhbhfqA_0000",
+                  "subject_profile_url": "linkedin.com/in/alcarl",
+                  "type": "pdl_profile_url",
+                  "url": "hubbell.com"
+                },
+                {
+                  "display_name": "alfred carl",
+                  "matched_on": [
+                    "name"
+                  ],
+                  "person_id": "pdl:DZghHxeenE6PBgVXbDbPRQ_0000",
+                  "provider": "people_data_labs",
+                  "provider_person_id": "DZghHxeenE6PBgVXbDbPRQ_0000",
+                  "subject_profile_url": "linkedin.com/in/alfred-carl-9786b1117",
+                  "type": "pdl_matched_on"
+                },
+                {
+                  "display_name": "alfred carl",
+                  "field": "linkedin_url",
+                  "person_id": "pdl:DZghHxeenE6PBgVXbDbPRQ_0000",
+                  "provider": "people_data_labs",
+                  "provider_person_id": "DZghHxeenE6PBgVXbDbPRQ_0000",
+                  "subject_profile_url": "linkedin.com/in/alfred-carl-9786b1117",
+                  "type": "pdl_profile_url",
+                  "url": "linkedin.com/in/alfred-carl-9786b1117"
+                },
+                {
+                  "display_name": "alfred carl",
+                  "matched_on": [
+                    "name"
+                  ],
+                  "person_id": "pdl:nvxlsfo4JyiBpiDDc8bZug_0000",
+                  "provider": "people_data_labs",
+                  "provider_person_id": "nvxlsfo4JyiBpiDDc8bZug_0000",
+                  "subject_profile_url": "linkedin.com/in/alfred-carl-742b3336a",
+                  "type": "pdl_matched_on"
+                },
+                {
+                  "display_name": "alfred carl",
+                  "field": "linkedin_url",
+                  "person_id": "pdl:nvxlsfo4JyiBpiDDc8bZug_0000",
+                  "provider": "people_data_labs",
+                  "provider_person_id": "nvxlsfo4JyiBpiDDc8bZug_0000",
+                  "subject_profile_url": "linkedin.com/in/alfred-carl-742b3336a",
+                  "type": "pdl_profile_url",
+                  "url": "linkedin.com/in/alfred-carl-742b3336a"
+                },
+                {
+                  "display_name": "alfred carl",
+                  "field": "job_company_website",
+                  "person_id": "pdl:nvxlsfo4JyiBpiDDc8bZug_0000",
+                  "provider": "people_data_labs",
+                  "provider_person_id": "nvxlsfo4JyiBpiDDc8bZug_0000",
+                  "subject_profile_url": "linkedin.com/in/alfred-carl-742b3336a",
+                  "type": "pdl_profile_url",
+                  "url": "independentsector.org"
+                },
+                {
+                  "candidate_id": "pdl:cY3D9O7eAvKc6FXKhbhfqA_0000",
+                  "image_url": "https://media.licdn.com/dms/image/v2/D4E03AQHt45Znrllfyg/profile-displayphoto-scale_200_200/B4EZtxeoeFIMAc-/0/1767135416795?e=2147483647&v=beta&t=pkk8uc08nJgPqyw1rHNvtLuhcTgFs6Y1N08KM3_PyQ0",
+                  "observed_time": 1786423600799,
+                  "person_id": "pdl:cY3D9O7eAvKc6FXKhbhfqA_0000",
+                  "provider": "social_profile",
+                  "snippet": "I am an integrated supply chain and procurement leader with experience across sourcing…",
+                  "source": "scrapecreators",
+                  "title": "Alfred Carl",
+                  "type": "social_profile_source",
+                  "url": "https://linkedin.com/in/alcarl"
+                },
+                {
+                  "candidate_id": "pdl:cY3D9O7eAvKc6FXKhbhfqA_0000",
+                  "image_url": "https://pbs.twimg.com/profile_images/1591081448148242434/Q2TAaIRB_normal.png",
+                  "observed_time": 1786423604382,
+                  "person_id": "pdl:cY3D9O7eAvKc6FXKhbhfqA_0000",
+                  "provider": "social_profile",
+                  "snippet": "",
+                  "source": "scrapecreators",
+                  "title": "Alfred Carl",
+                  "type": "social_profile_source",
+                  "url": "https://x.com/alfredcarl"
+                }
+              ],
+              "expire_time": "2026-09-10T04:46:32.707Z",
+              "generate_time": "2026-08-11T04:46:52.212Z",
+              "id": 1383,
+              "profiles": [
+                {
+                  "_rank_features": {
+                    "gender": "male",
+                    "has_contact": true
+                  },
+                  "avatar_url": "https://media.licdn.com/dms/image/v2/D4E03AQHt45Znrllfyg/profile-displayphoto-scale_200_200/B4EZtxeoeFIMAc-/0/1767135416795?e=2147483647&v=beta&t=pkk8uc08nJgPqyw1rHNvtLuhcTgFs6Y1N08KM3_PyQ0",
+                  "confidence_level": "LOW",
+                  "display_name": "alfred carl",
+                  "education": "boston university master of science masters; babson f.w. olin graduate school of business master of business administration masters; northeastern university bachelor of science bachelors",
+                  "education_items": [
+                    "boston university master of science masters",
+                    "babson f.w. olin graduate school of business master of business administration masters",
+                    "northeastern university bachelor of science bachelors"
+                  ],
+                  "email": "acarl@hubbell.com",
+                  "emails": null,
+                  "field_provenance": {
+                    "avatar_url": [
+                      {
+                        "observed_time": 1786423600799,
+                        "provider": "scrapecreators",
+                        "source_url": "https://linkedin.com/in/alcarl"
+                      },
+                      {
+                        "observed_time": 1786423604382,
+                        "provider": "scrapecreators",
+                        "source_url": "https://x.com/alfredcarl"
+                      }
+                    ],
+                    "display_name": [
+                      {
+                        "observed_time": 1786423600799,
+                        "provider": "scrapecreators",
+                        "source_url": "https://linkedin.com/in/alcarl"
+                      },
+                      {
+                        "observed_time": 1786423604382,
+                        "provider": "scrapecreators",
+                        "source_url": "https://x.com/alfredcarl"
+                      }
+                    ],
+                    "headline": [
+                      {
+                        "observed_time": 1786423600799,
+                        "provider": "scrapecreators",
+                        "source_url": "https://linkedin.com/in/alcarl"
+                      }
+                    ],
+                    "location": [
+                      {
+                        "observed_time": 1786423600799,
+                        "provider": "scrapecreators",
+                        "source_url": "https://linkedin.com/in/alcarl"
+                      },
+                      {
+                        "observed_time": 1786423604382,
+                        "provider": "scrapecreators",
+                        "source_url": "https://x.com/alfredcarl"
+                      }
+                    ],
+                    "social_links": [
+                      {
+                        "observed_time": 1786423600799,
+                        "provider": "scrapecreators",
+                        "source_url": "https://linkedin.com/in/alcarl"
+                      },
+                      {
+                        "observed_time": 1786423604382,
+                        "provider": "scrapecreators",
+                        "source_url": "https://x.com/alfredcarl"
+                      }
+                    ],
+                    "web_links": [
+                      {
+                        "observed_time": 1786423604382,
+                        "provider": "scrapecreators",
+                        "source_url": "https://x.com/alfredcarl"
+                      }
+                    ]
+                  },
+                  "field_source_providers": {
+                    "avatar_url": [
+                      "scrapecreators"
+                    ],
+                    "display_name": [
+                      "scrapecreators"
+                    ],
+                    "headline": [
+                      "scrapecreators"
+                    ],
+                    "location": [
+                      "scrapecreators"
+                    ],
+                    "social_links": [
+                      "scrapecreators"
+                    ],
+                    "web_links": [
+                      "scrapecreators"
+                    ]
+                  },
+                  "field_sources": {
+                    "avatar_url": [
+                      "https://linkedin.com/in/alcarl",
+                      "https://x.com/alfredcarl"
+                    ],
+                    "display_name": [
+                      "https://linkedin.com/in/alcarl",
+                      "https://x.com/alfredcarl"
+                    ],
+                    "headline": [
+                      "https://linkedin.com/in/alcarl"
+                    ],
+                    "location": [
+                      "https://linkedin.com/in/alcarl",
+                      "https://x.com/alfredcarl"
+                    ],
+                    "social_links": [
+                      "https://linkedin.com/in/alcarl",
+                      "https://x.com/alfredcarl"
+                    ],
+                    "web_links": [
+                      "https://x.com/alfredcarl"
+                    ]
+                  },
+                  "first_name": "alfred",
+                  "full_name": "alfred carl",
+                  "headline": "hes director of integrated supply chain at hubbell incorporated",
+                  "id": "cY3D9O7eAvKc6FXKhbhfqA_0000",
+                  "job": "hes director of integrated supply chain at hubbell incorporated",
+                  "job_company_linkedin_url": "linkedin.com/company/hubbell",
+                  "job_company_name": "hubbell incorporated",
+                  "job_company_website": "hubbell.com",
+                  "job_title": "hes director of integrated supply chain",
+                  "job_title_role": "fulfillment",
+                  "jobs": [
+                    "hes director of integrated supply chain at hubbell incorporated"
+                  ],
+                  "last_name": "carl",
+                  "location": "Greater Boston",
+                  "location_country": "united states",
+                  "location_locality": "boston",
+                  "location_name": "boston, massachusetts, united states",
+                  "location_region": "massachusetts",
+                  "match_score": 35,
+                  "match_source": "person_search",
+                  "matched_on": [
+                    "name"
+                  ],
+                  "person_id": "pdl:cY3D9O7eAvKc6FXKhbhfqA_0000",
+                  "photos": [
+                    "https://media.licdn.com/dms/image/v2/D4E03AQHt45Znrllfyg/profile-displayphoto-scale_200_200/B4EZtxeoeFIMAc-/0/1767135416795?e=2147483647&v=beta&t=pkk8uc08nJgPqyw1rHNvtLuhcTgFs6Y1N08KM3_PyQ0",
+                    "https://pbs.twimg.com/profile_images/1591081448148242434/Q2TAaIRB_normal.png"
+                  ],
+                  "profile_url": "linkedin.com/in/alcarl",
+                  "provider": "people_data_labs",
+                  "rank_features": {
+                    "gender": "male",
+                    "has_contact": true
+                  },
+                  "social_links": [
+                    {
+                      "platform": "linkedin",
+                      "source_url": "https://linkedin.com/in/alcarl",
+                      "url": "linkedin.com/in/alcarl",
+                      "username": "alcarl",
+                      "verification_level": "LIKELY",
+                      "verification_reason": "social_profile_name_match"
+                    },
+                    {
+                      "platform": "x",
+                      "source_url": "https://x.com/alfredcarl",
+                      "url": "twitter.com/alfredcarl",
+                      "username": "alfredcarl",
+                      "verification_level": "LIKELY",
+                      "verification_reason": "social_profile_name_match"
+                    }
+                  ],
+                  "social_platforms": [
+                    "linkedin",
+                    "x"
+                  ],
+                  "social_profile_details": [
+                    {
+                      "avatar_url": "https://media.licdn.com/dms/image/v2/D4E03AQHt45Znrllfyg/profile-displayphoto-scale_200_200/B4EZtxeoeFIMAc-/0/1767135416795?e=2147483647&v=beta&t=pkk8uc08nJgPqyw1rHNvtLuhcTgFs6Y1N08KM3_PyQ0",
+                      "display_name": "Alfred Carl",
+                      "followers_count": 1069,
+                      "headline": "I am an integrated supply chain and procurement leader with experience across sourcing…",
+                      "location": "Greater Boston",
+                      "observed_time": 1786423600799,
+                      "platform": "linkedin",
+                      "profile_url": "https://linkedin.com/in/alcarl",
+                      "provider": "social_profile",
+                      "source": "scrapecreators",
+                      "source_provider": "scrapecreators",
+                      "username": "alcarl",
+                      "verified": false
+                    },
+                    {
+                      "avatar_url": "https://pbs.twimg.com/profile_images/1591081448148242434/Q2TAaIRB_normal.png",
+                      "display_name": "Alfred Carl",
+                      "followers_count": 9,
+                      "headline": "",
+                      "location": "Southern New Hampshire",
+                      "observed_time": 1786423604382,
+                      "platform": "x",
+                      "profile_url": "https://x.com/alfredcarl",
+                      "provider": "social_profile",
+                      "source": "scrapecreators",
+                      "source_provider": "scrapecreators",
+                      "username": "alfredcarl",
+                      "verified": false
+                    }
+                  ],
+                  "source_providers": [
+                    "scrapecreators"
+                  ],
+                  "web_links": [
+                    {
+                      "observed_time": 1786423604382,
+                      "source": "scrapecreators",
+                      "source_url": "https://x.com/alfredcarl",
+                      "url": "http://alfredcarl.com"
+                    }
+                  ]
+                },
+                {
+                  "_rank_features": {
+                    "gender": "male",
+                    "has_contact": true
+                  },
+                  "confidence_level": "LOW",
+                  "display_name": "alfred carl",
+                  "email": "carla@coastalcarolina.edu",
+                  "first_name": "alfred",
+                  "full_name": "alfred carl",
+                  "headline": "project manager at coastal carolina community college",
+                  "id": "DZghHxeenE6PBgVXbDbPRQ_0000",
+                  "job": "project manager at coastal carolina community college",
+                  "job_company_linkedin_url": "linkedin.com/school/cccc",
+                  "job_company_name": "coastal carolina community college",
+                  "job_title": "project manager",
+                  "job_title_role": "fulfillment",
+                  "jobs": [
+                    "project manager at coastal carolina community college"
+                  ],
+                  "last_name": "carl",
+                  "location_country": "united states",
+                  "location_locality": "santa clara",
+                  "location_name": "santa clara, california, united states",
+                  "location_region": "california",
+                  "match_score": 35,
+                  "match_source": "person_search",
+                  "matched_on": [
+                    "name"
+                  ],
+                  "person_id": "pdl:DZghHxeenE6PBgVXbDbPRQ_0000",
+                  "profile_url": "linkedin.com/in/alfred-carl-9786b1117",
+                  "provider": "people_data_labs",
+                  "rank_features": {
+                    "gender": "male",
+                    "has_contact": true
+                  },
+                  "social_links": [
+                    {
+                      "platform": "linkedin",
+                      "provider": "people_data_labs",
+                      "url": "linkedin.com/in/alfred-carl-9786b1117",
+                      "username": "alfred-carl-9786b1117"
+                    }
+                  ],
+                  "social_platforms": [
+                    "linkedin"
+                  ]
+                },
+                {
+                  "_rank_features": {
+                    "gender": "male"
+                  },
+                  "confidence_level": "LOW",
+                  "display_name": "alfred carl",
+                  "first_name": "alfred",
+                  "full_name": "alfred carl",
+                  "headline": "project manager at independent sector",
+                  "id": "nvxlsfo4JyiBpiDDc8bZug_0000",
+                  "job": "project manager at independent sector",
+                  "job_company_linkedin_url": "linkedin.com/company/independent-sector",
+                  "job_company_name": "independent sector",
+                  "job_company_website": "independentsector.org",
+                  "job_title": "project manager",
+                  "job_title_role": "fulfillment",
+                  "jobs": [
+                    "project manager at independent sector"
+                  ],
+                  "last_name": "carl",
+                  "location_country": "united states",
+                  "location_locality": "brooklyn",
+                  "location_name": "brooklyn, new york, united states",
+                  "location_region": "new york",
+                  "match_score": 35,
+                  "match_source": "person_search",
+                  "matched_on": [
+                    "name"
+                  ],
+                  "person_id": "pdl:nvxlsfo4JyiBpiDDc8bZug_0000",
+                  "profile_url": "linkedin.com/in/alfred-carl-742b3336a",
+                  "provider": "people_data_labs",
+                  "rank_features": {
+                    "gender": "male"
+                  },
+                  "social_links": [
+                    {
+                      "platform": "linkedin",
+                      "provider": "people_data_labs",
+                      "url": "linkedin.com/in/alfred-carl-742b3336a",
+                      "username": "alfred-carl-742b3336a"
+                    }
+                  ],
+                  "social_platforms": [
+                    "linkedin"
+                  ]
+                }
+              ],
+              "related_info": [
+                {
+                  "match_source": "person_search",
+                  "matches_count": 8,
+                  "provider": "people_data_labs"
+                },
+                {
+                  "candidate_id": "pdl:cY3D9O7eAvKc6FXKhbhfqA_0000",
+                  "observed_time": 1786423604382,
+                  "person_id": "pdl:cY3D9O7eAvKc6FXKhbhfqA_0000",
+                  "provider": "social_profile",
+                  "source": "scrapecreators",
+                  "source_url": "https://x.com/alfredcarl",
+                  "type": "website",
+                  "url": "http://alfredcarl.com",
+                  "value": "http://alfredcarl.com"
+                }
+              ],
+              "report_id": "report_08a17a5eeb87a1ebc3c3e02c",
+              "snapshot_ref": "",
+              "social_accounts": [
+                {
+                  "avatar_url": "https://media.licdn.com/dms/image/v2/D4E03AQHt45Znrllfyg/profile-displayphoto-scale_200_200/B4EZtxeoeFIMAc-/0/1767135416795?e=2147483647&v=beta&t=pkk8uc08nJgPqyw1rHNvtLuhcTgFs6Y1N08KM3_PyQ0",
+                  "bio": "I am an integrated supply chain and procurement leader with experience across sourcing…",
+                  "candidate_id": "pdl:cY3D9O7eAvKc6FXKhbhfqA_0000",
+                  "display_name": "Alfred Carl",
+                  "person_id": "pdl:cY3D9O7eAvKc6FXKhbhfqA_0000",
+                  "platform": "linkedin",
+                  "provider": "people_data_labs",
+                  "source": "scrapecreators",
+                  "source_url": "https://linkedin.com/in/alcarl",
+                  "url": "linkedin.com/in/alcarl",
+                  "username": "alcarl"
+                },
+                {
+                  "avatar_url": "https://pbs.twimg.com/profile_images/1591081448148242434/Q2TAaIRB_normal.png",
+                  "candidate_id": "pdl:cY3D9O7eAvKc6FXKhbhfqA_0000",
+                  "display_name": "Alfred Carl",
+                  "person_id": "pdl:cY3D9O7eAvKc6FXKhbhfqA_0000",
+                  "platform": "x",
+                  "provider": "people_data_labs",
+                  "source": "scrapecreators",
+                  "source_url": "https://x.com/alfredcarl",
+                  "url": "twitter.com/alfredcarl",
+                  "username": "alfredcarl"
+                },
+                {
+                  "platform": "linkedin",
+                  "provider": "people_data_labs",
+                  "url": "linkedin.com/in/alfred-carl-9786b1117",
+                  "username": "alfred-carl-9786b1117"
+                },
+                {
+                  "platform": "linkedin",
+                  "provider": "people_data_labs",
+                  "url": "linkedin.com/in/alfred-carl-742b3336a",
+                  "username": "alfred-carl-742b3336a"
+                }
+              ],
+              "status": "ready",
+              "subject_summary": {
+                "avatar_materialization_attempt_count": 2,
+                "avatar_materialization_success_count": 2,
+                "candidate_photo_count": 0,
+                "candidate_photo_match_count": 0,
+                "confidence_cap": "HIGH",
+                "display_name": "alfred carl",
+                "estimated_cost_microunit": 843912,
+                "estimated_cost_scope": "TASK_TOTAL_ALL_PROVIDER_CALLS",
+                "fallback_reason": "LLM_NO_RESULT",
+                "fallback_used": true,
+                "headline": "hes director of integrated supply chain at hubbell incorporated",
+                "identity_found": true,
+                "match_score": 35,
+                "match_source": "person_search",
+                "matched_on": [
+                  "name"
+                ],
+                "matches_count": 8,
+                "pdl_billing_unit_count": 3,
+                "pdl_called": true,
+                "pdl_candidates": [
+                  {
+                    "candidate_id": "pdl:cY3D9O7eAvKc6FXKhbhfqA_0000",
+                    "decision": "ELIGIBLE",
+                    "display_name": "alfred carl",
+                    "match_score": 35,
+                    "matched_clue_types": [
+                      "FULL_NAME"
+                    ],
+                    "profile_fetch_called": false,
+                    "profile_fetch_cost_microunit": 0,
+                    "rejection_reason": "",
+                    "selected": true,
+                    "social_links": [
+                      "https://linkedin.com/in/alcarl",
+                      "https://twitter.com/alfredcarl"
+                    ],
+                    "stage": "person_search"
+                  },
+                  {
+                    "candidate_id": "pdl:DZghHxeenE6PBgVXbDbPRQ_0000",
+                    "decision": "ELIGIBLE",
+                    "display_name": "alfred carl",
+                    "match_score": 35,
+                    "matched_clue_types": [
+                      "FULL_NAME"
+                    ],
+                    "profile_fetch_called": false,
+                    "profile_fetch_cost_microunit": 0,
+                    "rejection_reason": "",
+                    "selected": true,
+                    "social_links": [
+                      "https://linkedin.com/in/alfred-carl-9786b1117"
+                    ],
+                    "stage": "person_search"
+                  },
+                  {
+                    "candidate_id": "pdl:nvxlsfo4JyiBpiDDc8bZug_0000",
+                    "decision": "ELIGIBLE",
+                    "display_name": "alfred carl",
+                    "match_score": 35,
+                    "matched_clue_types": [
+                      "FULL_NAME"
+                    ],
+                    "profile_fetch_called": false,
+                    "profile_fetch_cost_microunit": 0,
+                    "rejection_reason": "",
+                    "selected": true,
+                    "social_links": [
+                      "https://linkedin.com/in/alfred-carl-742b3336a"
+                    ],
+                    "stage": "person_search"
+                  }
+                ],
+                "pdl_cost_scope": "PDL_PROVIDER_CALL_ALL_STAGES",
+                "pdl_estimated_cost_microunit": 840000,
+                "pdl_external_request_count": 1,
+                "pdl_identify_call_count": 0,
+                "pdl_identify_called": false,
+                "pdl_identify_candidate_count": 0,
+                "pdl_person_search_call_count": 1,
+                "pdl_person_search_called": true,
+                "pdl_person_search_returned_profile_count": 3,
+                "pdl_pipeline_stages": [
+                  {
+                    "api_request_count": 1,
+                    "billed_quantity": 3,
+                    "billing_operation": "person_search_profile",
+                    "candidate_count": 3,
+                    "operation": "person_search",
+                    "status": "success",
+                    "unit_type": "returned_profile"
+                  }
+                ],
+                "pdl_profile_fetch_count": 0,
+                "pdl_rejected_candidate_count": 0,
+                "pdl_rejection_reasons": [],
+                "pdl_skipped": false,
+                "pdl_usable_candidate_count": 3,
+                "people_found": true,
+                "people_pipeline_cost_scope": "LLM_PUBLIC_FIGURE_AND_PDL",
+                "people_pipeline_estimated_cost_microunit": 840152,
+                "photo_evidence_found": false,
+                "policy_version": "v1",
+                "pre_pdl_estimated_cost_microunit": 152,
+                "primary_provider": "people_data_labs",
+                "provider": "search_agent",
+                "provider_person_id": "cY3D9O7eAvKc6FXKhbhfqA_0000",
+                "providers": [
+                  "agent_people",
+                  "social_profile",
+                  "image_materializer"
+                ],
+                "query_type": "FULL_NAME",
+                "reverse_image_estimated_cost_microunit": 0,
+                "reverse_image_fallback_reasons": null,
+                "reverse_image_fallback_used": false,
+                "reverse_image_final_provider": "",
+                "reverse_image_primary_provider": "",
+                "reverse_image_provider_attempt_count": 0,
+                "reverse_image_status": "NOT_PLANNED",
+                "reverse_image_stop_reason": "NOT_PLANNED",
+                "social_profile_attempted_count": 4,
+                "social_profile_error_count": 0,
+                "social_profile_merged_candidate_count": 1,
+                "social_profile_no_result_count": 2,
+                "social_profile_planned_count": 4,
+                "social_profile_queue_decision_truncated_count": 0,
+                "social_profile_queue_decisions": [
+                  {
+                    "canonical_url": "https://linkedin.com/in/alcarl",
+                    "decision": "CALLED",
+                    "depth": 1,
+                    "discovered_by": "PDL",
+                    "error_code": "",
+                    "no_result_reason": "",
+                    "outcome": "SUCCESS",
+                    "parent_candidate_id": "pdl:cY3D9O7eAvKc6FXKhbhfqA_0000",
+                    "parent_evidence_id": "",
+                    "parent_provider": "people_data_labs",
+                    "parent_url": "",
+                    "platform": "linkedin",
+                    "raw_url": "linkedin.com/in/alcarl",
+                    "skip_reason": ""
+                  },
+                  {
+                    "canonical_url": "https://linkedin.com/in/alcarl",
+                    "decision": "SKIPPED",
+                    "depth": 1,
+                    "discovered_by": "PDL",
+                    "error_code": "",
+                    "no_result_reason": "",
+                    "outcome": "",
+                    "parent_candidate_id": "pdl:cY3D9O7eAvKc6FXKhbhfqA_0000",
+                    "parent_evidence_id": "",
+                    "parent_provider": "people_data_labs",
+                    "parent_url": "",
+                    "platform": "linkedin",
+                    "raw_url": "linkedin.com/in/alcarl",
+                    "skip_reason": "DUPLICATE"
+                  },
+                  {
+                    "canonical_url": "https://x.com/alfredcarl",
+                    "decision": "CALLED",
+                    "depth": 1,
+                    "discovered_by": "PDL",
+                    "error_code": "",
+                    "no_result_reason": "",
+                    "outcome": "SUCCESS",
+                    "parent_candidate_id": "pdl:cY3D9O7eAvKc6FXKhbhfqA_0000",
+                    "parent_evidence_id": "",
+                    "parent_provider": "people_data_labs",
+                    "parent_url": "",
+                    "platform": "x",
+                    "raw_url": "twitter.com/alfredcarl",
+                    "skip_reason": ""
+                  },
+                  {
+                    "canonical_url": "https://linkedin.com/in/alfred-carl-9786b1117",
+                    "decision": "CALLED",
+                    "depth": 1,
+                    "discovered_by": "PDL",
+                    "error_code": "",
+                    "no_result_reason": "PROFILE_PRIVATE_OR_UNAVAILABLE",
+                    "outcome": "NO_RESULT",
+                    "parent_candidate_id": "pdl:DZghHxeenE6PBgVXbDbPRQ_0000",
+                    "parent_evidence_id": "",
+                    "parent_provider": "people_data_labs",
+                    "parent_url": "",
+                    "platform": "linkedin",
+                    "raw_url": "linkedin.com/in/alfred-carl-9786b1117",
+                    "skip_reason": ""
+                  },
+                  {
+                    "canonical_url": "https://linkedin.com/in/alfred-carl-9786b1117",
+                    "decision": "SKIPPED",
+                    "depth": 1,
+                    "discovered_by": "PDL",
+                    "error_code": "",
+                    "no_result_reason": "",
+                    "outcome": "",
+                    "parent_candidate_id": "pdl:DZghHxeenE6PBgVXbDbPRQ_0000",
+                    "parent_evidence_id": "",
+                    "parent_provider": "people_data_labs",
+                    "parent_url": "",
+                    "platform": "linkedin",
+                    "raw_url": "linkedin.com/in/alfred-carl-9786b1117",
+                    "skip_reason": "DUPLICATE"
+                  },
+                  {
+                    "canonical_url": "https://linkedin.com/in/alfred-carl-742b3336a",
+                    "decision": "CALLED",
+                    "depth": 1,
+                    "discovered_by": "PDL",
+                    "error_code": "",
+                    "no_result_reason": "PROFILE_PRIVATE_OR_UNAVAILABLE",
+                    "outcome": "NO_RESULT",
+                    "parent_candidate_id": "pdl:nvxlsfo4JyiBpiDDc8bZug_0000",
+                    "parent_evidence_id": "",
+                    "parent_provider": "people_data_labs",
+                    "parent_url": "",
+                    "platform": "linkedin",
+                    "raw_url": "linkedin.com/in/alfred-carl-742b3336a",
+                    "skip_reason": ""
+                  },
+                  {
+                    "canonical_url": "https://linkedin.com/in/alfred-carl-742b3336a",
+                    "decision": "SKIPPED",
+                    "depth": 1,
+                    "discovered_by": "PDL",
+                    "error_code": "",
+                    "no_result_reason": "",
+                    "outcome": "",
+                    "parent_candidate_id": "pdl:nvxlsfo4JyiBpiDDc8bZug_0000",
+                    "parent_evidence_id": "",
+                    "parent_provider": "people_data_labs",
+                    "parent_url": "",
+                    "platform": "linkedin",
+                    "raw_url": "linkedin.com/in/alfred-carl-742b3336a",
+                    "skip_reason": "DUPLICATE"
+                  },
+                  {
+                    "canonical_url": "https://linkedin.com/in/alcarl",
+                    "decision": "SKIPPED",
+                    "depth": 1,
+                    "discovered_by": "PDL",
+                    "error_code": "",
+                    "no_result_reason": "",
+                    "outcome": "",
+                    "parent_candidate_id": "",
+                    "parent_evidence_id": "",
+                    "parent_provider": "people_data_labs",
+                    "parent_url": "",
+                    "platform": "linkedin",
+                    "raw_url": "linkedin.com/in/alcarl",
+                    "skip_reason": "DUPLICATE"
+                  },
+                  {
+                    "canonical_url": "https://x.com/alfredcarl",
+                    "decision": "SKIPPED",
+                    "depth": 1,
+                    "discovered_by": "PDL",
+                    "error_code": "",
+                    "no_result_reason": "",
+                    "outcome": "",
+                    "parent_candidate_id": "",
+                    "parent_evidence_id": "",
+                    "parent_provider": "people_data_labs",
+                    "parent_url": "",
+                    "platform": "x",
+                    "raw_url": "twitter.com/alfredcarl",
+                    "skip_reason": "DUPLICATE"
+                  },
+                  {
+                    "canonical_url": "https://linkedin.com/in/alfred-carl-9786b1117",
+                    "decision": "SKIPPED",
+                    "depth": 1,
+                    "discovered_by": "PDL",
+                    "error_code": "",
+                    "no_result_reason": "",
+                    "outcome": "",
+                    "parent_candidate_id": "",
+                    "parent_evidence_id": "",
+                    "parent_provider": "people_data_labs",
+                    "parent_url": "",
+                    "platform": "linkedin",
+                    "raw_url": "linkedin.com/in/alfred-carl-9786b1117",
+                    "skip_reason": "DUPLICATE"
+                  },
+                  {
+                    "canonical_url": "https://linkedin.com/in/alfred-carl-742b3336a",
+                    "decision": "SKIPPED",
+                    "depth": 1,
+                    "discovered_by": "PDL",
+                    "error_code": "",
+                    "no_result_reason": "",
+                    "outcome": "",
+                    "parent_candidate_id": "",
+                    "parent_evidence_id": "",
+                    "parent_provider": "people_data_labs",
+                    "parent_url": "",
+                    "platform": "linkedin",
+                    "raw_url": "linkedin.com/in/alfred-carl-742b3336a",
+                    "skip_reason": "DUPLICATE"
+                  },
+                  {
+                    "canonical_url": "https://linkedin.com/in/alcarl",
+                    "decision": "SKIPPED",
+                    "depth": 2,
+                    "discovered_by": "SOCIAL_PROFILE",
+                    "error_code": "",
+                    "no_result_reason": "",
+                    "outcome": "",
+                    "parent_candidate_id": "",
+                    "parent_evidence_id": "",
+                    "parent_provider": "scrapecreators",
+                    "parent_url": "https://linkedin.com/in/alcarl",
+                    "platform": "linkedin",
+                    "raw_url": "https://linkedin.com/in/alcarl",
+                    "skip_reason": "DUPLICATE"
+                  },
+                  {
+                    "canonical_url": "https://linkedin.com/in/alcarl",
+                    "decision": "SKIPPED",
+                    "depth": 2,
+                    "discovered_by": "SOCIAL_PROFILE",
+                    "error_code": "",
+                    "no_result_reason": "",
+                    "outcome": "",
+                    "parent_candidate_id": "",
+                    "parent_evidence_id": "",
+                    "parent_provider": "scrapecreators",
+                    "parent_url": "https://linkedin.com/in/alcarl",
+                    "platform": "linkedin",
+                    "raw_url": "https://linkedin.com/in/alcarl",
+                    "skip_reason": "DUPLICATE"
+                  },
+                  {
+                    "canonical_url": "https://x.com/alfredcarl",
+                    "decision": "SKIPPED",
+                    "depth": 2,
+                    "discovered_by": "SOCIAL_PROFILE",
+                    "error_code": "",
+                    "no_result_reason": "",
+                    "outcome": "",
+                    "parent_candidate_id": "",
+                    "parent_evidence_id": "",
+                    "parent_provider": "scrapecreators",
+                    "parent_url": "https://x.com/alfredcarl",
+                    "platform": "x",
+                    "raw_url": "https://x.com/alfredcarl",
+                    "skip_reason": "DUPLICATE"
+                  },
+                  {
+                    "canonical_url": "https://x.com/alfredcarl",
+                    "decision": "SKIPPED",
+                    "depth": 2,
+                    "discovered_by": "SOCIAL_PROFILE",
+                    "error_code": "",
+                    "no_result_reason": "",
+                    "outcome": "",
+                    "parent_candidate_id": "",
+                    "parent_evidence_id": "",
+                    "parent_provider": "scrapecreators",
+                    "parent_url": "https://x.com/alfredcarl",
+                    "platform": "x",
+                    "raw_url": "https://x.com/alfredcarl",
+                    "skip_reason": "DUPLICATE"
+                  }
+                ],
+                "social_profile_requested_identity_matched": false,
+                "social_profile_skipped_depth_count": 0,
+                "social_profile_skipped_duplicate_count": 11,
+                "social_profile_skipped_execution_count": 0,
+                "social_profile_skipped_limit_count": 0,
+                "social_profile_skipped_unsupported_count": 0,
+                "social_profile_status": "PARTIAL",
+                "social_profile_success_count": 2,
+                "social_profile_unmatched_profile_count": 0,
+                "stop_reason": "completed",
+                "submitted_photo_count": 0,
+                "submitted_photo_error_count": 0,
+                "submitted_photo_evidence_found": false,
+                "submitted_photo_match_count": 0,
+                "submitted_photo_no_match_count": 0,
+                "task_total_estimated_cost_microunit": 843912,
+                "tool_steps": 7,
+                "verification_state": "SUPPORTED"
+              },
+              "task_id": "task_eee1995517bacaf98257e738",
+              "update_time": "2026-08-11T04:46:52.212Z"
+            }
+          ],
+          "task_events": [
+            {
+              "create_time": "2026-08-11T04:46:52.212Z",
+              "error_code": "",
+              "event_id": "event_4bf52b4ec681597521160a49",
+              "event_time": "2026-08-11T04:46:52.212Z",
+              "event_type": "REPORT_READY",
+              "id": 4916,
+              "progress_json": {
+                "display_message": "Report ready",
+                "display_percent": 100,
+                "stage": "report_ready"
+              },
+              "report_id": "report_08a17a5eeb87a1ebc3c3e02c",
+              "status": "SUCCEEDED",
+              "task_id": "task_eee1995517bacaf98257e738",
+              "update_time": "2026-08-11T12:46:52.216Z"
+            },
+            {
+              "create_time": "2026-08-11T04:46:34.215Z",
+              "error_code": "",
+              "event_id": "event_39aad10448020d23a8c92ab6",
+              "event_time": "2026-08-11T04:46:34.215Z",
+              "event_type": "TASK_SEARCHING",
+              "id": 4915,
+              "progress_json": {
+                "display_message": "Searching public sources",
+                "display_percent": 45,
+                "stage": "provider_search"
+              },
+              "report_id": "",
+              "status": "SEARCHING",
+              "task_id": "task_eee1995517bacaf98257e738",
+              "update_time": "2026-08-11T12:46:34.221Z"
+            },
+            {
+              "create_time": "2026-08-11T04:46:32.707Z",
+              "error_code": "",
+              "event_id": "event_aaa8c15f298caa9e930225ae",
+              "event_time": "2026-08-11T04:46:32.707Z",
+              "event_type": "TASK_QUEUED",
+              "id": 4914,
+              "progress_json": {
+                "display_message": "Queued",
+                "display_percent": 5,
+                "stage": "queued"
+              },
+              "report_id": "",
+              "status": "QUEUED",
+              "task_id": "task_eee1995517bacaf98257e738",
+              "update_time": "2026-08-11T12:46:32.721Z"
+            }
+          ],
+          "outbox_events": [
+            {
+              "aggregate_id": "task_eee1995517bacaf98257e738",
+              "aggregate_type": "search_task",
+              "available_time": "2026-08-11T04:46:32.707Z",
+              "create_time": "2026-08-11T04:46:32.707Z",
+              "event_type": "SearchTaskQueued",
+              "id": "outbox_8f0d207d6cb0e8692841e3da",
+              "payload": {
+                "app_version": "1.0.3",
+                "attempt_hint": 1,
+                "client_ip": "43.173.72.75",
+                "client_request_id": "crid-1786423591177-aadf691d43",
+                "event_id": "outbox_8f0d207d6cb0e8692841e3da",
+                "expire_time": "2026-09-10T04:46:32.707495345Z",
+                "query_type": "FULL_NAME",
+                "queued_time": "2026-08-11T04:46:32.707495345Z",
+                "request_id": "gw_req_40de65d3bb0e00428022cf36695d0d9d",
+                "task_id": "task_eee1995517bacaf98257e738",
+                "trace_id": "trace_2725af55d315d2de7436213d031df04c"
+              },
+              "publish_time": "2026-08-11T04:46:34.217Z",
+              "retry_count": 0,
+              "source_app": "people_insight",
+              "status": "published",
+              "topic": "tool-srv.test.search-task.v1",
+              "update_time": "2026-08-11T04:46:34.217Z"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
+
+2026-08-11 12:47:00,369 | INFO | search_tool.QueryChainLogger | GetProviderCostSummary 事件:
+{
+  "sequence_no": 8,
+  "api_sequence_no": 1,
+  "run_id": "run_1d70edb93a664d539c9c5dcc0f2d9742",
+  "input_id": "case-080",
+  "person_name": "Alfred Carl",
+  "task_id": "task_eee1995517bacaf98257e738",
+  "candidate_id": "",
+  "stage": "GetProviderCostSummary",
+  "attempt": 1,
+  "business_success": true
+}
+2026-08-11 12:47:00,369 | INFO | search_tool.QueryChainLogger | GetProviderCostSummary 脱敏请求数据: attempt=1
+{
+  "task_id": "task_eee1995517bacaf98257e738",
+  "limit": 100
+}
+2026-08-11 12:47:00,369 | INFO | search_tool.QueryChainLogger | GetProviderCostSummary 响应数据: HTTP 200 elapsed_ms=1232
+{
+  "code": 0,
+  "message": "ok",
+  "request_id": "gw_req_8663dc64b1a08c9dacdecf1fded1567b",
+  "trace_id": "trace_28eb27b0425d48e397bb52ddd9e01ea2",
+  "responses": [
+    {
+      "id": "req_0",
+      "success": true,
+      "code": 0,
+      "message": "ok",
+      "data": {
+        "cost_summary": {
+          "from_time": "2026-08-10T04:47:00.778101894Z",
+          "to_time": "2026-08-11T04:47:00.778101894Z",
+          "calls": [
+            {
+              "billable_units": 0,
+              "billing_currency": "",
+              "billing_unit": "",
+              "billing_usage_json": [],
+              "cache_hit": 0,
+              "call_id": "atc_20546d4b7c783084285a4df1b506fdaa",
+              "cost_breakdown_json": [],
+              "cost_status": "NON_BILLABLE",
+              "create_time": "2026-08-11T04:46:51.746Z",
+              "estimated_cost_microunit": 0,
+              "finish_time": "2026-08-11T04:46:51.746Z",
+              "http_status": 404,
+              "non_billable_reason": "provider_reported_zero_usage",
+              "pricing_rule_id": "",
+              "pricing_version": "",
+              "provider": "social_profile",
+              "provider_operation": "scrapecreators_linkedin_profile",
+              "query_id": "query_66f290538dfde887e1f045d2",
+              "request_type": "SOCIAL_LINK",
+              "start_time": "2026-08-11T04:46:48.298Z",
+              "status": "no_result",
+              "task_id": "task_eee1995517bacaf98257e738",
+              "worker_id": "worker-79f769d947-8gq88"
+            },
+            {
+              "billable_units": 0,
+              "billing_currency": "",
+              "billing_unit": "",
+              "billing_usage_json": [],
+              "cache_hit": 0,
+              "call_id": "atc_330874d5633af97780dba7bcb8166f9c",
+              "cost_breakdown_json": [],
+              "cost_status": "NON_BILLABLE",
+              "create_time": "2026-08-11T04:46:48.276Z",
+              "estimated_cost_microunit": 0,
+              "finish_time": "2026-08-11T04:46:48.276Z",
+              "http_status": 404,
+              "non_billable_reason": "provider_reported_zero_usage",
+              "pricing_rule_id": "",
+              "pricing_version": "",
+              "provider": "social_profile",
+              "provider_operation": "scrapecreators_linkedin_profile",
+              "query_id": "query_66f290538dfde887e1f045d2",
+              "request_type": "SOCIAL_LINK",
+              "start_time": "2026-08-11T04:46:44.448Z",
+              "status": "no_result",
+              "task_id": "task_eee1995517bacaf98257e738",
+              "worker_id": "worker-79f769d947-8gq88"
+            },
+            {
+              "billable_units": 1,
+              "billing_currency": "USD",
+              "billing_unit": "credit",
+              "billing_usage_json": [
+                {
+                  "operation": "scrapecreators_x_profile",
+                  "quantity": 1,
+                  "unit_type": "credit"
+                }
+              ],
+              "cache_hit": 0,
+              "call_id": "atc_9a522eb998652099a3676e326a37b1e5",
+              "cost_breakdown_json": [
+                {
+                  "billing_model": "PER_UNIT",
+                  "currency": "USD",
+                  "estimated_cost_microunit": 1880,
+                  "operation": "scrapecreators_x_profile",
+                  "pricing_rule_id": "price_scrapecreators_x_freelance_20260810",
+                  "pricing_version": "2026-08-scrapecreators-freelance-conservative",
+                  "quantity": 1,
+                  "status": "CALCULATED",
+                  "unit_type": "credit"
+                }
+              ],
+              "cost_status": "CALCULATED",
+              "create_time": "2026-08-11T04:46:44.386Z",
+              "estimated_cost_microunit": 1880,
+              "finish_time": "2026-08-11T04:46:44.386Z",
+              "http_status": 200,
+              "non_billable_reason": "",
+              "pricing_rule_id": "price_scrapecreators_x_freelance_20260810",
+              "pricing_version": "2026-08-scrapecreators-freelance-conservative",
+              "provider": "social_profile",
+              "provider_operation": "scrapecreators_x_profile",
+              "query_id": "query_66f290538dfde887e1f045d2",
+              "request_type": "SOCIAL_LINK",
+              "start_time": "2026-08-11T04:46:40.835Z",
+              "status": "success",
+              "task_id": "task_eee1995517bacaf98257e738",
+              "worker_id": "worker-79f769d947-8gq88"
+            },
+            {
+              "billable_units": 1,
+              "billing_currency": "USD",
+              "billing_unit": "credit",
+              "billing_usage_json": [
+                {
+                  "operation": "scrapecreators_linkedin_profile",
+                  "quantity": 1,
+                  "unit_type": "credit"
+                }
+              ],
+              "cache_hit": 0,
+              "call_id": "atc_bb649cbd55a79d6ac3a85aba6bfe4c3f",
+              "cost_breakdown_json": [
+                {
+                  "billing_model": "PER_UNIT",
+                  "currency": "USD",
+                  "estimated_cost_microunit": 1880,
+                  "operation": "scrapecreators_linkedin_profile",
+                  "pricing_rule_id": "price_scrapecreators_linkedin_freelance_20260810",
+                  "pricing_version": "2026-08-scrapecreators-freelance-conservative",
+                  "quantity": 1,
+                  "status": "CALCULATED",
+                  "unit_type": "credit"
+                }
+              ],
+              "cost_status": "CALCULATED",
+              "create_time": "2026-08-11T04:46:40.803Z",
+              "estimated_cost_microunit": 1880,
+              "finish_time": "2026-08-11T04:46:40.803Z",
+              "http_status": 200,
+              "non_billable_reason": "",
+              "pricing_rule_id": "price_scrapecreators_linkedin_freelance_20260810",
+              "pricing_version": "2026-08-scrapecreators-freelance-conservative",
+              "provider": "social_profile",
+              "provider_operation": "scrapecreators_linkedin_profile",
+              "query_id": "query_66f290538dfde887e1f045d2",
+              "request_type": "SOCIAL_LINK",
+              "start_time": "2026-08-11T04:46:38.299Z",
+              "status": "success",
+              "task_id": "task_eee1995517bacaf98257e738",
+              "worker_id": "worker-79f769d947-8gq88"
+            },
+            {
+              "billable_units": 0,
+              "billing_currency": "",
+              "billing_unit": "",
+              "billing_usage_json": [],
+              "cache_hit": 0,
+              "call_id": "atc_28854e8a8def8ab624fd8987690512da",
+              "cost_breakdown_json": [],
+              "cost_status": "NON_BILLABLE",
+              "create_time": "2026-08-11T04:46:38.293Z",
+              "estimated_cost_microunit": 0,
+              "finish_time": "2026-08-11T04:46:38.293Z",
+              "http_status": 0,
+              "non_billable_reason": "aggregated_by_child_calls",
+              "pricing_rule_id": "",
+              "pricing_version": "",
+              "provider": "agent_people",
+              "provider_operation": "request",
+              "query_id": "query_66f290538dfde887e1f045d2",
+              "request_type": "FULL_NAME",
+              "start_time": "2026-08-11T04:46:34.224Z",
+              "status": "success",
+              "task_id": "task_eee1995517bacaf98257e738",
+              "worker_id": "worker-79f769d947-8gq88"
+            },
+            {
+              "billable_units": 3,
+              "billing_currency": "USD",
+              "billing_unit": "returned_profile",
+              "billing_usage_json": [
+                {
+                  "operation": "person_search_profile",
+                  "quantity": 3,
+                  "unit_type": "returned_profile"
+                }
+              ],
+              "cache_hit": 0,
+              "call_id": "atc_3f6bb9f6ea56f017c3c734db9878b1fe",
+              "cost_breakdown_json": [
+                {
+                  "billing_model": "PER_UNIT",
+                  "currency": "USD",
+                  "estimated_cost_microunit": 840000,
+                  "operation": "person_search_profile",
+                  "pricing_rule_id": "price_pdl_search_tier1_20260729",
+                  "pricing_version": "2026-07-29-pdl-self-serve-tier1",
+                  "quantity": 3,
+                  "status": "CALCULATED",
+                  "unit_type": "returned_profile"
+                }
+              ],
+              "cost_status": "CALCULATED",
+              "create_time": "2026-08-11T04:46:38.253Z",
+              "estimated_cost_microunit": 840000,
+              "finish_time": "2026-08-11T04:46:38.253Z",
+              "http_status": 0,
+              "non_billable_reason": "",
+              "pricing_rule_id": "price_pdl_search_tier1_20260729",
+              "pricing_version": "2026-07-29-pdl-self-serve-tier1",
+              "provider": "people_data_labs",
+              "provider_operation": "person_search_profile",
+              "query_id": "query_66f290538dfde887e1f045d2",
+              "request_type": "FULL_NAME",
+              "start_time": "2026-08-11T04:46:38Z",
+              "status": "success",
+              "task_id": "task_eee1995517bacaf98257e738",
+              "worker_id": "worker-79f769d947-8gq88"
+            },
+            {
+              "billable_units": 0,
+              "billing_currency": "",
+              "billing_unit": "",
+              "billing_usage_json": [],
+              "cache_hit": 0,
+              "call_id": "atc_ad74fcdc5fe0d158d0063b97ad4a5c06",
+              "cost_breakdown_json": [],
+              "cost_status": "NON_BILLABLE",
+              "create_time": "2026-08-11T04:46:37.999Z",
+              "estimated_cost_microunit": 0,
+              "finish_time": "2026-08-11T04:46:37.999Z",
+              "http_status": 0,
+              "non_billable_reason": "public_source_no_direct_cost",
+              "pricing_rule_id": "",
+              "pricing_version": "",
+              "provider": "public_figure",
+              "provider_operation": "route_decision",
+              "query_id": "query_66f290538dfde887e1f045d2",
+              "request_type": "FULL_NAME",
+              "start_time": "2026-08-11T04:46:37.999Z",
+              "status": "success",
+              "task_id": "task_eee1995517bacaf98257e738",
+              "worker_id": "worker-79f769d947-8gq88"
+            },
+            {
+              "billable_units": 0,
+              "billing_currency": "",
+              "billing_unit": "",
+              "billing_usage_json": [],
+              "cache_hit": 0,
+              "call_id": "atc_776dda4b7a6f88bd5051827df0cc4d62",
+              "cost_breakdown_json": [],
+              "cost_status": "NON_BILLABLE",
+              "create_time": "2026-08-11T04:46:37.997Z",
+              "estimated_cost_microunit": 0,
+              "finish_time": "2026-08-11T04:46:37.997Z",
+              "http_status": 0,
+              "non_billable_reason": "aggregated_by_backend_attempts",
+              "pricing_rule_id": "",
+              "pricing_version": "",
+              "provider": "llm_search",
+              "provider_operation": "request",
+              "query_id": "query_66f290538dfde887e1f045d2",
+              "request_type": "FULL_NAME",
+              "start_time": "2026-08-11T04:46:34.23Z",
+              "status": "no_result",
+              "task_id": "task_eee1995517bacaf98257e738",
+              "worker_id": "worker-79f769d947-8gq88"
+            },
+            {
+              "billable_units": 966,
+              "billing_currency": "USD",
+              "billing_unit": "token",
+              "billing_usage_json": [
+                {
+                  "input_tokens": 855,
+                  "operation": "chat_completions/deepseek-v4-flash-202605",
+                  "output_tokens": 111,
+                  "unit_type": "token"
+                }
+              ],
+              "cache_hit": 0,
+              "call_id": "atc_703668709df2c2aae159ff90c44680ad",
+              "cost_breakdown_json": [
+                {
+                  "billing_model": "TOKEN",
+                  "currency": "USD",
+                  "estimated_cost_microunit": 152,
+                  "input_tokens": 855,
+                  "operation": "chat_completions/deepseek-v4-flash-202605",
+                  "output_tokens": 111,
+                  "pricing_rule_id": "price_tencent_deepseek_v4_flash_20260729",
+                  "pricing_version": "2026-07-29-tencent-intl-public",
+                  "status": "CALCULATED",
+                  "unit_type": "token"
+                }
+              ],
+              "cost_status": "CALCULATED",
+              "create_time": "2026-08-11T04:46:37.968Z",
+              "estimated_cost_microunit": 152,
+              "finish_time": "2026-08-11T04:46:37.968Z",
+              "http_status": 200,
+              "non_billable_reason": "",
+              "pricing_rule_id": "price_tencent_deepseek_v4_flash_20260729",
+              "pricing_version": "2026-07-29-tencent-intl-public",
+              "provider": "llm_search:deepseek",
+              "provider_operation": "chat_completions/deepseek-v4-flash-202605",
+              "query_id": "query_66f290538dfde887e1f045d2",
+              "request_type": "FULL_NAME",
+              "start_time": "2026-08-11T04:46:34.232Z",
+              "status": "no_result",
+              "task_id": "task_eee1995517bacaf98257e738",
+              "worker_id": "worker-79f769d947-8gq88"
+            },
+            {
+              "billable_units": 0,
+              "billing_currency": "",
+              "billing_unit": "",
+              "billing_usage_json": [],
+              "cache_hit": 1,
+              "call_id": "atc_e291eddbeacff690064a2a47af008172",
+              "cost_breakdown_json": [],
+              "cost_status": "NON_BILLABLE",
+              "create_time": "2026-08-11T04:46:34.228Z",
+              "estimated_cost_microunit": 0,
+              "finish_time": "2026-08-11T04:46:34.228Z",
+              "http_status": 0,
+              "non_billable_reason": "public_source_no_direct_cost",
+              "pricing_rule_id": "",
+              "pricing_version": "",
+              "provider": "public_figure",
+              "provider_operation": "local_lookup",
+              "query_id": "query_66f290538dfde887e1f045d2",
+              "request_type": "FULL_NAME",
+              "start_time": "2026-08-11T04:46:34.224Z",
+              "status": "success",
+              "task_id": "task_eee1995517bacaf98257e738",
+              "worker_id": "worker-79f769d947-8gq88"
+            }
+          ],
+          "totals": [
+            {
+              "call_count": 6,
+              "config_estimate_call_count": "0",
+              "cost_complete": 1,
+              "currency": "UNSPECIFIED",
+              "non_billable_call_count": "6",
+              "partial_cost_call_count": "0",
+              "priced_call_count": "0",
+              "total_cost_microunit": "0",
+              "unpriced_call_count": "0"
+            },
+            {
+              "call_count": 4,
+              "config_estimate_call_count": "0",
+              "cost_complete": 1,
+              "currency": "USD",
+              "non_billable_call_count": "0",
+              "partial_cost_call_count": "0",
+              "priced_call_count": "4",
+              "total_cost_microunit": "843912",
+              "unpriced_call_count": "0"
+            }
+          ],
+          "by_provider": [
+            {
+              "call_count": 1,
+              "config_estimate_call_count": "0",
+              "cost_complete": 1,
+              "currency": "USD",
+              "non_billable_call_count": "0",
+              "partial_cost_call_count": "0",
+              "priced_call_count": "1",
+              "provider": "people_data_labs",
+              "total_cost_microunit": "840000",
+              "unpriced_call_count": "0"
+            },
+            {
+              "call_count": 2,
+              "config_estimate_call_count": "0",
+              "cost_complete": 1,
+              "currency": "USD",
+              "non_billable_call_count": "0",
+              "partial_cost_call_count": "0",
+              "priced_call_count": "2",
+              "provider": "social_profile",
+              "total_cost_microunit": "3760",
+              "unpriced_call_count": "0"
+            },
+            {
+              "call_count": 1,
+              "config_estimate_call_count": "0",
+              "cost_complete": 1,
+              "currency": "USD",
+              "non_billable_call_count": "0",
+              "partial_cost_call_count": "0",
+              "priced_call_count": "1",
+              "provider": "llm_search:deepseek",
+              "total_cost_microunit": "152",
+              "unpriced_call_count": "0"
+            },
+            {
+              "call_count": 2,
+              "config_estimate_call_count": "0",
+              "cost_complete": 1,
+              "currency": "UNSPECIFIED",
+              "non_billable_call_count": "2",
+              "partial_cost_call_count": "0",
+              "priced_call_count": "0",
+              "provider": "public_figure",
+              "total_cost_microunit": "0",
+              "unpriced_call_count": "0"
+            },
+            {
+              "call_count": 2,
+              "config_estimate_call_count": "0",
+              "cost_complete": 1,
+              "currency": "UNSPECIFIED",
+              "non_billable_call_count": "2",
+              "partial_cost_call_count": "0",
+              "priced_call_count": "0",
+              "provider": "social_profile",
+              "total_cost_microunit": "0",
+              "unpriced_call_count": "0"
+            },
+            {
+              "call_count": 1,
+              "config_estimate_call_count": "0",
+              "cost_complete": 1,
+              "currency": "UNSPECIFIED",
+              "non_billable_call_count": "1",
+              "partial_cost_call_count": "0",
+              "priced_call_count": "0",
+              "provider": "llm_search",
+              "total_cost_microunit": "0",
+              "unpriced_call_count": "0"
+            },
+            {
+              "call_count": 1,
+              "config_estimate_call_count": "0",
+              "cost_complete": 1,
+              "currency": "UNSPECIFIED",
+              "non_billable_call_count": "1",
+              "partial_cost_call_count": "0",
+              "priced_call_count": "0",
+              "provider": "agent_people",
+              "total_cost_microunit": "0",
+              "unpriced_call_count": "0"
+            }
+          ],
+          "by_worker": [
+            {
+              "call_count": 4,
+              "config_estimate_call_count": "0",
+              "cost_complete": 1,
+              "currency": "USD",
+              "non_billable_call_count": "0",
+              "partial_cost_call_count": "0",
+              "priced_call_count": "4",
+              "total_cost_microunit": "843912",
+              "unpriced_call_count": "0",
+              "worker_id": "worker-79f769d947-8gq88"
+            },
+            {
+              "call_count": 6,
+              "config_estimate_call_count": "0",
+              "cost_complete": 1,
+              "currency": "UNSPECIFIED",
+              "non_billable_call_count": "6",
+              "partial_cost_call_count": "0",
+              "priced_call_count": "0",
+              "total_cost_microunit": "0",
+              "unpriced_call_count": "0",
+              "worker_id": "worker-79f769d947-8gq88"
+            }
+          ],
+          "by_search": [
+            {
+              "call_count": 4,
+              "config_estimate_call_count": "0",
+              "cost_complete": 1,
+              "currency": "USD",
+              "non_billable_call_count": "0",
+              "partial_cost_call_count": "0",
+              "priced_call_count": "4",
+              "task_id": "task_eee1995517bacaf98257e738",
+              "total_cost_microunit": "843912",
+              "unpriced_call_count": "0"
+            },
+            {
+              "call_count": 6,
+              "config_estimate_call_count": "0",
+              "cost_complete": 1,
+              "currency": "UNSPECIFIED",
+              "non_billable_call_count": "6",
+              "partial_cost_call_count": "0",
+              "priced_call_count": "0",
+              "task_id": "task_eee1995517bacaf98257e738",
+              "total_cost_microunit": "0",
+              "unpriced_call_count": "0"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
+
+2026-08-11 12:47:01,420 | INFO | search_tool.QueryChainLogger | ListTaskCandidates 事件:
+{
+  "sequence_no": 9,
+  "api_sequence_no": 1,
+  "run_id": "run_1d70edb93a664d539c9c5dcc0f2d9742",
+  "input_id": "case-080",
+  "person_name": "Alfred Carl",
+  "task_id": "task_eee1995517bacaf98257e738",
+  "candidate_id": "",
+  "stage": "ListTaskCandidates",
+  "attempt": 1,
+  "business_success": true
+}
+2026-08-11 12:47:01,420 | INFO | search_tool.QueryChainLogger | ListTaskCandidates 脱敏请求数据: attempt=1
+{
+  "task_id": "task_eee1995517bacaf98257e738",
+  "page": {
+    "page_size": 100,
+    "page_token": ""
+  }
+}
+2026-08-11 12:47:01,420 | INFO | search_tool.QueryChainLogger | ListTaskCandidates 响应数据: HTTP 200 elapsed_ms=1039
+{
+  "code": 0,
+  "message": "ok",
+  "request_id": "gw_req_bb333a03d785e30f0fdcd55cf91a5558",
+  "trace_id": "trace_901025f55ad9219186dc3900130febb4",
+  "responses": [
+    {
+      "id": "req_0",
+      "success": true,
+      "code": 0,
+      "message": "ok",
+      "data": {
+        "empty_reason": "",
+        "items": [
+          {
+            "age": 0,
+            "avatar_url": "https://media.licdn.com/dms/image/v2/D4E03AQHt45Znrllfyg/profile-displayphoto-scale_200_200/B4EZtxeoeFIMAc-/0/1767135416795?e=2147483647&v=beta&t=pkk8uc08nJgPqyw1rHNvtLuhcTgFs6Y1N08KM3_PyQ0",
+            "candidate_id": "report_08a17a5eeb87a1ebc3c3e02c_candidate_1",
+            "confidence_level": "LOW",
+            "display_name": "alfred carl",
+            "education": "boston university master of science masters; babson f.w. olin graduate school of business master of business administration masters; northeastern university bachelor of science bachelors",
+            "email": "acarl@hubbell.com",
+            "evidence_count": 6,
+            "headline": "hes director of integrated supply chain at hubbell incorporated",
+            "is_best_match": false,
+            "is_top_result": true,
+            "jobs": [
+              "hes director of integrated supply chain at hubbell incorporated"
+            ],
+            "location": "Greater Boston",
+            "match_reasons": [
+              "name"
+            ],
+            "match_score": 35,
+            "matched_clue_types": [],
+            "person_id": "pdl:cY3D9O7eAvKc6FXKhbhfqA_0000",
+            "primary_image": {
+              "priority": 1,
+              "reason": "profile_image",
+              "source": "profile",
+              "url": "https://media.licdn.com/dms/image/v2/D4E03AQHt45Znrllfyg/profile-displayphoto-scale_200_200/B4EZtxeoeFIMAc-/0/1767135416795?e=2147483647&v=beta&t=pkk8uc08nJgPqyw1rHNvtLuhcTgFs6Y1N08KM3_PyQ0"
+            },
+            "profile_url": "https://linkedin.com/in/alcarl",
+            "rank_breakdown": {
+              "data_completeness": 0.9,
+              "geo_relevance": 0,
+              "public_influence": 0,
+              "social_activity": 0,
+              "social_richness": 0.3333
+            },
+            "rank_score": 0.3983,
+            "rank_version": "candidate_ranking_v2",
+            "social_links": [
+              {
+                "platform": "linkedin",
+                "url": "https://linkedin.com/in/alcarl",
+                "username": "alcarl",
+                "verification_level": "LIKELY",
+                "verification_reason": "social_profile_name_match"
+              },
+              {
+                "platform": "x",
+                "url": "https://twitter.com/alfredcarl",
+                "username": "alfredcarl",
+                "verification_level": "LIKELY",
+                "verification_reason": "social_profile_name_match"
+              }
+            ],
+            "social_platforms": [
+              "linkedin",
+              "x"
+            ],
+            "social_source_count": 2,
+            "source": "people_data_labs",
+            "source_provider": "people_data_labs",
+            "source_providers": [
+              "scrapecreators",
+              "people_data_labs"
+            ],
+            "web_links": [
+              {
+                "domain": "alfredcarl.com",
+                "source": "Default",
+                "title": "Default",
+                "url": "http://alfredcarl.com"
+              },
+              {
+                "domain": "hubbell.com",
+                "source": "Default",
+                "title": "alfred carl",
+                "url": "https://hubbell.com"
+              }
+            ],
+            "web_platforms": [
+              "Default"
+            ],
+            "web_source_count": 2
+          },
+          {
+            "age": 0,
+            "avatar_url": "",
+            "candidate_id": "report_08a17a5eeb87a1ebc3c3e02c_candidate_2",
+            "confidence_level": "LOW",
+            "display_name": "alfred carl",
+            "education": "",
+            "email": "carla@coastalcarolina.edu",
+            "evidence_count": 2,
+            "headline": "project manager at coastal carolina community college",
+            "is_best_match": false,
+            "is_top_result": false,
+            "jobs": [
+              "project manager at coastal carolina community college"
+            ],
+            "location": "santa clara, california, united states",
+            "match_reasons": [
+              "name"
+            ],
+            "match_score": 35,
+            "matched_clue_types": [],
+            "person_id": "pdl:DZghHxeenE6PBgVXbDbPRQ_0000",
+            "profile_url": "https://linkedin.com/in/alfred-carl-9786b1117",
+            "rank_breakdown": {
+              "data_completeness": 0.8,
+              "geo_relevance": 0,
+              "public_influence": 0,
+              "social_activity": 0,
+              "social_richness": 0.1667
+            },
+            "rank_score": 0.3217,
+            "rank_version": "candidate_ranking_v2",
+            "social_links": [
+              {
+                "platform": "linkedin",
+                "url": "https://linkedin.com/in/alfred-carl-9786b1117",
+                "username": "alfred-carl-9786b1117"
+              }
+            ],
+            "social_platforms": [
+              "linkedin"
+            ],
+            "social_source_count": 1,
+            "source": "people_data_labs",
+            "source_provider": "people_data_labs",
+            "source_providers": [
+              "people_data_labs"
+            ],
+            "web_links": [],
+            "web_platforms": [],
+            "web_source_count": 0
+          },
+          {
+            "age": 0,
+            "avatar_url": "",
+            "candidate_id": "report_08a17a5eeb87a1ebc3c3e02c_candidate_3",
+            "confidence_level": "LOW",
+            "display_name": "alfred carl",
+            "education": "",
+            "evidence_count": 3,
+            "headline": "project manager at independent sector",
+            "is_best_match": false,
+            "is_top_result": false,
+            "jobs": [
+              "project manager at independent sector"
+            ],
+            "location": "brooklyn, new york, united states",
+            "match_reasons": [
+              "name"
+            ],
+            "match_score": 35,
+            "matched_clue_types": [],
+            "person_id": "pdl:nvxlsfo4JyiBpiDDc8bZug_0000",
+            "profile_url": "https://linkedin.com/in/alfred-carl-742b3336a",
+            "rank_breakdown": {
+              "data_completeness": 0.7,
+              "geo_relevance": 0,
+              "public_influence": 0,
+              "social_activity": 0,
+              "social_richness": 0.1667
+            },
+            "rank_score": 0.2867,
+            "rank_version": "candidate_ranking_v2",
+            "social_links": [
+              {
+                "platform": "linkedin",
+                "url": "https://linkedin.com/in/alfred-carl-742b3336a",
+                "username": "alfred-carl-742b3336a"
+              }
+            ],
+            "social_platforms": [
+              "linkedin"
+            ],
+            "social_source_count": 1,
+            "source": "people_data_labs",
+            "source_provider": "people_data_labs",
+            "source_providers": [
+              "people_data_labs"
+            ],
+            "web_links": [
+              {
+                "domain": "independentsector.org",
+                "source": "Default",
+                "title": "alfred carl",
+                "url": "https://independentsector.org"
+              }
+            ],
+            "web_platforms": [
+              "Default"
+            ],
+            "web_source_count": 1
+          }
+        ],
+        "next_page_token": "",
+        "provider_summary": {
+          "cache_hit": false,
+          "primary_provider": "agent_people",
+          "provider_execution": "REAL_PROVIDER",
+          "providers": [
+            "agent_people",
+            "social_profile",
+            "image_materializer",
+            "people_data_labs",
+            "search_agent"
+          ],
+          "public_sources": false,
+          "source_provider": "people_data_labs",
+          "source_providers": [
+            "people_data_labs",
+            "scrapecreators"
+          ]
+        },
+        "task_id": "task_eee1995517bacaf98257e738",
+        "update_time": 1786423612212
+      }
+    }
+  ]
+}
+
+2026-08-11 12:47:02,518 | INFO | search_tool.QueryChainLogger | GetTaskCandidateDetail 事件:
+{
+  "sequence_no": 10,
+  "api_sequence_no": 1,
+  "run_id": "run_1d70edb93a664d539c9c5dcc0f2d9742",
+  "input_id": "case-080",
+  "person_name": "Alfred Carl",
+  "task_id": "task_eee1995517bacaf98257e738",
+  "candidate_id": "report_08a17a5eeb87a1ebc3c3e02c_candidate_1",
+  "stage": "GetTaskCandidateDetail",
+  "attempt": 1,
+  "business_success": true
+}
+2026-08-11 12:47:02,518 | INFO | search_tool.QueryChainLogger | GetTaskCandidateDetail 脱敏请求数据: attempt=1
+{
+  "task_id": "task_eee1995517bacaf98257e738",
+  "candidate_id": "report_08a17a5eeb87a1ebc3c3e02c_candidate_1"
+}
+2026-08-11 12:47:02,518 | INFO | search_tool.QueryChainLogger | GetTaskCandidateDetail 响应数据: HTTP 200 elapsed_ms=1081
+{
+  "code": 0,
+  "message": "ok",
+  "request_id": "gw_req_23d69d2fedddef15c9ea43e10f8d74d4",
+  "trace_id": "trace_6b6d6528b1babdd2924ae71b6f71f27f",
+  "responses": [
+    {
+      "id": "req_0",
+      "success": true,
+      "code": 0,
+      "message": "ok",
+      "data": {
+        "candidate": {
+          "age": 0,
+          "avatar_url": "https://media.licdn.com/dms/image/v2/D4E03AQHt45Znrllfyg/profile-displayphoto-scale_200_200/B4EZtxeoeFIMAc-/0/1767135416795?e=2147483647&v=beta&t=pkk8uc08nJgPqyw1rHNvtLuhcTgFs6Y1N08KM3_PyQ0",
+          "candidate_id": "report_08a17a5eeb87a1ebc3c3e02c_candidate_1",
+          "confidence_level": "LOW",
+          "display_name": "alfred carl",
+          "education": "boston university master of science masters; babson f.w. olin graduate school of business master of business administration masters; northeastern university bachelor of science bachelors",
+          "email": "acarl@hubbell.com",
+          "evidence_count": 6,
+          "headline": "hes director of integrated supply chain at hubbell incorporated",
+          "is_best_match": false,
+          "is_top_result": true,
+          "jobs": [
+            "hes director of integrated supply chain at hubbell incorporated"
+          ],
+          "location": "Greater Boston",
+          "match_reasons": [
+            "name"
+          ],
+          "match_score": 35,
+          "matched_clue_types": [],
+          "person_id": "pdl:cY3D9O7eAvKc6FXKhbhfqA_0000",
+          "primary_image": {
+            "priority": 1,
+            "reason": "profile_image",
+            "source": "profile",
+            "url": "https://media.licdn.com/dms/image/v2/D4E03AQHt45Znrllfyg/profile-displayphoto-scale_200_200/B4EZtxeoeFIMAc-/0/1767135416795?e=2147483647&v=beta&t=pkk8uc08nJgPqyw1rHNvtLuhcTgFs6Y1N08KM3_PyQ0"
+          },
+          "profile_url": "https://linkedin.com/in/alcarl",
+          "rank_breakdown": {
+            "data_completeness": 0.9,
+            "geo_relevance": 0,
+            "public_influence": 0,
+            "social_activity": 0,
+            "social_richness": 0.3333
+          },
+          "rank_score": 0.3983,
+          "rank_version": "candidate_ranking_v2",
+          "social_links": [
+            {
+              "platform": "linkedin",
+              "url": "https://linkedin.com/in/alcarl",
+              "username": "alcarl",
+              "verification_level": "LIKELY",
+              "verification_reason": "social_profile_name_match"
+            },
+            {
+              "platform": "x",
+              "url": "https://twitter.com/alfredcarl",
+              "username": "alfredcarl",
+              "verification_level": "LIKELY",
+              "verification_reason": "social_profile_name_match"
+            }
+          ],
+          "social_platforms": [
+            "linkedin",
+            "x"
+          ],
+          "social_source_count": 2,
+          "source": "people_data_labs",
+          "source_provider": "people_data_labs",
+          "source_providers": [
+            "scrapecreators",
+            "people_data_labs"
+          ],
+          "web_links": [
+            {
+              "domain": "alfredcarl.com",
+              "source": "Default",
+              "title": "Default",
+              "url": "http://alfredcarl.com"
+            },
+            {
+              "domain": "hubbell.com",
+              "source": "Default",
+              "title": "alfred carl",
+              "url": "https://hubbell.com"
+            }
+          ],
+          "web_platforms": [
+            "Default"
+          ],
+          "web_source_count": 2
+        },
+        "candidate_id": "report_08a17a5eeb87a1ebc3c3e02c_candidate_1",
+        "disclaimers": [
+          "People Data Labs Person Search returns candidate profiles; review candidates or add stronger clues before relying on an identity match.",
+          "Social profile fields were extracted from public page data and remain subject to source availability and platform changes."
+        ],
+        "entitlement_decision": "ALLOW",
+        "evidence": [
+          {
+            "display_name": "alfred carl",
+            "matched_on": [
+              "name"
+            ],
+            "person_id": "pdl:cY3D9O7eAvKc6FXKhbhfqA_0000",
+            "provider": "people_data_labs",
+            "provider_person_id": "cY3D9O7eAvKc6FXKhbhfqA_0000",
+            "subject_profile_url": "linkedin.com/in/alcarl",
+            "type": "pdl_matched_on"
+          },
+          {
+            "display_name": "alfred carl",
+            "field": "linkedin_url",
+            "person_id": "pdl:cY3D9O7eAvKc6FXKhbhfqA_0000",
+            "provider": "people_data_labs",
+            "provider_person_id": "cY3D9O7eAvKc6FXKhbhfqA_0000",
+            "subject_profile_url": "linkedin.com/in/alcarl",
+            "type": "pdl_profile_url",
+            "url": "linkedin.com/in/alcarl"
+          },
+          {
+            "display_name": "alfred carl",
+            "field": "twitter_url",
+            "person_id": "pdl:cY3D9O7eAvKc6FXKhbhfqA_0000",
+            "provider": "people_data_labs",
+            "provider_person_id": "cY3D9O7eAvKc6FXKhbhfqA_0000",
+            "subject_profile_url": "linkedin.com/in/alcarl",
+            "type": "pdl_profile_url",
+            "url": "twitter.com/alfredcarl"
+          },
+          {
+            "display_name": "alfred carl",
+            "field": "job_company_website",
+            "person_id": "pdl:cY3D9O7eAvKc6FXKhbhfqA_0000",
+            "provider": "people_data_labs",
+            "provider_person_id": "cY3D9O7eAvKc6FXKhbhfqA_0000",
+            "subject_profile_url": "linkedin.com/in/alcarl",
+            "type": "pdl_profile_url",
+            "url": "hubbell.com"
+          },
+          {
+            "candidate_id": "pdl:cY3D9O7eAvKc6FXKhbhfqA_0000",
+            "image_url": "https://media.licdn.com/dms/image/v2/D4E03AQHt45Znrllfyg/profile-displayphoto-scale_200_200/B4EZtxeoeFIMAc-/0/1767135416795?e=2147483647&v=beta&t=pkk8uc08nJgPqyw1rHNvtLuhcTgFs6Y1N08KM3_PyQ0",
+            "observed_time": 1786423600799,
+            "person_id": "pdl:cY3D9O7eAvKc6FXKhbhfqA_0000",
+            "provider": "social_profile",
+            "snippet": "I am an integrated supply chain and procurement leader with experience across sourcing…",
+            "source": "scrapecreators",
+            "title": "Alfred Carl",
+            "type": "social_profile_source",
+            "url": "https://linkedin.com/in/alcarl"
+          },
+          {
+            "candidate_id": "pdl:cY3D9O7eAvKc6FXKhbhfqA_0000",
+            "image_url": "https://pbs.twimg.com/profile_images/1591081448148242434/Q2TAaIRB_normal.png",
+            "observed_time": 1786423604382,
+            "person_id": "pdl:cY3D9O7eAvKc6FXKhbhfqA_0000",
+            "provider": "social_profile",
+            "snippet": "",
+            "source": "scrapecreators",
+            "title": "Alfred Carl",
+            "type": "social_profile_source",
+            "url": "https://x.com/alfredcarl"
+          }
+        ],
+        "person_id": "pdl:cY3D9O7eAvKc6FXKhbhfqA_0000",
+        "social_accounts": [
+          {
+            "display_name": "alfred carl",
+            "person_id": "pdl:cY3D9O7eAvKc6FXKhbhfqA_0000",
+            "platform": "linkedin",
+            "profile_url": "https://linkedin.com/in/alcarl",
+            "source": "people_data_labs",
+            "url": "https://linkedin.com/in/alcarl",
+            "username": "alcarl",
+            "verification_level": "LIKELY",
+            "verification_reason": "social_profile_name_match"
+          },
+          {
+            "display_name": "alfred carl",
+            "person_id": "pdl:cY3D9O7eAvKc6FXKhbhfqA_0000",
+            "platform": "x",
+            "profile_url": "https://linkedin.com/in/alcarl",
+            "source": "people_data_labs",
+            "url": "https://twitter.com/alfredcarl",
+            "username": "alfredcarl",
+            "verification_level": "LIKELY",
+            "verification_reason": "social_profile_name_match"
+          }
+        ],
+        "task_id": "task_eee1995517bacaf98257e738",
+        "ui_sections": {
+          "insights": {
+            "data": {
+              "count": 0,
+              "items": []
+            },
+            "status": "empty"
+          },
+          "photos": {
+            "data": {
+              "authenticity_photos": [],
+              "baseline_photo_url": "",
+              "face_comparison_status": "not_applicable",
+              "identity_match_rate": 0,
+              "match_photos": []
+            },
+            "status": "empty"
+          },
+          "profile": {
+            "data": {
+              "sections": [
+                {
+                  "items": [
+                    {
+                      "label": "Full Name",
+                      "value": "alfred carl"
+                    },
+                    {
+                      "label": "Location",
+                      "value": "Greater Boston"
+                    },
+                    {
+                      "label": "Email",
+                      "value": "acarl@hubbell.com"
+                    },
+                    {
+                      "label": "Profile URL",
+                      "value": "https://linkedin.com/in/alcarl"
+                    }
+                  ],
+                  "title": "Identity"
+                },
+                {
+                  "items": [
+                    {
+                      "label": "Current Role",
+                      "value": "hes director of integrated supply chain at hubbell incorporated"
+                    }
+                  ],
+                  "title": "Career"
+                },
+                {
+                  "items": [
+                    {
+                      "label": "Education",
+                      "value": "boston university master of science masters; babson f.w. olin graduate school of business master of business administration masters; northeastern university bachelor of science bachelors"
+                    }
+                  ],
+                  "title": "Background"
+                }
+              ]
+            },
+            "status": "data"
+          },
+          "social": {
+            "data": {
+              "private_accounts": [],
+              "profiles": [
+                {
+                  "display_handle": "alcarl",
+                  "platform": "linkedin",
+                  "url": "https://linkedin.com/in/alcarl",
+                  "username": "alcarl",
+                  "verification_level": "LIKELY",
+                  "verification_reason": "social_profile_name_match"
+                },
+                {
+                  "display_handle": "alfredcarl",
+                  "platform": "x",
+                  "url": "https://twitter.com/alfredcarl",
+                  "username": "alfredcarl",
+                  "verification_level": "LIKELY",
+                  "verification_reason": "social_profile_name_match"
+                }
+              ]
+            },
+            "status": "data"
+          },
+          "summary": {
+            "data": {
+              "age": null,
+              "avatar_url": "https://media.licdn.com/dms/image/v2/D4E03AQHt45Znrllfyg/profile-displayphoto-scale_200_200/B4EZtxeoeFIMAc-/0/1767135416795?e=2147483647&v=beta&t=pkk8uc08nJgPqyw1rHNvtLuhcTgFs6Y1N08KM3_PyQ0",
+              "candidate_id": "report_08a17a5eeb87a1ebc3c3e02c_candidate_1",
+              "confidence_level": "LOW",
+              "disclaimers": [
+                "People Data Labs Person Search returns candidate profiles; review candidates or add stronger clues before relying on an identity match.",
+                "Social profile fields were extracted from public page data and remain subject to source availability and platform changes."
+              ],
+              "display_name": "alfred carl",
+              "education": "boston university master of science masters; babson f.w. olin graduate school of business master of business administration masters; northeastern university bachelor of science bachelors",
+              "generate_time": 1786423612212,
+              "headline": "hes director of integrated supply chain at hubbell incorporated",
+              "is_best_match": false,
+              "is_top_result": true,
+              "jobs": [
+                "hes director of integrated supply chain at hubbell incorporated"
+              ],
+              "location": "Greater Boston",
+              "match_reasons": [
+                "name"
+              ],
+              "match_score": 35,
+              "more_social_count": 0,
+              "person_id": "pdl:cY3D9O7eAvKc6FXKhbhfqA_0000",
+              "primary_image": {
+                "priority": 1,
+                "reason": "profile_image",
+                "source": "profile",
+                "url": "https://media.licdn.com/dms/image/v2/D4E03AQHt45Znrllfyg/profile-displayphoto-scale_200_200/B4EZtxeoeFIMAc-/0/1767135416795?e=2147483647&v=beta&t=pkk8uc08nJgPqyw1rHNvtLuhcTgFs6Y1N08KM3_PyQ0"
+              },
+              "profile_url": "https://linkedin.com/in/alcarl",
+              "report_expires_at": 1789015592707,
+              "social_links": [
+                {
+                  "platform": "linkedin",
+                  "title": "LinkedIn",
+                  "url": "https://linkedin.com/in/alcarl",
+                  "verification_level": "LIKELY",
+                  "verification_reason": "social_profile_name_match"
+                },
+                {
+                  "platform": "x",
+                  "title": "X",
+                  "url": "https://twitter.com/alfredcarl",
+                  "verification_level": "LIKELY",
+                  "verification_reason": "social_profile_name_match"
+                }
+              ],
+              "social_platforms": [
+                "linkedin",
+                "x"
+              ],
+              "source_provider": "people_data_labs",
+              "source_providers": [
+                "scrapecreators",
+                "people_data_labs"
+              ],
+              "web_links": [
+                {
+                  "platform": "default",
+                  "title": "Default",
+                  "url": "http://alfredcarl.com"
+                },
+                {
+                  "platform": "default",
+                  "title": "Default",
+                  "url": "https://hubbell.com"
+                }
+              ]
+            },
+            "status": "data"
+          }
+        },
+        "update_time": 1786423612212
+      }
+    }
+  ]
+}
+
+2026-08-11 12:47:03,701 | INFO | search_tool.QueryChainLogger | GetTaskCandidateDetail 事件:
+{
+  "sequence_no": 11,
+  "api_sequence_no": 2,
+  "run_id": "run_1d70edb93a664d539c9c5dcc0f2d9742",
+  "input_id": "case-080",
+  "person_name": "Alfred Carl",
+  "task_id": "task_eee1995517bacaf98257e738",
+  "candidate_id": "report_08a17a5eeb87a1ebc3c3e02c_candidate_2",
+  "stage": "GetTaskCandidateDetail",
+  "attempt": 1,
+  "business_success": true
+}
+2026-08-11 12:47:03,701 | INFO | search_tool.QueryChainLogger | GetTaskCandidateDetail 脱敏请求数据: attempt=1
+{
+  "task_id": "task_eee1995517bacaf98257e738",
+  "candidate_id": "report_08a17a5eeb87a1ebc3c3e02c_candidate_2"
+}
+2026-08-11 12:47:03,701 | INFO | search_tool.QueryChainLogger | GetTaskCandidateDetail 响应数据: HTTP 200 elapsed_ms=1152
+{
+  "code": 0,
+  "message": "ok",
+  "request_id": "gw_req_41b7d5eedd1f535ec8bfc17f433dfac2",
+  "trace_id": "trace_a85cb19e4c54d215088071d249a33d0e",
+  "responses": [
+    {
+      "id": "req_0",
+      "success": true,
+      "code": 0,
+      "message": "ok",
+      "data": {
+        "candidate": {
+          "age": 0,
+          "avatar_url": "",
+          "candidate_id": "report_08a17a5eeb87a1ebc3c3e02c_candidate_2",
+          "confidence_level": "LOW",
+          "display_name": "alfred carl",
+          "education": "",
+          "email": "carla@coastalcarolina.edu",
+          "evidence_count": 2,
+          "headline": "project manager at coastal carolina community college",
+          "is_best_match": false,
+          "is_top_result": false,
+          "jobs": [
+            "project manager at coastal carolina community college"
+          ],
+          "location": "santa clara, california, united states",
+          "match_reasons": [
+            "name"
+          ],
+          "match_score": 35,
+          "matched_clue_types": [],
+          "person_id": "pdl:DZghHxeenE6PBgVXbDbPRQ_0000",
+          "profile_url": "https://linkedin.com/in/alfred-carl-9786b1117",
+          "rank_breakdown": {
+            "data_completeness": 0.8,
+            "geo_relevance": 0,
+            "public_influence": 0,
+            "social_activity": 0,
+            "social_richness": 0.1667
+          },
+          "rank_score": 0.3217,
+          "rank_version": "candidate_ranking_v2",
+          "social_links": [
+            {
+              "platform": "linkedin",
+              "url": "https://linkedin.com/in/alfred-carl-9786b1117",
+              "username": "alfred-carl-9786b1117"
+            }
+          ],
+          "social_platforms": [
+            "linkedin"
+          ],
+          "social_source_count": 1,
+          "source": "people_data_labs",
+          "source_provider": "people_data_labs",
+          "source_providers": [
+            "people_data_labs"
+          ],
+          "web_links": [],
+          "web_platforms": [],
+          "web_source_count": 0
+        },
+        "candidate_id": "report_08a17a5eeb87a1ebc3c3e02c_candidate_2",
+        "disclaimers": [
+          "People Data Labs Person Search returns candidate profiles; review candidates or add stronger clues before relying on an identity match.",
+          "Social profile fields were extracted from public page data and remain subject to source availability and platform changes."
+        ],
+        "entitlement_decision": "ALLOW",
+        "evidence": [
+          {
+            "display_name": "alfred carl",
+            "matched_on": [
+              "name"
+            ],
+            "person_id": "pdl:DZghHxeenE6PBgVXbDbPRQ_0000",
+            "provider": "people_data_labs",
+            "provider_person_id": "DZghHxeenE6PBgVXbDbPRQ_0000",
+            "subject_profile_url": "linkedin.com/in/alfred-carl-9786b1117",
+            "type": "pdl_matched_on"
+          },
+          {
+            "display_name": "alfred carl",
+            "field": "linkedin_url",
+            "person_id": "pdl:DZghHxeenE6PBgVXbDbPRQ_0000",
+            "provider": "people_data_labs",
+            "provider_person_id": "DZghHxeenE6PBgVXbDbPRQ_0000",
+            "subject_profile_url": "linkedin.com/in/alfred-carl-9786b1117",
+            "type": "pdl_profile_url",
+            "url": "linkedin.com/in/alfred-carl-9786b1117"
+          }
+        ],
+        "person_id": "pdl:DZghHxeenE6PBgVXbDbPRQ_0000",
+        "social_accounts": [
+          {
+            "display_name": "alfred carl",
+            "person_id": "pdl:DZghHxeenE6PBgVXbDbPRQ_0000",
+            "platform": "linkedin",
+            "profile_url": "https://linkedin.com/in/alfred-carl-9786b1117",
+            "source": "people_data_labs",
+            "url": "https://linkedin.com/in/alfred-carl-9786b1117",
+            "username": "alfred-carl-9786b1117"
+          }
+        ],
+        "task_id": "task_eee1995517bacaf98257e738",
+        "ui_sections": {
+          "insights": {
+            "data": {
+              "count": 0,
+              "items": []
+            },
+            "status": "empty"
+          },
+          "photos": {
+            "data": {
+              "authenticity_photos": [],
+              "baseline_photo_url": "",
+              "face_comparison_status": "not_applicable",
+              "identity_match_rate": 0,
+              "match_photos": []
+            },
+            "status": "empty"
+          },
+          "profile": {
+            "data": {
+              "sections": [
+                {
+                  "items": [
+                    {
+                      "label": "Full Name",
+                      "value": "alfred carl"
+                    },
+                    {
+                      "label": "Location",
+                      "value": "santa clara, california, united states"
+                    },
+                    {
+                      "label": "Email",
+                      "value": "carla@coastalcarolina.edu"
+                    },
+                    {
+                      "label": "Profile URL",
+                      "value": "https://linkedin.com/in/alfred-carl-9786b1117"
+                    }
+                  ],
+                  "title": "Identity"
+                },
+                {
+                  "items": [
+                    {
+                      "label": "Current Role",
+                      "value": "project manager at coastal carolina community college"
+                    }
+                  ],
+                  "title": "Career"
+                },
+                {
+                  "items": [],
+                  "title": "Background"
+                }
+              ]
+            },
+            "status": "data"
+          },
+          "social": {
+            "data": {
+              "private_accounts": [],
+              "profiles": [
+                {
+                  "display_handle": "alfred-carl-9786b1117",
+                  "platform": "linkedin",
+                  "url": "https://linkedin.com/in/alfred-carl-9786b1117",
+                  "username": "alfred-carl-9786b1117"
+                }
+              ]
+            },
+            "status": "data"
+          },
+          "summary": {
+            "data": {
+              "age": null,
+              "avatar_url": "",
+              "candidate_id": "report_08a17a5eeb87a1ebc3c3e02c_candidate_2",
+              "confidence_level": "LOW",
+              "disclaimers": [
+                "People Data Labs Person Search returns candidate profiles; review candidates or add stronger clues before relying on an identity match.",
+                "Social profile fields were extracted from public page data and remain subject to source availability and platform changes."
+              ],
+              "display_name": "alfred carl",
+              "education": "",
+              "generate_time": 1786423612212,
+              "headline": "project manager at coastal carolina community college",
+              "is_best_match": false,
+              "is_top_result": false,
+              "jobs": [
+                "project manager at coastal carolina community college"
+              ],
+              "location": "santa clara, california, united states",
+              "match_reasons": [
+                "name"
+              ],
+              "match_score": 35,
+              "more_social_count": 0,
+              "person_id": "pdl:DZghHxeenE6PBgVXbDbPRQ_0000",
+              "primary_image": null,
+              "profile_url": "https://linkedin.com/in/alfred-carl-9786b1117",
+              "report_expires_at": 1789015592707,
+              "social_links": [
+                {
+                  "platform": "linkedin",
+                  "title": "LinkedIn",
+                  "url": "https://linkedin.com/in/alfred-carl-9786b1117"
+                }
+              ],
+              "social_platforms": [
+                "linkedin"
+              ],
+              "source_provider": "people_data_labs",
+              "source_providers": [
+                "people_data_labs"
+              ],
+              "web_links": []
+            },
+            "status": "data"
+          }
+        },
+        "update_time": 1786423612212
+      }
+    }
+  ]
+}
+
+2026-08-11 12:47:04,840 | INFO | search_tool.QueryChainLogger | GetTaskCandidateDetail 事件:
+{
+  "sequence_no": 12,
+  "api_sequence_no": 3,
+  "run_id": "run_1d70edb93a664d539c9c5dcc0f2d9742",
+  "input_id": "case-080",
+  "person_name": "Alfred Carl",
+  "task_id": "task_eee1995517bacaf98257e738",
+  "candidate_id": "report_08a17a5eeb87a1ebc3c3e02c_candidate_3",
+  "stage": "GetTaskCandidateDetail",
+  "attempt": 1,
+  "business_success": true
+}
+2026-08-11 12:47:04,840 | INFO | search_tool.QueryChainLogger | GetTaskCandidateDetail 脱敏请求数据: attempt=1
+{
+  "task_id": "task_eee1995517bacaf98257e738",
+  "candidate_id": "report_08a17a5eeb87a1ebc3c3e02c_candidate_3"
+}
+2026-08-11 12:47:04,840 | INFO | search_tool.QueryChainLogger | GetTaskCandidateDetail 响应数据: HTTP 200 elapsed_ms=1132
+{
+  "code": 0,
+  "message": "ok",
+  "request_id": "gw_req_5ae2b60056aeff7391280e528980158e",
+  "trace_id": "trace_a8f503e59c5ac682fb293d60b9449e6f",
+  "responses": [
+    {
+      "id": "req_0",
+      "success": true,
+      "code": 0,
+      "message": "ok",
+      "data": {
+        "candidate": {
+          "age": 0,
+          "avatar_url": "",
+          "candidate_id": "report_08a17a5eeb87a1ebc3c3e02c_candidate_3",
+          "confidence_level": "LOW",
+          "display_name": "alfred carl",
+          "education": "",
+          "evidence_count": 3,
+          "headline": "project manager at independent sector",
+          "is_best_match": false,
+          "is_top_result": false,
+          "jobs": [
+            "project manager at independent sector"
+          ],
+          "location": "brooklyn, new york, united states",
+          "match_reasons": [
+            "name"
+          ],
+          "match_score": 35,
+          "matched_clue_types": [],
+          "person_id": "pdl:nvxlsfo4JyiBpiDDc8bZug_0000",
+          "profile_url": "https://linkedin.com/in/alfred-carl-742b3336a",
+          "rank_breakdown": {
+            "data_completeness": 0.7,
+            "geo_relevance": 0,
+            "public_influence": 0,
+            "social_activity": 0,
+            "social_richness": 0.1667
+          },
+          "rank_score": 0.2867,
+          "rank_version": "candidate_ranking_v2",
+          "social_links": [
+            {
+              "platform": "linkedin",
+              "url": "https://linkedin.com/in/alfred-carl-742b3336a",
+              "username": "alfred-carl-742b3336a"
+            }
+          ],
+          "social_platforms": [
+            "linkedin"
+          ],
+          "social_source_count": 1,
+          "source": "people_data_labs",
+          "source_provider": "people_data_labs",
+          "source_providers": [
+            "people_data_labs"
+          ],
+          "web_links": [
+            {
+              "domain": "independentsector.org",
+              "source": "Default",
+              "title": "alfred carl",
+              "url": "https://independentsector.org"
+            }
+          ],
+          "web_platforms": [
+            "Default"
+          ],
+          "web_source_count": 1
+        },
+        "candidate_id": "report_08a17a5eeb87a1ebc3c3e02c_candidate_3",
+        "disclaimers": [
+          "People Data Labs Person Search returns candidate profiles; review candidates or add stronger clues before relying on an identity match.",
+          "Social profile fields were extracted from public page data and remain subject to source availability and platform changes."
+        ],
+        "entitlement_decision": "ALLOW",
+        "evidence": [
+          {
+            "display_name": "alfred carl",
+            "matched_on": [
+              "name"
+            ],
+            "person_id": "pdl:nvxlsfo4JyiBpiDDc8bZug_0000",
+            "provider": "people_data_labs",
+            "provider_person_id": "nvxlsfo4JyiBpiDDc8bZug_0000",
+            "subject_profile_url": "linkedin.com/in/alfred-carl-742b3336a",
+            "type": "pdl_matched_on"
+          },
+          {
+            "display_name": "alfred carl",
+            "field": "linkedin_url",
+            "person_id": "pdl:nvxlsfo4JyiBpiDDc8bZug_0000",
+            "provider": "people_data_labs",
+            "provider_person_id": "nvxlsfo4JyiBpiDDc8bZug_0000",
+            "subject_profile_url": "linkedin.com/in/alfred-carl-742b3336a",
+            "type": "pdl_profile_url",
+            "url": "linkedin.com/in/alfred-carl-742b3336a"
+          },
+          {
+            "display_name": "alfred carl",
+            "field": "job_company_website",
+            "person_id": "pdl:nvxlsfo4JyiBpiDDc8bZug_0000",
+            "provider": "people_data_labs",
+            "provider_person_id": "nvxlsfo4JyiBpiDDc8bZug_0000",
+            "subject_profile_url": "linkedin.com/in/alfred-carl-742b3336a",
+            "type": "pdl_profile_url",
+            "url": "independentsector.org"
+          }
+        ],
+        "person_id": "pdl:nvxlsfo4JyiBpiDDc8bZug_0000",
+        "social_accounts": [
+          {
+            "display_name": "alfred carl",
+            "person_id": "pdl:nvxlsfo4JyiBpiDDc8bZug_0000",
+            "platform": "linkedin",
+            "profile_url": "https://linkedin.com/in/alfred-carl-742b3336a",
+            "source": "people_data_labs",
+            "url": "https://linkedin.com/in/alfred-carl-742b3336a",
+            "username": "alfred-carl-742b3336a"
+          }
+        ],
+        "task_id": "task_eee1995517bacaf98257e738",
+        "ui_sections": {
+          "insights": {
+            "data": {
+              "count": 0,
+              "items": []
+            },
+            "status": "empty"
+          },
+          "photos": {
+            "data": {
+              "authenticity_photos": [],
+              "baseline_photo_url": "",
+              "face_comparison_status": "not_applicable",
+              "identity_match_rate": 0,
+              "match_photos": []
+            },
+            "status": "empty"
+          },
+          "profile": {
+            "data": {
+              "sections": [
+                {
+                  "items": [
+                    {
+                      "label": "Full Name",
+                      "value": "alfred carl"
+                    },
+                    {
+                      "label": "Location",
+                      "value": "brooklyn, new york, united states"
+                    },
+                    {
+                      "label": "Profile URL",
+                      "value": "https://linkedin.com/in/alfred-carl-742b3336a"
+                    }
+                  ],
+                  "title": "Identity"
+                },
+                {
+                  "items": [
+                    {
+                      "label": "Current Role",
+                      "value": "project manager at independent sector"
+                    }
+                  ],
+                  "title": "Career"
+                },
+                {
+                  "items": [],
+                  "title": "Background"
+                }
+              ]
+            },
+            "status": "data"
+          },
+          "social": {
+            "data": {
+              "private_accounts": [],
+              "profiles": [
+                {
+                  "display_handle": "alfred-carl-742b3336a",
+                  "platform": "linkedin",
+                  "url": "https://linkedin.com/in/alfred-carl-742b3336a",
+                  "username": "alfred-carl-742b3336a"
+                }
+              ]
+            },
+            "status": "data"
+          },
+          "summary": {
+            "data": {
+              "age": null,
+              "avatar_url": "",
+              "candidate_id": "report_08a17a5eeb87a1ebc3c3e02c_candidate_3",
+              "confidence_level": "LOW",
+              "disclaimers": [
+                "People Data Labs Person Search returns candidate profiles; review candidates or add stronger clues before relying on an identity match.",
+                "Social profile fields were extracted from public page data and remain subject to source availability and platform changes."
+              ],
+              "display_name": "alfred carl",
+              "education": "",
+              "generate_time": 1786423612212,
+              "headline": "project manager at independent sector",
+              "is_best_match": false,
+              "is_top_result": false,
+              "jobs": [
+                "project manager at independent sector"
+              ],
+              "location": "brooklyn, new york, united states",
+              "match_reasons": [
+                "name"
+              ],
+              "match_score": 35,
+              "more_social_count": 0,
+              "person_id": "pdl:nvxlsfo4JyiBpiDDc8bZug_0000",
+              "primary_image": null,
+              "profile_url": "https://linkedin.com/in/alfred-carl-742b3336a",
+              "report_expires_at": 1789015592707,
+              "social_links": [
+                {
+                  "platform": "linkedin",
+                  "title": "LinkedIn",
+                  "url": "https://linkedin.com/in/alfred-carl-742b3336a"
+                }
+              ],
+              "social_platforms": [
+                "linkedin"
+              ],
+              "source_provider": "people_data_labs",
+              "source_providers": [
+                "people_data_labs"
+              ],
+              "web_links": [
+                {
+                  "platform": "default",
+                  "title": "Default",
+                  "url": "https://independentsector.org"
+                }
+              ]
+            },
+            "status": "data"
+          }
+        },
+        "update_time": 1786423612212
+      }
+    }
+  ]
+}
+
+2026-08-11 12:47:04,862 | INFO | search_tool.QueryChainLogger | QueryEnd 事件:
+{
+  "sequence_no": 13,
+  "api_sequence_no": null,
+  "run_id": "run_1d70edb93a664d539c9c5dcc0f2d9742",
+  "input_id": "case-080",
+  "person_name": "Alfred Carl",
+  "task_id": "task_eee1995517bacaf98257e738",
+  "candidate_id": "",
+  "stage": "QueryEnd",
+  "attempt": 1,
+  "business_success": true
+}
+2026-08-11 12:47:04,862 | INFO | search_tool.QueryChainLogger | QueryEnd 响应数据: HTTP - elapsed_ms=-
+{
+  "status": "SUCCESS",
+  "candidate_count": 3
+}
+

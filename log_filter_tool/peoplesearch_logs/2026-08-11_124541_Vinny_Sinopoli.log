@@ -1,0 +1,2612 @@
+2026-08-11 12:45:41,596 | INFO | search_tool.QueryChainLogger | QueryStart 事件:
+{
+  "sequence_no": 1,
+  "api_sequence_no": null,
+  "run_id": "run_1d70edb93a664d539c9c5dcc0f2d9742",
+  "input_id": "case-078",
+  "person_name": "Vinny Sinopoli",
+  "task_id": "",
+  "candidate_id": "",
+  "stage": "QueryStart",
+  "attempt": 1,
+  "business_success": true
+}
+2026-08-11 12:45:41,596 | INFO | search_tool.QueryChainLogger | QueryStart 脱敏请求数据: attempt=1
+{
+  "input_id": "case-078",
+  "query_stage": "FULL_NAME",
+  "match_strategy": "UNION",
+  "clues": [
+    {
+      "full_name_query": {
+        "full_name": "Vinny Sinopoli"
+      },
+      "type": "FULL_NAME"
+    }
+  ],
+  "additional_details": []
+}
+
+2026-08-11 12:45:42,601 | INFO | search_tool.QueryChainLogger | CreateIntentTask 事件:
+{
+  "sequence_no": 2,
+  "api_sequence_no": 1,
+  "run_id": "run_1d70edb93a664d539c9c5dcc0f2d9742",
+  "input_id": "case-078",
+  "person_name": "Vinny Sinopoli",
+  "task_id": "task_bc0fe7515f6de9ff7acad3c9",
+  "candidate_id": "",
+  "stage": "CreateIntentTask",
+  "attempt": 1,
+  "business_success": true
+}
+2026-08-11 12:45:42,601 | INFO | search_tool.QueryChainLogger | CreateIntentTask 脱敏请求数据: attempt=1
+{
+  "match_strategy": "UNION",
+  "clues": [
+    {
+      "full_name_query": {
+        "full_name": "Vinny Sinopoli"
+      },
+      "type": "FULL_NAME"
+    }
+  ],
+  "additional_details": []
+}
+2026-08-11 12:45:42,601 | INFO | search_tool.QueryChainLogger | CreateIntentTask 响应数据: HTTP 200 elapsed_ms=1000
+{
+  "code": 0,
+  "message": "ok",
+  "request_id": "gw_req_0eeae0b402e641be6c58402f7311a677",
+  "trace_id": "trace_9f595aa44ac516dc4838c16ac8b7b26d",
+  "responses": [
+    {
+      "id": "req_0",
+      "success": true,
+      "code": 0,
+      "message": "ok",
+      "data": {
+        "accepted_query_type": "FULL_NAME",
+        "additional_details": [],
+        "cache_hit": false,
+        "can_start_real_search": true,
+        "clue_types": [
+          "FULL_NAME"
+        ],
+        "entitlement_decision": "ALLOW",
+        "expires_time": 1789015543114,
+        "match_strategy": "UNION",
+        "status": "QUEUED",
+        "task_id": "task_bc0fe7515f6de9ff7acad3c9"
+      }
+    }
+  ]
+}
+
+2026-08-11 12:45:48,607 | INFO | search_tool.QueryChainLogger | GetTask 事件:
+{
+  "sequence_no": 3,
+  "api_sequence_no": 1,
+  "run_id": "run_1d70edb93a664d539c9c5dcc0f2d9742",
+  "input_id": "case-078",
+  "person_name": "Vinny Sinopoli",
+  "task_id": "task_bc0fe7515f6de9ff7acad3c9",
+  "candidate_id": "",
+  "stage": "GetTask",
+  "attempt": 1,
+  "business_success": true
+}
+2026-08-11 12:45:48,607 | INFO | search_tool.QueryChainLogger | GetTask 脱敏请求数据: attempt=1
+{
+  "task_id": "task_bc0fe7515f6de9ff7acad3c9"
+}
+2026-08-11 12:45:48,607 | INFO | search_tool.QueryChainLogger | GetTask 响应数据: HTTP 200 elapsed_ms=996
+{
+  "code": 0,
+  "message": "ok",
+  "request_id": "gw_req_a032999a3f3f824977f6bcaeb420a147",
+  "trace_id": "trace_4f5ac817d2fa25b34b1ed173e139840f",
+  "responses": [
+    {
+      "id": "req_0",
+      "success": true,
+      "code": 0,
+      "message": "ok",
+      "data": {
+        "cache_hit": false,
+        "candidate_confidence_scores": [],
+        "candidate_count": 0,
+        "error_code": "",
+        "failure_reason": "",
+        "has_additional_clues": false,
+        "is_initial_search": true,
+        "no_result_reason": "",
+        "progress": {
+          "display_message": "Searching public sources",
+          "display_percent": 45,
+          "stage": "provider_search"
+        },
+        "provider_execution": "PENDING",
+        "provider_summary": {
+          "cache_hit": false,
+          "primary_provider": "",
+          "provider_execution": "PENDING",
+          "providers": [],
+          "public_sources": false,
+          "source_provider": "",
+          "source_providers": []
+        },
+        "result_type": "",
+        "status": "SEARCHING",
+        "task_id": "task_bc0fe7515f6de9ff7acad3c9",
+        "top_confidence_score": 0,
+        "update_time": 1786423544216
+      }
+    }
+  ]
+}
+
+2026-08-11 12:45:54,695 | INFO | search_tool.QueryChainLogger | GetTask 事件:
+{
+  "sequence_no": 4,
+  "api_sequence_no": 2,
+  "run_id": "run_1d70edb93a664d539c9c5dcc0f2d9742",
+  "input_id": "case-078",
+  "person_name": "Vinny Sinopoli",
+  "task_id": "task_bc0fe7515f6de9ff7acad3c9",
+  "candidate_id": "",
+  "stage": "GetTask",
+  "attempt": 1,
+  "business_success": true
+}
+2026-08-11 12:45:54,695 | INFO | search_tool.QueryChainLogger | GetTask 脱敏请求数据: attempt=1
+{
+  "task_id": "task_bc0fe7515f6de9ff7acad3c9"
+}
+2026-08-11 12:45:54,695 | INFO | search_tool.QueryChainLogger | GetTask 响应数据: HTTP 200 elapsed_ms=1078
+{
+  "code": 0,
+  "message": "ok",
+  "request_id": "gw_req_e69119c6e7147ba9b9fc4489a3af0f1d",
+  "trace_id": "trace_50a4470da8db1e6d41aa6266fd2e1098",
+  "responses": [
+    {
+      "id": "req_0",
+      "success": true,
+      "code": 0,
+      "message": "ok",
+      "data": {
+        "cache_hit": false,
+        "candidate_confidence_scores": [],
+        "candidate_count": 0,
+        "error_code": "",
+        "failure_reason": "",
+        "has_additional_clues": false,
+        "is_initial_search": true,
+        "no_result_reason": "",
+        "progress": {
+          "display_message": "Searching public sources",
+          "display_percent": 45,
+          "stage": "provider_search"
+        },
+        "provider_execution": "PENDING",
+        "provider_summary": {
+          "cache_hit": false,
+          "primary_provider": "",
+          "provider_execution": "PENDING",
+          "providers": [],
+          "public_sources": false,
+          "source_provider": "",
+          "source_providers": []
+        },
+        "result_type": "",
+        "status": "SEARCHING",
+        "task_id": "task_bc0fe7515f6de9ff7acad3c9",
+        "top_confidence_score": 0,
+        "update_time": 1786423544216
+      }
+    }
+  ]
+}
+
+2026-08-11 12:46:00,745 | INFO | search_tool.QueryChainLogger | GetTask 事件:
+{
+  "sequence_no": 5,
+  "api_sequence_no": 3,
+  "run_id": "run_1d70edb93a664d539c9c5dcc0f2d9742",
+  "input_id": "case-078",
+  "person_name": "Vinny Sinopoli",
+  "task_id": "task_bc0fe7515f6de9ff7acad3c9",
+  "candidate_id": "",
+  "stage": "GetTask",
+  "attempt": 1,
+  "business_success": true
+}
+2026-08-11 12:46:00,745 | INFO | search_tool.QueryChainLogger | GetTask 脱敏请求数据: attempt=1
+{
+  "task_id": "task_bc0fe7515f6de9ff7acad3c9"
+}
+2026-08-11 12:46:00,745 | INFO | search_tool.QueryChainLogger | GetTask 响应数据: HTTP 200 elapsed_ms=1038
+{
+  "code": 0,
+  "message": "ok",
+  "request_id": "gw_req_c5b950514ebebf4753e822c98aff2440",
+  "trace_id": "trace_2afaa9f97e675898bbb2b8f713b4b34f",
+  "responses": [
+    {
+      "id": "req_0",
+      "success": true,
+      "code": 0,
+      "message": "ok",
+      "data": {
+        "cache_hit": false,
+        "candidate_confidence_scores": [
+          35
+        ],
+        "candidate_count": 1,
+        "error_code": "",
+        "failure_reason": "",
+        "has_additional_clues": false,
+        "is_initial_search": true,
+        "no_result_reason": "",
+        "progress": {
+          "display_message": "Report ready",
+          "display_percent": 100,
+          "stage": "report_ready"
+        },
+        "provider_execution": "REAL_PROVIDER",
+        "provider_summary": {
+          "cache_hit": false,
+          "primary_provider": "agent_people",
+          "provider_execution": "REAL_PROVIDER",
+          "providers": [
+            "agent_people",
+            "social_profile",
+            "people_data_labs",
+            "search_agent"
+          ],
+          "public_sources": false,
+          "source_provider": "people_data_labs",
+          "source_providers": [
+            "people_data_labs"
+          ]
+        },
+        "result_type": "single",
+        "status": "SUCCEEDED",
+        "task_id": "task_bc0fe7515f6de9ff7acad3c9",
+        "top_confidence_score": 35,
+        "update_time": 1786423555517
+      }
+    }
+  ]
+}
+
+2026-08-11 12:46:03,256 | INFO | search_tool.QueryChainLogger | GetSearchTaskDebug 事件:
+{
+  "sequence_no": 6,
+  "api_sequence_no": 1,
+  "run_id": "run_1d70edb93a664d539c9c5dcc0f2d9742",
+  "input_id": "case-078",
+  "person_name": "Vinny Sinopoli",
+  "task_id": "task_bc0fe7515f6de9ff7acad3c9",
+  "candidate_id": "",
+  "stage": "GetSearchTaskDebug",
+  "attempt": 1,
+  "business_success": true
+}
+2026-08-11 12:46:03,256 | INFO | search_tool.QueryChainLogger | GetSearchTaskDebug 脱敏请求数据: attempt=1
+{
+  "task_id": "task_bc0fe7515f6de9ff7acad3c9",
+  "service": "worker"
+}
+2026-08-11 12:46:03,256 | INFO | search_tool.QueryChainLogger | GetSearchTaskDebug 响应数据: HTTP 200 elapsed_ms=1482
+{
+  "code": 0,
+  "message": "ok",
+  "request_id": "gw_req_3a75e60a1ad30dfd21a2bf7e06a363df",
+  "trace_id": "trace_84cca7f3e80b4e559552c175f1e2ef81",
+  "responses": [
+    {
+      "id": "req_0",
+      "success": true,
+      "code": 0,
+      "message": "ok",
+      "data": {
+        "debug": {
+          "task": {
+            "cache_hit": 0,
+            "client_request_id": "crid-1786423541600-14dc35fbd1",
+            "create_time": "2026-08-11T04:45:43.114Z",
+            "entitlement_decision": "ALLOW",
+            "error_code": "",
+            "expire_time": "2026-09-10T04:45:43.114Z",
+            "finish_time": "2026-08-11T04:45:55.517Z",
+            "id": 1658,
+            "no_result_reason": "",
+            "progress_message": "Report ready",
+            "progress_percent": 100,
+            "progress_stage": "report_ready",
+            "query_type": "FULL_NAME",
+            "refine_feedback_id": "",
+            "report_id": "report_efae16569296d0a241d5e999",
+            "source_report_id": "",
+            "source_task_id": "",
+            "start_time": "2026-08-11T04:45:44.216Z",
+            "status": "SUCCEEDED",
+            "task_id": "task_bc0fe7515f6de9ff7acad3c9",
+            "update_time": "2026-08-11T04:45:55.517Z"
+          },
+          "query": {
+            "additional_details_json": null,
+            "city": "",
+            "clues_json": [
+              {
+                "full_name": "Vinny Sinopoli",
+                "type": "FULL_NAME"
+              }
+            ],
+            "country": "",
+            "create_time": "2026-08-11T04:45:43.114Z",
+            "extra_hint": "",
+            "full_name": "Vinny Sinopoli",
+            "id": 1657,
+            "location_json": null,
+            "location_text": "",
+            "match_strategy": "UNION",
+            "media_asset_id": "",
+            "photo_type_hint": "",
+            "platform_hint": "",
+            "query_id": "query_cf8402b054d05f6061c78222",
+            "query_type": "FULL_NAME",
+            "raw_query": {
+              "additional_details": [],
+              "clues": [
+                {
+                  "full_name_query": {
+                    "full_name": "Vinny Sinopoli"
+                  },
+                  "type": "FULL_NAME"
+                }
+              ],
+              "match_strategy": "UNION"
+            },
+            "task_id": "task_bc0fe7515f6de9ff7acad3c9",
+            "update_time": "2026-08-11T12:45:43.122Z",
+            "url": ""
+          },
+          "diagnosis": {
+            "agent_tool_call_count": 9,
+            "config_estimate_call_count": 0,
+            "conflict_resolution": "",
+            "conflict_warning": "",
+            "conflicting_clue_types": [],
+            "cost_complete": true,
+            "cost_consistent": true,
+            "estimated_cost_microunit": 280152,
+            "estimated_cost_scope": "TASK_TOTAL_ALL_PROVIDER_CALLS",
+            "failed_call_count": 0,
+            "fallback_reason": "LLM_NO_RESULT",
+            "fallback_resolution": "",
+            "fallback_used": true,
+            "final_reason": "",
+            "final_status": "SUCCEEDED",
+            "identity_conflict": false,
+            "identity_resolution_status": "NOT_EVALUATED",
+            "llm_content_bytes": 418,
+            "llm_http_attempt_count": 1,
+            "llm_output_status": "LLM_OUTPUT_COMPLETE",
+            "llm_partial_candidates": 0,
+            "llm_partial_response": false,
+            "llm_partial_result_usable": false,
+            "llm_partial_sources": 0,
+            "llm_reasoning_bytes": 0,
+            "llm_recoverable_candidates": 0,
+            "llm_repair_retry_used": false,
+            "llm_truncation_detected": false,
+            "no_result_call_count": 6,
+            "partial_cost_call_count": 0,
+            "pdl_billing_unit_count": 1,
+            "pdl_called": true,
+            "pdl_candidates": [
+              {
+                "candidate_id": "pdl:58-eYlAth7ExsYB1XgEtGA_0000",
+                "decision": "ELIGIBLE",
+                "display_name": "vinny sinopoli",
+                "match_score": 35,
+                "matched_clue_types": [
+                  "FULL_NAME"
+                ],
+                "profile_fetch_called": false,
+                "profile_fetch_cost_microunit": 0,
+                "rejection_reason": "",
+                "selected": true,
+                "social_links": [
+                  "https://linkedin.com/in/vinny-sinopoli-465ab865",
+                  "https://linkedin.com/in/vinnie-sinopoli-465ab865"
+                ],
+                "stage": "person_search"
+              }
+            ],
+            "pdl_decision": "called",
+            "pdl_estimated_cost_microunit": 280000,
+            "pdl_external_request_count": 1,
+            "pdl_identify_call_count": 0,
+            "pdl_identify_called": false,
+            "pdl_identify_candidate_count": 0,
+            "pdl_not_called_reason": "",
+            "pdl_person_search_call_count": 1,
+            "pdl_person_search_called": true,
+            "pdl_person_search_returned_profile_count": 1,
+            "pdl_pipeline_stages": [
+              {
+                "api_request_count": 1,
+                "billed_quantity": 1,
+                "billing_operation": "person_search_profile",
+                "candidate_count": 1,
+                "operation": "person_search",
+                "status": "success",
+                "unit_type": "returned_profile"
+              }
+            ],
+            "pdl_profile_fetch_count": 0,
+            "pdl_rejected_candidate_count": 0,
+            "pdl_rejection_reasons": [],
+            "pdl_skip_reason": "",
+            "pdl_skipped": false,
+            "pdl_usable_candidate_count": 1,
+            "people_fallback_reason": "LLM_NO_RESULT",
+            "people_fallback_used": true,
+            "pre_pdl_estimated_cost_microunit": 152,
+            "provider_request_count": 1,
+            "public_figure_eligibility": "eligible",
+            "public_figure_eligible": true,
+            "public_figure_evaluated": true,
+            "public_figure_local": "miss",
+            "public_figure_local_known": false,
+            "public_figure_remote": "miss",
+            "public_figure_remote_ambiguous": false,
+            "public_figure_remote_called": true,
+            "public_figure_remote_total": 0,
+            "public_figure_remote_usable": "unusable",
+            "public_figure_remote_usable_count": 0,
+            "public_figure_selected_wikidata_id": "",
+            "public_figure_skip_reason": "PRIMARY_NO_RESULT",
+            "report_estimated_cost_microunit": 280152,
+            "result_confidence_level": "LOW",
+            "result_pdl_skip_reason": "",
+            "result_pdl_skipped": false,
+            "result_provider": "people_data_labs",
+            "result_source_provider": "",
+            "result_stop_reason": "completed",
+            "reverse_image_estimated_cost_microunit": 0,
+            "reverse_image_fallback_reasons": [],
+            "reverse_image_fallback_used": false,
+            "reverse_image_final_provider": "",
+            "reverse_image_primary_provider": "",
+            "reverse_image_provider_attempt_count": 0,
+            "reverse_image_status": "NOT_PLANNED",
+            "reverse_image_stop_reason": "NOT_PLANNED",
+            "search_result_cache": "miss",
+            "social_identity_support": "",
+            "social_link_owner_names": [],
+            "social_profile_attempted_count": 2,
+            "social_profile_depth_skipped_count": 0,
+            "social_profile_duplicate_count": 3,
+            "social_profile_error_count": 0,
+            "social_profile_execution_skipped_count": 0,
+            "social_profile_limit_skipped_count": 0,
+            "social_profile_merged_candidate_count": 0,
+            "social_profile_no_result_count": 2,
+            "social_profile_planned_count": 2,
+            "social_profile_queue_decision_truncated_count": 0,
+            "social_profile_queue_decisions": [
+              {
+                "canonical_url": "https://linkedin.com/in/vinny-sinopoli-465ab865",
+                "decision": "CALLED",
+                "depth": 1,
+                "discovered_by": "PDL",
+                "error_code": "",
+                "no_result_reason": "PROFILE_PRIVATE_OR_UNAVAILABLE",
+                "outcome": "NO_RESULT",
+                "parent_candidate_id": "pdl:58-eYlAth7ExsYB1XgEtGA_0000",
+                "parent_evidence_id": "",
+                "parent_provider": "people_data_labs",
+                "parent_url": "",
+                "platform": "linkedin",
+                "raw_url": "linkedin.com/in/vinny-sinopoli-465ab865",
+                "skip_reason": ""
+              },
+              {
+                "canonical_url": "https://linkedin.com/in/vinny-sinopoli-465ab865",
+                "decision": "SKIPPED",
+                "depth": 1,
+                "discovered_by": "PDL",
+                "error_code": "",
+                "no_result_reason": "",
+                "outcome": "",
+                "parent_candidate_id": "pdl:58-eYlAth7ExsYB1XgEtGA_0000",
+                "parent_evidence_id": "",
+                "parent_provider": "people_data_labs",
+                "parent_url": "",
+                "platform": "linkedin",
+                "raw_url": "linkedin.com/in/vinny-sinopoli-465ab865",
+                "skip_reason": "DUPLICATE"
+              },
+              {
+                "canonical_url": "https://linkedin.com/in/vinnie-sinopoli-465ab865",
+                "decision": "CALLED",
+                "depth": 1,
+                "discovered_by": "PDL",
+                "error_code": "",
+                "no_result_reason": "PROFILE_PRIVATE_OR_UNAVAILABLE",
+                "outcome": "NO_RESULT",
+                "parent_candidate_id": "pdl:58-eYlAth7ExsYB1XgEtGA_0000",
+                "parent_evidence_id": "",
+                "parent_provider": "people_data_labs",
+                "parent_url": "",
+                "platform": "linkedin",
+                "raw_url": "linkedin.com/in/vinnie-sinopoli-465ab865",
+                "skip_reason": ""
+              },
+              {
+                "canonical_url": "https://linkedin.com/in/vinny-sinopoli-465ab865",
+                "decision": "SKIPPED",
+                "depth": 1,
+                "discovered_by": "PDL",
+                "error_code": "",
+                "no_result_reason": "",
+                "outcome": "",
+                "parent_candidate_id": "",
+                "parent_evidence_id": "",
+                "parent_provider": "people_data_labs",
+                "parent_url": "",
+                "platform": "linkedin",
+                "raw_url": "linkedin.com/in/vinny-sinopoli-465ab865",
+                "skip_reason": "DUPLICATE"
+              },
+              {
+                "canonical_url": "https://linkedin.com/in/vinnie-sinopoli-465ab865",
+                "decision": "SKIPPED",
+                "depth": 1,
+                "discovered_by": "PDL",
+                "error_code": "",
+                "no_result_reason": "",
+                "outcome": "",
+                "parent_candidate_id": "",
+                "parent_evidence_id": "",
+                "parent_provider": "people_data_labs",
+                "parent_url": "",
+                "platform": "linkedin",
+                "raw_url": "linkedin.com/in/vinnie-sinopoli-465ab865",
+                "skip_reason": "DUPLICATE"
+              }
+            ],
+            "social_profile_requested_identity_matched": false,
+            "social_profile_skip_reason": "",
+            "social_profile_status": "NO_RESULT",
+            "social_profile_success_count": 0,
+            "social_profile_unmatched_profile_count": 0,
+            "social_profile_unsupported_count": 0,
+            "status_consistent": true,
+            "stop_reason": "FALLBACK_RESULT_USABLE",
+            "successful_call_count": 3,
+            "task_total_estimated_cost_microunit": 280152,
+            "unmatched_clue_types": [],
+            "unpriced_call_count": 0,
+            "unverified_requested_social_identity": false,
+            "warnings": []
+          },
+          "provider_requests": [
+            {
+              "create_time": "2026-08-11T04:45:55.475Z",
+              "error_code": "",
+              "error_message": "",
+              "finish_time": "2026-08-11T04:45:55.475Z",
+              "id": 1710,
+              "idempotency_key": "task_bc0fe7515f6de9ff7acad3c9:search_agent:full_name",
+              "provider": "search_agent",
+              "provider_request_id": "provider_req_task_bc0fe7515f6de9ff7acad3c9_sear_56c4e98a67f8515b",
+              "request_payload": {
+                "clue_types": [
+                  "FULL_NAME"
+                ],
+                "max_depth": 1,
+                "max_estimated_cost_microunit": 0,
+                "max_photo_inputs": 5,
+                "max_social_urls": 6,
+                "max_tool_steps": 20,
+                "policy_version": "v1",
+                "provider": "search_agent",
+                "providers": [
+                  "agent_people",
+                  "social_profile"
+                ],
+                "query_id": "query_cf8402b054d05f6061c78222",
+                "query_type": "FULL_NAME",
+                "task_id": "task_bc0fe7515f6de9ff7acad3c9",
+                "timeout_ms": 90000
+              },
+              "request_type": "FULL_NAME",
+              "response_ref": "cos://tool-srv-people-insight-1349591044/provider-responses/search_agent/20260811/task_bc0fe7515f6de9ff7acad3c9/gw_req_0eeae0b402e641be6c58402f7311a677/succeeded-95d971d2f241f405.json",
+              "start_time": "2026-08-11T04:45:44.224Z",
+              "status": "succeeded",
+              "task_id": "task_bc0fe7515f6de9ff7acad3c9",
+              "update_time": "2026-08-11T04:45:55.475Z"
+            }
+          ],
+          "agent_tool_calls": [
+            {
+              "billable_units": 0,
+              "billing_currency": "",
+              "billing_unit": "",
+              "billing_usage_json": [],
+              "cache_hit": 0,
+              "call_id": "atc_0f7964ffffc990f08383a03ebd6afd92",
+              "cost_breakdown_json": [],
+              "cost_status": "NON_BILLABLE",
+              "create_time": "2026-08-11T04:45:55.45Z",
+              "error_code": "",
+              "error_message": "",
+              "estimated_cost_microunit": 0,
+              "finish_time": "2026-08-11T04:45:55.45Z",
+              "http_status": 404,
+              "non_billable_reason": "provider_reported_zero_usage",
+              "policy_version": "v1",
+              "pricing_rule_id": "",
+              "pricing_version": "",
+              "provider": "social_profile",
+              "provider_operation": "scrapecreators_linkedin_profile",
+              "query_id": "query_cf8402b054d05f6061c78222",
+              "request_fingerprint": "6df98eb7255b5e2607a8d24e784a3226825ed6ae1405161e54d555121d42395b",
+              "request_summary": {
+                "canonical_url": "https://linkedin.com/in/vinnie-sinopoli-465ab865",
+                "clue_types": [
+                  "FULL_NAME"
+                ],
+                "detail_count": 0,
+                "has_location": false,
+                "has_media": false,
+                "has_name": true,
+                "has_url": true,
+                "input_url": "https://linkedin.com/in/vinnie-sinopoli-465ab865",
+                "platform": "linkedin",
+                "policy_version": "v1",
+                "query_type": "SOCIAL_LINK"
+              },
+              "request_type": "SOCIAL_LINK",
+              "response_ref": "cos://tool-srv-people-insight-1349591044/provider-responses/social_profile/20260811/task_bc0fe7515f6de9ff7acad3c9/gw_req_0eeae0b402e641be6c58402f7311a677/no_result-414c31aef3b2f3f9.json",
+              "response_summary": {
+                "cache_hit": false,
+                "confidence_level": "",
+                "evidence_count": 0,
+                "found": false,
+                "no_result_reason": "PROFILE_PRIVATE_OR_UNAVAILABLE",
+                "profile_count": 0,
+                "provider": "social_profile",
+                "social_account_count": 0
+              },
+              "start_time": "2026-08-11T04:45:52.267Z",
+              "status": "no_result",
+              "task_id": "task_bc0fe7515f6de9ff7acad3c9",
+              "worker_id": "worker-79f769d947-jcpk7"
+            },
+            {
+              "billable_units": 0,
+              "billing_currency": "",
+              "billing_unit": "",
+              "billing_usage_json": [],
+              "cache_hit": 0,
+              "call_id": "atc_cd25029af6dd0c89d3bf849f458c8fe0",
+              "cost_breakdown_json": [],
+              "cost_status": "NON_BILLABLE",
+              "create_time": "2026-08-11T04:45:52.246Z",
+              "error_code": "",
+              "error_message": "",
+              "estimated_cost_microunit": 0,
+              "finish_time": "2026-08-11T04:45:52.246Z",
+              "http_status": 404,
+              "non_billable_reason": "provider_reported_zero_usage",
+              "policy_version": "v1",
+              "pricing_rule_id": "",
+              "pricing_version": "",
+              "provider": "social_profile",
+              "provider_operation": "scrapecreators_linkedin_profile",
+              "query_id": "query_cf8402b054d05f6061c78222",
+              "request_fingerprint": "2ba9931692cc0fea04a0b0f07e4a8f5c9e0594185a6dfbb860e6d515eeae07c5",
+              "request_summary": {
+                "canonical_url": "https://linkedin.com/in/vinny-sinopoli-465ab865",
+                "clue_types": [
+                  "FULL_NAME"
+                ],
+                "detail_count": 0,
+                "has_location": false,
+                "has_media": false,
+                "has_name": true,
+                "has_url": true,
+                "input_url": "https://linkedin.com/in/vinny-sinopoli-465ab865",
+                "platform": "linkedin",
+                "policy_version": "v1",
+                "query_type": "SOCIAL_LINK"
+              },
+              "request_type": "SOCIAL_LINK",
+              "response_ref": "cos://tool-srv-people-insight-1349591044/provider-responses/social_profile/20260811/task_bc0fe7515f6de9ff7acad3c9/gw_req_0eeae0b402e641be6c58402f7311a677/no_result-414c31aef3b2f3f9.json",
+              "response_summary": {
+                "cache_hit": false,
+                "confidence_level": "",
+                "evidence_count": 0,
+                "found": false,
+                "no_result_reason": "PROFILE_PRIVATE_OR_UNAVAILABLE",
+                "profile_count": 0,
+                "provider": "social_profile",
+                "social_account_count": 0
+              },
+              "start_time": "2026-08-11T04:45:48.092Z",
+              "status": "no_result",
+              "task_id": "task_bc0fe7515f6de9ff7acad3c9",
+              "worker_id": "worker-79f769d947-jcpk7"
+            },
+            {
+              "billable_units": 0,
+              "billing_currency": "",
+              "billing_unit": "",
+              "billing_usage_json": [],
+              "cache_hit": 0,
+              "call_id": "atc_b7d754ccfec5da019b93d99cacbec1db",
+              "cost_breakdown_json": [],
+              "cost_status": "NON_BILLABLE",
+              "create_time": "2026-08-11T04:45:48.089Z",
+              "error_code": "",
+              "error_message": "",
+              "estimated_cost_microunit": 0,
+              "finish_time": "2026-08-11T04:45:48.089Z",
+              "http_status": 0,
+              "non_billable_reason": "aggregated_by_child_calls",
+              "policy_version": "v1",
+              "pricing_rule_id": "",
+              "pricing_version": "",
+              "provider": "agent_people",
+              "provider_operation": "request",
+              "query_id": "query_cf8402b054d05f6061c78222",
+              "request_fingerprint": "5381d77b44b41bf925cd95b02f78781e42c64a989f21250a8976d6fc00594fd1",
+              "request_summary": {
+                "clue_types": [
+                  "FULL_NAME"
+                ],
+                "detail_count": 0,
+                "has_location": false,
+                "has_media": false,
+                "has_name": true,
+                "has_url": false,
+                "policy_version": "v1",
+                "query_type": "FULL_NAME"
+              },
+              "request_type": "FULL_NAME",
+              "response_ref": "",
+              "response_summary": {
+                "cache_hit": false,
+                "confidence_level": "LOW",
+                "evidence_count": 3,
+                "fallback_reason": "LLM_NO_RESULT",
+                "found": true,
+                "no_result_reason": "",
+                "pdl_billing_unit_count": 1,
+                "pdl_candidates": [
+                  {
+                    "candidate_id": "pdl:58-eYlAth7ExsYB1XgEtGA_0000",
+                    "decision": "ELIGIBLE",
+                    "display_name": "vinny sinopoli",
+                    "match_score": 35,
+                    "matched_clue_types": [
+                      "FULL_NAME"
+                    ],
+                    "profile_fetch_called": false,
+                    "profile_fetch_cost_microunit": 0,
+                    "rejection_reason": "",
+                    "selected": true,
+                    "social_links": [
+                      "https://linkedin.com/in/vinny-sinopoli-465ab865",
+                      "https://linkedin.com/in/vinnie-sinopoli-465ab865"
+                    ],
+                    "stage": "person_search"
+                  }
+                ],
+                "pdl_cost_scope": "PDL_PROVIDER_CALL_ALL_STAGES",
+                "pdl_estimated_cost_microunit": 280000,
+                "pdl_external_request_count": 1,
+                "pdl_identify_call_count": 0,
+                "pdl_identify_called": false,
+                "pdl_identify_candidate_count": 0,
+                "pdl_person_search_call_count": 1,
+                "pdl_person_search_called": true,
+                "pdl_person_search_returned_profile_count": 1,
+                "pdl_pipeline_stages": [
+                  {
+                    "api_request_count": 1,
+                    "billed_quantity": 1,
+                    "billing_operation": "person_search_profile",
+                    "candidate_count": 1,
+                    "operation": "person_search",
+                    "status": "success",
+                    "unit_type": "returned_profile"
+                  }
+                ],
+                "pdl_profile_fetch_count": 0,
+                "pdl_rejected_candidate_count": 0,
+                "pdl_rejection_reasons": [],
+                "pdl_usable_candidate_count": 1,
+                "people_pipeline_cost_scope": "LLM_PUBLIC_FIGURE_AND_PDL",
+                "people_pipeline_estimated_cost_microunit": 280152,
+                "pre_pdl_estimated_cost_microunit": 152,
+                "profile_count": 1,
+                "provider": "agent_people",
+                "provider_runs": [
+                  {
+                    "found": false,
+                    "no_result_reason": "NO_STRONG_IDENTIFIER",
+                    "provider": "person_entity_store"
+                  },
+                  {
+                    "found": false,
+                    "no_result_reason": "NO_MATCH",
+                    "provider": "llm_search"
+                  },
+                  {
+                    "found": true,
+                    "provider": "people_data_labs"
+                  }
+                ],
+                "social_account_count": 2,
+                "stop_reason": "FALLBACK_RESULT_USABLE"
+              },
+              "start_time": "2026-08-11T04:45:44.224Z",
+              "status": "success",
+              "task_id": "task_bc0fe7515f6de9ff7acad3c9",
+              "worker_id": "worker-79f769d947-jcpk7"
+            },
+            {
+              "billable_units": 1,
+              "billing_currency": "USD",
+              "billing_unit": "returned_profile",
+              "billing_usage_json": [
+                {
+                  "operation": "person_search_profile",
+                  "quantity": 1,
+                  "unit_type": "returned_profile"
+                }
+              ],
+              "cache_hit": 0,
+              "call_id": "atc_6de9be81dced7a8c6b5f509f32a7fc03",
+              "cost_breakdown_json": [
+                {
+                  "billing_model": "PER_UNIT",
+                  "currency": "USD",
+                  "estimated_cost_microunit": 280000,
+                  "operation": "person_search_profile",
+                  "pricing_rule_id": "price_pdl_search_tier1_20260729",
+                  "pricing_version": "2026-07-29-pdl-self-serve-tier1",
+                  "quantity": 1,
+                  "status": "CALCULATED",
+                  "unit_type": "returned_profile"
+                }
+              ],
+              "cost_status": "CALCULATED",
+              "create_time": "2026-08-11T04:45:48.058Z",
+              "error_code": "",
+              "error_message": "",
+              "estimated_cost_microunit": 280000,
+              "finish_time": "2026-08-11T04:45:48.058Z",
+              "http_status": 0,
+              "non_billable_reason": "",
+              "policy_version": "v1",
+              "pricing_rule_id": "price_pdl_search_tier1_20260729",
+              "pricing_version": "2026-07-29-pdl-self-serve-tier1",
+              "provider": "people_data_labs",
+              "provider_operation": "person_search_profile",
+              "query_id": "query_cf8402b054d05f6061c78222",
+              "request_fingerprint": "6b0cdbcd41adc629ab98a8c07e609122202deaafb596ee451ceb1530fd3fb0e0",
+              "request_summary": {
+                "clue_types": [
+                  "FULL_NAME"
+                ],
+                "detail_count": 0,
+                "has_location": false,
+                "has_media": false,
+                "has_name": true,
+                "has_url": false,
+                "policy_version": "v1",
+                "query_type": "FULL_NAME"
+              },
+              "request_type": "FULL_NAME",
+              "response_ref": "cos://tool-srv-people-insight-1349591044/provider-responses/people_data_labs/20260811/task_bc0fe7515f6de9ff7acad3c9/gw_req_0eeae0b402e641be6c58402f7311a677/success-3d50d95f12893582.json",
+              "response_summary": {
+                "cache_hit": false,
+                "confidence_level": "LOW",
+                "evidence_count": 3,
+                "found": true,
+                "no_result_reason": "",
+                "pdl_billing_unit_count": 1,
+                "pdl_candidates": [
+                  {
+                    "candidate_id": "pdl:58-eYlAth7ExsYB1XgEtGA_0000",
+                    "decision": "ELIGIBLE",
+                    "display_name": "vinny sinopoli",
+                    "match_score": 35,
+                    "matched_clue_types": [
+                      "FULL_NAME"
+                    ],
+                    "profile_fetch_called": false,
+                    "profile_fetch_cost_microunit": 0,
+                    "rejection_reason": "",
+                    "selected": true,
+                    "social_links": [
+                      "https://linkedin.com/in/vinny-sinopoli-465ab865",
+                      "https://linkedin.com/in/vinnie-sinopoli-465ab865"
+                    ],
+                    "stage": "person_search"
+                  }
+                ],
+                "pdl_cost_scope": "PDL_PROVIDER_CALL_ALL_STAGES",
+                "pdl_estimated_cost_microunit": 280000,
+                "pdl_external_request_count": 1,
+                "pdl_identify_call_count": 0,
+                "pdl_identify_called": false,
+                "pdl_identify_candidate_count": 0,
+                "pdl_person_search_call_count": 1,
+                "pdl_person_search_called": true,
+                "pdl_person_search_returned_profile_count": 1,
+                "pdl_pipeline_stages": [
+                  {
+                    "api_request_count": 1,
+                    "billed_quantity": 1,
+                    "billing_operation": "person_search_profile",
+                    "candidate_count": 1,
+                    "operation": "person_search",
+                    "status": "success",
+                    "unit_type": "returned_profile"
+                  }
+                ],
+                "pdl_profile_fetch_count": 0,
+                "pdl_rejected_candidate_count": 0,
+                "pdl_rejection_reasons": [],
+                "pdl_usable_candidate_count": 1,
+                "profile_count": 1,
+                "provider": "people_data_labs",
+                "social_account_count": 2
+              },
+              "start_time": "2026-08-11T04:45:47.823Z",
+              "status": "success",
+              "task_id": "task_bc0fe7515f6de9ff7acad3c9",
+              "worker_id": "worker-79f769d947-jcpk7"
+            },
+            {
+              "billable_units": 0,
+              "billing_currency": "",
+              "billing_unit": "",
+              "billing_usage_json": [],
+              "cache_hit": 0,
+              "call_id": "atc_eed7a714b74832f867a400d5ca57ddbd",
+              "cost_breakdown_json": [],
+              "cost_status": "NON_BILLABLE",
+              "create_time": "2026-08-11T04:45:47.822Z",
+              "error_code": "",
+              "error_message": "",
+              "estimated_cost_microunit": 0,
+              "finish_time": "2026-08-11T04:45:47.822Z",
+              "http_status": 0,
+              "non_billable_reason": "public_source_no_direct_cost",
+              "policy_version": "v1",
+              "pricing_rule_id": "",
+              "pricing_version": "",
+              "provider": "public_figure",
+              "provider_operation": "remote_lookup",
+              "query_id": "query_cf8402b054d05f6061c78222",
+              "request_fingerprint": "ec0488e039926f360999a3915b1e3092531dfa9d43bfca939a63d35b718337d3",
+              "request_summary": {
+                "clue_types": [
+                  "FULL_NAME"
+                ],
+                "detail_count": 0,
+                "has_location": false,
+                "has_media": false,
+                "has_name": true,
+                "has_url": false,
+                "policy_version": "v1",
+                "query_type": "FULL_NAME",
+                "stage": "remote_lookup"
+              },
+              "request_type": "FULL_NAME",
+              "response_ref": "",
+              "response_summary": {
+                "ambiguous": false,
+                "cache_hit": false,
+                "confidence_level": "",
+                "decision_reason": "REMOTE_NO_MATCH",
+                "eligible": true,
+                "evidence_count": 0,
+                "found": false,
+                "local_known": false,
+                "no_result_reason": "NO_PUBLIC_FIGURE_MATCH",
+                "profile_count": 0,
+                "provider": "public_figure",
+                "remote_called": true,
+                "remote_enabled": true,
+                "result_usable": false,
+                "social_account_count": 0,
+                "stage": "remote_lookup",
+                "total_profile_count": 0,
+                "usable_profile_count": 0
+              },
+              "start_time": "2026-08-11T04:45:47.693Z",
+              "status": "no_result",
+              "task_id": "task_bc0fe7515f6de9ff7acad3c9",
+              "worker_id": "worker-79f769d947-jcpk7"
+            },
+            {
+              "billable_units": 0,
+              "billing_currency": "",
+              "billing_unit": "",
+              "billing_usage_json": [],
+              "cache_hit": 0,
+              "call_id": "atc_907b3f88fc0a3a5a9500f6516b2215b5",
+              "cost_breakdown_json": [],
+              "cost_status": "NON_BILLABLE",
+              "create_time": "2026-08-11T04:45:47.691Z",
+              "error_code": "",
+              "error_message": "",
+              "estimated_cost_microunit": 0,
+              "finish_time": "2026-08-11T04:45:47.691Z",
+              "http_status": 0,
+              "non_billable_reason": "public_source_no_direct_cost",
+              "policy_version": "v1",
+              "pricing_rule_id": "",
+              "pricing_version": "",
+              "provider": "public_figure",
+              "provider_operation": "route_decision",
+              "query_id": "query_cf8402b054d05f6061c78222",
+              "request_fingerprint": "8242df7b07f82851187a5b84b982c4770593e4b54fd95e3a62b35789f76ebb7c",
+              "request_summary": {
+                "clue_types": [
+                  "FULL_NAME"
+                ],
+                "detail_count": 0,
+                "has_location": false,
+                "has_media": false,
+                "has_name": true,
+                "has_url": false,
+                "policy_version": "v1",
+                "query_type": "FULL_NAME",
+                "stage": "route_decision"
+              },
+              "request_type": "FULL_NAME",
+              "response_ref": "",
+              "response_summary": {
+                "cache_hit": false,
+                "confidence_level": "LOW",
+                "decision_reason": "PRIMARY_NO_RESULT",
+                "eligible": true,
+                "evidence_count": 0,
+                "found": false,
+                "local_known": false,
+                "no_result_reason": "NO_MATCH",
+                "profile_count": 0,
+                "provider": "llm_search",
+                "remote_called": true,
+                "remote_enabled": true,
+                "social_account_count": 0,
+                "stage": "route_decision"
+              },
+              "start_time": "2026-08-11T04:45:47.691Z",
+              "status": "success",
+              "task_id": "task_bc0fe7515f6de9ff7acad3c9",
+              "worker_id": "worker-79f769d947-jcpk7"
+            },
+            {
+              "billable_units": 0,
+              "billing_currency": "",
+              "billing_unit": "",
+              "billing_usage_json": [],
+              "cache_hit": 0,
+              "call_id": "atc_140578867299eaf690081b308c4b5005",
+              "cost_breakdown_json": [],
+              "cost_status": "NON_BILLABLE",
+              "create_time": "2026-08-11T04:45:47.69Z",
+              "error_code": "",
+              "error_message": "",
+              "estimated_cost_microunit": 0,
+              "finish_time": "2026-08-11T04:45:47.69Z",
+              "http_status": 0,
+              "non_billable_reason": "aggregated_by_backend_attempts",
+              "policy_version": "v1",
+              "pricing_rule_id": "",
+              "pricing_version": "",
+              "provider": "llm_search",
+              "provider_operation": "request",
+              "query_id": "query_cf8402b054d05f6061c78222",
+              "request_fingerprint": "3ecdd6f5a661c773073664435ce73cd2bdeeee26480b68ea2d2d302e37ffc403",
+              "request_summary": {
+                "clue_types": [
+                  "FULL_NAME"
+                ],
+                "detail_count": 0,
+                "has_location": false,
+                "has_media": false,
+                "has_name": true,
+                "has_url": false,
+                "policy_version": "v1",
+                "query_type": "FULL_NAME"
+              },
+              "request_type": "FULL_NAME",
+              "response_ref": "",
+              "response_summary": {
+                "cache_hit": false,
+                "confidence_level": "LOW",
+                "evidence_count": 0,
+                "found": false,
+                "no_result_reason": "NO_MATCH",
+                "profile_count": 0,
+                "provider": "llm_search",
+                "social_account_count": 0
+              },
+              "start_time": "2026-08-11T04:45:44.226Z",
+              "status": "no_result",
+              "task_id": "task_bc0fe7515f6de9ff7acad3c9",
+              "worker_id": "worker-79f769d947-jcpk7"
+            },
+            {
+              "billable_units": 973,
+              "billing_currency": "USD",
+              "billing_unit": "token",
+              "billing_usage_json": [
+                {
+                  "input_tokens": 866,
+                  "operation": "chat_completions/deepseek-v4-flash-202605",
+                  "output_tokens": 107,
+                  "unit_type": "token"
+                }
+              ],
+              "cache_hit": 0,
+              "call_id": "atc_d228aa44323376e9b15967914e6d9051",
+              "cost_breakdown_json": [
+                {
+                  "billing_model": "TOKEN",
+                  "currency": "USD",
+                  "estimated_cost_microunit": 152,
+                  "input_tokens": 866,
+                  "operation": "chat_completions/deepseek-v4-flash-202605",
+                  "output_tokens": 107,
+                  "pricing_rule_id": "price_tencent_deepseek_v4_flash_20260729",
+                  "pricing_version": "2026-07-29-tencent-intl-public",
+                  "status": "CALCULATED",
+                  "unit_type": "token"
+                }
+              ],
+              "cost_status": "CALCULATED",
+              "create_time": "2026-08-11T04:45:47.666Z",
+              "error_code": "",
+              "error_message": "",
+              "estimated_cost_microunit": 152,
+              "finish_time": "2026-08-11T04:45:47.666Z",
+              "http_status": 200,
+              "non_billable_reason": "",
+              "policy_version": "v1",
+              "pricing_rule_id": "price_tencent_deepseek_v4_flash_20260729",
+              "pricing_version": "2026-07-29-tencent-intl-public",
+              "provider": "llm_search:deepseek",
+              "provider_operation": "chat_completions/deepseek-v4-flash-202605",
+              "query_id": "query_cf8402b054d05f6061c78222",
+              "request_fingerprint": "b7be271abed93ab9bbe8d088327ccc8b1539d2a3c011da0043dec65e3e3f66a9",
+              "request_summary": {
+                "attempt_index": 1,
+                "backend": "openai_compatible",
+                "decode_retry": false,
+                "max_tokens": 4096,
+                "model": "deepseek-v4-flash-202605",
+                "provider": "deepseek",
+                "reasoning_effort": "",
+                "thinking": "disabled"
+              },
+              "request_type": "FULL_NAME",
+              "response_ref": "cos://tool-srv-people-insight-1349591044/provider-responses/llm_search_deepseek/20260811/task_bc0fe7515f6de9ff7acad3c9/gw_req_0eeae0b402e641be6c58402f7311a677/no_result-ea6f90b343002d6f.json",
+              "response_summary": {
+                "attempt_index": 1,
+                "cache_hit": false,
+                "cached_prompt_tokens": 0,
+                "completion_tokens": 107,
+                "confidence_level": "LOW",
+                "content_bytes": 418,
+                "decode_failure_position": 0,
+                "decode_retry": false,
+                "estimated_cost_microunit": 0,
+                "evidence_count": 0,
+                "finish_reason": "stop",
+                "found": false,
+                "http_attempt_count": 1,
+                "max_tokens": 4096,
+                "max_tokens_reached": false,
+                "no_result_reason": "NO_MATCH",
+                "output_status": "LLM_OUTPUT_COMPLETE",
+                "partial_candidate_count": 0,
+                "partial_response_present": false,
+                "partial_result_usable": false,
+                "partial_source_count": 0,
+                "profile_count": 0,
+                "prompt_tokens": 866,
+                "provider": "llm_search",
+                "reasoning_bytes": 0,
+                "recoverable_candidate_count": 0,
+                "social_account_count": 0,
+                "total_tokens": 973
+              },
+              "start_time": "2026-08-11T04:45:44.229Z",
+              "status": "no_result",
+              "task_id": "task_bc0fe7515f6de9ff7acad3c9",
+              "worker_id": "worker-79f769d947-jcpk7"
+            },
+            {
+              "billable_units": 0,
+              "billing_currency": "",
+              "billing_unit": "",
+              "billing_usage_json": [],
+              "cache_hit": 0,
+              "call_id": "atc_a4fb84adb16fca97db8c21cb688e1835",
+              "cost_breakdown_json": [],
+              "cost_status": "NON_BILLABLE",
+              "create_time": "2026-08-11T04:45:44.225Z",
+              "error_code": "",
+              "error_message": "",
+              "estimated_cost_microunit": 0,
+              "finish_time": "2026-08-11T04:45:44.225Z",
+              "http_status": 0,
+              "non_billable_reason": "public_source_no_direct_cost",
+              "policy_version": "v1",
+              "pricing_rule_id": "",
+              "pricing_version": "",
+              "provider": "public_figure",
+              "provider_operation": "local_lookup",
+              "query_id": "query_cf8402b054d05f6061c78222",
+              "request_fingerprint": "43e2713ce6261e6a5e48be64e79a19e67ca65e78f96dc16b7618dd3c660babf5",
+              "request_summary": {
+                "clue_types": [
+                  "FULL_NAME"
+                ],
+                "detail_count": 0,
+                "has_location": false,
+                "has_media": false,
+                "has_name": true,
+                "has_url": false,
+                "policy_version": "v1",
+                "query_type": "FULL_NAME",
+                "stage": "local_lookup"
+              },
+              "request_type": "FULL_NAME",
+              "response_ref": "",
+              "response_summary": {
+                "ambiguous": false,
+                "decision_reason": "LOCAL_CACHE_MISS",
+                "eligible": true,
+                "found": false,
+                "local_known": false,
+                "remote_called": false,
+                "remote_enabled": true,
+                "result_usable": false,
+                "stage": "local_lookup",
+                "total_profile_count": 0,
+                "usable_profile_count": 0
+              },
+              "start_time": "2026-08-11T04:45:44.224Z",
+              "status": "no_result",
+              "task_id": "task_bc0fe7515f6de9ff7acad3c9",
+              "worker_id": "worker-79f769d947-jcpk7"
+            }
+          ],
+          "reports": [
+            {
+              "confidence_level": "LOW",
+              "create_time": "2026-08-11T04:45:55.517Z",
+              "disclaimers": [
+                "People Data Labs Person Search returns candidate profiles; review candidates or add stronger clues before relying on an identity match."
+              ],
+              "evidence": [
+                {
+                  "display_name": "vinny sinopoli",
+                  "matched_on": [
+                    "name"
+                  ],
+                  "person_id": "pdl:58-eYlAth7ExsYB1XgEtGA_0000",
+                  "provider": "people_data_labs",
+                  "provider_person_id": "58-eYlAth7ExsYB1XgEtGA_0000",
+                  "subject_profile_url": "linkedin.com/in/vinny-sinopoli-465ab865",
+                  "type": "pdl_matched_on"
+                },
+                {
+                  "display_name": "vinny sinopoli",
+                  "field": "linkedin_url",
+                  "person_id": "pdl:58-eYlAth7ExsYB1XgEtGA_0000",
+                  "provider": "people_data_labs",
+                  "provider_person_id": "58-eYlAth7ExsYB1XgEtGA_0000",
+                  "subject_profile_url": "linkedin.com/in/vinny-sinopoli-465ab865",
+                  "type": "pdl_profile_url",
+                  "url": "linkedin.com/in/vinny-sinopoli-465ab865"
+                },
+                {
+                  "display_name": "vinny sinopoli",
+                  "field": "job_company_website",
+                  "person_id": "pdl:58-eYlAth7ExsYB1XgEtGA_0000",
+                  "provider": "people_data_labs",
+                  "provider_person_id": "58-eYlAth7ExsYB1XgEtGA_0000",
+                  "subject_profile_url": "linkedin.com/in/vinny-sinopoli-465ab865",
+                  "type": "pdl_profile_url",
+                  "url": "housingcenter.com"
+                }
+              ],
+              "expire_time": "2026-09-10T04:45:43.114Z",
+              "generate_time": "2026-08-11T04:45:55.517Z",
+              "id": 1381,
+              "profiles": [
+                {
+                  "_rank_features": {
+                    "gender": "male",
+                    "has_contact": true
+                  },
+                  "confidence_level": "LOW",
+                  "display_name": "vinny sinopoli",
+                  "email": "vsinopoli@housingcenter.com",
+                  "first_name": "vinny",
+                  "full_name": "vinny sinopoli",
+                  "headline": "senior underwriter at hai group",
+                  "id": "58-eYlAth7ExsYB1XgEtGA_0000",
+                  "job": "senior underwriter at hai group",
+                  "job_company_linkedin_url": "linkedin.com/company/hai-group",
+                  "job_company_name": "hai group",
+                  "job_company_website": "housingcenter.com",
+                  "job_title": "senior underwriter",
+                  "job_title_role": "finance",
+                  "jobs": [
+                    "senior underwriter at hai group"
+                  ],
+                  "last_name": "sinopoli",
+                  "location_country": "united states",
+                  "location_locality": "rocky hill",
+                  "location_name": "rocky hill, connecticut, united states",
+                  "location_region": "connecticut",
+                  "match_score": 35,
+                  "match_source": "person_search",
+                  "matched_on": [
+                    "name"
+                  ],
+                  "person_id": "pdl:58-eYlAth7ExsYB1XgEtGA_0000",
+                  "profile_url": "linkedin.com/in/vinny-sinopoli-465ab865",
+                  "provider": "people_data_labs",
+                  "rank_features": {
+                    "gender": "male",
+                    "has_contact": true
+                  },
+                  "social_links": [
+                    {
+                      "platform": "linkedin",
+                      "provider": "people_data_labs",
+                      "url": "linkedin.com/in/vinny-sinopoli-465ab865",
+                      "username": "vinny-sinopoli-465ab865"
+                    },
+                    {
+                      "platform": "linkedin",
+                      "provider": "people_data_labs",
+                      "url": "linkedin.com/in/vinnie-sinopoli-465ab865",
+                      "username": "vinnie-sinopoli-465ab865"
+                    }
+                  ],
+                  "social_platforms": [
+                    "linkedin"
+                  ]
+                }
+              ],
+              "related_info": [
+                {
+                  "match_source": "person_search",
+                  "matches_count": 1,
+                  "provider": "people_data_labs"
+                }
+              ],
+              "report_id": "report_efae16569296d0a241d5e999",
+              "snapshot_ref": "",
+              "social_accounts": [
+                {
+                  "platform": "linkedin",
+                  "provider": "people_data_labs",
+                  "url": "linkedin.com/in/vinny-sinopoli-465ab865",
+                  "username": "vinny-sinopoli-465ab865"
+                },
+                {
+                  "platform": "linkedin",
+                  "provider": "people_data_labs",
+                  "url": "linkedin.com/in/vinnie-sinopoli-465ab865",
+                  "username": "vinnie-sinopoli-465ab865"
+                }
+              ],
+              "status": "ready",
+              "subject_summary": {
+                "candidate_photo_count": 0,
+                "candidate_photo_match_count": 0,
+                "confidence_cap": "HIGH",
+                "display_name": "vinny sinopoli",
+                "estimated_cost_microunit": 280152,
+                "estimated_cost_scope": "TASK_TOTAL_ALL_PROVIDER_CALLS",
+                "fallback_reason": "LLM_NO_RESULT",
+                "fallback_used": true,
+                "headline": "senior underwriter at hai group",
+                "identity_found": true,
+                "match_score": 35,
+                "match_source": "person_search",
+                "matched_on": [
+                  "name"
+                ],
+                "matches_count": 1,
+                "pdl_billing_unit_count": 1,
+                "pdl_called": true,
+                "pdl_candidates": [
+                  {
+                    "candidate_id": "pdl:58-eYlAth7ExsYB1XgEtGA_0000",
+                    "decision": "ELIGIBLE",
+                    "display_name": "vinny sinopoli",
+                    "match_score": 35,
+                    "matched_clue_types": [
+                      "FULL_NAME"
+                    ],
+                    "profile_fetch_called": false,
+                    "profile_fetch_cost_microunit": 0,
+                    "rejection_reason": "",
+                    "selected": true,
+                    "social_links": [
+                      "https://linkedin.com/in/vinny-sinopoli-465ab865",
+                      "https://linkedin.com/in/vinnie-sinopoli-465ab865"
+                    ],
+                    "stage": "person_search"
+                  }
+                ],
+                "pdl_cost_scope": "PDL_PROVIDER_CALL_ALL_STAGES",
+                "pdl_estimated_cost_microunit": 280000,
+                "pdl_external_request_count": 1,
+                "pdl_identify_call_count": 0,
+                "pdl_identify_called": false,
+                "pdl_identify_candidate_count": 0,
+                "pdl_person_search_call_count": 1,
+                "pdl_person_search_called": true,
+                "pdl_person_search_returned_profile_count": 1,
+                "pdl_pipeline_stages": [
+                  {
+                    "api_request_count": 1,
+                    "billed_quantity": 1,
+                    "billing_operation": "person_search_profile",
+                    "candidate_count": 1,
+                    "operation": "person_search",
+                    "status": "success",
+                    "unit_type": "returned_profile"
+                  }
+                ],
+                "pdl_profile_fetch_count": 0,
+                "pdl_rejected_candidate_count": 0,
+                "pdl_rejection_reasons": [],
+                "pdl_skipped": false,
+                "pdl_usable_candidate_count": 1,
+                "people_found": true,
+                "people_pipeline_cost_scope": "LLM_PUBLIC_FIGURE_AND_PDL",
+                "people_pipeline_estimated_cost_microunit": 280152,
+                "photo_evidence_found": false,
+                "policy_version": "v1",
+                "pre_pdl_estimated_cost_microunit": 152,
+                "primary_provider": "people_data_labs",
+                "provider": "search_agent",
+                "provider_person_id": "58-eYlAth7ExsYB1XgEtGA_0000",
+                "providers": [
+                  "agent_people",
+                  "social_profile"
+                ],
+                "query_type": "FULL_NAME",
+                "reverse_image_estimated_cost_microunit": 0,
+                "reverse_image_fallback_reasons": null,
+                "reverse_image_fallback_used": false,
+                "reverse_image_final_provider": "",
+                "reverse_image_primary_provider": "",
+                "reverse_image_provider_attempt_count": 0,
+                "reverse_image_status": "NOT_PLANNED",
+                "reverse_image_stop_reason": "NOT_PLANNED",
+                "social_profile_attempted_count": 2,
+                "social_profile_error_count": 0,
+                "social_profile_merged_candidate_count": 0,
+                "social_profile_no_result_count": 2,
+                "social_profile_planned_count": 2,
+                "social_profile_queue_decision_truncated_count": 0,
+                "social_profile_queue_decisions": [
+                  {
+                    "canonical_url": "https://linkedin.com/in/vinny-sinopoli-465ab865",
+                    "decision": "CALLED",
+                    "depth": 1,
+                    "discovered_by": "PDL",
+                    "error_code": "",
+                    "no_result_reason": "PROFILE_PRIVATE_OR_UNAVAILABLE",
+                    "outcome": "NO_RESULT",
+                    "parent_candidate_id": "pdl:58-eYlAth7ExsYB1XgEtGA_0000",
+                    "parent_evidence_id": "",
+                    "parent_provider": "people_data_labs",
+                    "parent_url": "",
+                    "platform": "linkedin",
+                    "raw_url": "linkedin.com/in/vinny-sinopoli-465ab865",
+                    "skip_reason": ""
+                  },
+                  {
+                    "canonical_url": "https://linkedin.com/in/vinny-sinopoli-465ab865",
+                    "decision": "SKIPPED",
+                    "depth": 1,
+                    "discovered_by": "PDL",
+                    "error_code": "",
+                    "no_result_reason": "",
+                    "outcome": "",
+                    "parent_candidate_id": "pdl:58-eYlAth7ExsYB1XgEtGA_0000",
+                    "parent_evidence_id": "",
+                    "parent_provider": "people_data_labs",
+                    "parent_url": "",
+                    "platform": "linkedin",
+                    "raw_url": "linkedin.com/in/vinny-sinopoli-465ab865",
+                    "skip_reason": "DUPLICATE"
+                  },
+                  {
+                    "canonical_url": "https://linkedin.com/in/vinnie-sinopoli-465ab865",
+                    "decision": "CALLED",
+                    "depth": 1,
+                    "discovered_by": "PDL",
+                    "error_code": "",
+                    "no_result_reason": "PROFILE_PRIVATE_OR_UNAVAILABLE",
+                    "outcome": "NO_RESULT",
+                    "parent_candidate_id": "pdl:58-eYlAth7ExsYB1XgEtGA_0000",
+                    "parent_evidence_id": "",
+                    "parent_provider": "people_data_labs",
+                    "parent_url": "",
+                    "platform": "linkedin",
+                    "raw_url": "linkedin.com/in/vinnie-sinopoli-465ab865",
+                    "skip_reason": ""
+                  },
+                  {
+                    "canonical_url": "https://linkedin.com/in/vinny-sinopoli-465ab865",
+                    "decision": "SKIPPED",
+                    "depth": 1,
+                    "discovered_by": "PDL",
+                    "error_code": "",
+                    "no_result_reason": "",
+                    "outcome": "",
+                    "parent_candidate_id": "",
+                    "parent_evidence_id": "",
+                    "parent_provider": "people_data_labs",
+                    "parent_url": "",
+                    "platform": "linkedin",
+                    "raw_url": "linkedin.com/in/vinny-sinopoli-465ab865",
+                    "skip_reason": "DUPLICATE"
+                  },
+                  {
+                    "canonical_url": "https://linkedin.com/in/vinnie-sinopoli-465ab865",
+                    "decision": "SKIPPED",
+                    "depth": 1,
+                    "discovered_by": "PDL",
+                    "error_code": "",
+                    "no_result_reason": "",
+                    "outcome": "",
+                    "parent_candidate_id": "",
+                    "parent_evidence_id": "",
+                    "parent_provider": "people_data_labs",
+                    "parent_url": "",
+                    "platform": "linkedin",
+                    "raw_url": "linkedin.com/in/vinnie-sinopoli-465ab865",
+                    "skip_reason": "DUPLICATE"
+                  }
+                ],
+                "social_profile_requested_identity_matched": false,
+                "social_profile_skipped_depth_count": 0,
+                "social_profile_skipped_duplicate_count": 3,
+                "social_profile_skipped_execution_count": 0,
+                "social_profile_skipped_limit_count": 0,
+                "social_profile_skipped_unsupported_count": 0,
+                "social_profile_status": "NO_RESULT",
+                "social_profile_success_count": 0,
+                "social_profile_unmatched_profile_count": 0,
+                "stop_reason": "completed",
+                "submitted_photo_count": 0,
+                "submitted_photo_error_count": 0,
+                "submitted_photo_evidence_found": false,
+                "submitted_photo_match_count": 0,
+                "submitted_photo_no_match_count": 0,
+                "task_total_estimated_cost_microunit": 280152,
+                "tool_steps": 3,
+                "verification_state": "SUPPORTED"
+              },
+              "task_id": "task_bc0fe7515f6de9ff7acad3c9",
+              "update_time": "2026-08-11T04:45:55.517Z"
+            }
+          ],
+          "task_events": [
+            {
+              "create_time": "2026-08-11T04:45:55.517Z",
+              "error_code": "",
+              "event_id": "event_db6902e13897552591cfbb27",
+              "event_time": "2026-08-11T04:45:55.517Z",
+              "event_type": "REPORT_READY",
+              "id": 4910,
+              "progress_json": {
+                "display_message": "Report ready",
+                "display_percent": 100,
+                "stage": "report_ready"
+              },
+              "report_id": "report_efae16569296d0a241d5e999",
+              "status": "SUCCEEDED",
+              "task_id": "task_bc0fe7515f6de9ff7acad3c9",
+              "update_time": "2026-08-11T12:45:55.522Z"
+            },
+            {
+              "create_time": "2026-08-11T04:45:44.216Z",
+              "error_code": "",
+              "event_id": "event_f06e427eb7fcbe5460ccf7a3",
+              "event_time": "2026-08-11T04:45:44.216Z",
+              "event_type": "TASK_SEARCHING",
+              "id": 4909,
+              "progress_json": {
+                "display_message": "Searching public sources",
+                "display_percent": 45,
+                "stage": "provider_search"
+              },
+              "report_id": "",
+              "status": "SEARCHING",
+              "task_id": "task_bc0fe7515f6de9ff7acad3c9",
+              "update_time": "2026-08-11T12:45:44.222Z"
+            },
+            {
+              "create_time": "2026-08-11T04:45:43.114Z",
+              "error_code": "",
+              "event_id": "event_d6763e2466f3190a97f890a7",
+              "event_time": "2026-08-11T04:45:43.114Z",
+              "event_type": "TASK_QUEUED",
+              "id": 4908,
+              "progress_json": {
+                "display_message": "Queued",
+                "display_percent": 5,
+                "stage": "queued"
+              },
+              "report_id": "",
+              "status": "QUEUED",
+              "task_id": "task_bc0fe7515f6de9ff7acad3c9",
+              "update_time": "2026-08-11T12:45:43.13Z"
+            }
+          ],
+          "outbox_events": [
+            {
+              "aggregate_id": "task_bc0fe7515f6de9ff7acad3c9",
+              "aggregate_type": "search_task",
+              "available_time": "2026-08-11T04:45:43.114Z",
+              "create_time": "2026-08-11T04:45:43.114Z",
+              "event_type": "SearchTaskQueued",
+              "id": "outbox_b05c68610f662c08053f38b5",
+              "payload": {
+                "app_version": "1.0.3",
+                "attempt_hint": 1,
+                "client_ip": "43.173.72.75",
+                "client_request_id": "crid-1786423541600-14dc35fbd1",
+                "event_id": "outbox_b05c68610f662c08053f38b5",
+                "expire_time": "2026-09-10T04:45:43.113810204Z",
+                "query_type": "FULL_NAME",
+                "queued_time": "2026-08-11T04:45:43.113810204Z",
+                "request_id": "gw_req_0eeae0b402e641be6c58402f7311a677",
+                "task_id": "task_bc0fe7515f6de9ff7acad3c9",
+                "trace_id": "trace_9f595aa44ac516dc4838c16ac8b7b26d"
+              },
+              "publish_time": "2026-08-11T04:45:44.216Z",
+              "retry_count": 0,
+              "source_app": "people_insight",
+              "status": "published",
+              "topic": "tool-srv.test.search-task.v1",
+              "update_time": "2026-08-11T04:45:44.216Z"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
+
+2026-08-11 12:46:04,355 | INFO | search_tool.QueryChainLogger | GetProviderCostSummary 事件:
+{
+  "sequence_no": 7,
+  "api_sequence_no": 1,
+  "run_id": "run_1d70edb93a664d539c9c5dcc0f2d9742",
+  "input_id": "case-078",
+  "person_name": "Vinny Sinopoli",
+  "task_id": "task_bc0fe7515f6de9ff7acad3c9",
+  "candidate_id": "",
+  "stage": "GetProviderCostSummary",
+  "attempt": 1,
+  "business_success": true
+}
+2026-08-11 12:46:04,355 | INFO | search_tool.QueryChainLogger | GetProviderCostSummary 脱敏请求数据: attempt=1
+{
+  "task_id": "task_bc0fe7515f6de9ff7acad3c9",
+  "limit": 100
+}
+2026-08-11 12:46:04,355 | INFO | search_tool.QueryChainLogger | GetProviderCostSummary 响应数据: HTTP 200 elapsed_ms=1078
+{
+  "code": 0,
+  "message": "ok",
+  "request_id": "gw_req_5c7fcf5506b0ed87dd5a0cd06d95be58",
+  "trace_id": "trace_7948444df991493a9da9ede5278ff3a1",
+  "responses": [
+    {
+      "id": "req_0",
+      "success": true,
+      "code": 0,
+      "message": "ok",
+      "data": {
+        "cost_summary": {
+          "from_time": "2026-08-10T04:46:04.875973104Z",
+          "to_time": "2026-08-11T04:46:04.875973104Z",
+          "calls": [
+            {
+              "billable_units": 0,
+              "billing_currency": "",
+              "billing_unit": "",
+              "billing_usage_json": [],
+              "cache_hit": 0,
+              "call_id": "atc_0f7964ffffc990f08383a03ebd6afd92",
+              "cost_breakdown_json": [],
+              "cost_status": "NON_BILLABLE",
+              "create_time": "2026-08-11T04:45:55.45Z",
+              "estimated_cost_microunit": 0,
+              "finish_time": "2026-08-11T04:45:55.45Z",
+              "http_status": 404,
+              "non_billable_reason": "provider_reported_zero_usage",
+              "pricing_rule_id": "",
+              "pricing_version": "",
+              "provider": "social_profile",
+              "provider_operation": "scrapecreators_linkedin_profile",
+              "query_id": "query_cf8402b054d05f6061c78222",
+              "request_type": "SOCIAL_LINK",
+              "start_time": "2026-08-11T04:45:52.267Z",
+              "status": "no_result",
+              "task_id": "task_bc0fe7515f6de9ff7acad3c9",
+              "worker_id": "worker-79f769d947-jcpk7"
+            },
+            {
+              "billable_units": 0,
+              "billing_currency": "",
+              "billing_unit": "",
+              "billing_usage_json": [],
+              "cache_hit": 0,
+              "call_id": "atc_cd25029af6dd0c89d3bf849f458c8fe0",
+              "cost_breakdown_json": [],
+              "cost_status": "NON_BILLABLE",
+              "create_time": "2026-08-11T04:45:52.246Z",
+              "estimated_cost_microunit": 0,
+              "finish_time": "2026-08-11T04:45:52.246Z",
+              "http_status": 404,
+              "non_billable_reason": "provider_reported_zero_usage",
+              "pricing_rule_id": "",
+              "pricing_version": "",
+              "provider": "social_profile",
+              "provider_operation": "scrapecreators_linkedin_profile",
+              "query_id": "query_cf8402b054d05f6061c78222",
+              "request_type": "SOCIAL_LINK",
+              "start_time": "2026-08-11T04:45:48.092Z",
+              "status": "no_result",
+              "task_id": "task_bc0fe7515f6de9ff7acad3c9",
+              "worker_id": "worker-79f769d947-jcpk7"
+            },
+            {
+              "billable_units": 0,
+              "billing_currency": "",
+              "billing_unit": "",
+              "billing_usage_json": [],
+              "cache_hit": 0,
+              "call_id": "atc_b7d754ccfec5da019b93d99cacbec1db",
+              "cost_breakdown_json": [],
+              "cost_status": "NON_BILLABLE",
+              "create_time": "2026-08-11T04:45:48.089Z",
+              "estimated_cost_microunit": 0,
+              "finish_time": "2026-08-11T04:45:48.089Z",
+              "http_status": 0,
+              "non_billable_reason": "aggregated_by_child_calls",
+              "pricing_rule_id": "",
+              "pricing_version": "",
+              "provider": "agent_people",
+              "provider_operation": "request",
+              "query_id": "query_cf8402b054d05f6061c78222",
+              "request_type": "FULL_NAME",
+              "start_time": "2026-08-11T04:45:44.224Z",
+              "status": "success",
+              "task_id": "task_bc0fe7515f6de9ff7acad3c9",
+              "worker_id": "worker-79f769d947-jcpk7"
+            },
+            {
+              "billable_units": 1,
+              "billing_currency": "USD",
+              "billing_unit": "returned_profile",
+              "billing_usage_json": [
+                {
+                  "operation": "person_search_profile",
+                  "quantity": 1,
+                  "unit_type": "returned_profile"
+                }
+              ],
+              "cache_hit": 0,
+              "call_id": "atc_6de9be81dced7a8c6b5f509f32a7fc03",
+              "cost_breakdown_json": [
+                {
+                  "billing_model": "PER_UNIT",
+                  "currency": "USD",
+                  "estimated_cost_microunit": 280000,
+                  "operation": "person_search_profile",
+                  "pricing_rule_id": "price_pdl_search_tier1_20260729",
+                  "pricing_version": "2026-07-29-pdl-self-serve-tier1",
+                  "quantity": 1,
+                  "status": "CALCULATED",
+                  "unit_type": "returned_profile"
+                }
+              ],
+              "cost_status": "CALCULATED",
+              "create_time": "2026-08-11T04:45:48.058Z",
+              "estimated_cost_microunit": 280000,
+              "finish_time": "2026-08-11T04:45:48.058Z",
+              "http_status": 0,
+              "non_billable_reason": "",
+              "pricing_rule_id": "price_pdl_search_tier1_20260729",
+              "pricing_version": "2026-07-29-pdl-self-serve-tier1",
+              "provider": "people_data_labs",
+              "provider_operation": "person_search_profile",
+              "query_id": "query_cf8402b054d05f6061c78222",
+              "request_type": "FULL_NAME",
+              "start_time": "2026-08-11T04:45:47.823Z",
+              "status": "success",
+              "task_id": "task_bc0fe7515f6de9ff7acad3c9",
+              "worker_id": "worker-79f769d947-jcpk7"
+            },
+            {
+              "billable_units": 0,
+              "billing_currency": "",
+              "billing_unit": "",
+              "billing_usage_json": [],
+              "cache_hit": 0,
+              "call_id": "atc_eed7a714b74832f867a400d5ca57ddbd",
+              "cost_breakdown_json": [],
+              "cost_status": "NON_BILLABLE",
+              "create_time": "2026-08-11T04:45:47.822Z",
+              "estimated_cost_microunit": 0,
+              "finish_time": "2026-08-11T04:45:47.822Z",
+              "http_status": 0,
+              "non_billable_reason": "public_source_no_direct_cost",
+              "pricing_rule_id": "",
+              "pricing_version": "",
+              "provider": "public_figure",
+              "provider_operation": "remote_lookup",
+              "query_id": "query_cf8402b054d05f6061c78222",
+              "request_type": "FULL_NAME",
+              "start_time": "2026-08-11T04:45:47.693Z",
+              "status": "no_result",
+              "task_id": "task_bc0fe7515f6de9ff7acad3c9",
+              "worker_id": "worker-79f769d947-jcpk7"
+            },
+            {
+              "billable_units": 0,
+              "billing_currency": "",
+              "billing_unit": "",
+              "billing_usage_json": [],
+              "cache_hit": 0,
+              "call_id": "atc_907b3f88fc0a3a5a9500f6516b2215b5",
+              "cost_breakdown_json": [],
+              "cost_status": "NON_BILLABLE",
+              "create_time": "2026-08-11T04:45:47.691Z",
+              "estimated_cost_microunit": 0,
+              "finish_time": "2026-08-11T04:45:47.691Z",
+              "http_status": 0,
+              "non_billable_reason": "public_source_no_direct_cost",
+              "pricing_rule_id": "",
+              "pricing_version": "",
+              "provider": "public_figure",
+              "provider_operation": "route_decision",
+              "query_id": "query_cf8402b054d05f6061c78222",
+              "request_type": "FULL_NAME",
+              "start_time": "2026-08-11T04:45:47.691Z",
+              "status": "success",
+              "task_id": "task_bc0fe7515f6de9ff7acad3c9",
+              "worker_id": "worker-79f769d947-jcpk7"
+            },
+            {
+              "billable_units": 0,
+              "billing_currency": "",
+              "billing_unit": "",
+              "billing_usage_json": [],
+              "cache_hit": 0,
+              "call_id": "atc_140578867299eaf690081b308c4b5005",
+              "cost_breakdown_json": [],
+              "cost_status": "NON_BILLABLE",
+              "create_time": "2026-08-11T04:45:47.69Z",
+              "estimated_cost_microunit": 0,
+              "finish_time": "2026-08-11T04:45:47.69Z",
+              "http_status": 0,
+              "non_billable_reason": "aggregated_by_backend_attempts",
+              "pricing_rule_id": "",
+              "pricing_version": "",
+              "provider": "llm_search",
+              "provider_operation": "request",
+              "query_id": "query_cf8402b054d05f6061c78222",
+              "request_type": "FULL_NAME",
+              "start_time": "2026-08-11T04:45:44.226Z",
+              "status": "no_result",
+              "task_id": "task_bc0fe7515f6de9ff7acad3c9",
+              "worker_id": "worker-79f769d947-jcpk7"
+            },
+            {
+              "billable_units": 973,
+              "billing_currency": "USD",
+              "billing_unit": "token",
+              "billing_usage_json": [
+                {
+                  "input_tokens": 866,
+                  "operation": "chat_completions/deepseek-v4-flash-202605",
+                  "output_tokens": 107,
+                  "unit_type": "token"
+                }
+              ],
+              "cache_hit": 0,
+              "call_id": "atc_d228aa44323376e9b15967914e6d9051",
+              "cost_breakdown_json": [
+                {
+                  "billing_model": "TOKEN",
+                  "currency": "USD",
+                  "estimated_cost_microunit": 152,
+                  "input_tokens": 866,
+                  "operation": "chat_completions/deepseek-v4-flash-202605",
+                  "output_tokens": 107,
+                  "pricing_rule_id": "price_tencent_deepseek_v4_flash_20260729",
+                  "pricing_version": "2026-07-29-tencent-intl-public",
+                  "status": "CALCULATED",
+                  "unit_type": "token"
+                }
+              ],
+              "cost_status": "CALCULATED",
+              "create_time": "2026-08-11T04:45:47.666Z",
+              "estimated_cost_microunit": 152,
+              "finish_time": "2026-08-11T04:45:47.666Z",
+              "http_status": 200,
+              "non_billable_reason": "",
+              "pricing_rule_id": "price_tencent_deepseek_v4_flash_20260729",
+              "pricing_version": "2026-07-29-tencent-intl-public",
+              "provider": "llm_search:deepseek",
+              "provider_operation": "chat_completions/deepseek-v4-flash-202605",
+              "query_id": "query_cf8402b054d05f6061c78222",
+              "request_type": "FULL_NAME",
+              "start_time": "2026-08-11T04:45:44.229Z",
+              "status": "no_result",
+              "task_id": "task_bc0fe7515f6de9ff7acad3c9",
+              "worker_id": "worker-79f769d947-jcpk7"
+            },
+            {
+              "billable_units": 0,
+              "billing_currency": "",
+              "billing_unit": "",
+              "billing_usage_json": [],
+              "cache_hit": 0,
+              "call_id": "atc_a4fb84adb16fca97db8c21cb688e1835",
+              "cost_breakdown_json": [],
+              "cost_status": "NON_BILLABLE",
+              "create_time": "2026-08-11T04:45:44.225Z",
+              "estimated_cost_microunit": 0,
+              "finish_time": "2026-08-11T04:45:44.225Z",
+              "http_status": 0,
+              "non_billable_reason": "public_source_no_direct_cost",
+              "pricing_rule_id": "",
+              "pricing_version": "",
+              "provider": "public_figure",
+              "provider_operation": "local_lookup",
+              "query_id": "query_cf8402b054d05f6061c78222",
+              "request_type": "FULL_NAME",
+              "start_time": "2026-08-11T04:45:44.224Z",
+              "status": "no_result",
+              "task_id": "task_bc0fe7515f6de9ff7acad3c9",
+              "worker_id": "worker-79f769d947-jcpk7"
+            }
+          ],
+          "totals": [
+            {
+              "call_count": 7,
+              "config_estimate_call_count": "0",
+              "cost_complete": 1,
+              "currency": "UNSPECIFIED",
+              "non_billable_call_count": "7",
+              "partial_cost_call_count": "0",
+              "priced_call_count": "0",
+              "total_cost_microunit": "0",
+              "unpriced_call_count": "0"
+            },
+            {
+              "call_count": 2,
+              "config_estimate_call_count": "0",
+              "cost_complete": 1,
+              "currency": "USD",
+              "non_billable_call_count": "0",
+              "partial_cost_call_count": "0",
+              "priced_call_count": "2",
+              "total_cost_microunit": "280152",
+              "unpriced_call_count": "0"
+            }
+          ],
+          "by_provider": [
+            {
+              "call_count": 1,
+              "config_estimate_call_count": "0",
+              "cost_complete": 1,
+              "currency": "USD",
+              "non_billable_call_count": "0",
+              "partial_cost_call_count": "0",
+              "priced_call_count": "1",
+              "provider": "people_data_labs",
+              "total_cost_microunit": "280000",
+              "unpriced_call_count": "0"
+            },
+            {
+              "call_count": 1,
+              "config_estimate_call_count": "0",
+              "cost_complete": 1,
+              "currency": "USD",
+              "non_billable_call_count": "0",
+              "partial_cost_call_count": "0",
+              "priced_call_count": "1",
+              "provider": "llm_search:deepseek",
+              "total_cost_microunit": "152",
+              "unpriced_call_count": "0"
+            },
+            {
+              "call_count": 3,
+              "config_estimate_call_count": "0",
+              "cost_complete": 1,
+              "currency": "UNSPECIFIED",
+              "non_billable_call_count": "3",
+              "partial_cost_call_count": "0",
+              "priced_call_count": "0",
+              "provider": "public_figure",
+              "total_cost_microunit": "0",
+              "unpriced_call_count": "0"
+            },
+            {
+              "call_count": 2,
+              "config_estimate_call_count": "0",
+              "cost_complete": 1,
+              "currency": "UNSPECIFIED",
+              "non_billable_call_count": "2",
+              "partial_cost_call_count": "0",
+              "priced_call_count": "0",
+              "provider": "social_profile",
+              "total_cost_microunit": "0",
+              "unpriced_call_count": "0"
+            },
+            {
+              "call_count": 1,
+              "config_estimate_call_count": "0",
+              "cost_complete": 1,
+              "currency": "UNSPECIFIED",
+              "non_billable_call_count": "1",
+              "partial_cost_call_count": "0",
+              "priced_call_count": "0",
+              "provider": "llm_search",
+              "total_cost_microunit": "0",
+              "unpriced_call_count": "0"
+            },
+            {
+              "call_count": 1,
+              "config_estimate_call_count": "0",
+              "cost_complete": 1,
+              "currency": "UNSPECIFIED",
+              "non_billable_call_count": "1",
+              "partial_cost_call_count": "0",
+              "priced_call_count": "0",
+              "provider": "agent_people",
+              "total_cost_microunit": "0",
+              "unpriced_call_count": "0"
+            }
+          ],
+          "by_worker": [
+            {
+              "call_count": 2,
+              "config_estimate_call_count": "0",
+              "cost_complete": 1,
+              "currency": "USD",
+              "non_billable_call_count": "0",
+              "partial_cost_call_count": "0",
+              "priced_call_count": "2",
+              "total_cost_microunit": "280152",
+              "unpriced_call_count": "0",
+              "worker_id": "worker-79f769d947-jcpk7"
+            },
+            {
+              "call_count": 7,
+              "config_estimate_call_count": "0",
+              "cost_complete": 1,
+              "currency": "UNSPECIFIED",
+              "non_billable_call_count": "7",
+              "partial_cost_call_count": "0",
+              "priced_call_count": "0",
+              "total_cost_microunit": "0",
+              "unpriced_call_count": "0",
+              "worker_id": "worker-79f769d947-jcpk7"
+            }
+          ],
+          "by_search": [
+            {
+              "call_count": 2,
+              "config_estimate_call_count": "0",
+              "cost_complete": 1,
+              "currency": "USD",
+              "non_billable_call_count": "0",
+              "partial_cost_call_count": "0",
+              "priced_call_count": "2",
+              "task_id": "task_bc0fe7515f6de9ff7acad3c9",
+              "total_cost_microunit": "280152",
+              "unpriced_call_count": "0"
+            },
+            {
+              "call_count": 7,
+              "config_estimate_call_count": "0",
+              "cost_complete": 1,
+              "currency": "UNSPECIFIED",
+              "non_billable_call_count": "7",
+              "partial_cost_call_count": "0",
+              "priced_call_count": "0",
+              "task_id": "task_bc0fe7515f6de9ff7acad3c9",
+              "total_cost_microunit": "0",
+              "unpriced_call_count": "0"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
+
+2026-08-11 12:46:05,365 | INFO | search_tool.QueryChainLogger | ListTaskCandidates 事件:
+{
+  "sequence_no": 8,
+  "api_sequence_no": 1,
+  "run_id": "run_1d70edb93a664d539c9c5dcc0f2d9742",
+  "input_id": "case-078",
+  "person_name": "Vinny Sinopoli",
+  "task_id": "task_bc0fe7515f6de9ff7acad3c9",
+  "candidate_id": "",
+  "stage": "ListTaskCandidates",
+  "attempt": 1,
+  "business_success": true
+}
+2026-08-11 12:46:05,365 | INFO | search_tool.QueryChainLogger | ListTaskCandidates 脱敏请求数据: attempt=1
+{
+  "task_id": "task_bc0fe7515f6de9ff7acad3c9",
+  "page": {
+    "page_size": 100,
+    "page_token": ""
+  }
+}
+2026-08-11 12:46:05,365 | INFO | search_tool.QueryChainLogger | ListTaskCandidates 响应数据: HTTP 200 elapsed_ms=1002
+{
+  "code": 0,
+  "message": "ok",
+  "request_id": "gw_req_c5986e63f81fd872bf7069855c5a9c4a",
+  "trace_id": "trace_8a1ea22c833c7c73a9e61673abd9b49b",
+  "responses": [
+    {
+      "id": "req_0",
+      "success": true,
+      "code": 0,
+      "message": "ok",
+      "data": {
+        "empty_reason": "",
+        "items": [
+          {
+            "age": 0,
+            "avatar_url": "",
+            "candidate_id": "report_efae16569296d0a241d5e999_candidate_1",
+            "confidence_level": "LOW",
+            "display_name": "vinny sinopoli",
+            "education": "",
+            "email": "vsinopoli@housingcenter.com",
+            "evidence_count": 3,
+            "headline": "senior underwriter at hai group",
+            "is_best_match": false,
+            "is_top_result": true,
+            "jobs": [
+              "senior underwriter at hai group"
+            ],
+            "location": "rocky hill, connecticut, united states",
+            "match_reasons": [
+              "name"
+            ],
+            "match_score": 35,
+            "matched_clue_types": [],
+            "person_id": "pdl:58-eYlAth7ExsYB1XgEtGA_0000",
+            "profile_url": "https://linkedin.com/in/vinny-sinopoli-465ab865",
+            "rank_breakdown": {
+              "data_completeness": 0.8,
+              "geo_relevance": 0,
+              "public_influence": 0,
+              "social_activity": 0,
+              "social_richness": 0.1667
+            },
+            "rank_score": 0.3217,
+            "rank_version": "candidate_ranking_v2",
+            "social_links": [
+              {
+                "platform": "linkedin",
+                "url": "https://linkedin.com/in/vinny-sinopoli-465ab865",
+                "username": "vinny-sinopoli-465ab865"
+              },
+              {
+                "platform": "linkedin",
+                "url": "https://linkedin.com/in/vinnie-sinopoli-465ab865",
+                "username": "vinnie-sinopoli-465ab865"
+              }
+            ],
+            "social_platforms": [
+              "linkedin"
+            ],
+            "social_source_count": 2,
+            "source": "people_data_labs",
+            "source_provider": "people_data_labs",
+            "source_providers": [
+              "people_data_labs"
+            ],
+            "web_links": [
+              {
+                "domain": "housingcenter.com",
+                "source": "Default",
+                "title": "vinny sinopoli",
+                "url": "https://housingcenter.com"
+              }
+            ],
+            "web_platforms": [
+              "Default"
+            ],
+            "web_source_count": 1
+          }
+        ],
+        "next_page_token": "",
+        "provider_summary": {
+          "cache_hit": false,
+          "primary_provider": "agent_people",
+          "provider_execution": "REAL_PROVIDER",
+          "providers": [
+            "agent_people",
+            "social_profile",
+            "people_data_labs",
+            "search_agent"
+          ],
+          "public_sources": false,
+          "source_provider": "people_data_labs",
+          "source_providers": [
+            "people_data_labs"
+          ]
+        },
+        "task_id": "task_bc0fe7515f6de9ff7acad3c9",
+        "update_time": 1786423555517
+      }
+    }
+  ]
+}
+
+2026-08-11 12:46:06,392 | INFO | search_tool.QueryChainLogger | GetTaskCandidateDetail 事件:
+{
+  "sequence_no": 9,
+  "api_sequence_no": 1,
+  "run_id": "run_1d70edb93a664d539c9c5dcc0f2d9742",
+  "input_id": "case-078",
+  "person_name": "Vinny Sinopoli",
+  "task_id": "task_bc0fe7515f6de9ff7acad3c9",
+  "candidate_id": "report_efae16569296d0a241d5e999_candidate_1",
+  "stage": "GetTaskCandidateDetail",
+  "attempt": 1,
+  "business_success": true
+}
+2026-08-11 12:46:06,392 | INFO | search_tool.QueryChainLogger | GetTaskCandidateDetail 脱敏请求数据: attempt=1
+{
+  "task_id": "task_bc0fe7515f6de9ff7acad3c9",
+  "candidate_id": "report_efae16569296d0a241d5e999_candidate_1"
+}
+2026-08-11 12:46:06,392 | INFO | search_tool.QueryChainLogger | GetTaskCandidateDetail 响应数据: HTTP 200 elapsed_ms=1020
+{
+  "code": 0,
+  "message": "ok",
+  "request_id": "gw_req_358eeab629c1244ff9656286b47c568c",
+  "trace_id": "trace_260a3d82dd356754f0013a5db44a1a89",
+  "responses": [
+    {
+      "id": "req_0",
+      "success": true,
+      "code": 0,
+      "message": "ok",
+      "data": {
+        "candidate": {
+          "age": 0,
+          "avatar_url": "",
+          "candidate_id": "report_efae16569296d0a241d5e999_candidate_1",
+          "confidence_level": "LOW",
+          "display_name": "vinny sinopoli",
+          "education": "",
+          "email": "vsinopoli@housingcenter.com",
+          "evidence_count": 3,
+          "headline": "senior underwriter at hai group",
+          "is_best_match": false,
+          "is_top_result": true,
+          "jobs": [
+            "senior underwriter at hai group"
+          ],
+          "location": "rocky hill, connecticut, united states",
+          "match_reasons": [
+            "name"
+          ],
+          "match_score": 35,
+          "matched_clue_types": [],
+          "person_id": "pdl:58-eYlAth7ExsYB1XgEtGA_0000",
+          "profile_url": "https://linkedin.com/in/vinny-sinopoli-465ab865",
+          "rank_breakdown": {
+            "data_completeness": 0.8,
+            "geo_relevance": 0,
+            "public_influence": 0,
+            "social_activity": 0,
+            "social_richness": 0.1667
+          },
+          "rank_score": 0.3217,
+          "rank_version": "candidate_ranking_v2",
+          "social_links": [
+            {
+              "platform": "linkedin",
+              "url": "https://linkedin.com/in/vinny-sinopoli-465ab865",
+              "username": "vinny-sinopoli-465ab865"
+            },
+            {
+              "platform": "linkedin",
+              "url": "https://linkedin.com/in/vinnie-sinopoli-465ab865",
+              "username": "vinnie-sinopoli-465ab865"
+            }
+          ],
+          "social_platforms": [
+            "linkedin"
+          ],
+          "social_source_count": 2,
+          "source": "people_data_labs",
+          "source_provider": "people_data_labs",
+          "source_providers": [
+            "people_data_labs"
+          ],
+          "web_links": [
+            {
+              "domain": "housingcenter.com",
+              "source": "Default",
+              "title": "vinny sinopoli",
+              "url": "https://housingcenter.com"
+            }
+          ],
+          "web_platforms": [
+            "Default"
+          ],
+          "web_source_count": 1
+        },
+        "candidate_id": "report_efae16569296d0a241d5e999_candidate_1",
+        "disclaimers": [
+          "People Data Labs Person Search returns candidate profiles; review candidates or add stronger clues before relying on an identity match."
+        ],
+        "entitlement_decision": "ALLOW",
+        "evidence": [
+          {
+            "display_name": "vinny sinopoli",
+            "matched_on": [
+              "name"
+            ],
+            "person_id": "pdl:58-eYlAth7ExsYB1XgEtGA_0000",
+            "provider": "people_data_labs",
+            "provider_person_id": "58-eYlAth7ExsYB1XgEtGA_0000",
+            "subject_profile_url": "linkedin.com/in/vinny-sinopoli-465ab865",
+            "type": "pdl_matched_on"
+          },
+          {
+            "display_name": "vinny sinopoli",
+            "field": "linkedin_url",
+            "person_id": "pdl:58-eYlAth7ExsYB1XgEtGA_0000",
+            "provider": "people_data_labs",
+            "provider_person_id": "58-eYlAth7ExsYB1XgEtGA_0000",
+            "subject_profile_url": "linkedin.com/in/vinny-sinopoli-465ab865",
+            "type": "pdl_profile_url",
+            "url": "linkedin.com/in/vinny-sinopoli-465ab865"
+          },
+          {
+            "display_name": "vinny sinopoli",
+            "field": "job_company_website",
+            "person_id": "pdl:58-eYlAth7ExsYB1XgEtGA_0000",
+            "provider": "people_data_labs",
+            "provider_person_id": "58-eYlAth7ExsYB1XgEtGA_0000",
+            "subject_profile_url": "linkedin.com/in/vinny-sinopoli-465ab865",
+            "type": "pdl_profile_url",
+            "url": "housingcenter.com"
+          }
+        ],
+        "person_id": "pdl:58-eYlAth7ExsYB1XgEtGA_0000",
+        "social_accounts": [
+          {
+            "display_name": "vinny sinopoli",
+            "person_id": "pdl:58-eYlAth7ExsYB1XgEtGA_0000",
+            "platform": "linkedin",
+            "profile_url": "https://linkedin.com/in/vinny-sinopoli-465ab865",
+            "source": "people_data_labs",
+            "url": "https://linkedin.com/in/vinny-sinopoli-465ab865",
+            "username": "vinny-sinopoli-465ab865"
+          },
+          {
+            "display_name": "vinny sinopoli",
+            "person_id": "pdl:58-eYlAth7ExsYB1XgEtGA_0000",
+            "platform": "linkedin",
+            "profile_url": "https://linkedin.com/in/vinny-sinopoli-465ab865",
+            "source": "people_data_labs",
+            "url": "https://linkedin.com/in/vinnie-sinopoli-465ab865",
+            "username": "vinnie-sinopoli-465ab865"
+          }
+        ],
+        "task_id": "task_bc0fe7515f6de9ff7acad3c9",
+        "ui_sections": {
+          "insights": {
+            "data": {
+              "count": 0,
+              "items": []
+            },
+            "status": "empty"
+          },
+          "photos": {
+            "data": {
+              "authenticity_photos": [],
+              "baseline_photo_url": "",
+              "face_comparison_status": "not_applicable",
+              "identity_match_rate": 0,
+              "match_photos": []
+            },
+            "status": "empty"
+          },
+          "profile": {
+            "data": {
+              "sections": [
+                {
+                  "items": [
+                    {
+                      "label": "Full Name",
+                      "value": "vinny sinopoli"
+                    },
+                    {
+                      "label": "Location",
+                      "value": "rocky hill, connecticut, united states"
+                    },
+                    {
+                      "label": "Email",
+                      "value": "vsinopoli@housingcenter.com"
+                    },
+                    {
+                      "label": "Profile URL",
+                      "value": "https://linkedin.com/in/vinny-sinopoli-465ab865"
+                    }
+                  ],
+                  "title": "Identity"
+                },
+                {
+                  "items": [
+                    {
+                      "label": "Current Role",
+                      "value": "senior underwriter at hai group"
+                    }
+                  ],
+                  "title": "Career"
+                },
+                {
+                  "items": [],
+                  "title": "Background"
+                }
+              ]
+            },
+            "status": "data"
+          },
+          "social": {
+            "data": {
+              "private_accounts": [],
+              "profiles": [
+                {
+                  "display_handle": "vinny-sinopoli-465ab865",
+                  "platform": "linkedin",
+                  "url": "https://linkedin.com/in/vinny-sinopoli-465ab865",
+                  "username": "vinny-sinopoli-465ab865"
+                },
+                {
+                  "display_handle": "vinnie-sinopoli-465ab865",
+                  "platform": "linkedin",
+                  "url": "https://linkedin.com/in/vinnie-sinopoli-465ab865",
+                  "username": "vinnie-sinopoli-465ab865"
+                }
+              ]
+            },
+            "status": "data"
+          },
+          "summary": {
+            "data": {
+              "age": null,
+              "avatar_url": "",
+              "candidate_id": "report_efae16569296d0a241d5e999_candidate_1",
+              "confidence_level": "LOW",
+              "disclaimers": [
+                "People Data Labs Person Search returns candidate profiles; review candidates or add stronger clues before relying on an identity match."
+              ],
+              "display_name": "vinny sinopoli",
+              "education": "",
+              "generate_time": 1786423555517,
+              "headline": "senior underwriter at hai group",
+              "is_best_match": false,
+              "is_top_result": true,
+              "jobs": [
+                "senior underwriter at hai group"
+              ],
+              "location": "rocky hill, connecticut, united states",
+              "match_reasons": [
+                "name"
+              ],
+              "match_score": 35,
+              "more_social_count": 0,
+              "person_id": "pdl:58-eYlAth7ExsYB1XgEtGA_0000",
+              "primary_image": null,
+              "profile_url": "https://linkedin.com/in/vinny-sinopoli-465ab865",
+              "report_expires_at": 1789015543114,
+              "social_links": [
+                {
+                  "platform": "linkedin",
+                  "title": "LinkedIn",
+                  "url": "https://linkedin.com/in/vinny-sinopoli-465ab865"
+                },
+                {
+                  "platform": "linkedin",
+                  "title": "LinkedIn",
+                  "url": "https://linkedin.com/in/vinnie-sinopoli-465ab865"
+                }
+              ],
+              "social_platforms": [
+                "linkedin"
+              ],
+              "source_provider": "people_data_labs",
+              "source_providers": [
+                "people_data_labs"
+              ],
+              "web_links": [
+                {
+                  "platform": "default",
+                  "title": "Default",
+                  "url": "https://housingcenter.com"
+                }
+              ]
+            },
+            "status": "data"
+          }
+        },
+        "update_time": 1786423555517
+      }
+    }
+  ]
+}
+
+2026-08-11 12:46:06,415 | INFO | search_tool.QueryChainLogger | QueryEnd 事件:
+{
+  "sequence_no": 10,
+  "api_sequence_no": null,
+  "run_id": "run_1d70edb93a664d539c9c5dcc0f2d9742",
+  "input_id": "case-078",
+  "person_name": "Vinny Sinopoli",
+  "task_id": "task_bc0fe7515f6de9ff7acad3c9",
+  "candidate_id": "",
+  "stage": "QueryEnd",
+  "attempt": 1,
+  "business_success": true
+}
+2026-08-11 12:46:06,415 | INFO | search_tool.QueryChainLogger | QueryEnd 响应数据: HTTP - elapsed_ms=-
+{
+  "status": "SUCCESS",
+  "candidate_count": 1
+}
+

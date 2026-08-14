@@ -166,10 +166,16 @@ services:
       PLATFORM_API_URL: http://platform-api:8000/api/v1
       PLATFORM_CLIENT_TOKEN_FILE: /run/secrets/platform-client-token
       PLATFORM_RUNTIME_ENV: "${PLATFORM_RUNTIME_ENV:-dev}"
+      PEOPLE_SEARCH_ANALYZER_ENABLED: "true"
+      PEOPLE_SEARCH_ANALYZER_AI_ENABLED: "true"
+      PEOPLE_SEARCH_ANALYZER_LLM_ENDPOINT: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+      PEOPLE_SEARCH_ANALYZER_LLM_MODEL: "deepseek-v4-flash"
+      PEOPLE_SEARCH_ANALYZER_LLM_API_KEY_FILE: "/run/secrets/llm-api-key"
     volumes:
       # 页面提示使用宿主机路径，容器实际写入对应的 /exports 目录。
       - ${LOG_EXPORT_HOST_DIR:-/Users/admin/Documents/log}:/exports
       - ./.runtime-secrets/log-filter-client-token:/run/secrets/platform-client-token:ro
+      - ./.runtime-secrets/llm-api-key:/run/secrets/llm-api-key:ro
     expose:
       - "5001"
     healthcheck:

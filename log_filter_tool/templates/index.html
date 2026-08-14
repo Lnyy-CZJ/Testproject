@@ -159,6 +159,25 @@
         font-size: 14px;
       }
 
+      .toolbar-buttons {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+
+      .toolbar-buttons button#analyze-people-search-btn {
+        background: #1f8a4c;
+      }
+
+      .toolbar-buttons button#analyze-people-search-btn:hover {
+        background: #176d3b;
+      }
+
+      .toolbar-buttons button#analyze-people-search-btn:disabled {
+        background: #9bb7a7;
+        cursor: not-allowed;
+      }
+
       .message {
         padding: 10px 12px;
         border: 1px solid #e0bc63;
@@ -405,7 +424,10 @@
             </div>
           </div>
 
-          <button type="submit">解析日志</button>
+          <div class="toolbar-buttons">
+            <button type="submit">解析日志</button>
+            <button type="button" id="analyze-people-search-btn" onclick="analyzePeopleSearch()">分析检索链路</button>
+          </div>
 
           <div class="stats">
             识别到 {{ method_count }} 个 method，当前匹配 {{ match_count }} 个日志块
@@ -519,6 +541,18 @@
           </div>
         </section>
       {% endif %}
+
+      <section id="people-search-analysis" hidden>
+        <div class="result-header">
+          <h2>检索链路分析</h2>
+          <div class="result-tools">
+            <span class="stats" id="people-search-status">未分析</span>
+            <button type="button" id="copy-report-btn" onclick="copyReport()">复制报告</button>
+            <button type="button" id="export-report-btn" onclick="exportReport()">导出Markdown</button>
+          </div>
+        </div>
+        <pre id="people-search-report"></pre>
+      </section>
     </main>
     <script>
       (function() {
@@ -632,15 +666,23 @@
 
       /**
        * 导出指定文本区域的当前原始内容，不包含搜索产生的高亮标签。
-       * @param {'log_content'|'filtered_result'} exportType 导出内容来源。
+       * @param {'log_content'|'filtered_result'|'analysis_report'} exportType 导出内容来源。
+       * @param {string} [overrideContent] 显式指定导出内容（检索分析报告使用）。
        */
-      function exportLog(exportType) {
-        var content = exportType === 'log_content'
-          ? document.getElementById('log_text').value
-          : resultRawText;
+      function exportLog(exportType, overrideContent) {
+        var content;
+        if (overrideContent !== undefined && overrideContent !== null) {
+          content = overrideContent;
+        } else if (exportType === 'log_content') {
+          content = document.getElementById('log_text').value;
+        } else {
+          content = resultRawText;
+        }
         var buttonId = exportType === 'log_content'
           ? 'export-log-content-btn'
-          : 'export-filtered-result-btn';
+          : exportType === 'analysis_report'
+            ? 'export-report-btn'
+            : 'export-filtered-result-btn';
         var button = document.getElementById(buttonId);
         var originalText = button.textContent;
 
@@ -761,6 +803,75 @@
           btn.textContent = '已复制';
           setTimeout(function() { btn.textContent = '复制'; }, 1500);
         });
+      }
+
+      /**
+       * 调用检索链路分析接口，用 textContent 写入报告，不渲染任意 HTML。
+       * 失败时保留原日志和现有过滤结果，仅展示错误信息。
+       */
+      function analyzePeopleSearch() {
+        var logText = document.getElementById('log_text').value;
+        var button = document.getElementById('analyze-people-search-btn');
+        var statusEl = document.getElementById('people-search-status');
+        var reportEl = document.getElementById('people-search-report');
+        var section = document.getElementById('people-search-analysis');
+        var originalText = button.textContent;
+
+        if (!logText.trim()) {
+          showActionMessage('日志内容为空，请先粘贴日志再分析', true);
+          return;
+        }
+
+        button.disabled = true;
+        button.textContent = '分析中...';
+        statusEl.textContent = '分析中';
+        section.hidden = false;
+
+        var analyzeUrl = {{ url_for('tool.analyze_people_search')|tojson }};
+        fetch(analyzeUrl, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json', 'X-CSRF-Token': readCookie('tp_csrf')},
+          body: JSON.stringify({log_text: logText})
+        })
+          .then(function(response) {
+            return response.json().then(function(payload) {
+              if (!response.ok) {
+                throw new Error(payload.message || '分析失败');
+              }
+              return payload;
+            });
+          })
+          .then(function(payload) {
+            var data = payload.data || {};
+            reportEl.textContent = data.report_markdown || '';
+            statusEl.textContent = data.verdict || '完成';
+            showActionMessage('分析完成：' + (data.verdict || ''), false);
+          })
+          .catch(function(error) {
+            reportEl.textContent = '';
+            statusEl.textContent = '失败';
+            showActionMessage(error.message, true);
+          })
+          .finally(function() {
+            button.disabled = false;
+            button.textContent = originalText;
+          });
+      }
+
+      /** 复制检索链路分析报告纯文本。 */
+      function copyReport() {
+        var reportText = document.getElementById('people-search-report').textContent;
+        navigator.clipboard.writeText(reportText).then(function() {
+          var btn = document.getElementById('copy-report-btn');
+          btn.textContent = '已复制';
+          setTimeout(function() { btn.textContent = '复制报告'; }, 1500);
+        });
+      }
+
+      /** 将检索链路分析报告导出为 .md 文件，复用服务端固定导出目录。 */
+      function exportReport() {
+        var reportText = document.getElementById('people-search-report').textContent;
+        exportLog('analysis_report', reportText);
       }
     </script>
   </body>

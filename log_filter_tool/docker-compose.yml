@@ -8,7 +8,18 @@ services:
       # 容器写入目录与用户看到的宿主机路径分离，防止前端控制任意路径。
       LOG_EXPORT_DIR: /exports
       LOG_EXPORT_DISPLAY_DIR: /Users/admin/Documents/log
+      # People Insight 专项分析：默认开启规则分析，AI 默认关闭（评审确认配置完成后再开启）。
+      PEOPLE_SEARCH_ANALYZER_ENABLED: "true"
+      PEOPLE_SEARCH_ANALYZER_AI_ENABLED: "false"
+      # API Key 不写明文，使用只读 secret 文件挂载。
+      PEOPLE_SEARCH_ANALYZER_LLM_API_KEY_FILE: /run/secrets/log-analyzer-key
     volumes:
       # 将已确认的默认日志目录映射到容器，导出文件会直接落到 macOS。
       - /Users/admin/Documents/log:/exports
+    secrets:
+      - log-analyzer-key
     restart: unless-stopped
+
+secrets:
+  log-analyzer-key:
+    file: ./secrets/log-analyzer-key.txt

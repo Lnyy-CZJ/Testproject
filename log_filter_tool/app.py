@@ -37,9 +37,10 @@ STATUS_CODE_PATTERNS = (
     re.compile(r"HTTP/\d(?:\.\d)?\s+(\d{3})", re.IGNORECASE),
     re.compile(r'"?status_code"?\s*[:=]\s*"?(\d{3})', re.IGNORECASE),
 )
-EXPORT_FILE_PREFIXES = {
-    "log_content": "log_content",
-    "filtered_result": "filtered_result",
+EXPORT_FILE_TYPES = {
+    "log_content": ("log_content", ".log"),
+    "filtered_result": ("filtered_result", ".log"),
+    "analysis_report": ("people_search_analysis", ".md"),
 }
 DEFAULT_EXPORT_DIR = "/Users/admin/Documents/log"
 # 导出文件名使用用户所在的上海时区，避免 Docker 默认 UTC 造成时间偏差。
@@ -324,7 +325,7 @@ def save_exported_log(content, export_type, export_dir):
 
     参数说明:
         content (str): 需要导出的当前文本框内容，不能为空或仅包含空白。
-        export_type (str): 导出来源，只允许 log_content 或 filtered_result。
+        export_type (str): 导出来源，支持 log_content、filtered_result 和 analysis_report。
         export_dir (str | Path): 服务端实际写入的目录。
 
     返回值:
@@ -334,7 +335,7 @@ def save_exported_log(content, export_type, export_dir):
         ValueError: 导出类型不受支持或导出内容为空时抛出。
         OSError: 目录创建或文件写入失败时由调用方统一转换为错误响应。
     """
-    if export_type not in EXPORT_FILE_PREFIXES:
+    if export_type not in EXPORT_FILE_TYPES:
         raise ValueError("不支持的导出类型")
     if not isinstance(content, str) or not content.strip():
         raise ValueError("当前内容为空，无法导出")
@@ -342,11 +343,12 @@ def save_exported_log(content, export_type, export_dir):
     target_dir = Path(export_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now(EXPORT_TIMEZONE).strftime("%Y%m%d_%H%M%S")
-    filename_base = f"{EXPORT_FILE_PREFIXES[export_type]}_{timestamp}"
+    prefix, extension = EXPORT_FILE_TYPES[export_type]
+    filename_base = f"{prefix}_{timestamp}"
 
     for sequence in range(10000):
         suffix = "" if sequence == 0 else f"_{sequence}"
-        target_path = target_dir / f"{filename_base}{suffix}.log"
+        target_path = target_dir / f"{filename_base}{suffix}{extension}"
         try:
             with target_path.open("x", encoding="utf-8") as export_file:
                 export_file.write(content)
@@ -393,6 +395,12 @@ def create_app(base_path=None):
     app.config["PLATFORM_HOME_URL"] = os.environ.get("PLATFORM_HOME_URL", "").strip()
     app.config["PLATFORM_API_URL"] = os.environ.get("PLATFORM_API_URL", "").rstrip("/")
     app.config["PLATFORM_CLIENT_TOKEN_FILE"] = os.environ.get("PLATFORM_CLIENT_TOKEN_FILE", "")
+    app.config["PEOPLE_SEARCH_ANALYZER_ENABLED"] = os.environ.get(
+        "PEOPLE_SEARCH_ANALYZER_ENABLED", "true"
+    ).lower() in ("1", "true", "yes", "on")
+    app.config["PEOPLE_SEARCH_ANALYZER_AI_ENABLED"] = os.environ.get(
+        "PEOPLE_SEARCH_ANALYZER_AI_ENABLED", "false"
+    ).lower() in ("1", "true", "yes", "on")
     tool = Blueprint("tool", __name__)
 
     def client_token():
@@ -512,6 +520,103 @@ def create_app(base_path=None):
     def sample_log():
         sample_path = Path(__file__).with_name("log_default.log")
         return sample_path.read_text(encoding="utf-8") if sample_path.exists() else ""
+
+    @tool.route("/people-search/analyze", methods=["POST"])
+    def analyze_people_search():
+        """People Insight 检索日志分析接口（设计 §13）。
+
+        请求:
+            JSON: {"log_text": "...", "task_id": "可选"}
+
+        返回:
+            成功 200：{code, message, data:{verdict, task, coverage, timeline,
+                     checks, cost, ai, report_markdown}}。
+            400 EMPTY_LOG、422 UNSUPPORTED_LOG/MULTIPLE_TASKS_FOUND、
+            500 ANALYSIS_INTERNAL_ERROR。
+            AI 默认关闭，data.ai.status 为 DISABLED；规则报告始终返回。
+        """
+        if not app.config["PEOPLE_SEARCH_ANALYZER_ENABLED"]:
+            return jsonify({
+                "code": 1,
+                "message": "检索分析功能未启用",
+                "error_code": "ANALYZER_DISABLED",
+            }), 503
+
+        payload = request.get_json(silent=True) or {}
+        log_text = payload.get("log_text", "") or ""
+        task_id = payload.get("task_id") or None
+        if not log_text.strip():
+            return jsonify({
+                "code": 1,
+                "message": "日志内容为空",
+                "error_code": "EMPTY_LOG",
+            }), 400
+
+        try:
+            # 延迟导入避免与 people_search_analyzer -> app 的循环导入。
+            from people_search_analyzer import (
+                ANALYZER_VERSION,
+                RULESET_VERSION,
+                analyze_people_search_log,
+            )
+            from people_search_ai import (
+                attach_ai_to_report,
+                load_ai_config,
+                summarize_with_ai,
+            )
+            from people_search_rules import (
+                redact_for_response,
+                render_rule_report,
+                run_all_checks,
+            )
+
+            result = analyze_people_search_log(log_text, task_id)
+            if not result["supported"]:
+                return jsonify({
+                    "code": 1,
+                    "message": "未识别到 People Insight 检索接口",
+                    "error_code": "UNSUPPORTED_LOG",
+                }), 422
+            if result["selection_error"]:
+                return jsonify({
+                    "code": 1,
+                    "message": result["selection_error"],
+                    "error_code": result["selection_error"],
+                    "detected_task_ids": result["task_ids"],
+                }), 422
+
+            snapshot = result["snapshot"]
+            warnings = list(result["parse_warnings"])
+            checks, verdict, _ = run_all_checks(snapshot, warnings)
+            report_markdown = render_rule_report(result)
+
+            # 可选 AI 总结（§11~§12）：默认关闭，配置齐全后开启；
+            # 任何失败（超时、HTTP 错、非法响应）都只降级为规则报告。
+            ai_status = {"status": "DISABLED"}
+            if app.config["PEOPLE_SEARCH_ANALYZER_AI_ENABLED"]:
+                ai_cfg = load_ai_config()
+                ai_text, ai_status, _ = summarize_with_ai(result, ai_cfg)
+                report_markdown = attach_ai_to_report(report_markdown, ai_text)
+
+            data = {
+                "analyzer_version": ANALYZER_VERSION,
+                "ruleset_version": RULESET_VERSION,
+                "verdict": verdict,
+                "task": snapshot["task"],
+                "coverage": snapshot["coverage"],
+                "timeline": snapshot["timeline"],
+                "checks": redact_for_response(checks),
+                "cost": snapshot["cost"],
+                "ai": ai_status,
+                "report_markdown": report_markdown,
+            }
+            return jsonify({"code": 0, "message": "ok", "data": data}), 200
+        except Exception:
+            return jsonify({
+                "code": 1,
+                "message": "分析失败",
+                "error_code": "ANALYSIS_INTERNAL_ERROR",
+            }), 500
 
     @tool.route("/export", methods=["POST"])
     def export_log():

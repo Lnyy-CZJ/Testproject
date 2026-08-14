@@ -1,0 +1,4589 @@
+2026-08-11 12:45:08,599 | INFO | search_tool.QueryChainLogger | QueryStart 事件:
+{
+  "sequence_no": 1,
+  "api_sequence_no": null,
+  "run_id": "run_1d70edb93a664d539c9c5dcc0f2d9742",
+  "input_id": "case-077",
+  "person_name": "Matt Locklear",
+  "task_id": "",
+  "candidate_id": "",
+  "stage": "QueryStart",
+  "attempt": 1,
+  "business_success": true
+}
+2026-08-11 12:45:08,599 | INFO | search_tool.QueryChainLogger | QueryStart 脱敏请求数据: attempt=1
+{
+  "input_id": "case-077",
+  "query_stage": "FULL_NAME",
+  "match_strategy": "UNION",
+  "clues": [
+    {
+      "full_name_query": {
+        "full_name": "Matt Locklear"
+      },
+      "type": "FULL_NAME"
+    }
+  ],
+  "additional_details": []
+}
+
+2026-08-11 12:45:09,691 | INFO | search_tool.QueryChainLogger | CreateIntentTask 事件:
+{
+  "sequence_no": 2,
+  "api_sequence_no": 1,
+  "run_id": "run_1d70edb93a664d539c9c5dcc0f2d9742",
+  "input_id": "case-077",
+  "person_name": "Matt Locklear",
+  "task_id": "task_5b217eaef83d705d6580ce49",
+  "candidate_id": "",
+  "stage": "CreateIntentTask",
+  "attempt": 1,
+  "business_success": true
+}
+2026-08-11 12:45:09,691 | INFO | search_tool.QueryChainLogger | CreateIntentTask 脱敏请求数据: attempt=1
+{
+  "match_strategy": "UNION",
+  "clues": [
+    {
+      "full_name_query": {
+        "full_name": "Matt Locklear"
+      },
+      "type": "FULL_NAME"
+    }
+  ],
+  "additional_details": []
+}
+2026-08-11 12:45:09,691 | INFO | search_tool.QueryChainLogger | CreateIntentTask 响应数据: HTTP 200 elapsed_ms=1088
+{
+  "code": 0,
+  "message": "ok",
+  "request_id": "gw_req_5f45d904ff7847be48bc78ca4f772b6d",
+  "trace_id": "trace_f8e285167d5ea8fbb99af6d9d1df952e",
+  "responses": [
+    {
+      "id": "req_0",
+      "success": true,
+      "code": 0,
+      "message": "ok",
+      "data": {
+        "accepted_query_type": "FULL_NAME",
+        "additional_details": [],
+        "cache_hit": false,
+        "can_start_real_search": true,
+        "clue_types": [
+          "FULL_NAME"
+        ],
+        "entitlement_decision": "ALLOW",
+        "expires_time": 1789015510202,
+        "match_strategy": "UNION",
+        "status": "QUEUED",
+        "task_id": "task_5b217eaef83d705d6580ce49"
+      }
+    }
+  ]
+}
+
+2026-08-11 12:45:15,697 | INFO | search_tool.QueryChainLogger | GetTask 事件:
+{
+  "sequence_no": 3,
+  "api_sequence_no": 1,
+  "run_id": "run_1d70edb93a664d539c9c5dcc0f2d9742",
+  "input_id": "case-077",
+  "person_name": "Matt Locklear",
+  "task_id": "task_5b217eaef83d705d6580ce49",
+  "candidate_id": "",
+  "stage": "GetTask",
+  "attempt": 1,
+  "business_success": true
+}
+2026-08-11 12:45:15,697 | INFO | search_tool.QueryChainLogger | GetTask 脱敏请求数据: attempt=1
+{
+  "task_id": "task_5b217eaef83d705d6580ce49"
+}
+2026-08-11 12:45:15,697 | INFO | search_tool.QueryChainLogger | GetTask 响应数据: HTTP 200 elapsed_ms=994
+{
+  "code": 0,
+  "message": "ok",
+  "request_id": "gw_req_49a839647ec72922d6ae23db87fd2dd0",
+  "trace_id": "trace_73a8f47cfd1404b6b4c06aea8830ce2e",
+  "responses": [
+    {
+      "id": "req_0",
+      "success": true,
+      "code": 0,
+      "message": "ok",
+      "data": {
+        "cache_hit": false,
+        "candidate_confidence_scores": [],
+        "candidate_count": 0,
+        "error_code": "",
+        "failure_reason": "",
+        "has_additional_clues": false,
+        "is_initial_search": true,
+        "no_result_reason": "",
+        "progress": {
+          "display_message": "Searching public sources",
+          "display_percent": 45,
+          "stage": "provider_search"
+        },
+        "provider_execution": "PENDING",
+        "provider_summary": {
+          "cache_hit": false,
+          "primary_provider": "",
+          "provider_execution": "PENDING",
+          "providers": [],
+          "public_sources": false,
+          "source_provider": "",
+          "source_providers": []
+        },
+        "result_type": "",
+        "status": "SEARCHING",
+        "task_id": "task_5b217eaef83d705d6580ce49",
+        "top_confidence_score": 0,
+        "update_time": 1786423511562
+      }
+    }
+  ]
+}
+
+2026-08-11 12:45:21,709 | INFO | search_tool.QueryChainLogger | GetTask 事件:
+{
+  "sequence_no": 4,
+  "api_sequence_no": 2,
+  "run_id": "run_1d70edb93a664d539c9c5dcc0f2d9742",
+  "input_id": "case-077",
+  "person_name": "Matt Locklear",
+  "task_id": "task_5b217eaef83d705d6580ce49",
+  "candidate_id": "",
+  "stage": "GetTask",
+  "attempt": 1,
+  "business_success": true
+}
+2026-08-11 12:45:21,709 | INFO | search_tool.QueryChainLogger | GetTask 脱敏请求数据: attempt=1
+{
+  "task_id": "task_5b217eaef83d705d6580ce49"
+}
+2026-08-11 12:45:21,709 | INFO | search_tool.QueryChainLogger | GetTask 响应数据: HTTP 200 elapsed_ms=996
+{
+  "code": 0,
+  "message": "ok",
+  "request_id": "gw_req_262d223dd304c0d9255eac78f118f2f4",
+  "trace_id": "trace_e1f0343e3c1cd2ad35cc5365a8f5909e",
+  "responses": [
+    {
+      "id": "req_0",
+      "success": true,
+      "code": 0,
+      "message": "ok",
+      "data": {
+        "cache_hit": false,
+        "candidate_confidence_scores": [],
+        "candidate_count": 0,
+        "error_code": "",
+        "failure_reason": "",
+        "has_additional_clues": false,
+        "is_initial_search": true,
+        "no_result_reason": "",
+        "progress": {
+          "display_message": "Searching public sources",
+          "display_percent": 45,
+          "stage": "provider_search"
+        },
+        "provider_execution": "PENDING",
+        "provider_summary": {
+          "cache_hit": false,
+          "primary_provider": "",
+          "provider_execution": "PENDING",
+          "providers": [],
+          "public_sources": false,
+          "source_provider": "",
+          "source_providers": []
+        },
+        "result_type": "",
+        "status": "SEARCHING",
+        "task_id": "task_5b217eaef83d705d6580ce49",
+        "top_confidence_score": 0,
+        "update_time": 1786423511562
+      }
+    }
+  ]
+}
+
+2026-08-11 12:45:27,773 | INFO | search_tool.QueryChainLogger | GetTask 事件:
+{
+  "sequence_no": 5,
+  "api_sequence_no": 3,
+  "run_id": "run_1d70edb93a664d539c9c5dcc0f2d9742",
+  "input_id": "case-077",
+  "person_name": "Matt Locklear",
+  "task_id": "task_5b217eaef83d705d6580ce49",
+  "candidate_id": "",
+  "stage": "GetTask",
+  "attempt": 1,
+  "business_success": true
+}
+2026-08-11 12:45:27,773 | INFO | search_tool.QueryChainLogger | GetTask 脱敏请求数据: attempt=1
+{
+  "task_id": "task_5b217eaef83d705d6580ce49"
+}
+2026-08-11 12:45:27,773 | INFO | search_tool.QueryChainLogger | GetTask 响应数据: HTTP 200 elapsed_ms=1062
+{
+  "code": 0,
+  "message": "ok",
+  "request_id": "gw_req_785c6fb556804f4f3d2ae7e3203b3547",
+  "trace_id": "trace_ed371762fb3122653058212cadb8485a",
+  "responses": [
+    {
+      "id": "req_0",
+      "success": true,
+      "code": 0,
+      "message": "ok",
+      "data": {
+        "cache_hit": false,
+        "candidate_confidence_scores": [],
+        "candidate_count": 0,
+        "error_code": "",
+        "failure_reason": "",
+        "has_additional_clues": false,
+        "is_initial_search": true,
+        "no_result_reason": "",
+        "progress": {
+          "display_message": "Searching public sources",
+          "display_percent": 45,
+          "stage": "provider_search"
+        },
+        "provider_execution": "PENDING",
+        "provider_summary": {
+          "cache_hit": false,
+          "primary_provider": "",
+          "provider_execution": "PENDING",
+          "providers": [],
+          "public_sources": false,
+          "source_provider": "",
+          "source_providers": []
+        },
+        "result_type": "",
+        "status": "SEARCHING",
+        "task_id": "task_5b217eaef83d705d6580ce49",
+        "top_confidence_score": 0,
+        "update_time": 1786423511562
+      }
+    }
+  ]
+}
+
+2026-08-11 12:45:33,768 | INFO | search_tool.QueryChainLogger | GetTask 事件:
+{
+  "sequence_no": 6,
+  "api_sequence_no": 4,
+  "run_id": "run_1d70edb93a664d539c9c5dcc0f2d9742",
+  "input_id": "case-077",
+  "person_name": "Matt Locklear",
+  "task_id": "task_5b217eaef83d705d6580ce49",
+  "candidate_id": "",
+  "stage": "GetTask",
+  "attempt": 1,
+  "business_success": true
+}
+2026-08-11 12:45:33,768 | INFO | search_tool.QueryChainLogger | GetTask 脱敏请求数据: attempt=1
+{
+  "task_id": "task_5b217eaef83d705d6580ce49"
+}
+2026-08-11 12:45:33,768 | INFO | search_tool.QueryChainLogger | GetTask 响应数据: HTTP 200 elapsed_ms=992
+{
+  "code": 0,
+  "message": "ok",
+  "request_id": "gw_req_d0d49541a55f16c10f2b3a84bbec5966",
+  "trace_id": "trace_5fae375fbebb413318c4275a96ee0a37",
+  "responses": [
+    {
+      "id": "req_0",
+      "success": true,
+      "code": 0,
+      "message": "ok",
+      "data": {
+        "cache_hit": false,
+        "candidate_confidence_scores": [
+          35,
+          35,
+          35
+        ],
+        "candidate_count": 3,
+        "error_code": "",
+        "failure_reason": "",
+        "has_additional_clues": false,
+        "is_initial_search": true,
+        "no_result_reason": "",
+        "progress": {
+          "display_message": "Report ready",
+          "display_percent": 100,
+          "stage": "report_ready"
+        },
+        "provider_execution": "REAL_PROVIDER",
+        "provider_summary": {
+          "cache_hit": false,
+          "primary_provider": "agent_people",
+          "provider_execution": "REAL_PROVIDER",
+          "providers": [
+            "agent_people",
+            "social_profile",
+            "image_materializer",
+            "people_data_labs",
+            "search_agent"
+          ],
+          "public_sources": false,
+          "source_provider": "people_data_labs",
+          "source_providers": [
+            "people_data_labs",
+            "scrapecreators"
+          ]
+        },
+        "result_type": "multiple",
+        "status": "SUCCEEDED",
+        "task_id": "task_5b217eaef83d705d6580ce49",
+        "top_confidence_score": 35,
+        "update_time": 1786423531966
+      }
+    }
+  ]
+}
+
+2026-08-11 12:45:36,145 | INFO | search_tool.QueryChainLogger | GetSearchTaskDebug 事件:
+{
+  "sequence_no": 7,
+  "api_sequence_no": 1,
+  "run_id": "run_1d70edb93a664d539c9c5dcc0f2d9742",
+  "input_id": "case-077",
+  "person_name": "Matt Locklear",
+  "task_id": "task_5b217eaef83d705d6580ce49",
+  "candidate_id": "",
+  "stage": "GetSearchTaskDebug",
+  "attempt": 1,
+  "business_success": true
+}
+2026-08-11 12:45:36,145 | INFO | search_tool.QueryChainLogger | GetSearchTaskDebug 脱敏请求数据: attempt=1
+{
+  "task_id": "task_5b217eaef83d705d6580ce49",
+  "service": "worker"
+}
+2026-08-11 12:45:36,145 | INFO | search_tool.QueryChainLogger | GetSearchTaskDebug 响应数据: HTTP 200 elapsed_ms=1338
+{
+  "code": 0,
+  "message": "ok",
+  "request_id": "gw_req_12aaa10f84ab40f848a5500743b39f0a",
+  "trace_id": "trace_214d1f540d3545ca99b9c0ffb38c5640",
+  "responses": [
+    {
+      "id": "req_0",
+      "success": true,
+      "code": 0,
+      "message": "ok",
+      "data": {
+        "debug": {
+          "task": {
+            "cache_hit": 0,
+            "client_request_id": "crid-1786423508602-0fae77c784",
+            "create_time": "2026-08-11T04:45:10.202Z",
+            "entitlement_decision": "ALLOW",
+            "error_code": "",
+            "expire_time": "2026-09-10T04:45:10.202Z",
+            "finish_time": "2026-08-11T04:45:31.966Z",
+            "id": 1657,
+            "no_result_reason": "",
+            "progress_message": "Report ready",
+            "progress_percent": 100,
+            "progress_stage": "report_ready",
+            "query_type": "FULL_NAME",
+            "refine_feedback_id": "",
+            "report_id": "report_27461d9e9a69fb1a34dca4c8",
+            "source_report_id": "",
+            "source_task_id": "",
+            "start_time": "2026-08-11T04:45:11.562Z",
+            "status": "SUCCEEDED",
+            "task_id": "task_5b217eaef83d705d6580ce49",
+            "update_time": "2026-08-11T04:45:31.966Z"
+          },
+          "query": {
+            "additional_details_json": null,
+            "city": "",
+            "clues_json": [
+              {
+                "full_name": "Matt Locklear",
+                "type": "FULL_NAME"
+              }
+            ],
+            "country": "",
+            "create_time": "2026-08-11T04:45:10.202Z",
+            "extra_hint": "",
+            "full_name": "Matt Locklear",
+            "id": 1656,
+            "location_json": null,
+            "location_text": "",
+            "match_strategy": "UNION",
+            "media_asset_id": "",
+            "photo_type_hint": "",
+            "platform_hint": "",
+            "query_id": "query_0363851473c8b3de8be3770f",
+            "query_type": "FULL_NAME",
+            "raw_query": {
+              "additional_details": [],
+              "clues": [
+                {
+                  "full_name_query": {
+                    "full_name": "Matt Locklear"
+                  },
+                  "type": "FULL_NAME"
+                }
+              ],
+              "match_strategy": "UNION"
+            },
+            "task_id": "task_5b217eaef83d705d6580ce49",
+            "update_time": "2026-08-11T12:45:10.209Z",
+            "url": ""
+          },
+          "diagnosis": {
+            "agent_tool_call_count": 11,
+            "config_estimate_call_count": 0,
+            "conflict_resolution": "",
+            "conflict_warning": "",
+            "conflicting_clue_types": [],
+            "cost_complete": true,
+            "cost_consistent": true,
+            "estimated_cost_microunit": 843910,
+            "estimated_cost_scope": "TASK_TOTAL_ALL_PROVIDER_CALLS",
+            "failed_call_count": 0,
+            "fallback_reason": "LLM_NO_RESULT",
+            "fallback_resolution": "",
+            "fallback_used": true,
+            "final_reason": "",
+            "final_status": "SUCCEEDED",
+            "identity_conflict": false,
+            "identity_resolution_status": "NOT_EVALUATED",
+            "llm_content_bytes": 400,
+            "llm_http_attempt_count": 1,
+            "llm_output_status": "LLM_OUTPUT_COMPLETE",
+            "llm_partial_candidates": 0,
+            "llm_partial_response": false,
+            "llm_partial_result_usable": false,
+            "llm_partial_sources": 0,
+            "llm_reasoning_bytes": 0,
+            "llm_recoverable_candidates": 0,
+            "llm_repair_retry_used": false,
+            "llm_truncation_detected": false,
+            "no_result_call_count": 6,
+            "partial_cost_call_count": 0,
+            "pdl_billing_unit_count": 3,
+            "pdl_called": true,
+            "pdl_candidates": [
+              {
+                "candidate_id": "pdl:dB3-5A1gPY1lrbeG4tfbzA_0000",
+                "decision": "ELIGIBLE",
+                "display_name": "matt locklear",
+                "match_score": 35,
+                "matched_clue_types": [
+                  "FULL_NAME"
+                ],
+                "profile_fetch_called": false,
+                "profile_fetch_cost_microunit": 0,
+                "rejection_reason": "",
+                "selected": true,
+                "social_links": [
+                  "https://linkedin.com/in/matt-locklear-92884753",
+                  "https://twitter.com/praeus_ml"
+                ],
+                "stage": "person_search"
+              },
+              {
+                "candidate_id": "pdl:MZ8HQoAge1niay7F58PzeQ_0000",
+                "decision": "ELIGIBLE",
+                "display_name": "matt locklear",
+                "match_score": 35,
+                "matched_clue_types": [
+                  "FULL_NAME"
+                ],
+                "profile_fetch_called": false,
+                "profile_fetch_cost_microunit": 0,
+                "rejection_reason": "",
+                "selected": true,
+                "social_links": [
+                  "https://linkedin.com/in/matt-locklear-32b554a2"
+                ],
+                "stage": "person_search"
+              },
+              {
+                "candidate_id": "pdl:c7cK-YBYaTYJcy71wT-7Iw_0000",
+                "decision": "ELIGIBLE",
+                "display_name": "matt locklear",
+                "match_score": 35,
+                "matched_clue_types": [
+                  "FULL_NAME"
+                ],
+                "profile_fetch_called": false,
+                "profile_fetch_cost_microunit": 0,
+                "rejection_reason": "",
+                "selected": true,
+                "social_links": [
+                  "https://linkedin.com/in/matt-locklear"
+                ],
+                "stage": "person_search"
+              }
+            ],
+            "pdl_decision": "called",
+            "pdl_estimated_cost_microunit": 840000,
+            "pdl_external_request_count": 1,
+            "pdl_identify_call_count": 0,
+            "pdl_identify_called": false,
+            "pdl_identify_candidate_count": 0,
+            "pdl_not_called_reason": "",
+            "pdl_person_search_call_count": 1,
+            "pdl_person_search_called": true,
+            "pdl_person_search_returned_profile_count": 3,
+            "pdl_pipeline_stages": [
+              {
+                "api_request_count": 1,
+                "billed_quantity": 3,
+                "billing_operation": "person_search_profile",
+                "candidate_count": 3,
+                "operation": "person_search",
+                "status": "success",
+                "unit_type": "returned_profile"
+              }
+            ],
+            "pdl_profile_fetch_count": 0,
+            "pdl_rejected_candidate_count": 0,
+            "pdl_rejection_reasons": [],
+            "pdl_skip_reason": "",
+            "pdl_skipped": false,
+            "pdl_usable_candidate_count": 3,
+            "people_fallback_reason": "LLM_NO_RESULT",
+            "people_fallback_used": true,
+            "pre_pdl_estimated_cost_microunit": 150,
+            "provider_request_count": 1,
+            "public_figure_eligibility": "eligible",
+            "public_figure_eligible": true,
+            "public_figure_evaluated": true,
+            "public_figure_local": "miss",
+            "public_figure_local_known": false,
+            "public_figure_remote": "miss",
+            "public_figure_remote_ambiguous": false,
+            "public_figure_remote_called": true,
+            "public_figure_remote_total": 0,
+            "public_figure_remote_usable": "unusable",
+            "public_figure_remote_usable_count": 0,
+            "public_figure_selected_wikidata_id": "",
+            "public_figure_skip_reason": "PRIMARY_NO_RESULT",
+            "report_estimated_cost_microunit": 843910,
+            "result_confidence_level": "LOW",
+            "result_pdl_skip_reason": "",
+            "result_pdl_skipped": false,
+            "result_provider": "people_data_labs",
+            "result_source_provider": "",
+            "result_stop_reason": "completed",
+            "reverse_image_estimated_cost_microunit": 0,
+            "reverse_image_fallback_reasons": [],
+            "reverse_image_fallback_used": false,
+            "reverse_image_final_provider": "",
+            "reverse_image_primary_provider": "",
+            "reverse_image_provider_attempt_count": 0,
+            "reverse_image_status": "NOT_PLANNED",
+            "reverse_image_stop_reason": "NOT_PLANNED",
+            "search_result_cache": "miss",
+            "social_identity_support": "",
+            "social_link_owner_names": [],
+            "social_profile_attempted_count": 4,
+            "social_profile_depth_skipped_count": 0,
+            "social_profile_duplicate_count": 11,
+            "social_profile_error_count": 0,
+            "social_profile_execution_skipped_count": 0,
+            "social_profile_limit_skipped_count": 0,
+            "social_profile_merged_candidate_count": 2,
+            "social_profile_no_result_count": 2,
+            "social_profile_planned_count": 4,
+            "social_profile_queue_decision_truncated_count": 0,
+            "social_profile_queue_decisions": [
+              {
+                "canonical_url": "https://linkedin.com/in/matt-locklear-92884753",
+                "decision": "CALLED",
+                "depth": 1,
+                "discovered_by": "PDL",
+                "error_code": "",
+                "no_result_reason": "PROFILE_PRIVATE_OR_UNAVAILABLE",
+                "outcome": "NO_RESULT",
+                "parent_candidate_id": "pdl:dB3-5A1gPY1lrbeG4tfbzA_0000",
+                "parent_evidence_id": "",
+                "parent_provider": "people_data_labs",
+                "parent_url": "",
+                "platform": "linkedin",
+                "raw_url": "linkedin.com/in/matt-locklear-92884753",
+                "skip_reason": ""
+              },
+              {
+                "canonical_url": "https://linkedin.com/in/matt-locklear-92884753",
+                "decision": "SKIPPED",
+                "depth": 1,
+                "discovered_by": "PDL",
+                "error_code": "",
+                "no_result_reason": "",
+                "outcome": "",
+                "parent_candidate_id": "pdl:dB3-5A1gPY1lrbeG4tfbzA_0000",
+                "parent_evidence_id": "",
+                "parent_provider": "people_data_labs",
+                "parent_url": "",
+                "platform": "linkedin",
+                "raw_url": "linkedin.com/in/matt-locklear-92884753",
+                "skip_reason": "DUPLICATE"
+              },
+              {
+                "canonical_url": "https://x.com/praeus_ml",
+                "decision": "CALLED",
+                "depth": 1,
+                "discovered_by": "PDL",
+                "error_code": "",
+                "no_result_reason": "",
+                "outcome": "SUCCESS",
+                "parent_candidate_id": "pdl:dB3-5A1gPY1lrbeG4tfbzA_0000",
+                "parent_evidence_id": "",
+                "parent_provider": "people_data_labs",
+                "parent_url": "",
+                "platform": "x",
+                "raw_url": "twitter.com/praeus_ml",
+                "skip_reason": ""
+              },
+              {
+                "canonical_url": "https://linkedin.com/in/matt-locklear-32b554a2",
+                "decision": "CALLED",
+                "depth": 1,
+                "discovered_by": "PDL",
+                "error_code": "",
+                "no_result_reason": "PROFILE_PRIVATE_OR_UNAVAILABLE",
+                "outcome": "NO_RESULT",
+                "parent_candidate_id": "pdl:MZ8HQoAge1niay7F58PzeQ_0000",
+                "parent_evidence_id": "",
+                "parent_provider": "people_data_labs",
+                "parent_url": "",
+                "platform": "linkedin",
+                "raw_url": "linkedin.com/in/matt-locklear-32b554a2",
+                "skip_reason": ""
+              },
+              {
+                "canonical_url": "https://linkedin.com/in/matt-locklear-32b554a2",
+                "decision": "SKIPPED",
+                "depth": 1,
+                "discovered_by": "PDL",
+                "error_code": "",
+                "no_result_reason": "",
+                "outcome": "",
+                "parent_candidate_id": "pdl:MZ8HQoAge1niay7F58PzeQ_0000",
+                "parent_evidence_id": "",
+                "parent_provider": "people_data_labs",
+                "parent_url": "",
+                "platform": "linkedin",
+                "raw_url": "linkedin.com/in/matt-locklear-32b554a2",
+                "skip_reason": "DUPLICATE"
+              },
+              {
+                "canonical_url": "https://linkedin.com/in/matt-locklear",
+                "decision": "CALLED",
+                "depth": 1,
+                "discovered_by": "PDL",
+                "error_code": "",
+                "no_result_reason": "",
+                "outcome": "SUCCESS",
+                "parent_candidate_id": "pdl:c7cK-YBYaTYJcy71wT-7Iw_0000",
+                "parent_evidence_id": "",
+                "parent_provider": "people_data_labs",
+                "parent_url": "",
+                "platform": "linkedin",
+                "raw_url": "linkedin.com/in/matt-locklear",
+                "skip_reason": ""
+              },
+              {
+                "canonical_url": "https://linkedin.com/in/matt-locklear",
+                "decision": "SKIPPED",
+                "depth": 1,
+                "discovered_by": "PDL",
+                "error_code": "",
+                "no_result_reason": "",
+                "outcome": "",
+                "parent_candidate_id": "pdl:c7cK-YBYaTYJcy71wT-7Iw_0000",
+                "parent_evidence_id": "",
+                "parent_provider": "people_data_labs",
+                "parent_url": "",
+                "platform": "linkedin",
+                "raw_url": "linkedin.com/in/matt-locklear",
+                "skip_reason": "DUPLICATE"
+              },
+              {
+                "canonical_url": "https://linkedin.com/in/matt-locklear-92884753",
+                "decision": "SKIPPED",
+                "depth": 1,
+                "discovered_by": "PDL",
+                "error_code": "",
+                "no_result_reason": "",
+                "outcome": "",
+                "parent_candidate_id": "",
+                "parent_evidence_id": "",
+                "parent_provider": "people_data_labs",
+                "parent_url": "",
+                "platform": "linkedin",
+                "raw_url": "linkedin.com/in/matt-locklear-92884753",
+                "skip_reason": "DUPLICATE"
+              },
+              {
+                "canonical_url": "https://x.com/praeus_ml",
+                "decision": "SKIPPED",
+                "depth": 1,
+                "discovered_by": "PDL",
+                "error_code": "",
+                "no_result_reason": "",
+                "outcome": "",
+                "parent_candidate_id": "",
+                "parent_evidence_id": "",
+                "parent_provider": "people_data_labs",
+                "parent_url": "",
+                "platform": "x",
+                "raw_url": "twitter.com/praeus_ml",
+                "skip_reason": "DUPLICATE"
+              },
+              {
+                "canonical_url": "https://linkedin.com/in/matt-locklear-32b554a2",
+                "decision": "SKIPPED",
+                "depth": 1,
+                "discovered_by": "PDL",
+                "error_code": "",
+                "no_result_reason": "",
+                "outcome": "",
+                "parent_candidate_id": "",
+                "parent_evidence_id": "",
+                "parent_provider": "people_data_labs",
+                "parent_url": "",
+                "platform": "linkedin",
+                "raw_url": "linkedin.com/in/matt-locklear-32b554a2",
+                "skip_reason": "DUPLICATE"
+              },
+              {
+                "canonical_url": "https://linkedin.com/in/matt-locklear",
+                "decision": "SKIPPED",
+                "depth": 1,
+                "discovered_by": "PDL",
+                "error_code": "",
+                "no_result_reason": "",
+                "outcome": "",
+                "parent_candidate_id": "",
+                "parent_evidence_id": "",
+                "parent_provider": "people_data_labs",
+                "parent_url": "",
+                "platform": "linkedin",
+                "raw_url": "linkedin.com/in/matt-locklear",
+                "skip_reason": "DUPLICATE"
+              },
+              {
+                "canonical_url": "https://x.com/praeus_ml",
+                "decision": "SKIPPED",
+                "depth": 2,
+                "discovered_by": "SOCIAL_PROFILE",
+                "error_code": "",
+                "no_result_reason": "",
+                "outcome": "",
+                "parent_candidate_id": "",
+                "parent_evidence_id": "",
+                "parent_provider": "scrapecreators",
+                "parent_url": "https://x.com/praeus_ml",
+                "platform": "x",
+                "raw_url": "https://x.com/praeus_ml",
+                "skip_reason": "DUPLICATE"
+              },
+              {
+                "canonical_url": "https://x.com/praeus_ml",
+                "decision": "SKIPPED",
+                "depth": 2,
+                "discovered_by": "SOCIAL_PROFILE",
+                "error_code": "",
+                "no_result_reason": "",
+                "outcome": "",
+                "parent_candidate_id": "",
+                "parent_evidence_id": "",
+                "parent_provider": "scrapecreators",
+                "parent_url": "https://x.com/praeus_ml",
+                "platform": "x",
+                "raw_url": "https://x.com/praeus_ml",
+                "skip_reason": "DUPLICATE"
+              },
+              {
+                "canonical_url": "https://linkedin.com/in/matt-locklear",
+                "decision": "SKIPPED",
+                "depth": 2,
+                "discovered_by": "SOCIAL_PROFILE",
+                "error_code": "",
+                "no_result_reason": "",
+                "outcome": "",
+                "parent_candidate_id": "",
+                "parent_evidence_id": "",
+                "parent_provider": "scrapecreators",
+                "parent_url": "https://linkedin.com/in/matt-locklear",
+                "platform": "linkedin",
+                "raw_url": "https://linkedin.com/in/matt-locklear",
+                "skip_reason": "DUPLICATE"
+              },
+              {
+                "canonical_url": "https://linkedin.com/in/matt-locklear",
+                "decision": "SKIPPED",
+                "depth": 2,
+                "discovered_by": "SOCIAL_PROFILE",
+                "error_code": "",
+                "no_result_reason": "",
+                "outcome": "",
+                "parent_candidate_id": "",
+                "parent_evidence_id": "",
+                "parent_provider": "scrapecreators",
+                "parent_url": "https://linkedin.com/in/matt-locklear",
+                "platform": "linkedin",
+                "raw_url": "https://linkedin.com/in/matt-locklear",
+                "skip_reason": "DUPLICATE"
+              }
+            ],
+            "social_profile_requested_identity_matched": false,
+            "social_profile_skip_reason": "",
+            "social_profile_status": "PARTIAL",
+            "social_profile_success_count": 2,
+            "social_profile_unmatched_profile_count": 0,
+            "social_profile_unsupported_count": 0,
+            "status_consistent": true,
+            "stop_reason": "FALLBACK_RESULT_USABLE",
+            "successful_call_count": 5,
+            "task_total_estimated_cost_microunit": 843910,
+            "unmatched_clue_types": [],
+            "unpriced_call_count": 0,
+            "unverified_requested_social_identity": false,
+            "warnings": []
+          },
+          "provider_requests": [
+            {
+              "create_time": "2026-08-11T04:45:31.941Z",
+              "error_code": "",
+              "error_message": "",
+              "finish_time": "2026-08-11T04:45:31.941Z",
+              "id": 1709,
+              "idempotency_key": "task_5b217eaef83d705d6580ce49:search_agent:full_name",
+              "provider": "search_agent",
+              "provider_request_id": "provider_req_task_5b217eaef83d705d6580ce49_sear_760e13234aa0b567",
+              "request_payload": {
+                "clue_types": [
+                  "FULL_NAME"
+                ],
+                "max_depth": 1,
+                "max_estimated_cost_microunit": 0,
+                "max_photo_inputs": 5,
+                "max_social_urls": 6,
+                "max_tool_steps": 20,
+                "policy_version": "v1",
+                "provider": "search_agent",
+                "providers": [
+                  "agent_people",
+                  "social_profile",
+                  "image_materializer"
+                ],
+                "query_id": "query_0363851473c8b3de8be3770f",
+                "query_type": "FULL_NAME",
+                "task_id": "task_5b217eaef83d705d6580ce49",
+                "timeout_ms": 90000
+              },
+              "request_type": "FULL_NAME",
+              "response_ref": "cos://tool-srv-people-insight-1349591044/provider-responses/search_agent/20260811/task_5b217eaef83d705d6580ce49/gw_req_5f45d904ff7847be48bc78ca4f772b6d/succeeded-75e50ed35380c832.json",
+              "start_time": "2026-08-11T04:45:11.572Z",
+              "status": "succeeded",
+              "task_id": "task_5b217eaef83d705d6580ce49",
+              "update_time": "2026-08-11T04:45:31.941Z"
+            }
+          ],
+          "agent_tool_calls": [
+            {
+              "billable_units": 1,
+              "billing_currency": "USD",
+              "billing_unit": "credit",
+              "billing_usage_json": [
+                {
+                  "operation": "scrapecreators_linkedin_profile",
+                  "quantity": 1,
+                  "unit_type": "credit"
+                }
+              ],
+              "cache_hit": 0,
+              "call_id": "atc_357240e97bc61959286d5c969be55d72",
+              "cost_breakdown_json": [
+                {
+                  "billing_model": "PER_UNIT",
+                  "currency": "USD",
+                  "estimated_cost_microunit": 1880,
+                  "operation": "scrapecreators_linkedin_profile",
+                  "pricing_rule_id": "price_scrapecreators_linkedin_freelance_20260810",
+                  "pricing_version": "2026-08-scrapecreators-freelance-conservative",
+                  "quantity": 1,
+                  "status": "CALCULATED",
+                  "unit_type": "credit"
+                }
+              ],
+              "cost_status": "CALCULATED",
+              "create_time": "2026-08-11T04:45:31.602Z",
+              "error_code": "",
+              "error_message": "",
+              "estimated_cost_microunit": 1880,
+              "finish_time": "2026-08-11T04:45:31.602Z",
+              "http_status": 200,
+              "non_billable_reason": "",
+              "policy_version": "v1",
+              "pricing_rule_id": "price_scrapecreators_linkedin_freelance_20260810",
+              "pricing_version": "2026-08-scrapecreators-freelance-conservative",
+              "provider": "social_profile",
+              "provider_operation": "scrapecreators_linkedin_profile",
+              "query_id": "query_0363851473c8b3de8be3770f",
+              "request_fingerprint": "e8352bec5d829f87e6abe617fd05b51c15487681c3ba3df16c2fdb01c071c0af",
+              "request_summary": {
+                "canonical_url": "https://linkedin.com/in/matt-locklear",
+                "clue_types": [
+                  "FULL_NAME"
+                ],
+                "detail_count": 0,
+                "has_location": false,
+                "has_media": false,
+                "has_name": true,
+                "has_url": true,
+                "input_url": "https://linkedin.com/in/matt-locklear",
+                "platform": "linkedin",
+                "policy_version": "v1",
+                "query_type": "SOCIAL_LINK"
+              },
+              "request_type": "SOCIAL_LINK",
+              "response_ref": "cos://tool-srv-people-insight-1349591044/provider-responses/social_profile/20260811/task_5b217eaef83d705d6580ce49/gw_req_5f45d904ff7847be48bc78ca4f772b6d/success-d58cda6c39d37988.json",
+              "response_summary": {
+                "cache_hit": false,
+                "confidence_level": "MEDIUM",
+                "evidence_count": 1,
+                "found": true,
+                "no_result_reason": "",
+                "profile_count": 1,
+                "provider": "social_profile",
+                "provider_cache_hit": false,
+                "social_account_count": 1
+              },
+              "start_time": "2026-08-11T04:45:29.378Z",
+              "status": "success",
+              "task_id": "task_5b217eaef83d705d6580ce49",
+              "worker_id": "worker-79f769d947-jcpk7"
+            },
+            {
+              "billable_units": 0,
+              "billing_currency": "",
+              "billing_unit": "",
+              "billing_usage_json": [],
+              "cache_hit": 0,
+              "call_id": "atc_b5ef9e7fce1736cd14ab9711d77762ff",
+              "cost_breakdown_json": [],
+              "cost_status": "NON_BILLABLE",
+              "create_time": "2026-08-11T04:45:29.355Z",
+              "error_code": "",
+              "error_message": "",
+              "estimated_cost_microunit": 0,
+              "finish_time": "2026-08-11T04:45:29.355Z",
+              "http_status": 404,
+              "non_billable_reason": "provider_reported_zero_usage",
+              "policy_version": "v1",
+              "pricing_rule_id": "",
+              "pricing_version": "",
+              "provider": "social_profile",
+              "provider_operation": "scrapecreators_linkedin_profile",
+              "query_id": "query_0363851473c8b3de8be3770f",
+              "request_fingerprint": "cc3c9d454072aa2e08a6126b85a47aa4583647db8975ac2e0ba306aff0757466",
+              "request_summary": {
+                "canonical_url": "https://linkedin.com/in/matt-locklear-32b554a2",
+                "clue_types": [
+                  "FULL_NAME"
+                ],
+                "detail_count": 0,
+                "has_location": false,
+                "has_media": false,
+                "has_name": true,
+                "has_url": true,
+                "input_url": "https://linkedin.com/in/matt-locklear-32b554a2",
+                "platform": "linkedin",
+                "policy_version": "v1",
+                "query_type": "SOCIAL_LINK"
+              },
+              "request_type": "SOCIAL_LINK",
+              "response_ref": "cos://tool-srv-people-insight-1349591044/provider-responses/social_profile/20260811/task_5b217eaef83d705d6580ce49/gw_req_5f45d904ff7847be48bc78ca4f772b6d/no_result-86a93981c0fa334f.json",
+              "response_summary": {
+                "cache_hit": false,
+                "confidence_level": "",
+                "evidence_count": 0,
+                "found": false,
+                "no_result_reason": "PROFILE_PRIVATE_OR_UNAVAILABLE",
+                "profile_count": 0,
+                "provider": "social_profile",
+                "social_account_count": 0
+              },
+              "start_time": "2026-08-11T04:45:25.262Z",
+              "status": "no_result",
+              "task_id": "task_5b217eaef83d705d6580ce49",
+              "worker_id": "worker-79f769d947-jcpk7"
+            },
+            {
+              "billable_units": 1,
+              "billing_currency": "USD",
+              "billing_unit": "credit",
+              "billing_usage_json": [
+                {
+                  "operation": "scrapecreators_x_profile",
+                  "quantity": 1,
+                  "unit_type": "credit"
+                }
+              ],
+              "cache_hit": 0,
+              "call_id": "atc_d5292fa79b50c4bef3e130c3ba5eeb57",
+              "cost_breakdown_json": [
+                {
+                  "billing_model": "PER_UNIT",
+                  "currency": "USD",
+                  "estimated_cost_microunit": 1880,
+                  "operation": "scrapecreators_x_profile",
+                  "pricing_rule_id": "price_scrapecreators_x_freelance_20260810",
+                  "pricing_version": "2026-08-scrapecreators-freelance-conservative",
+                  "quantity": 1,
+                  "status": "CALCULATED",
+                  "unit_type": "credit"
+                }
+              ],
+              "cost_status": "CALCULATED",
+              "create_time": "2026-08-11T04:45:25.23Z",
+              "error_code": "",
+              "error_message": "",
+              "estimated_cost_microunit": 1880,
+              "finish_time": "2026-08-11T04:45:25.23Z",
+              "http_status": 200,
+              "non_billable_reason": "",
+              "policy_version": "v1",
+              "pricing_rule_id": "price_scrapecreators_x_freelance_20260810",
+              "pricing_version": "2026-08-scrapecreators-freelance-conservative",
+              "provider": "social_profile",
+              "provider_operation": "scrapecreators_x_profile",
+              "query_id": "query_0363851473c8b3de8be3770f",
+              "request_fingerprint": "f5a356fd985e29d3613c68ebfe9b35b5255fb4e253b920b71f5681ad8caf0d5e",
+              "request_summary": {
+                "canonical_url": "https://x.com/praeus_ml",
+                "clue_types": [
+                  "FULL_NAME"
+                ],
+                "detail_count": 0,
+                "has_location": false,
+                "has_media": false,
+                "has_name": true,
+                "has_url": true,
+                "input_url": "https://x.com/praeus_ml",
+                "platform": "x",
+                "policy_version": "v1",
+                "query_type": "SOCIAL_LINK"
+              },
+              "request_type": "SOCIAL_LINK",
+              "response_ref": "cos://tool-srv-people-insight-1349591044/provider-responses/social_profile/20260811/task_5b217eaef83d705d6580ce49/gw_req_5f45d904ff7847be48bc78ca4f772b6d/success-4901db3915c2d308.json",
+              "response_summary": {
+                "cache_hit": false,
+                "confidence_level": "MEDIUM",
+                "evidence_count": 1,
+                "found": true,
+                "no_result_reason": "",
+                "profile_count": 1,
+                "provider": "social_profile",
+                "provider_cache_hit": false,
+                "social_account_count": 1
+              },
+              "start_time": "2026-08-11T04:45:23.83Z",
+              "status": "success",
+              "task_id": "task_5b217eaef83d705d6580ce49",
+              "worker_id": "worker-79f769d947-jcpk7"
+            },
+            {
+              "billable_units": 0,
+              "billing_currency": "",
+              "billing_unit": "",
+              "billing_usage_json": [],
+              "cache_hit": 0,
+              "call_id": "atc_d31c1ef787f16e1cffc29ca4ae13d987",
+              "cost_breakdown_json": [],
+              "cost_status": "NON_BILLABLE",
+              "create_time": "2026-08-11T04:45:23.807Z",
+              "error_code": "",
+              "error_message": "",
+              "estimated_cost_microunit": 0,
+              "finish_time": "2026-08-11T04:45:23.807Z",
+              "http_status": 404,
+              "non_billable_reason": "provider_reported_zero_usage",
+              "policy_version": "v1",
+              "pricing_rule_id": "",
+              "pricing_version": "",
+              "provider": "social_profile",
+              "provider_operation": "scrapecreators_linkedin_profile",
+              "query_id": "query_0363851473c8b3de8be3770f",
+              "request_fingerprint": "97826d3fa06d9c63770d3dd6ee43d4ce88aed6027dc3172a9e28003bf2de985f",
+              "request_summary": {
+                "canonical_url": "https://linkedin.com/in/matt-locklear-92884753",
+                "clue_types": [
+                  "FULL_NAME"
+                ],
+                "detail_count": 0,
+                "has_location": false,
+                "has_media": false,
+                "has_name": true,
+                "has_url": true,
+                "input_url": "https://linkedin.com/in/matt-locklear-92884753",
+                "platform": "linkedin",
+                "policy_version": "v1",
+                "query_type": "SOCIAL_LINK"
+              },
+              "request_type": "SOCIAL_LINK",
+              "response_ref": "cos://tool-srv-people-insight-1349591044/provider-responses/social_profile/20260811/task_5b217eaef83d705d6580ce49/gw_req_5f45d904ff7847be48bc78ca4f772b6d/no_result-d163b333a03639f6.json",
+              "response_summary": {
+                "cache_hit": false,
+                "confidence_level": "",
+                "evidence_count": 0,
+                "found": false,
+                "no_result_reason": "PROFILE_PRIVATE_OR_UNAVAILABLE",
+                "profile_count": 0,
+                "provider": "social_profile",
+                "social_account_count": 0
+              },
+              "start_time": "2026-08-11T04:45:16.038Z",
+              "status": "no_result",
+              "task_id": "task_5b217eaef83d705d6580ce49",
+              "worker_id": "worker-79f769d947-jcpk7"
+            },
+            {
+              "billable_units": 0,
+              "billing_currency": "",
+              "billing_unit": "",
+              "billing_usage_json": [],
+              "cache_hit": 0,
+              "call_id": "atc_2b79cf699046198e0086be0daf6e41d6",
+              "cost_breakdown_json": [],
+              "cost_status": "NON_BILLABLE",
+              "create_time": "2026-08-11T04:45:16.035Z",
+              "error_code": "",
+              "error_message": "",
+              "estimated_cost_microunit": 0,
+              "finish_time": "2026-08-11T04:45:16.035Z",
+              "http_status": 0,
+              "non_billable_reason": "aggregated_by_child_calls",
+              "policy_version": "v1",
+              "pricing_rule_id": "",
+              "pricing_version": "",
+              "provider": "agent_people",
+              "provider_operation": "request",
+              "query_id": "query_0363851473c8b3de8be3770f",
+              "request_fingerprint": "d503a8d5bc2894576096d14e7c33f93e07349eb03043d12dd9cf88ea3492ffe8",
+              "request_summary": {
+                "clue_types": [
+                  "FULL_NAME"
+                ],
+                "detail_count": 0,
+                "has_location": false,
+                "has_media": false,
+                "has_name": true,
+                "has_url": false,
+                "policy_version": "v1",
+                "query_type": "FULL_NAME"
+              },
+              "request_type": "FULL_NAME",
+              "response_ref": "",
+              "response_summary": {
+                "cache_hit": false,
+                "confidence_level": "LOW",
+                "evidence_count": 10,
+                "fallback_reason": "LLM_NO_RESULT",
+                "found": true,
+                "no_result_reason": "",
+                "pdl_billing_unit_count": 3,
+                "pdl_candidates": [
+                  {
+                    "candidate_id": "pdl:dB3-5A1gPY1lrbeG4tfbzA_0000",
+                    "decision": "ELIGIBLE",
+                    "display_name": "matt locklear",
+                    "match_score": 35,
+                    "matched_clue_types": [
+                      "FULL_NAME"
+                    ],
+                    "profile_fetch_called": false,
+                    "profile_fetch_cost_microunit": 0,
+                    "rejection_reason": "",
+                    "selected": true,
+                    "social_links": [
+                      "https://linkedin.com/in/matt-locklear-92884753",
+                      "https://twitter.com/praeus_ml"
+                    ],
+                    "stage": "person_search"
+                  },
+                  {
+                    "candidate_id": "pdl:MZ8HQoAge1niay7F58PzeQ_0000",
+                    "decision": "ELIGIBLE",
+                    "display_name": "matt locklear",
+                    "match_score": 35,
+                    "matched_clue_types": [
+                      "FULL_NAME"
+                    ],
+                    "profile_fetch_called": false,
+                    "profile_fetch_cost_microunit": 0,
+                    "rejection_reason": "",
+                    "selected": true,
+                    "social_links": [
+                      "https://linkedin.com/in/matt-locklear-32b554a2"
+                    ],
+                    "stage": "person_search"
+                  },
+                  {
+                    "candidate_id": "pdl:c7cK-YBYaTYJcy71wT-7Iw_0000",
+                    "decision": "ELIGIBLE",
+                    "display_name": "matt locklear",
+                    "match_score": 35,
+                    "matched_clue_types": [
+                      "FULL_NAME"
+                    ],
+                    "profile_fetch_called": false,
+                    "profile_fetch_cost_microunit": 0,
+                    "rejection_reason": "",
+                    "selected": true,
+                    "social_links": [
+                      "https://linkedin.com/in/matt-locklear"
+                    ],
+                    "stage": "person_search"
+                  }
+                ],
+                "pdl_cost_scope": "PDL_PROVIDER_CALL_ALL_STAGES",
+                "pdl_estimated_cost_microunit": 840000,
+                "pdl_external_request_count": 1,
+                "pdl_identify_call_count": 0,
+                "pdl_identify_called": false,
+                "pdl_identify_candidate_count": 0,
+                "pdl_person_search_call_count": 1,
+                "pdl_person_search_called": true,
+                "pdl_person_search_returned_profile_count": 3,
+                "pdl_pipeline_stages": [
+                  {
+                    "api_request_count": 1,
+                    "billed_quantity": 3,
+                    "billing_operation": "person_search_profile",
+                    "candidate_count": 3,
+                    "operation": "person_search",
+                    "status": "success",
+                    "unit_type": "returned_profile"
+                  }
+                ],
+                "pdl_profile_fetch_count": 0,
+                "pdl_rejected_candidate_count": 0,
+                "pdl_rejection_reasons": [],
+                "pdl_usable_candidate_count": 3,
+                "people_pipeline_cost_scope": "LLM_PUBLIC_FIGURE_AND_PDL",
+                "people_pipeline_estimated_cost_microunit": 840150,
+                "pre_pdl_estimated_cost_microunit": 150,
+                "profile_count": 3,
+                "provider": "agent_people",
+                "provider_runs": [
+                  {
+                    "found": false,
+                    "no_result_reason": "NO_STRONG_IDENTIFIER",
+                    "provider": "person_entity_store"
+                  },
+                  {
+                    "found": false,
+                    "no_result_reason": "NO_MATCH",
+                    "provider": "llm_search"
+                  },
+                  {
+                    "found": true,
+                    "provider": "people_data_labs"
+                  }
+                ],
+                "social_account_count": 4,
+                "stop_reason": "FALLBACK_RESULT_USABLE"
+              },
+              "start_time": "2026-08-11T04:45:11.572Z",
+              "status": "success",
+              "task_id": "task_5b217eaef83d705d6580ce49",
+              "worker_id": "worker-79f769d947-jcpk7"
+            },
+            {
+              "billable_units": 3,
+              "billing_currency": "USD",
+              "billing_unit": "returned_profile",
+              "billing_usage_json": [
+                {
+                  "operation": "person_search_profile",
+                  "quantity": 3,
+                  "unit_type": "returned_profile"
+                }
+              ],
+              "cache_hit": 0,
+              "call_id": "atc_34e4d5e865d49430cc0df26060de752a",
+              "cost_breakdown_json": [
+                {
+                  "billing_model": "PER_UNIT",
+                  "currency": "USD",
+                  "estimated_cost_microunit": 840000,
+                  "operation": "person_search_profile",
+                  "pricing_rule_id": "price_pdl_search_tier1_20260729",
+                  "pricing_version": "2026-07-29-pdl-self-serve-tier1",
+                  "quantity": 3,
+                  "status": "CALCULATED",
+                  "unit_type": "returned_profile"
+                }
+              ],
+              "cost_status": "CALCULATED",
+              "create_time": "2026-08-11T04:45:15.999Z",
+              "error_code": "",
+              "error_message": "",
+              "estimated_cost_microunit": 840000,
+              "finish_time": "2026-08-11T04:45:15.999Z",
+              "http_status": 0,
+              "non_billable_reason": "",
+              "policy_version": "v1",
+              "pricing_rule_id": "price_pdl_search_tier1_20260729",
+              "pricing_version": "2026-07-29-pdl-self-serve-tier1",
+              "provider": "people_data_labs",
+              "provider_operation": "person_search_profile",
+              "query_id": "query_0363851473c8b3de8be3770f",
+              "request_fingerprint": "aa7abbfe9518cea309b2ba2022109bf3da7a870217ed979205ed0b1a1042c2ed",
+              "request_summary": {
+                "clue_types": [
+                  "FULL_NAME"
+                ],
+                "detail_count": 0,
+                "has_location": false,
+                "has_media": false,
+                "has_name": true,
+                "has_url": false,
+                "policy_version": "v1",
+                "query_type": "FULL_NAME"
+              },
+              "request_type": "FULL_NAME",
+              "response_ref": "cos://tool-srv-people-insight-1349591044/provider-responses/people_data_labs/20260811/task_5b217eaef83d705d6580ce49/gw_req_5f45d904ff7847be48bc78ca4f772b6d/success-bf1057ead4d5ce0e.json",
+              "response_summary": {
+                "cache_hit": false,
+                "confidence_level": "LOW",
+                "evidence_count": 10,
+                "found": true,
+                "no_result_reason": "",
+                "pdl_billing_unit_count": 3,
+                "pdl_candidates": [
+                  {
+                    "candidate_id": "pdl:dB3-5A1gPY1lrbeG4tfbzA_0000",
+                    "decision": "ELIGIBLE",
+                    "display_name": "matt locklear",
+                    "match_score": 35,
+                    "matched_clue_types": [
+                      "FULL_NAME"
+                    ],
+                    "profile_fetch_called": false,
+                    "profile_fetch_cost_microunit": 0,
+                    "rejection_reason": "",
+                    "selected": true,
+                    "social_links": [
+                      "https://linkedin.com/in/matt-locklear-92884753",
+                      "https://twitter.com/praeus_ml"
+                    ],
+                    "stage": "person_search"
+                  },
+                  {
+                    "candidate_id": "pdl:MZ8HQoAge1niay7F58PzeQ_0000",
+                    "decision": "ELIGIBLE",
+                    "display_name": "matt locklear",
+                    "match_score": 35,
+                    "matched_clue_types": [
+                      "FULL_NAME"
+                    ],
+                    "profile_fetch_called": false,
+                    "profile_fetch_cost_microunit": 0,
+                    "rejection_reason": "",
+                    "selected": true,
+                    "social_links": [
+                      "https://linkedin.com/in/matt-locklear-32b554a2"
+                    ],
+                    "stage": "person_search"
+                  },
+                  {
+                    "candidate_id": "pdl:c7cK-YBYaTYJcy71wT-7Iw_0000",
+                    "decision": "ELIGIBLE",
+                    "display_name": "matt locklear",
+                    "match_score": 35,
+                    "matched_clue_types": [
+                      "FULL_NAME"
+                    ],
+                    "profile_fetch_called": false,
+                    "profile_fetch_cost_microunit": 0,
+                    "rejection_reason": "",
+                    "selected": true,
+                    "social_links": [
+                      "https://linkedin.com/in/matt-locklear"
+                    ],
+                    "stage": "person_search"
+                  }
+                ],
+                "pdl_cost_scope": "PDL_PROVIDER_CALL_ALL_STAGES",
+                "pdl_estimated_cost_microunit": 840000,
+                "pdl_external_request_count": 1,
+                "pdl_identify_call_count": 0,
+                "pdl_identify_called": false,
+                "pdl_identify_candidate_count": 0,
+                "pdl_person_search_call_count": 1,
+                "pdl_person_search_called": true,
+                "pdl_person_search_returned_profile_count": 3,
+                "pdl_pipeline_stages": [
+                  {
+                    "api_request_count": 1,
+                    "billed_quantity": 3,
+                    "billing_operation": "person_search_profile",
+                    "candidate_count": 3,
+                    "operation": "person_search",
+                    "status": "success",
+                    "unit_type": "returned_profile"
+                  }
+                ],
+                "pdl_profile_fetch_count": 0,
+                "pdl_rejected_candidate_count": 0,
+                "pdl_rejection_reasons": [],
+                "pdl_usable_candidate_count": 3,
+                "profile_count": 3,
+                "provider": "people_data_labs",
+                "social_account_count": 4
+              },
+              "start_time": "2026-08-11T04:45:15.77Z",
+              "status": "success",
+              "task_id": "task_5b217eaef83d705d6580ce49",
+              "worker_id": "worker-79f769d947-jcpk7"
+            },
+            {
+              "billable_units": 0,
+              "billing_currency": "",
+              "billing_unit": "",
+              "billing_usage_json": [],
+              "cache_hit": 0,
+              "call_id": "atc_7285e32570fff56f9e687f589bfae115",
+              "cost_breakdown_json": [],
+              "cost_status": "NON_BILLABLE",
+              "create_time": "2026-08-11T04:45:15.768Z",
+              "error_code": "",
+              "error_message": "",
+              "estimated_cost_microunit": 0,
+              "finish_time": "2026-08-11T04:45:15.768Z",
+              "http_status": 0,
+              "non_billable_reason": "public_source_no_direct_cost",
+              "policy_version": "v1",
+              "pricing_rule_id": "",
+              "pricing_version": "",
+              "provider": "public_figure",
+              "provider_operation": "remote_lookup",
+              "query_id": "query_0363851473c8b3de8be3770f",
+              "request_fingerprint": "9a8c43cf9537ea57e693f073a80b4818ee57448bab24d98f49a369c6f5197813",
+              "request_summary": {
+                "clue_types": [
+                  "FULL_NAME"
+                ],
+                "detail_count": 0,
+                "has_location": false,
+                "has_media": false,
+                "has_name": true,
+                "has_url": false,
+                "policy_version": "v1",
+                "query_type": "FULL_NAME",
+                "stage": "remote_lookup"
+              },
+              "request_type": "FULL_NAME",
+              "response_ref": "",
+              "response_summary": {
+                "ambiguous": false,
+                "cache_hit": false,
+                "confidence_level": "",
+                "decision_reason": "REMOTE_NO_MATCH",
+                "eligible": true,
+                "evidence_count": 0,
+                "found": false,
+                "local_known": false,
+                "no_result_reason": "NO_PUBLIC_FIGURE_MATCH",
+                "profile_count": 0,
+                "provider": "public_figure",
+                "remote_called": true,
+                "remote_enabled": true,
+                "result_usable": false,
+                "social_account_count": 0,
+                "stage": "remote_lookup",
+                "total_profile_count": 0,
+                "usable_profile_count": 0
+              },
+              "start_time": "2026-08-11T04:45:15.656Z",
+              "status": "no_result",
+              "task_id": "task_5b217eaef83d705d6580ce49",
+              "worker_id": "worker-79f769d947-jcpk7"
+            },
+            {
+              "billable_units": 0,
+              "billing_currency": "",
+              "billing_unit": "",
+              "billing_usage_json": [],
+              "cache_hit": 0,
+              "call_id": "atc_d6a2c5249f6e98bd6afebec64c347552",
+              "cost_breakdown_json": [],
+              "cost_status": "NON_BILLABLE",
+              "create_time": "2026-08-11T04:45:15.654Z",
+              "error_code": "",
+              "error_message": "",
+              "estimated_cost_microunit": 0,
+              "finish_time": "2026-08-11T04:45:15.654Z",
+              "http_status": 0,
+              "non_billable_reason": "public_source_no_direct_cost",
+              "policy_version": "v1",
+              "pricing_rule_id": "",
+              "pricing_version": "",
+              "provider": "public_figure",
+              "provider_operation": "route_decision",
+              "query_id": "query_0363851473c8b3de8be3770f",
+              "request_fingerprint": "e02b38e7450f022f872f9c22755223cbd0056ccafe18175a8874c1f6d3d12bc4",
+              "request_summary": {
+                "clue_types": [
+                  "FULL_NAME"
+                ],
+                "detail_count": 0,
+                "has_location": false,
+                "has_media": false,
+                "has_name": true,
+                "has_url": false,
+                "policy_version": "v1",
+                "query_type": "FULL_NAME",
+                "stage": "route_decision"
+              },
+              "request_type": "FULL_NAME",
+              "response_ref": "",
+              "response_summary": {
+                "cache_hit": false,
+                "confidence_level": "LOW",
+                "decision_reason": "PRIMARY_NO_RESULT",
+                "eligible": true,
+                "evidence_count": 0,
+                "found": false,
+                "local_known": false,
+                "no_result_reason": "NO_MATCH",
+                "profile_count": 0,
+                "provider": "llm_search",
+                "remote_called": true,
+                "remote_enabled": true,
+                "social_account_count": 0,
+                "stage": "route_decision"
+              },
+              "start_time": "2026-08-11T04:45:15.654Z",
+              "status": "success",
+              "task_id": "task_5b217eaef83d705d6580ce49",
+              "worker_id": "worker-79f769d947-jcpk7"
+            },
+            {
+              "billable_units": 0,
+              "billing_currency": "",
+              "billing_unit": "",
+              "billing_usage_json": [],
+              "cache_hit": 0,
+              "call_id": "atc_e4715b58ad0fedc855b0954787aefc51",
+              "cost_breakdown_json": [],
+              "cost_status": "NON_BILLABLE",
+              "create_time": "2026-08-11T04:45:15.653Z",
+              "error_code": "",
+              "error_message": "",
+              "estimated_cost_microunit": 0,
+              "finish_time": "2026-08-11T04:45:15.653Z",
+              "http_status": 0,
+              "non_billable_reason": "aggregated_by_backend_attempts",
+              "policy_version": "v1",
+              "pricing_rule_id": "",
+              "pricing_version": "",
+              "provider": "llm_search",
+              "provider_operation": "request",
+              "query_id": "query_0363851473c8b3de8be3770f",
+              "request_fingerprint": "27567bfd51d5ac1377f77627a869abc66082e99211125aa043ee5eb00467b2ee",
+              "request_summary": {
+                "clue_types": [
+                  "FULL_NAME"
+                ],
+                "detail_count": 0,
+                "has_location": false,
+                "has_media": false,
+                "has_name": true,
+                "has_url": false,
+                "policy_version": "v1",
+                "query_type": "FULL_NAME"
+              },
+              "request_type": "FULL_NAME",
+              "response_ref": "",
+              "response_summary": {
+                "cache_hit": false,
+                "confidence_level": "LOW",
+                "evidence_count": 0,
+                "found": false,
+                "no_result_reason": "NO_MATCH",
+                "profile_count": 0,
+                "provider": "llm_search",
+                "social_account_count": 0
+              },
+              "start_time": "2026-08-11T04:45:11.575Z",
+              "status": "no_result",
+              "task_id": "task_5b217eaef83d705d6580ce49",
+              "worker_id": "worker-79f769d947-jcpk7"
+            },
+            {
+              "billable_units": 963,
+              "billing_currency": "USD",
+              "billing_unit": "token",
+              "billing_usage_json": [
+                {
+                  "input_tokens": 862,
+                  "operation": "chat_completions/deepseek-v4-flash-202605",
+                  "output_tokens": 101,
+                  "unit_type": "token"
+                }
+              ],
+              "cache_hit": 0,
+              "call_id": "atc_0a24ae59f7da7e03a82155a0f30b515b",
+              "cost_breakdown_json": [
+                {
+                  "billing_model": "TOKEN",
+                  "currency": "USD",
+                  "estimated_cost_microunit": 150,
+                  "input_tokens": 862,
+                  "operation": "chat_completions/deepseek-v4-flash-202605",
+                  "output_tokens": 101,
+                  "pricing_rule_id": "price_tencent_deepseek_v4_flash_20260729",
+                  "pricing_version": "2026-07-29-tencent-intl-public",
+                  "status": "CALCULATED",
+                  "unit_type": "token"
+                }
+              ],
+              "cost_status": "CALCULATED",
+              "create_time": "2026-08-11T04:45:15.613Z",
+              "error_code": "",
+              "error_message": "",
+              "estimated_cost_microunit": 150,
+              "finish_time": "2026-08-11T04:45:15.613Z",
+              "http_status": 200,
+              "non_billable_reason": "",
+              "policy_version": "v1",
+              "pricing_rule_id": "price_tencent_deepseek_v4_flash_20260729",
+              "pricing_version": "2026-07-29-tencent-intl-public",
+              "provider": "llm_search:deepseek",
+              "provider_operation": "chat_completions/deepseek-v4-flash-202605",
+              "query_id": "query_0363851473c8b3de8be3770f",
+              "request_fingerprint": "76bbce6eedb688d129a3bcc76ef2f94d33ebeee63a263c1fc5d1addc2c2a167b",
+              "request_summary": {
+                "attempt_index": 1,
+                "backend": "openai_compatible",
+                "decode_retry": false,
+                "max_tokens": 4096,
+                "model": "deepseek-v4-flash-202605",
+                "provider": "deepseek",
+                "reasoning_effort": "",
+                "thinking": "disabled"
+              },
+              "request_type": "FULL_NAME",
+              "response_ref": "cos://tool-srv-people-insight-1349591044/provider-responses/llm_search_deepseek/20260811/task_5b217eaef83d705d6580ce49/gw_req_5f45d904ff7847be48bc78ca4f772b6d/no_result-ec9a2978dd289a48.json",
+              "response_summary": {
+                "attempt_index": 1,
+                "cache_hit": false,
+                "cached_prompt_tokens": 0,
+                "completion_tokens": 101,
+                "confidence_level": "LOW",
+                "content_bytes": 400,
+                "decode_failure_position": 0,
+                "decode_retry": false,
+                "estimated_cost_microunit": 0,
+                "evidence_count": 0,
+                "finish_reason": "stop",
+                "found": false,
+                "http_attempt_count": 1,
+                "max_tokens": 4096,
+                "max_tokens_reached": false,
+                "no_result_reason": "NO_MATCH",
+                "output_status": "LLM_OUTPUT_COMPLETE",
+                "partial_candidate_count": 0,
+                "partial_response_present": false,
+                "partial_result_usable": false,
+                "partial_source_count": 0,
+                "profile_count": 0,
+                "prompt_tokens": 862,
+                "provider": "llm_search",
+                "reasoning_bytes": 0,
+                "recoverable_candidate_count": 0,
+                "social_account_count": 0,
+                "total_tokens": 963
+              },
+              "start_time": "2026-08-11T04:45:11.579Z",
+              "status": "no_result",
+              "task_id": "task_5b217eaef83d705d6580ce49",
+              "worker_id": "worker-79f769d947-jcpk7"
+            },
+            {
+              "billable_units": 0,
+              "billing_currency": "",
+              "billing_unit": "",
+              "billing_usage_json": [],
+              "cache_hit": 0,
+              "call_id": "atc_7f9d4c494e13491f2544d24a24e38724",
+              "cost_breakdown_json": [],
+              "cost_status": "NON_BILLABLE",
+              "create_time": "2026-08-11T04:45:11.574Z",
+              "error_code": "",
+              "error_message": "",
+              "estimated_cost_microunit": 0,
+              "finish_time": "2026-08-11T04:45:11.574Z",
+              "http_status": 0,
+              "non_billable_reason": "public_source_no_direct_cost",
+              "policy_version": "v1",
+              "pricing_rule_id": "",
+              "pricing_version": "",
+              "provider": "public_figure",
+              "provider_operation": "local_lookup",
+              "query_id": "query_0363851473c8b3de8be3770f",
+              "request_fingerprint": "caa4fdd96f4acbc40fdad2b660834c46be69ca0c91d2175ab61b4dec2baa3da8",
+              "request_summary": {
+                "clue_types": [
+                  "FULL_NAME"
+                ],
+                "detail_count": 0,
+                "has_location": false,
+                "has_media": false,
+                "has_name": true,
+                "has_url": false,
+                "policy_version": "v1",
+                "query_type": "FULL_NAME",
+                "stage": "local_lookup"
+              },
+              "request_type": "FULL_NAME",
+              "response_ref": "",
+              "response_summary": {
+                "ambiguous": false,
+                "decision_reason": "LOCAL_CACHE_MISS",
+                "eligible": true,
+                "found": false,
+                "local_known": false,
+                "remote_called": false,
+                "remote_enabled": true,
+                "result_usable": false,
+                "stage": "local_lookup",
+                "total_profile_count": 0,
+                "usable_profile_count": 0
+              },
+              "start_time": "2026-08-11T04:45:11.572Z",
+              "status": "no_result",
+              "task_id": "task_5b217eaef83d705d6580ce49",
+              "worker_id": "worker-79f769d947-jcpk7"
+            }
+          ],
+          "reports": [
+            {
+              "confidence_level": "LOW",
+              "create_time": "2026-08-11T04:45:31.966Z",
+              "disclaimers": [
+                "People Data Labs Person Search returns candidate profiles; review candidates or add stronger clues before relying on an identity match.",
+                "Social profile fields were extracted from public page data and remain subject to source availability and platform changes."
+              ],
+              "evidence": [
+                {
+                  "display_name": "matt locklear",
+                  "matched_on": [
+                    "name"
+                  ],
+                  "person_id": "pdl:dB3-5A1gPY1lrbeG4tfbzA_0000",
+                  "provider": "people_data_labs",
+                  "provider_person_id": "dB3-5A1gPY1lrbeG4tfbzA_0000",
+                  "subject_profile_url": "linkedin.com/in/matt-locklear-92884753",
+                  "type": "pdl_matched_on"
+                },
+                {
+                  "display_name": "matt locklear",
+                  "field": "linkedin_url",
+                  "person_id": "pdl:dB3-5A1gPY1lrbeG4tfbzA_0000",
+                  "provider": "people_data_labs",
+                  "provider_person_id": "dB3-5A1gPY1lrbeG4tfbzA_0000",
+                  "subject_profile_url": "linkedin.com/in/matt-locklear-92884753",
+                  "type": "pdl_profile_url",
+                  "url": "linkedin.com/in/matt-locklear-92884753"
+                },
+                {
+                  "display_name": "matt locklear",
+                  "field": "twitter_url",
+                  "person_id": "pdl:dB3-5A1gPY1lrbeG4tfbzA_0000",
+                  "provider": "people_data_labs",
+                  "provider_person_id": "dB3-5A1gPY1lrbeG4tfbzA_0000",
+                  "subject_profile_url": "linkedin.com/in/matt-locklear-92884753",
+                  "type": "pdl_profile_url",
+                  "url": "twitter.com/praeus_ml"
+                },
+                {
+                  "display_name": "matt locklear",
+                  "field": "job_company_website",
+                  "person_id": "pdl:dB3-5A1gPY1lrbeG4tfbzA_0000",
+                  "provider": "people_data_labs",
+                  "provider_person_id": "dB3-5A1gPY1lrbeG4tfbzA_0000",
+                  "subject_profile_url": "linkedin.com/in/matt-locklear-92884753",
+                  "type": "pdl_profile_url",
+                  "url": "baptist-health.com"
+                },
+                {
+                  "display_name": "matt locklear",
+                  "matched_on": [
+                    "name"
+                  ],
+                  "person_id": "pdl:MZ8HQoAge1niay7F58PzeQ_0000",
+                  "provider": "people_data_labs",
+                  "provider_person_id": "MZ8HQoAge1niay7F58PzeQ_0000",
+                  "subject_profile_url": "linkedin.com/in/matt-locklear-32b554a2",
+                  "type": "pdl_matched_on"
+                },
+                {
+                  "display_name": "matt locklear",
+                  "field": "linkedin_url",
+                  "person_id": "pdl:MZ8HQoAge1niay7F58PzeQ_0000",
+                  "provider": "people_data_labs",
+                  "provider_person_id": "MZ8HQoAge1niay7F58PzeQ_0000",
+                  "subject_profile_url": "linkedin.com/in/matt-locklear-32b554a2",
+                  "type": "pdl_profile_url",
+                  "url": "linkedin.com/in/matt-locklear-32b554a2"
+                },
+                {
+                  "display_name": "matt locklear",
+                  "field": "job_company_website",
+                  "person_id": "pdl:MZ8HQoAge1niay7F58PzeQ_0000",
+                  "provider": "people_data_labs",
+                  "provider_person_id": "MZ8HQoAge1niay7F58PzeQ_0000",
+                  "subject_profile_url": "linkedin.com/in/matt-locklear-32b554a2",
+                  "type": "pdl_profile_url",
+                  "url": "truist.com"
+                },
+                {
+                  "display_name": "matt locklear",
+                  "matched_on": [
+                    "name"
+                  ],
+                  "person_id": "pdl:c7cK-YBYaTYJcy71wT-7Iw_0000",
+                  "provider": "people_data_labs",
+                  "provider_person_id": "c7cK-YBYaTYJcy71wT-7Iw_0000",
+                  "subject_profile_url": "linkedin.com/in/matt-locklear",
+                  "type": "pdl_matched_on"
+                },
+                {
+                  "display_name": "matt locklear",
+                  "field": "linkedin_url",
+                  "person_id": "pdl:c7cK-YBYaTYJcy71wT-7Iw_0000",
+                  "provider": "people_data_labs",
+                  "provider_person_id": "c7cK-YBYaTYJcy71wT-7Iw_0000",
+                  "subject_profile_url": "linkedin.com/in/matt-locklear",
+                  "type": "pdl_profile_url",
+                  "url": "linkedin.com/in/matt-locklear"
+                },
+                {
+                  "display_name": "matt locklear",
+                  "field": "job_company_website",
+                  "person_id": "pdl:c7cK-YBYaTYJcy71wT-7Iw_0000",
+                  "provider": "people_data_labs",
+                  "provider_person_id": "c7cK-YBYaTYJcy71wT-7Iw_0000",
+                  "subject_profile_url": "linkedin.com/in/matt-locklear",
+                  "type": "pdl_profile_url",
+                  "url": "ey.com"
+                },
+                {
+                  "candidate_id": "pdl:dB3-5A1gPY1lrbeG4tfbzA_0000",
+                  "image_url": "https://pbs.twimg.com/profile_images/1600899595294343169/ep9RlJ73_normal.jpg",
+                  "observed_time": 1786423525227,
+                  "person_id": "pdl:dB3-5A1gPY1lrbeG4tfbzA_0000",
+                  "provider": "social_profile",
+                  "snippet": "computer geek, wower",
+                  "source": "scrapecreators",
+                  "title": "Matt Locklear",
+                  "type": "social_profile_source",
+                  "url": "https://x.com/praeus_ml"
+                },
+                {
+                  "candidate_id": "pdl:c7cK-YBYaTYJcy71wT-7Iw_0000",
+                  "image_url": "https://media.licdn.com/dms/image/v2/C5603AQHAt_a26s_lXg/profile-displayphoto-shrink_200_200/profile-displayphoto-shrink_200_200/0/1568961272497?e=2147483647&v=beta&t=B_TFUSbQ9ciphVxN90-qj49sGk6lQcL8YMUp9k_5ass",
+                  "observed_time": 1786423531599,
+                  "person_id": "pdl:c7cK-YBYaTYJcy71wT-7Iw_0000",
+                  "provider": "social_profile",
+                  "snippet": "",
+                  "source": "scrapecreators",
+                  "title": "Matt Locklear, CPA",
+                  "type": "social_profile_source",
+                  "url": "https://linkedin.com/in/matt-locklear"
+                }
+              ],
+              "expire_time": "2026-09-10T04:45:10.202Z",
+              "generate_time": "2026-08-11T04:45:31.966Z",
+              "id": 1380,
+              "profiles": [
+                {
+                  "_rank_features": {
+                    "gender": "male",
+                    "has_contact": true
+                  },
+                  "avatar_url": "https://pbs.twimg.com/profile_images/1600899595294343169/ep9RlJ73_normal.jpg",
+                  "confidence_level": "LOW",
+                  "display_name": "matt locklear",
+                  "email": "mlocklear@baptisthealth.net",
+                  "emails": null,
+                  "field_provenance": {
+                    "avatar_url": [
+                      {
+                        "observed_time": 1786423525227,
+                        "provider": "scrapecreators",
+                        "source_url": "https://x.com/praeus_ml"
+                      }
+                    ],
+                    "display_name": [
+                      {
+                        "observed_time": 1786423525227,
+                        "provider": "scrapecreators",
+                        "source_url": "https://x.com/praeus_ml"
+                      }
+                    ],
+                    "headline": [
+                      {
+                        "observed_time": 1786423525227,
+                        "provider": "scrapecreators",
+                        "source_url": "https://x.com/praeus_ml"
+                      }
+                    ],
+                    "location": [
+                      {
+                        "observed_time": 1786423525227,
+                        "provider": "scrapecreators",
+                        "source_url": "https://x.com/praeus_ml"
+                      }
+                    ],
+                    "social_links": [
+                      {
+                        "observed_time": 1786423525227,
+                        "provider": "scrapecreators",
+                        "source_url": "https://x.com/praeus_ml"
+                      }
+                    ]
+                  },
+                  "field_source_providers": {
+                    "avatar_url": [
+                      "scrapecreators"
+                    ],
+                    "display_name": [
+                      "scrapecreators"
+                    ],
+                    "headline": [
+                      "scrapecreators"
+                    ],
+                    "location": [
+                      "scrapecreators"
+                    ],
+                    "social_links": [
+                      "scrapecreators"
+                    ]
+                  },
+                  "field_sources": {
+                    "avatar_url": [
+                      "https://x.com/praeus_ml"
+                    ],
+                    "display_name": [
+                      "https://x.com/praeus_ml"
+                    ],
+                    "headline": [
+                      "https://x.com/praeus_ml"
+                    ],
+                    "location": [
+                      "https://x.com/praeus_ml"
+                    ],
+                    "social_links": [
+                      "https://x.com/praeus_ml"
+                    ]
+                  },
+                  "first_name": "matt",
+                  "full_name": "matt locklear",
+                  "headline": "senior user support representative at baptist health",
+                  "id": "dB3-5A1gPY1lrbeG4tfbzA_0000",
+                  "job": "senior user support representative at baptist health",
+                  "job_company_linkedin_url": "linkedin.com/company/baptist-health_394296",
+                  "job_company_name": "baptist health",
+                  "job_company_website": "baptist-health.com",
+                  "job_title": "senior user support representative",
+                  "job_title_role": "support",
+                  "jobs": [
+                    "senior user support representative at baptist health"
+                  ],
+                  "last_name": "locklear",
+                  "location": "Conway, AR",
+                  "location_country": "united states",
+                  "location_locality": "conway",
+                  "location_name": "conway, arkansas, united states",
+                  "location_region": "arkansas",
+                  "match_score": 35,
+                  "match_source": "person_search",
+                  "matched_on": [
+                    "name"
+                  ],
+                  "person_id": "pdl:dB3-5A1gPY1lrbeG4tfbzA_0000",
+                  "photos": [
+                    "https://pbs.twimg.com/profile_images/1600899595294343169/ep9RlJ73_normal.jpg"
+                  ],
+                  "profile_url": "linkedin.com/in/matt-locklear-92884753",
+                  "provider": "people_data_labs",
+                  "rank_features": {
+                    "gender": "male",
+                    "has_contact": true
+                  },
+                  "social_links": [
+                    {
+                      "platform": "linkedin",
+                      "url": "linkedin.com/in/matt-locklear-92884753",
+                      "username": "matt-locklear-92884753"
+                    },
+                    {
+                      "platform": "x",
+                      "source_url": "https://x.com/praeus_ml",
+                      "url": "twitter.com/praeus_ml",
+                      "username": "praeus_ml",
+                      "verification_level": "LIKELY",
+                      "verification_reason": "social_profile_name_match"
+                    }
+                  ],
+                  "social_platforms": [
+                    "linkedin",
+                    "x"
+                  ],
+                  "social_profile_details": [
+                    {
+                      "avatar_url": "https://pbs.twimg.com/profile_images/1600899595294343169/ep9RlJ73_normal.jpg",
+                      "display_name": "Matt Locklear",
+                      "followers_count": 100,
+                      "headline": "computer geek, wower",
+                      "location": "Conway, AR",
+                      "observed_time": 1786423525227,
+                      "platform": "x",
+                      "profile_url": "https://x.com/praeus_ml",
+                      "provider": "social_profile",
+                      "source": "scrapecreators",
+                      "source_provider": "scrapecreators",
+                      "username": "Praeus_ML",
+                      "verified": false
+                    }
+                  ],
+                  "source_providers": [
+                    "scrapecreators"
+                  ]
+                },
+                {
+                  "_rank_features": {
+                    "gender": "male",
+                    "has_contact": true
+                  },
+                  "confidence_level": "LOW",
+                  "display_name": "matt locklear",
+                  "education": "the university of north carolina at chapel hill bachelor of applied science bachelors",
+                  "education_items": [
+                    "the university of north carolina at chapel hill bachelor of applied science bachelors"
+                  ],
+                  "email": "matt.locklear@truist.com",
+                  "first_name": "matt",
+                  "full_name": "matt locklear",
+                  "headline": "manager, enterprise endpoint security & strategy at truist",
+                  "id": "MZ8HQoAge1niay7F58PzeQ_0000",
+                  "job": "manager, enterprise endpoint security & strategy at truist",
+                  "job_company_linkedin_url": "linkedin.com/company/truistfinancialcorporation",
+                  "job_company_name": "truist",
+                  "job_company_website": "truist.com",
+                  "job_title": "manager, enterprise endpoint security & strategy",
+                  "job_title_role": "professional_service",
+                  "jobs": [
+                    "manager, enterprise endpoint security & strategy at truist"
+                  ],
+                  "last_name": "locklear",
+                  "location_country": "united states",
+                  "location_locality": "raleigh",
+                  "location_name": "raleigh, north carolina, united states",
+                  "location_region": "north carolina",
+                  "match_score": 35,
+                  "match_source": "person_search",
+                  "matched_on": [
+                    "name"
+                  ],
+                  "person_id": "pdl:MZ8HQoAge1niay7F58PzeQ_0000",
+                  "profile_url": "linkedin.com/in/matt-locklear-32b554a2",
+                  "provider": "people_data_labs",
+                  "rank_features": {
+                    "gender": "male",
+                    "has_contact": true
+                  },
+                  "social_links": [
+                    {
+                      "platform": "linkedin",
+                      "provider": "people_data_labs",
+                      "url": "linkedin.com/in/matt-locklear-32b554a2",
+                      "username": "matt-locklear-32b554a2"
+                    }
+                  ],
+                  "social_platforms": [
+                    "linkedin"
+                  ]
+                },
+                {
+                  "_rank_features": {
+                    "gender": "male",
+                    "has_contact": true
+                  },
+                  "avatar_url": "https://media.licdn.com/dms/image/v2/C5603AQHAt_a26s_lXg/profile-displayphoto-shrink_200_200/profile-displayphoto-shrink_200_200/0/1568961272497?e=2147483647&v=beta&t=B_TFUSbQ9ciphVxN90-qj49sGk6lQcL8YMUp9k_5ass",
+                  "confidence_level": "LOW",
+                  "display_name": "matt locklear",
+                  "education": "university of california, irvine - the paul merage school of business masters; ucla extension accounting; university of california, berkeley bachelor of science bachelors",
+                  "education_items": [
+                    "university of california, irvine - the paul merage school of business masters",
+                    "ucla extension accounting",
+                    "university of california, berkeley bachelor of science bachelors"
+                  ],
+                  "email": "matt.locklear@ey.com",
+                  "emails": null,
+                  "field_provenance": {
+                    "avatar_url": [
+                      {
+                        "observed_time": 1786423531599,
+                        "provider": "scrapecreators",
+                        "source_url": "https://linkedin.com/in/matt-locklear"
+                      }
+                    ],
+                    "display_name": [
+                      {
+                        "observed_time": 1786423531599,
+                        "provider": "scrapecreators",
+                        "source_url": "https://linkedin.com/in/matt-locklear"
+                      }
+                    ],
+                    "location": [
+                      {
+                        "observed_time": 1786423531599,
+                        "provider": "scrapecreators",
+                        "source_url": "https://linkedin.com/in/matt-locklear"
+                      }
+                    ],
+                    "social_links": [
+                      {
+                        "observed_time": 1786423531599,
+                        "provider": "scrapecreators",
+                        "source_url": "https://linkedin.com/in/matt-locklear"
+                      }
+                    ]
+                  },
+                  "field_source_providers": {
+                    "avatar_url": [
+                      "scrapecreators"
+                    ],
+                    "display_name": [
+                      "scrapecreators"
+                    ],
+                    "location": [
+                      "scrapecreators"
+                    ],
+                    "social_links": [
+                      "scrapecreators"
+                    ]
+                  },
+                  "field_sources": {
+                    "avatar_url": [
+                      "https://linkedin.com/in/matt-locklear"
+                    ],
+                    "display_name": [
+                      "https://linkedin.com/in/matt-locklear"
+                    ],
+                    "location": [
+                      "https://linkedin.com/in/matt-locklear"
+                    ],
+                    "social_links": [
+                      "https://linkedin.com/in/matt-locklear"
+                    ]
+                  },
+                  "first_name": "matt",
+                  "full_name": "matt locklear",
+                  "headline": "assurance manager at ey",
+                  "id": "c7cK-YBYaTYJcy71wT-7Iw_0000",
+                  "job": "assurance manager at ey",
+                  "job_company_linkedin_url": "linkedin.com/company/ernstandyoung",
+                  "job_company_name": "ey",
+                  "job_company_website": "ey.com",
+                  "job_title": "assurance manager",
+                  "job_title_role": "operations",
+                  "jobs": [
+                    "assurance manager at ey"
+                  ],
+                  "last_name": "locklear",
+                  "location": "Irvine, California, United States",
+                  "location_country": "united states",
+                  "location_locality": "irvine",
+                  "location_name": "irvine, california, united states",
+                  "location_region": "california",
+                  "match_score": 35,
+                  "match_source": "person_search",
+                  "matched_on": [
+                    "name"
+                  ],
+                  "person_id": "pdl:c7cK-YBYaTYJcy71wT-7Iw_0000",
+                  "photos": [
+                    "https://media.licdn.com/dms/image/v2/C5603AQHAt_a26s_lXg/profile-displayphoto-shrink_200_200/profile-displayphoto-shrink_200_200/0/1568961272497?e=2147483647&v=beta&t=B_TFUSbQ9ciphVxN90-qj49sGk6lQcL8YMUp9k_5ass"
+                  ],
+                  "profile_url": "linkedin.com/in/matt-locklear",
+                  "provider": "people_data_labs",
+                  "rank_features": {
+                    "gender": "male",
+                    "has_contact": true
+                  },
+                  "social_links": [
+                    {
+                      "platform": "linkedin",
+                      "source_url": "https://linkedin.com/in/matt-locklear",
+                      "url": "linkedin.com/in/matt-locklear",
+                      "username": "matt-locklear",
+                      "verification_level": "LIKELY",
+                      "verification_reason": "social_profile_name_match"
+                    }
+                  ],
+                  "social_platforms": [
+                    "linkedin"
+                  ],
+                  "social_profile_details": [
+                    {
+                      "avatar_url": "https://media.licdn.com/dms/image/v2/C5603AQHAt_a26s_lXg/profile-displayphoto-shrink_200_200/profile-displayphoto-shrink_200_200/0/1568961272497?e=2147483647&v=beta&t=B_TFUSbQ9ciphVxN90-qj49sGk6lQcL8YMUp9k_5ass",
+                      "display_name": "Matt Locklear, CPA",
+                      "followers_count": 487,
+                      "headline": "",
+                      "location": "Irvine, California, United States",
+                      "observed_time": 1786423531599,
+                      "platform": "linkedin",
+                      "profile_url": "https://linkedin.com/in/matt-locklear",
+                      "provider": "social_profile",
+                      "source": "scrapecreators",
+                      "source_provider": "scrapecreators",
+                      "username": "matt-locklear",
+                      "verified": false
+                    }
+                  ],
+                  "source_providers": [
+                    "scrapecreators"
+                  ]
+                }
+              ],
+              "related_info": [
+                {
+                  "match_source": "person_search",
+                  "matches_count": 15,
+                  "provider": "people_data_labs"
+                }
+              ],
+              "report_id": "report_27461d9e9a69fb1a34dca4c8",
+              "snapshot_ref": "",
+              "social_accounts": [
+                {
+                  "platform": "linkedin",
+                  "provider": "people_data_labs",
+                  "url": "linkedin.com/in/matt-locklear-92884753",
+                  "username": "matt-locklear-92884753"
+                },
+                {
+                  "avatar_url": "https://pbs.twimg.com/profile_images/1600899595294343169/ep9RlJ73_normal.jpg",
+                  "bio": "computer geek, wower",
+                  "candidate_id": "pdl:dB3-5A1gPY1lrbeG4tfbzA_0000",
+                  "display_name": "Matt Locklear",
+                  "person_id": "pdl:dB3-5A1gPY1lrbeG4tfbzA_0000",
+                  "platform": "x",
+                  "provider": "people_data_labs",
+                  "source": "scrapecreators",
+                  "source_url": "https://x.com/praeus_ml",
+                  "url": "twitter.com/praeus_ml",
+                  "username": "praeus_ml"
+                },
+                {
+                  "platform": "linkedin",
+                  "provider": "people_data_labs",
+                  "url": "linkedin.com/in/matt-locklear-32b554a2",
+                  "username": "matt-locklear-32b554a2"
+                },
+                {
+                  "avatar_url": "https://media.licdn.com/dms/image/v2/C5603AQHAt_a26s_lXg/profile-displayphoto-shrink_200_200/profile-displayphoto-shrink_200_200/0/1568961272497?e=2147483647&v=beta&t=B_TFUSbQ9ciphVxN90-qj49sGk6lQcL8YMUp9k_5ass",
+                  "candidate_id": "pdl:c7cK-YBYaTYJcy71wT-7Iw_0000",
+                  "display_name": "Matt Locklear, CPA",
+                  "person_id": "pdl:c7cK-YBYaTYJcy71wT-7Iw_0000",
+                  "platform": "linkedin",
+                  "provider": "people_data_labs",
+                  "source": "scrapecreators",
+                  "source_url": "https://linkedin.com/in/matt-locklear",
+                  "url": "linkedin.com/in/matt-locklear",
+                  "username": "matt-locklear"
+                }
+              ],
+              "status": "ready",
+              "subject_summary": {
+                "avatar_materialization_attempt_count": 2,
+                "avatar_materialization_success_count": 2,
+                "candidate_photo_count": 0,
+                "candidate_photo_match_count": 0,
+                "confidence_cap": "HIGH",
+                "display_name": "matt locklear",
+                "estimated_cost_microunit": 843910,
+                "estimated_cost_scope": "TASK_TOTAL_ALL_PROVIDER_CALLS",
+                "fallback_reason": "LLM_NO_RESULT",
+                "fallback_used": true,
+                "headline": "senior user support representative at baptist health",
+                "identity_found": true,
+                "match_score": 35,
+                "match_source": "person_search",
+                "matched_on": [
+                  "name"
+                ],
+                "matches_count": 15,
+                "pdl_billing_unit_count": 3,
+                "pdl_called": true,
+                "pdl_candidates": [
+                  {
+                    "candidate_id": "pdl:dB3-5A1gPY1lrbeG4tfbzA_0000",
+                    "decision": "ELIGIBLE",
+                    "display_name": "matt locklear",
+                    "match_score": 35,
+                    "matched_clue_types": [
+                      "FULL_NAME"
+                    ],
+                    "profile_fetch_called": false,
+                    "profile_fetch_cost_microunit": 0,
+                    "rejection_reason": "",
+                    "selected": true,
+                    "social_links": [
+                      "https://linkedin.com/in/matt-locklear-92884753",
+                      "https://twitter.com/praeus_ml"
+                    ],
+                    "stage": "person_search"
+                  },
+                  {
+                    "candidate_id": "pdl:MZ8HQoAge1niay7F58PzeQ_0000",
+                    "decision": "ELIGIBLE",
+                    "display_name": "matt locklear",
+                    "match_score": 35,
+                    "matched_clue_types": [
+                      "FULL_NAME"
+                    ],
+                    "profile_fetch_called": false,
+                    "profile_fetch_cost_microunit": 0,
+                    "rejection_reason": "",
+                    "selected": true,
+                    "social_links": [
+                      "https://linkedin.com/in/matt-locklear-32b554a2"
+                    ],
+                    "stage": "person_search"
+                  },
+                  {
+                    "candidate_id": "pdl:c7cK-YBYaTYJcy71wT-7Iw_0000",
+                    "decision": "ELIGIBLE",
+                    "display_name": "matt locklear",
+                    "match_score": 35,
+                    "matched_clue_types": [
+                      "FULL_NAME"
+                    ],
+                    "profile_fetch_called": false,
+                    "profile_fetch_cost_microunit": 0,
+                    "rejection_reason": "",
+                    "selected": true,
+                    "social_links": [
+                      "https://linkedin.com/in/matt-locklear"
+                    ],
+                    "stage": "person_search"
+                  }
+                ],
+                "pdl_cost_scope": "PDL_PROVIDER_CALL_ALL_STAGES",
+                "pdl_estimated_cost_microunit": 840000,
+                "pdl_external_request_count": 1,
+                "pdl_identify_call_count": 0,
+                "pdl_identify_called": false,
+                "pdl_identify_candidate_count": 0,
+                "pdl_person_search_call_count": 1,
+                "pdl_person_search_called": true,
+                "pdl_person_search_returned_profile_count": 3,
+                "pdl_pipeline_stages": [
+                  {
+                    "api_request_count": 1,
+                    "billed_quantity": 3,
+                    "billing_operation": "person_search_profile",
+                    "candidate_count": 3,
+                    "operation": "person_search",
+                    "status": "success",
+                    "unit_type": "returned_profile"
+                  }
+                ],
+                "pdl_profile_fetch_count": 0,
+                "pdl_rejected_candidate_count": 0,
+                "pdl_rejection_reasons": [],
+                "pdl_skipped": false,
+                "pdl_usable_candidate_count": 3,
+                "people_found": true,
+                "people_pipeline_cost_scope": "LLM_PUBLIC_FIGURE_AND_PDL",
+                "people_pipeline_estimated_cost_microunit": 840150,
+                "photo_evidence_found": false,
+                "policy_version": "v1",
+                "pre_pdl_estimated_cost_microunit": 150,
+                "primary_provider": "people_data_labs",
+                "provider": "search_agent",
+                "provider_person_id": "dB3-5A1gPY1lrbeG4tfbzA_0000",
+                "providers": [
+                  "agent_people",
+                  "social_profile",
+                  "image_materializer"
+                ],
+                "query_type": "FULL_NAME",
+                "reverse_image_estimated_cost_microunit": 0,
+                "reverse_image_fallback_reasons": null,
+                "reverse_image_fallback_used": false,
+                "reverse_image_final_provider": "",
+                "reverse_image_primary_provider": "",
+                "reverse_image_provider_attempt_count": 0,
+                "reverse_image_status": "NOT_PLANNED",
+                "reverse_image_stop_reason": "NOT_PLANNED",
+                "social_profile_attempted_count": 4,
+                "social_profile_error_count": 0,
+                "social_profile_merged_candidate_count": 2,
+                "social_profile_no_result_count": 2,
+                "social_profile_planned_count": 4,
+                "social_profile_queue_decision_truncated_count": 0,
+                "social_profile_queue_decisions": [
+                  {
+                    "canonical_url": "https://linkedin.com/in/matt-locklear-92884753",
+                    "decision": "CALLED",
+                    "depth": 1,
+                    "discovered_by": "PDL",
+                    "error_code": "",
+                    "no_result_reason": "PROFILE_PRIVATE_OR_UNAVAILABLE",
+                    "outcome": "NO_RESULT",
+                    "parent_candidate_id": "pdl:dB3-5A1gPY1lrbeG4tfbzA_0000",
+                    "parent_evidence_id": "",
+                    "parent_provider": "people_data_labs",
+                    "parent_url": "",
+                    "platform": "linkedin",
+                    "raw_url": "linkedin.com/in/matt-locklear-92884753",
+                    "skip_reason": ""
+                  },
+                  {
+                    "canonical_url": "https://linkedin.com/in/matt-locklear-92884753",
+                    "decision": "SKIPPED",
+                    "depth": 1,
+                    "discovered_by": "PDL",
+                    "error_code": "",
+                    "no_result_reason": "",
+                    "outcome": "",
+                    "parent_candidate_id": "pdl:dB3-5A1gPY1lrbeG4tfbzA_0000",
+                    "parent_evidence_id": "",
+                    "parent_provider": "people_data_labs",
+                    "parent_url": "",
+                    "platform": "linkedin",
+                    "raw_url": "linkedin.com/in/matt-locklear-92884753",
+                    "skip_reason": "DUPLICATE"
+                  },
+                  {
+                    "canonical_url": "https://x.com/praeus_ml",
+                    "decision": "CALLED",
+                    "depth": 1,
+                    "discovered_by": "PDL",
+                    "error_code": "",
+                    "no_result_reason": "",
+                    "outcome": "SUCCESS",
+                    "parent_candidate_id": "pdl:dB3-5A1gPY1lrbeG4tfbzA_0000",
+                    "parent_evidence_id": "",
+                    "parent_provider": "people_data_labs",
+                    "parent_url": "",
+                    "platform": "x",
+                    "raw_url": "twitter.com/praeus_ml",
+                    "skip_reason": ""
+                  },
+                  {
+                    "canonical_url": "https://linkedin.com/in/matt-locklear-32b554a2",
+                    "decision": "CALLED",
+                    "depth": 1,
+                    "discovered_by": "PDL",
+                    "error_code": "",
+                    "no_result_reason": "PROFILE_PRIVATE_OR_UNAVAILABLE",
+                    "outcome": "NO_RESULT",
+                    "parent_candidate_id": "pdl:MZ8HQoAge1niay7F58PzeQ_0000",
+                    "parent_evidence_id": "",
+                    "parent_provider": "people_data_labs",
+                    "parent_url": "",
+                    "platform": "linkedin",
+                    "raw_url": "linkedin.com/in/matt-locklear-32b554a2",
+                    "skip_reason": ""
+                  },
+                  {
+                    "canonical_url": "https://linkedin.com/in/matt-locklear-32b554a2",
+                    "decision": "SKIPPED",
+                    "depth": 1,
+                    "discovered_by": "PDL",
+                    "error_code": "",
+                    "no_result_reason": "",
+                    "outcome": "",
+                    "parent_candidate_id": "pdl:MZ8HQoAge1niay7F58PzeQ_0000",
+                    "parent_evidence_id": "",
+                    "parent_provider": "people_data_labs",
+                    "parent_url": "",
+                    "platform": "linkedin",
+                    "raw_url": "linkedin.com/in/matt-locklear-32b554a2",
+                    "skip_reason": "DUPLICATE"
+                  },
+                  {
+                    "canonical_url": "https://linkedin.com/in/matt-locklear",
+                    "decision": "CALLED",
+                    "depth": 1,
+                    "discovered_by": "PDL",
+                    "error_code": "",
+                    "no_result_reason": "",
+                    "outcome": "SUCCESS",
+                    "parent_candidate_id": "pdl:c7cK-YBYaTYJcy71wT-7Iw_0000",
+                    "parent_evidence_id": "",
+                    "parent_provider": "people_data_labs",
+                    "parent_url": "",
+                    "platform": "linkedin",
+                    "raw_url": "linkedin.com/in/matt-locklear",
+                    "skip_reason": ""
+                  },
+                  {
+                    "canonical_url": "https://linkedin.com/in/matt-locklear",
+                    "decision": "SKIPPED",
+                    "depth": 1,
+                    "discovered_by": "PDL",
+                    "error_code": "",
+                    "no_result_reason": "",
+                    "outcome": "",
+                    "parent_candidate_id": "pdl:c7cK-YBYaTYJcy71wT-7Iw_0000",
+                    "parent_evidence_id": "",
+                    "parent_provider": "people_data_labs",
+                    "parent_url": "",
+                    "platform": "linkedin",
+                    "raw_url": "linkedin.com/in/matt-locklear",
+                    "skip_reason": "DUPLICATE"
+                  },
+                  {
+                    "canonical_url": "https://linkedin.com/in/matt-locklear-92884753",
+                    "decision": "SKIPPED",
+                    "depth": 1,
+                    "discovered_by": "PDL",
+                    "error_code": "",
+                    "no_result_reason": "",
+                    "outcome": "",
+                    "parent_candidate_id": "",
+                    "parent_evidence_id": "",
+                    "parent_provider": "people_data_labs",
+                    "parent_url": "",
+                    "platform": "linkedin",
+                    "raw_url": "linkedin.com/in/matt-locklear-92884753",
+                    "skip_reason": "DUPLICATE"
+                  },
+                  {
+                    "canonical_url": "https://x.com/praeus_ml",
+                    "decision": "SKIPPED",
+                    "depth": 1,
+                    "discovered_by": "PDL",
+                    "error_code": "",
+                    "no_result_reason": "",
+                    "outcome": "",
+                    "parent_candidate_id": "",
+                    "parent_evidence_id": "",
+                    "parent_provider": "people_data_labs",
+                    "parent_url": "",
+                    "platform": "x",
+                    "raw_url": "twitter.com/praeus_ml",
+                    "skip_reason": "DUPLICATE"
+                  },
+                  {
+                    "canonical_url": "https://linkedin.com/in/matt-locklear-32b554a2",
+                    "decision": "SKIPPED",
+                    "depth": 1,
+                    "discovered_by": "PDL",
+                    "error_code": "",
+                    "no_result_reason": "",
+                    "outcome": "",
+                    "parent_candidate_id": "",
+                    "parent_evidence_id": "",
+                    "parent_provider": "people_data_labs",
+                    "parent_url": "",
+                    "platform": "linkedin",
+                    "raw_url": "linkedin.com/in/matt-locklear-32b554a2",
+                    "skip_reason": "DUPLICATE"
+                  },
+                  {
+                    "canonical_url": "https://linkedin.com/in/matt-locklear",
+                    "decision": "SKIPPED",
+                    "depth": 1,
+                    "discovered_by": "PDL",
+                    "error_code": "",
+                    "no_result_reason": "",
+                    "outcome": "",
+                    "parent_candidate_id": "",
+                    "parent_evidence_id": "",
+                    "parent_provider": "people_data_labs",
+                    "parent_url": "",
+                    "platform": "linkedin",
+                    "raw_url": "linkedin.com/in/matt-locklear",
+                    "skip_reason": "DUPLICATE"
+                  },
+                  {
+                    "canonical_url": "https://x.com/praeus_ml",
+                    "decision": "SKIPPED",
+                    "depth": 2,
+                    "discovered_by": "SOCIAL_PROFILE",
+                    "error_code": "",
+                    "no_result_reason": "",
+                    "outcome": "",
+                    "parent_candidate_id": "",
+                    "parent_evidence_id": "",
+                    "parent_provider": "scrapecreators",
+                    "parent_url": "https://x.com/praeus_ml",
+                    "platform": "x",
+                    "raw_url": "https://x.com/praeus_ml",
+                    "skip_reason": "DUPLICATE"
+                  },
+                  {
+                    "canonical_url": "https://x.com/praeus_ml",
+                    "decision": "SKIPPED",
+                    "depth": 2,
+                    "discovered_by": "SOCIAL_PROFILE",
+                    "error_code": "",
+                    "no_result_reason": "",
+                    "outcome": "",
+                    "parent_candidate_id": "",
+                    "parent_evidence_id": "",
+                    "parent_provider": "scrapecreators",
+                    "parent_url": "https://x.com/praeus_ml",
+                    "platform": "x",
+                    "raw_url": "https://x.com/praeus_ml",
+                    "skip_reason": "DUPLICATE"
+                  },
+                  {
+                    "canonical_url": "https://linkedin.com/in/matt-locklear",
+                    "decision": "SKIPPED",
+                    "depth": 2,
+                    "discovered_by": "SOCIAL_PROFILE",
+                    "error_code": "",
+                    "no_result_reason": "",
+                    "outcome": "",
+                    "parent_candidate_id": "",
+                    "parent_evidence_id": "",
+                    "parent_provider": "scrapecreators",
+                    "parent_url": "https://linkedin.com/in/matt-locklear",
+                    "platform": "linkedin",
+                    "raw_url": "https://linkedin.com/in/matt-locklear",
+                    "skip_reason": "DUPLICATE"
+                  },
+                  {
+                    "canonical_url": "https://linkedin.com/in/matt-locklear",
+                    "decision": "SKIPPED",
+                    "depth": 2,
+                    "discovered_by": "SOCIAL_PROFILE",
+                    "error_code": "",
+                    "no_result_reason": "",
+                    "outcome": "",
+                    "parent_candidate_id": "",
+                    "parent_evidence_id": "",
+                    "parent_provider": "scrapecreators",
+                    "parent_url": "https://linkedin.com/in/matt-locklear",
+                    "platform": "linkedin",
+                    "raw_url": "https://linkedin.com/in/matt-locklear",
+                    "skip_reason": "DUPLICATE"
+                  }
+                ],
+                "social_profile_requested_identity_matched": false,
+                "social_profile_skipped_depth_count": 0,
+                "social_profile_skipped_duplicate_count": 11,
+                "social_profile_skipped_execution_count": 0,
+                "social_profile_skipped_limit_count": 0,
+                "social_profile_skipped_unsupported_count": 0,
+                "social_profile_status": "PARTIAL",
+                "social_profile_success_count": 2,
+                "social_profile_unmatched_profile_count": 0,
+                "stop_reason": "completed",
+                "submitted_photo_count": 0,
+                "submitted_photo_error_count": 0,
+                "submitted_photo_evidence_found": false,
+                "submitted_photo_match_count": 0,
+                "submitted_photo_no_match_count": 0,
+                "task_total_estimated_cost_microunit": 843910,
+                "tool_steps": 7,
+                "verification_state": "SUPPORTED"
+              },
+              "task_id": "task_5b217eaef83d705d6580ce49",
+              "update_time": "2026-08-11T04:45:31.966Z"
+            }
+          ],
+          "task_events": [
+            {
+              "create_time": "2026-08-11T04:45:31.966Z",
+              "error_code": "",
+              "event_id": "event_084b7afb20e3e165ad55d11e",
+              "event_time": "2026-08-11T04:45:31.966Z",
+              "event_type": "REPORT_READY",
+              "id": 4907,
+              "progress_json": {
+                "display_message": "Report ready",
+                "display_percent": 100,
+                "stage": "report_ready"
+              },
+              "report_id": "report_27461d9e9a69fb1a34dca4c8",
+              "status": "SUCCEEDED",
+              "task_id": "task_5b217eaef83d705d6580ce49",
+              "update_time": "2026-08-11T12:45:31.97Z"
+            },
+            {
+              "create_time": "2026-08-11T04:45:11.562Z",
+              "error_code": "",
+              "event_id": "event_29d63c52f0f352f0c1a1483b",
+              "event_time": "2026-08-11T04:45:11.562Z",
+              "event_type": "TASK_SEARCHING",
+              "id": 4906,
+              "progress_json": {
+                "display_message": "Searching public sources",
+                "display_percent": 45,
+                "stage": "provider_search"
+              },
+              "report_id": "",
+              "status": "SEARCHING",
+              "task_id": "task_5b217eaef83d705d6580ce49",
+              "update_time": "2026-08-11T12:45:11.568Z"
+            },
+            {
+              "create_time": "2026-08-11T04:45:10.202Z",
+              "error_code": "",
+              "event_id": "event_7895e1921d3cb40aa45170fa",
+              "event_time": "2026-08-11T04:45:10.202Z",
+              "event_type": "TASK_QUEUED",
+              "id": 4905,
+              "progress_json": {
+                "display_message": "Queued",
+                "display_percent": 5,
+                "stage": "queued"
+              },
+              "report_id": "",
+              "status": "QUEUED",
+              "task_id": "task_5b217eaef83d705d6580ce49",
+              "update_time": "2026-08-11T12:45:10.217Z"
+            }
+          ],
+          "outbox_events": [
+            {
+              "aggregate_id": "task_5b217eaef83d705d6580ce49",
+              "aggregate_type": "search_task",
+              "available_time": "2026-08-11T04:45:10.202Z",
+              "create_time": "2026-08-11T04:45:10.202Z",
+              "event_type": "SearchTaskQueued",
+              "id": "outbox_8716f5a009b268f5487f939e",
+              "payload": {
+                "app_version": "1.0.3",
+                "attempt_hint": 1,
+                "client_ip": "43.173.72.75",
+                "client_request_id": "crid-1786423508602-0fae77c784",
+                "event_id": "outbox_8716f5a009b268f5487f939e",
+                "expire_time": "2026-09-10T04:45:10.202199279Z",
+                "query_type": "FULL_NAME",
+                "queued_time": "2026-08-11T04:45:10.202199279Z",
+                "request_id": "gw_req_5f45d904ff7847be48bc78ca4f772b6d",
+                "task_id": "task_5b217eaef83d705d6580ce49",
+                "trace_id": "trace_f8e285167d5ea8fbb99af6d9d1df952e"
+              },
+              "publish_time": "2026-08-11T04:45:11.562Z",
+              "retry_count": 0,
+              "source_app": "people_insight",
+              "status": "published",
+              "topic": "tool-srv.test.search-task.v1",
+              "update_time": "2026-08-11T04:45:11.562Z"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
+
+2026-08-11 12:45:37,275 | INFO | search_tool.QueryChainLogger | GetProviderCostSummary 事件:
+{
+  "sequence_no": 8,
+  "api_sequence_no": 1,
+  "run_id": "run_1d70edb93a664d539c9c5dcc0f2d9742",
+  "input_id": "case-077",
+  "person_name": "Matt Locklear",
+  "task_id": "task_5b217eaef83d705d6580ce49",
+  "candidate_id": "",
+  "stage": "GetProviderCostSummary",
+  "attempt": 1,
+  "business_success": true
+}
+2026-08-11 12:45:37,275 | INFO | search_tool.QueryChainLogger | GetProviderCostSummary 脱敏请求数据: attempt=1
+{
+  "task_id": "task_5b217eaef83d705d6580ce49",
+  "limit": 100
+}
+2026-08-11 12:45:37,275 | INFO | search_tool.QueryChainLogger | GetProviderCostSummary 响应数据: HTTP 200 elapsed_ms=1105
+{
+  "code": 0,
+  "message": "ok",
+  "request_id": "gw_req_2d366e574c3f25440c7334d6bbe9b98e",
+  "trace_id": "trace_bdc70afbe0864f69b0d731ae5f1ce4f4",
+  "responses": [
+    {
+      "id": "req_0",
+      "success": true,
+      "code": 0,
+      "message": "ok",
+      "data": {
+        "cost_summary": {
+          "from_time": "2026-08-10T04:45:37.699178959Z",
+          "to_time": "2026-08-11T04:45:37.699178959Z",
+          "calls": [
+            {
+              "billable_units": 1,
+              "billing_currency": "USD",
+              "billing_unit": "credit",
+              "billing_usage_json": [
+                {
+                  "operation": "scrapecreators_linkedin_profile",
+                  "quantity": 1,
+                  "unit_type": "credit"
+                }
+              ],
+              "cache_hit": 0,
+              "call_id": "atc_357240e97bc61959286d5c969be55d72",
+              "cost_breakdown_json": [
+                {
+                  "billing_model": "PER_UNIT",
+                  "currency": "USD",
+                  "estimated_cost_microunit": 1880,
+                  "operation": "scrapecreators_linkedin_profile",
+                  "pricing_rule_id": "price_scrapecreators_linkedin_freelance_20260810",
+                  "pricing_version": "2026-08-scrapecreators-freelance-conservative",
+                  "quantity": 1,
+                  "status": "CALCULATED",
+                  "unit_type": "credit"
+                }
+              ],
+              "cost_status": "CALCULATED",
+              "create_time": "2026-08-11T04:45:31.602Z",
+              "estimated_cost_microunit": 1880,
+              "finish_time": "2026-08-11T04:45:31.602Z",
+              "http_status": 200,
+              "non_billable_reason": "",
+              "pricing_rule_id": "price_scrapecreators_linkedin_freelance_20260810",
+              "pricing_version": "2026-08-scrapecreators-freelance-conservative",
+              "provider": "social_profile",
+              "provider_operation": "scrapecreators_linkedin_profile",
+              "query_id": "query_0363851473c8b3de8be3770f",
+              "request_type": "SOCIAL_LINK",
+              "start_time": "2026-08-11T04:45:29.378Z",
+              "status": "success",
+              "task_id": "task_5b217eaef83d705d6580ce49",
+              "worker_id": "worker-79f769d947-jcpk7"
+            },
+            {
+              "billable_units": 0,
+              "billing_currency": "",
+              "billing_unit": "",
+              "billing_usage_json": [],
+              "cache_hit": 0,
+              "call_id": "atc_b5ef9e7fce1736cd14ab9711d77762ff",
+              "cost_breakdown_json": [],
+              "cost_status": "NON_BILLABLE",
+              "create_time": "2026-08-11T04:45:29.355Z",
+              "estimated_cost_microunit": 0,
+              "finish_time": "2026-08-11T04:45:29.355Z",
+              "http_status": 404,
+              "non_billable_reason": "provider_reported_zero_usage",
+              "pricing_rule_id": "",
+              "pricing_version": "",
+              "provider": "social_profile",
+              "provider_operation": "scrapecreators_linkedin_profile",
+              "query_id": "query_0363851473c8b3de8be3770f",
+              "request_type": "SOCIAL_LINK",
+              "start_time": "2026-08-11T04:45:25.262Z",
+              "status": "no_result",
+              "task_id": "task_5b217eaef83d705d6580ce49",
+              "worker_id": "worker-79f769d947-jcpk7"
+            },
+            {
+              "billable_units": 1,
+              "billing_currency": "USD",
+              "billing_unit": "credit",
+              "billing_usage_json": [
+                {
+                  "operation": "scrapecreators_x_profile",
+                  "quantity": 1,
+                  "unit_type": "credit"
+                }
+              ],
+              "cache_hit": 0,
+              "call_id": "atc_d5292fa79b50c4bef3e130c3ba5eeb57",
+              "cost_breakdown_json": [
+                {
+                  "billing_model": "PER_UNIT",
+                  "currency": "USD",
+                  "estimated_cost_microunit": 1880,
+                  "operation": "scrapecreators_x_profile",
+                  "pricing_rule_id": "price_scrapecreators_x_freelance_20260810",
+                  "pricing_version": "2026-08-scrapecreators-freelance-conservative",
+                  "quantity": 1,
+                  "status": "CALCULATED",
+                  "unit_type": "credit"
+                }
+              ],
+              "cost_status": "CALCULATED",
+              "create_time": "2026-08-11T04:45:25.23Z",
+              "estimated_cost_microunit": 1880,
+              "finish_time": "2026-08-11T04:45:25.23Z",
+              "http_status": 200,
+              "non_billable_reason": "",
+              "pricing_rule_id": "price_scrapecreators_x_freelance_20260810",
+              "pricing_version": "2026-08-scrapecreators-freelance-conservative",
+              "provider": "social_profile",
+              "provider_operation": "scrapecreators_x_profile",
+              "query_id": "query_0363851473c8b3de8be3770f",
+              "request_type": "SOCIAL_LINK",
+              "start_time": "2026-08-11T04:45:23.83Z",
+              "status": "success",
+              "task_id": "task_5b217eaef83d705d6580ce49",
+              "worker_id": "worker-79f769d947-jcpk7"
+            },
+            {
+              "billable_units": 0,
+              "billing_currency": "",
+              "billing_unit": "",
+              "billing_usage_json": [],
+              "cache_hit": 0,
+              "call_id": "atc_d31c1ef787f16e1cffc29ca4ae13d987",
+              "cost_breakdown_json": [],
+              "cost_status": "NON_BILLABLE",
+              "create_time": "2026-08-11T04:45:23.807Z",
+              "estimated_cost_microunit": 0,
+              "finish_time": "2026-08-11T04:45:23.807Z",
+              "http_status": 404,
+              "non_billable_reason": "provider_reported_zero_usage",
+              "pricing_rule_id": "",
+              "pricing_version": "",
+              "provider": "social_profile",
+              "provider_operation": "scrapecreators_linkedin_profile",
+              "query_id": "query_0363851473c8b3de8be3770f",
+              "request_type": "SOCIAL_LINK",
+              "start_time": "2026-08-11T04:45:16.038Z",
+              "status": "no_result",
+              "task_id": "task_5b217eaef83d705d6580ce49",
+              "worker_id": "worker-79f769d947-jcpk7"
+            },
+            {
+              "billable_units": 0,
+              "billing_currency": "",
+              "billing_unit": "",
+              "billing_usage_json": [],
+              "cache_hit": 0,
+              "call_id": "atc_2b79cf699046198e0086be0daf6e41d6",
+              "cost_breakdown_json": [],
+              "cost_status": "NON_BILLABLE",
+              "create_time": "2026-08-11T04:45:16.035Z",
+              "estimated_cost_microunit": 0,
+              "finish_time": "2026-08-11T04:45:16.035Z",
+              "http_status": 0,
+              "non_billable_reason": "aggregated_by_child_calls",
+              "pricing_rule_id": "",
+              "pricing_version": "",
+              "provider": "agent_people",
+              "provider_operation": "request",
+              "query_id": "query_0363851473c8b3de8be3770f",
+              "request_type": "FULL_NAME",
+              "start_time": "2026-08-11T04:45:11.572Z",
+              "status": "success",
+              "task_id": "task_5b217eaef83d705d6580ce49",
+              "worker_id": "worker-79f769d947-jcpk7"
+            },
+            {
+              "billable_units": 3,
+              "billing_currency": "USD",
+              "billing_unit": "returned_profile",
+              "billing_usage_json": [
+                {
+                  "operation": "person_search_profile",
+                  "quantity": 3,
+                  "unit_type": "returned_profile"
+                }
+              ],
+              "cache_hit": 0,
+              "call_id": "atc_34e4d5e865d49430cc0df26060de752a",
+              "cost_breakdown_json": [
+                {
+                  "billing_model": "PER_UNIT",
+                  "currency": "USD",
+                  "estimated_cost_microunit": 840000,
+                  "operation": "person_search_profile",
+                  "pricing_rule_id": "price_pdl_search_tier1_20260729",
+                  "pricing_version": "2026-07-29-pdl-self-serve-tier1",
+                  "quantity": 3,
+                  "status": "CALCULATED",
+                  "unit_type": "returned_profile"
+                }
+              ],
+              "cost_status": "CALCULATED",
+              "create_time": "2026-08-11T04:45:15.999Z",
+              "estimated_cost_microunit": 840000,
+              "finish_time": "2026-08-11T04:45:15.999Z",
+              "http_status": 0,
+              "non_billable_reason": "",
+              "pricing_rule_id": "price_pdl_search_tier1_20260729",
+              "pricing_version": "2026-07-29-pdl-self-serve-tier1",
+              "provider": "people_data_labs",
+              "provider_operation": "person_search_profile",
+              "query_id": "query_0363851473c8b3de8be3770f",
+              "request_type": "FULL_NAME",
+              "start_time": "2026-08-11T04:45:15.77Z",
+              "status": "success",
+              "task_id": "task_5b217eaef83d705d6580ce49",
+              "worker_id": "worker-79f769d947-jcpk7"
+            },
+            {
+              "billable_units": 0,
+              "billing_currency": "",
+              "billing_unit": "",
+              "billing_usage_json": [],
+              "cache_hit": 0,
+              "call_id": "atc_7285e32570fff56f9e687f589bfae115",
+              "cost_breakdown_json": [],
+              "cost_status": "NON_BILLABLE",
+              "create_time": "2026-08-11T04:45:15.768Z",
+              "estimated_cost_microunit": 0,
+              "finish_time": "2026-08-11T04:45:15.768Z",
+              "http_status": 0,
+              "non_billable_reason": "public_source_no_direct_cost",
+              "pricing_rule_id": "",
+              "pricing_version": "",
+              "provider": "public_figure",
+              "provider_operation": "remote_lookup",
+              "query_id": "query_0363851473c8b3de8be3770f",
+              "request_type": "FULL_NAME",
+              "start_time": "2026-08-11T04:45:15.656Z",
+              "status": "no_result",
+              "task_id": "task_5b217eaef83d705d6580ce49",
+              "worker_id": "worker-79f769d947-jcpk7"
+            },
+            {
+              "billable_units": 0,
+              "billing_currency": "",
+              "billing_unit": "",
+              "billing_usage_json": [],
+              "cache_hit": 0,
+              "call_id": "atc_d6a2c5249f6e98bd6afebec64c347552",
+              "cost_breakdown_json": [],
+              "cost_status": "NON_BILLABLE",
+              "create_time": "2026-08-11T04:45:15.654Z",
+              "estimated_cost_microunit": 0,
+              "finish_time": "2026-08-11T04:45:15.654Z",
+              "http_status": 0,
+              "non_billable_reason": "public_source_no_direct_cost",
+              "pricing_rule_id": "",
+              "pricing_version": "",
+              "provider": "public_figure",
+              "provider_operation": "route_decision",
+              "query_id": "query_0363851473c8b3de8be3770f",
+              "request_type": "FULL_NAME",
+              "start_time": "2026-08-11T04:45:15.654Z",
+              "status": "success",
+              "task_id": "task_5b217eaef83d705d6580ce49",
+              "worker_id": "worker-79f769d947-jcpk7"
+            },
+            {
+              "billable_units": 0,
+              "billing_currency": "",
+              "billing_unit": "",
+              "billing_usage_json": [],
+              "cache_hit": 0,
+              "call_id": "atc_e4715b58ad0fedc855b0954787aefc51",
+              "cost_breakdown_json": [],
+              "cost_status": "NON_BILLABLE",
+              "create_time": "2026-08-11T04:45:15.653Z",
+              "estimated_cost_microunit": 0,
+              "finish_time": "2026-08-11T04:45:15.653Z",
+              "http_status": 0,
+              "non_billable_reason": "aggregated_by_backend_attempts",
+              "pricing_rule_id": "",
+              "pricing_version": "",
+              "provider": "llm_search",
+              "provider_operation": "request",
+              "query_id": "query_0363851473c8b3de8be3770f",
+              "request_type": "FULL_NAME",
+              "start_time": "2026-08-11T04:45:11.575Z",
+              "status": "no_result",
+              "task_id": "task_5b217eaef83d705d6580ce49",
+              "worker_id": "worker-79f769d947-jcpk7"
+            },
+            {
+              "billable_units": 963,
+              "billing_currency": "USD",
+              "billing_unit": "token",
+              "billing_usage_json": [
+                {
+                  "input_tokens": 862,
+                  "operation": "chat_completions/deepseek-v4-flash-202605",
+                  "output_tokens": 101,
+                  "unit_type": "token"
+                }
+              ],
+              "cache_hit": 0,
+              "call_id": "atc_0a24ae59f7da7e03a82155a0f30b515b",
+              "cost_breakdown_json": [
+                {
+                  "billing_model": "TOKEN",
+                  "currency": "USD",
+                  "estimated_cost_microunit": 150,
+                  "input_tokens": 862,
+                  "operation": "chat_completions/deepseek-v4-flash-202605",
+                  "output_tokens": 101,
+                  "pricing_rule_id": "price_tencent_deepseek_v4_flash_20260729",
+                  "pricing_version": "2026-07-29-tencent-intl-public",
+                  "status": "CALCULATED",
+                  "unit_type": "token"
+                }
+              ],
+              "cost_status": "CALCULATED",
+              "create_time": "2026-08-11T04:45:15.613Z",
+              "estimated_cost_microunit": 150,
+              "finish_time": "2026-08-11T04:45:15.613Z",
+              "http_status": 200,
+              "non_billable_reason": "",
+              "pricing_rule_id": "price_tencent_deepseek_v4_flash_20260729",
+              "pricing_version": "2026-07-29-tencent-intl-public",
+              "provider": "llm_search:deepseek",
+              "provider_operation": "chat_completions/deepseek-v4-flash-202605",
+              "query_id": "query_0363851473c8b3de8be3770f",
+              "request_type": "FULL_NAME",
+              "start_time": "2026-08-11T04:45:11.579Z",
+              "status": "no_result",
+              "task_id": "task_5b217eaef83d705d6580ce49",
+              "worker_id": "worker-79f769d947-jcpk7"
+            },
+            {
+              "billable_units": 0,
+              "billing_currency": "",
+              "billing_unit": "",
+              "billing_usage_json": [],
+              "cache_hit": 0,
+              "call_id": "atc_7f9d4c494e13491f2544d24a24e38724",
+              "cost_breakdown_json": [],
+              "cost_status": "NON_BILLABLE",
+              "create_time": "2026-08-11T04:45:11.574Z",
+              "estimated_cost_microunit": 0,
+              "finish_time": "2026-08-11T04:45:11.574Z",
+              "http_status": 0,
+              "non_billable_reason": "public_source_no_direct_cost",
+              "pricing_rule_id": "",
+              "pricing_version": "",
+              "provider": "public_figure",
+              "provider_operation": "local_lookup",
+              "query_id": "query_0363851473c8b3de8be3770f",
+              "request_type": "FULL_NAME",
+              "start_time": "2026-08-11T04:45:11.572Z",
+              "status": "no_result",
+              "task_id": "task_5b217eaef83d705d6580ce49",
+              "worker_id": "worker-79f769d947-jcpk7"
+            }
+          ],
+          "totals": [
+            {
+              "call_count": 7,
+              "config_estimate_call_count": "0",
+              "cost_complete": 1,
+              "currency": "UNSPECIFIED",
+              "non_billable_call_count": "7",
+              "partial_cost_call_count": "0",
+              "priced_call_count": "0",
+              "total_cost_microunit": "0",
+              "unpriced_call_count": "0"
+            },
+            {
+              "call_count": 4,
+              "config_estimate_call_count": "0",
+              "cost_complete": 1,
+              "currency": "USD",
+              "non_billable_call_count": "0",
+              "partial_cost_call_count": "0",
+              "priced_call_count": "4",
+              "total_cost_microunit": "843910",
+              "unpriced_call_count": "0"
+            }
+          ],
+          "by_provider": [
+            {
+              "call_count": 1,
+              "config_estimate_call_count": "0",
+              "cost_complete": 1,
+              "currency": "USD",
+              "non_billable_call_count": "0",
+              "partial_cost_call_count": "0",
+              "priced_call_count": "1",
+              "provider": "people_data_labs",
+              "total_cost_microunit": "840000",
+              "unpriced_call_count": "0"
+            },
+            {
+              "call_count": 2,
+              "config_estimate_call_count": "0",
+              "cost_complete": 1,
+              "currency": "USD",
+              "non_billable_call_count": "0",
+              "partial_cost_call_count": "0",
+              "priced_call_count": "2",
+              "provider": "social_profile",
+              "total_cost_microunit": "3760",
+              "unpriced_call_count": "0"
+            },
+            {
+              "call_count": 1,
+              "config_estimate_call_count": "0",
+              "cost_complete": 1,
+              "currency": "USD",
+              "non_billable_call_count": "0",
+              "partial_cost_call_count": "0",
+              "priced_call_count": "1",
+              "provider": "llm_search:deepseek",
+              "total_cost_microunit": "150",
+              "unpriced_call_count": "0"
+            },
+            {
+              "call_count": 3,
+              "config_estimate_call_count": "0",
+              "cost_complete": 1,
+              "currency": "UNSPECIFIED",
+              "non_billable_call_count": "3",
+              "partial_cost_call_count": "0",
+              "priced_call_count": "0",
+              "provider": "public_figure",
+              "total_cost_microunit": "0",
+              "unpriced_call_count": "0"
+            },
+            {
+              "call_count": 2,
+              "config_estimate_call_count": "0",
+              "cost_complete": 1,
+              "currency": "UNSPECIFIED",
+              "non_billable_call_count": "2",
+              "partial_cost_call_count": "0",
+              "priced_call_count": "0",
+              "provider": "social_profile",
+              "total_cost_microunit": "0",
+              "unpriced_call_count": "0"
+            },
+            {
+              "call_count": 1,
+              "config_estimate_call_count": "0",
+              "cost_complete": 1,
+              "currency": "UNSPECIFIED",
+              "non_billable_call_count": "1",
+              "partial_cost_call_count": "0",
+              "priced_call_count": "0",
+              "provider": "llm_search",
+              "total_cost_microunit": "0",
+              "unpriced_call_count": "0"
+            },
+            {
+              "call_count": 1,
+              "config_estimate_call_count": "0",
+              "cost_complete": 1,
+              "currency": "UNSPECIFIED",
+              "non_billable_call_count": "1",
+              "partial_cost_call_count": "0",
+              "priced_call_count": "0",
+              "provider": "agent_people",
+              "total_cost_microunit": "0",
+              "unpriced_call_count": "0"
+            }
+          ],
+          "by_worker": [
+            {
+              "call_count": 4,
+              "config_estimate_call_count": "0",
+              "cost_complete": 1,
+              "currency": "USD",
+              "non_billable_call_count": "0",
+              "partial_cost_call_count": "0",
+              "priced_call_count": "4",
+              "total_cost_microunit": "843910",
+              "unpriced_call_count": "0",
+              "worker_id": "worker-79f769d947-jcpk7"
+            },
+            {
+              "call_count": 7,
+              "config_estimate_call_count": "0",
+              "cost_complete": 1,
+              "currency": "UNSPECIFIED",
+              "non_billable_call_count": "7",
+              "partial_cost_call_count": "0",
+              "priced_call_count": "0",
+              "total_cost_microunit": "0",
+              "unpriced_call_count": "0",
+              "worker_id": "worker-79f769d947-jcpk7"
+            }
+          ],
+          "by_search": [
+            {
+              "call_count": 4,
+              "config_estimate_call_count": "0",
+              "cost_complete": 1,
+              "currency": "USD",
+              "non_billable_call_count": "0",
+              "partial_cost_call_count": "0",
+              "priced_call_count": "4",
+              "task_id": "task_5b217eaef83d705d6580ce49",
+              "total_cost_microunit": "843910",
+              "unpriced_call_count": "0"
+            },
+            {
+              "call_count": 7,
+              "config_estimate_call_count": "0",
+              "cost_complete": 1,
+              "currency": "UNSPECIFIED",
+              "non_billable_call_count": "7",
+              "partial_cost_call_count": "0",
+              "priced_call_count": "0",
+              "task_id": "task_5b217eaef83d705d6580ce49",
+              "total_cost_microunit": "0",
+              "unpriced_call_count": "0"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
+
+2026-08-11 12:45:38,260 | INFO | search_tool.QueryChainLogger | ListTaskCandidates 事件:
+{
+  "sequence_no": 9,
+  "api_sequence_no": 1,
+  "run_id": "run_1d70edb93a664d539c9c5dcc0f2d9742",
+  "input_id": "case-077",
+  "person_name": "Matt Locklear",
+  "task_id": "task_5b217eaef83d705d6580ce49",
+  "candidate_id": "",
+  "stage": "ListTaskCandidates",
+  "attempt": 1,
+  "business_success": true
+}
+2026-08-11 12:45:38,260 | INFO | search_tool.QueryChainLogger | ListTaskCandidates 脱敏请求数据: attempt=1
+{
+  "task_id": "task_5b217eaef83d705d6580ce49",
+  "page": {
+    "page_size": 100,
+    "page_token": ""
+  }
+}
+2026-08-11 12:45:38,260 | INFO | search_tool.QueryChainLogger | ListTaskCandidates 响应数据: HTTP 200 elapsed_ms=980
+{
+  "code": 0,
+  "message": "ok",
+  "request_id": "gw_req_fb6b99f8b561a8bdaa605de244a4065d",
+  "trace_id": "trace_819c1228ce41135011e4e51d821dd8e8",
+  "responses": [
+    {
+      "id": "req_0",
+      "success": true,
+      "code": 0,
+      "message": "ok",
+      "data": {
+        "empty_reason": "",
+        "items": [
+          {
+            "age": 0,
+            "avatar_url": "https://pbs.twimg.com/profile_images/1600899595294343169/ep9RlJ73_normal.jpg",
+            "candidate_id": "report_27461d9e9a69fb1a34dca4c8_candidate_1",
+            "confidence_level": "LOW",
+            "display_name": "matt locklear",
+            "education": "",
+            "email": "mlocklear@baptisthealth.net",
+            "evidence_count": 5,
+            "headline": "senior user support representative at baptist health",
+            "is_best_match": false,
+            "is_top_result": true,
+            "jobs": [
+              "senior user support representative at baptist health"
+            ],
+            "location": "Conway, AR",
+            "match_reasons": [
+              "name"
+            ],
+            "match_score": 35,
+            "matched_clue_types": [],
+            "person_id": "pdl:dB3-5A1gPY1lrbeG4tfbzA_0000",
+            "primary_image": {
+              "priority": 1,
+              "reason": "profile_image",
+              "source": "profile",
+              "url": "https://pbs.twimg.com/profile_images/1600899595294343169/ep9RlJ73_normal.jpg"
+            },
+            "profile_url": "https://linkedin.com/in/matt-locklear-92884753",
+            "rank_breakdown": {
+              "data_completeness": 0.8,
+              "geo_relevance": 0,
+              "public_influence": 0,
+              "social_activity": 0,
+              "social_richness": 0.3333
+            },
+            "rank_score": 0.3633,
+            "rank_version": "candidate_ranking_v2",
+            "social_links": [
+              {
+                "platform": "linkedin",
+                "url": "https://linkedin.com/in/matt-locklear-92884753",
+                "username": "matt-locklear-92884753"
+              },
+              {
+                "platform": "x",
+                "url": "https://twitter.com/praeus_ml",
+                "username": "praeus_ml",
+                "verification_level": "LIKELY",
+                "verification_reason": "social_profile_name_match"
+              }
+            ],
+            "social_platforms": [
+              "linkedin",
+              "x"
+            ],
+            "social_source_count": 2,
+            "source": "people_data_labs",
+            "source_provider": "people_data_labs",
+            "source_providers": [
+              "scrapecreators",
+              "people_data_labs"
+            ],
+            "web_links": [
+              {
+                "domain": "baptist-health.com",
+                "source": "Default",
+                "title": "matt locklear",
+                "url": "https://baptist-health.com"
+              }
+            ],
+            "web_platforms": [
+              "Default"
+            ],
+            "web_source_count": 1
+          },
+          {
+            "age": 0,
+            "avatar_url": "",
+            "candidate_id": "report_27461d9e9a69fb1a34dca4c8_candidate_2",
+            "confidence_level": "LOW",
+            "display_name": "matt locklear",
+            "education": "the university of north carolina at chapel hill bachelor of applied science bachelors",
+            "email": "matt.locklear@truist.com",
+            "evidence_count": 3,
+            "headline": "manager, enterprise endpoint security & strategy at truist",
+            "is_best_match": false,
+            "is_top_result": false,
+            "jobs": [
+              "manager, enterprise endpoint security & strategy at truist"
+            ],
+            "location": "raleigh, north carolina, united states",
+            "match_reasons": [
+              "name"
+            ],
+            "match_score": 35,
+            "matched_clue_types": [],
+            "person_id": "pdl:MZ8HQoAge1niay7F58PzeQ_0000",
+            "profile_url": "https://linkedin.com/in/matt-locklear-32b554a2",
+            "rank_breakdown": {
+              "data_completeness": 0.9,
+              "geo_relevance": 0,
+              "public_influence": 0,
+              "social_activity": 0,
+              "social_richness": 0.1667
+            },
+            "rank_score": 0.3567,
+            "rank_version": "candidate_ranking_v2",
+            "social_links": [
+              {
+                "platform": "linkedin",
+                "url": "https://linkedin.com/in/matt-locklear-32b554a2",
+                "username": "matt-locklear-32b554a2"
+              }
+            ],
+            "social_platforms": [
+              "linkedin"
+            ],
+            "social_source_count": 1,
+            "source": "people_data_labs",
+            "source_provider": "people_data_labs",
+            "source_providers": [
+              "people_data_labs"
+            ],
+            "web_links": [
+              {
+                "domain": "truist.com",
+                "source": "Default",
+                "title": "matt locklear",
+                "url": "https://truist.com"
+              }
+            ],
+            "web_platforms": [
+              "Default"
+            ],
+            "web_source_count": 1
+          },
+          {
+            "age": 0,
+            "avatar_url": "https://media.licdn.com/dms/image/v2/C5603AQHAt_a26s_lXg/profile-displayphoto-shrink_200_200/profile-displayphoto-shrink_200_200/0/1568961272497?e=2147483647&v=beta&t=B_TFUSbQ9ciphVxN90-qj49sGk6lQcL8YMUp9k_5ass",
+            "candidate_id": "report_27461d9e9a69fb1a34dca4c8_candidate_3",
+            "confidence_level": "LOW",
+            "display_name": "matt locklear",
+            "education": "university of california, irvine - the paul merage school of business masters; ucla extension accounting; university of california, berkeley bachelor of science bachelors",
+            "email": "matt.locklear@ey.com",
+            "evidence_count": 4,
+            "headline": "assurance manager at ey",
+            "is_best_match": false,
+            "is_top_result": false,
+            "jobs": [
+              "assurance manager at ey"
+            ],
+            "location": "Irvine, California, United States",
+            "match_reasons": [
+              "name"
+            ],
+            "match_score": 35,
+            "matched_clue_types": [],
+            "person_id": "pdl:c7cK-YBYaTYJcy71wT-7Iw_0000",
+            "primary_image": {
+              "priority": 1,
+              "reason": "profile_image",
+              "source": "profile",
+              "url": "https://media.licdn.com/dms/image/v2/C5603AQHAt_a26s_lXg/profile-displayphoto-shrink_200_200/profile-displayphoto-shrink_200_200/0/1568961272497?e=2147483647&v=beta&t=B_TFUSbQ9ciphVxN90-qj49sGk6lQcL8YMUp9k_5ass"
+            },
+            "profile_url": "https://linkedin.com/in/matt-locklear",
+            "rank_breakdown": {
+              "data_completeness": 0.9,
+              "geo_relevance": 0,
+              "public_influence": 0,
+              "social_activity": 0,
+              "social_richness": 0.1667
+            },
+            "rank_score": 0.3567,
+            "rank_version": "candidate_ranking_v2",
+            "social_links": [
+              {
+                "platform": "linkedin",
+                "url": "https://linkedin.com/in/matt-locklear",
+                "username": "matt-locklear",
+                "verification_level": "LIKELY",
+                "verification_reason": "social_profile_name_match"
+              }
+            ],
+            "social_platforms": [
+              "linkedin"
+            ],
+            "social_source_count": 1,
+            "source": "people_data_labs",
+            "source_provider": "people_data_labs",
+            "source_providers": [
+              "scrapecreators",
+              "people_data_labs"
+            ],
+            "web_links": [
+              {
+                "domain": "ey.com",
+                "source": "Default",
+                "title": "matt locklear",
+                "url": "https://ey.com"
+              }
+            ],
+            "web_platforms": [
+              "Default"
+            ],
+            "web_source_count": 1
+          }
+        ],
+        "next_page_token": "",
+        "provider_summary": {
+          "cache_hit": false,
+          "primary_provider": "agent_people",
+          "provider_execution": "REAL_PROVIDER",
+          "providers": [
+            "agent_people",
+            "social_profile",
+            "image_materializer",
+            "people_data_labs",
+            "search_agent"
+          ],
+          "public_sources": false,
+          "source_provider": "people_data_labs",
+          "source_providers": [
+            "people_data_labs",
+            "scrapecreators"
+          ]
+        },
+        "task_id": "task_5b217eaef83d705d6580ce49",
+        "update_time": 1786423531966
+      }
+    }
+  ]
+}
+
+2026-08-11 12:45:39,382 | INFO | search_tool.QueryChainLogger | GetTaskCandidateDetail 事件:
+{
+  "sequence_no": 10,
+  "api_sequence_no": 1,
+  "run_id": "run_1d70edb93a664d539c9c5dcc0f2d9742",
+  "input_id": "case-077",
+  "person_name": "Matt Locklear",
+  "task_id": "task_5b217eaef83d705d6580ce49",
+  "candidate_id": "report_27461d9e9a69fb1a34dca4c8_candidate_1",
+  "stage": "GetTaskCandidateDetail",
+  "attempt": 1,
+  "business_success": true
+}
+2026-08-11 12:45:39,382 | INFO | search_tool.QueryChainLogger | GetTaskCandidateDetail 脱敏请求数据: attempt=1
+{
+  "task_id": "task_5b217eaef83d705d6580ce49",
+  "candidate_id": "report_27461d9e9a69fb1a34dca4c8_candidate_1"
+}
+2026-08-11 12:45:39,382 | INFO | search_tool.QueryChainLogger | GetTaskCandidateDetail 响应数据: HTTP 200 elapsed_ms=1109
+{
+  "code": 0,
+  "message": "ok",
+  "request_id": "gw_req_28792f9e3d900a5a5c90e1160df19c55",
+  "trace_id": "trace_2d40ec5b3e689940f71a3663f02f45e9",
+  "responses": [
+    {
+      "id": "req_0",
+      "success": true,
+      "code": 0,
+      "message": "ok",
+      "data": {
+        "candidate": {
+          "age": 0,
+          "avatar_url": "https://pbs.twimg.com/profile_images/1600899595294343169/ep9RlJ73_normal.jpg",
+          "candidate_id": "report_27461d9e9a69fb1a34dca4c8_candidate_1",
+          "confidence_level": "LOW",
+          "display_name": "matt locklear",
+          "education": "",
+          "email": "mlocklear@baptisthealth.net",
+          "evidence_count": 5,
+          "headline": "senior user support representative at baptist health",
+          "is_best_match": false,
+          "is_top_result": true,
+          "jobs": [
+            "senior user support representative at baptist health"
+          ],
+          "location": "Conway, AR",
+          "match_reasons": [
+            "name"
+          ],
+          "match_score": 35,
+          "matched_clue_types": [],
+          "person_id": "pdl:dB3-5A1gPY1lrbeG4tfbzA_0000",
+          "primary_image": {
+            "priority": 1,
+            "reason": "profile_image",
+            "source": "profile",
+            "url": "https://pbs.twimg.com/profile_images/1600899595294343169/ep9RlJ73_normal.jpg"
+          },
+          "profile_url": "https://linkedin.com/in/matt-locklear-92884753",
+          "rank_breakdown": {
+            "data_completeness": 0.8,
+            "geo_relevance": 0,
+            "public_influence": 0,
+            "social_activity": 0,
+            "social_richness": 0.3333
+          },
+          "rank_score": 0.3633,
+          "rank_version": "candidate_ranking_v2",
+          "social_links": [
+            {
+              "platform": "linkedin",
+              "url": "https://linkedin.com/in/matt-locklear-92884753",
+              "username": "matt-locklear-92884753"
+            },
+            {
+              "platform": "x",
+              "url": "https://twitter.com/praeus_ml",
+              "username": "praeus_ml",
+              "verification_level": "LIKELY",
+              "verification_reason": "social_profile_name_match"
+            }
+          ],
+          "social_platforms": [
+            "linkedin",
+            "x"
+          ],
+          "social_source_count": 2,
+          "source": "people_data_labs",
+          "source_provider": "people_data_labs",
+          "source_providers": [
+            "scrapecreators",
+            "people_data_labs"
+          ],
+          "web_links": [
+            {
+              "domain": "baptist-health.com",
+              "source": "Default",
+              "title": "matt locklear",
+              "url": "https://baptist-health.com"
+            }
+          ],
+          "web_platforms": [
+            "Default"
+          ],
+          "web_source_count": 1
+        },
+        "candidate_id": "report_27461d9e9a69fb1a34dca4c8_candidate_1",
+        "disclaimers": [
+          "People Data Labs Person Search returns candidate profiles; review candidates or add stronger clues before relying on an identity match.",
+          "Social profile fields were extracted from public page data and remain subject to source availability and platform changes."
+        ],
+        "entitlement_decision": "ALLOW",
+        "evidence": [
+          {
+            "display_name": "matt locklear",
+            "matched_on": [
+              "name"
+            ],
+            "person_id": "pdl:dB3-5A1gPY1lrbeG4tfbzA_0000",
+            "provider": "people_data_labs",
+            "provider_person_id": "dB3-5A1gPY1lrbeG4tfbzA_0000",
+            "subject_profile_url": "linkedin.com/in/matt-locklear-92884753",
+            "type": "pdl_matched_on"
+          },
+          {
+            "display_name": "matt locklear",
+            "field": "linkedin_url",
+            "person_id": "pdl:dB3-5A1gPY1lrbeG4tfbzA_0000",
+            "provider": "people_data_labs",
+            "provider_person_id": "dB3-5A1gPY1lrbeG4tfbzA_0000",
+            "subject_profile_url": "linkedin.com/in/matt-locklear-92884753",
+            "type": "pdl_profile_url",
+            "url": "linkedin.com/in/matt-locklear-92884753"
+          },
+          {
+            "display_name": "matt locklear",
+            "field": "twitter_url",
+            "person_id": "pdl:dB3-5A1gPY1lrbeG4tfbzA_0000",
+            "provider": "people_data_labs",
+            "provider_person_id": "dB3-5A1gPY1lrbeG4tfbzA_0000",
+            "subject_profile_url": "linkedin.com/in/matt-locklear-92884753",
+            "type": "pdl_profile_url",
+            "url": "twitter.com/praeus_ml"
+          },
+          {
+            "display_name": "matt locklear",
+            "field": "job_company_website",
+            "person_id": "pdl:dB3-5A1gPY1lrbeG4tfbzA_0000",
+            "provider": "people_data_labs",
+            "provider_person_id": "dB3-5A1gPY1lrbeG4tfbzA_0000",
+            "subject_profile_url": "linkedin.com/in/matt-locklear-92884753",
+            "type": "pdl_profile_url",
+            "url": "baptist-health.com"
+          },
+          {
+            "candidate_id": "pdl:dB3-5A1gPY1lrbeG4tfbzA_0000",
+            "image_url": "https://pbs.twimg.com/profile_images/1600899595294343169/ep9RlJ73_normal.jpg",
+            "observed_time": 1786423525227,
+            "person_id": "pdl:dB3-5A1gPY1lrbeG4tfbzA_0000",
+            "provider": "social_profile",
+            "snippet": "computer geek, wower",
+            "source": "scrapecreators",
+            "title": "Matt Locklear",
+            "type": "social_profile_source",
+            "url": "https://x.com/praeus_ml"
+          }
+        ],
+        "person_id": "pdl:dB3-5A1gPY1lrbeG4tfbzA_0000",
+        "social_accounts": [
+          {
+            "display_name": "matt locklear",
+            "person_id": "pdl:dB3-5A1gPY1lrbeG4tfbzA_0000",
+            "platform": "linkedin",
+            "profile_url": "https://linkedin.com/in/matt-locklear-92884753",
+            "source": "people_data_labs",
+            "url": "https://linkedin.com/in/matt-locklear-92884753",
+            "username": "matt-locklear-92884753"
+          },
+          {
+            "display_name": "matt locklear",
+            "person_id": "pdl:dB3-5A1gPY1lrbeG4tfbzA_0000",
+            "platform": "x",
+            "profile_url": "https://linkedin.com/in/matt-locklear-92884753",
+            "source": "people_data_labs",
+            "url": "https://twitter.com/praeus_ml",
+            "username": "praeus_ml",
+            "verification_level": "LIKELY",
+            "verification_reason": "social_profile_name_match"
+          }
+        ],
+        "task_id": "task_5b217eaef83d705d6580ce49",
+        "ui_sections": {
+          "insights": {
+            "data": {
+              "count": 0,
+              "items": []
+            },
+            "status": "empty"
+          },
+          "photos": {
+            "data": {
+              "authenticity_photos": [],
+              "baseline_photo_url": "",
+              "face_comparison_status": "not_applicable",
+              "identity_match_rate": 0,
+              "match_photos": []
+            },
+            "status": "empty"
+          },
+          "profile": {
+            "data": {
+              "sections": [
+                {
+                  "items": [
+                    {
+                      "label": "Full Name",
+                      "value": "matt locklear"
+                    },
+                    {
+                      "label": "Location",
+                      "value": "Conway, AR"
+                    },
+                    {
+                      "label": "Email",
+                      "value": "mlocklear@baptisthealth.net"
+                    },
+                    {
+                      "label": "Profile URL",
+                      "value": "https://linkedin.com/in/matt-locklear-92884753"
+                    }
+                  ],
+                  "title": "Identity"
+                },
+                {
+                  "items": [
+                    {
+                      "label": "Current Role",
+                      "value": "senior user support representative at baptist health"
+                    }
+                  ],
+                  "title": "Career"
+                },
+                {
+                  "items": [],
+                  "title": "Background"
+                }
+              ]
+            },
+            "status": "data"
+          },
+          "social": {
+            "data": {
+              "private_accounts": [],
+              "profiles": [
+                {
+                  "display_handle": "matt-locklear-92884753",
+                  "platform": "linkedin",
+                  "url": "https://linkedin.com/in/matt-locklear-92884753",
+                  "username": "matt-locklear-92884753"
+                },
+                {
+                  "display_handle": "praeus_ml",
+                  "platform": "x",
+                  "url": "https://twitter.com/praeus_ml",
+                  "username": "praeus_ml",
+                  "verification_level": "LIKELY",
+                  "verification_reason": "social_profile_name_match"
+                }
+              ]
+            },
+            "status": "data"
+          },
+          "summary": {
+            "data": {
+              "age": null,
+              "avatar_url": "https://pbs.twimg.com/profile_images/1600899595294343169/ep9RlJ73_normal.jpg",
+              "candidate_id": "report_27461d9e9a69fb1a34dca4c8_candidate_1",
+              "confidence_level": "LOW",
+              "disclaimers": [
+                "People Data Labs Person Search returns candidate profiles; review candidates or add stronger clues before relying on an identity match.",
+                "Social profile fields were extracted from public page data and remain subject to source availability and platform changes."
+              ],
+              "display_name": "matt locklear",
+              "education": "",
+              "generate_time": 1786423531966,
+              "headline": "senior user support representative at baptist health",
+              "is_best_match": false,
+              "is_top_result": true,
+              "jobs": [
+                "senior user support representative at baptist health"
+              ],
+              "location": "Conway, AR",
+              "match_reasons": [
+                "name"
+              ],
+              "match_score": 35,
+              "more_social_count": 0,
+              "person_id": "pdl:dB3-5A1gPY1lrbeG4tfbzA_0000",
+              "primary_image": {
+                "priority": 1,
+                "reason": "profile_image",
+                "source": "profile",
+                "url": "https://pbs.twimg.com/profile_images/1600899595294343169/ep9RlJ73_normal.jpg"
+              },
+              "profile_url": "https://linkedin.com/in/matt-locklear-92884753",
+              "report_expires_at": 1789015510202,
+              "social_links": [
+                {
+                  "platform": "linkedin",
+                  "title": "LinkedIn",
+                  "url": "https://linkedin.com/in/matt-locklear-92884753"
+                },
+                {
+                  "platform": "x",
+                  "title": "X",
+                  "url": "https://twitter.com/praeus_ml",
+                  "verification_level": "LIKELY",
+                  "verification_reason": "social_profile_name_match"
+                }
+              ],
+              "social_platforms": [
+                "linkedin",
+                "x"
+              ],
+              "source_provider": "people_data_labs",
+              "source_providers": [
+                "scrapecreators",
+                "people_data_labs"
+              ],
+              "web_links": [
+                {
+                  "platform": "default",
+                  "title": "Default",
+                  "url": "https://baptist-health.com"
+                }
+              ]
+            },
+            "status": "data"
+          }
+        },
+        "update_time": 1786423531966
+      }
+    }
+  ]
+}
+
+2026-08-11 12:45:40,467 | INFO | search_tool.QueryChainLogger | GetTaskCandidateDetail 事件:
+{
+  "sequence_no": 11,
+  "api_sequence_no": 2,
+  "run_id": "run_1d70edb93a664d539c9c5dcc0f2d9742",
+  "input_id": "case-077",
+  "person_name": "Matt Locklear",
+  "task_id": "task_5b217eaef83d705d6580ce49",
+  "candidate_id": "report_27461d9e9a69fb1a34dca4c8_candidate_2",
+  "stage": "GetTaskCandidateDetail",
+  "attempt": 1,
+  "business_success": true
+}
+2026-08-11 12:45:40,467 | INFO | search_tool.QueryChainLogger | GetTaskCandidateDetail 脱敏请求数据: attempt=1
+{
+  "task_id": "task_5b217eaef83d705d6580ce49",
+  "candidate_id": "report_27461d9e9a69fb1a34dca4c8_candidate_2"
+}
+2026-08-11 12:45:40,467 | INFO | search_tool.QueryChainLogger | GetTaskCandidateDetail 响应数据: HTTP 200 elapsed_ms=1071
+{
+  "code": 0,
+  "message": "ok",
+  "request_id": "gw_req_80fc07b950cbc97becac991587bd4886",
+  "trace_id": "trace_38c844b364a3e3e526dc9edc55ce3a2e",
+  "responses": [
+    {
+      "id": "req_0",
+      "success": true,
+      "code": 0,
+      "message": "ok",
+      "data": {
+        "candidate": {
+          "age": 0,
+          "avatar_url": "",
+          "candidate_id": "report_27461d9e9a69fb1a34dca4c8_candidate_2",
+          "confidence_level": "LOW",
+          "display_name": "matt locklear",
+          "education": "the university of north carolina at chapel hill bachelor of applied science bachelors",
+          "email": "matt.locklear@truist.com",
+          "evidence_count": 3,
+          "headline": "manager, enterprise endpoint security & strategy at truist",
+          "is_best_match": false,
+          "is_top_result": false,
+          "jobs": [
+            "manager, enterprise endpoint security & strategy at truist"
+          ],
+          "location": "raleigh, north carolina, united states",
+          "match_reasons": [
+            "name"
+          ],
+          "match_score": 35,
+          "matched_clue_types": [],
+          "person_id": "pdl:MZ8HQoAge1niay7F58PzeQ_0000",
+          "profile_url": "https://linkedin.com/in/matt-locklear-32b554a2",
+          "rank_breakdown": {
+            "data_completeness": 0.9,
+            "geo_relevance": 0,
+            "public_influence": 0,
+            "social_activity": 0,
+            "social_richness": 0.1667
+          },
+          "rank_score": 0.3567,
+          "rank_version": "candidate_ranking_v2",
+          "social_links": [
+            {
+              "platform": "linkedin",
+              "url": "https://linkedin.com/in/matt-locklear-32b554a2",
+              "username": "matt-locklear-32b554a2"
+            }
+          ],
+          "social_platforms": [
+            "linkedin"
+          ],
+          "social_source_count": 1,
+          "source": "people_data_labs",
+          "source_provider": "people_data_labs",
+          "source_providers": [
+            "people_data_labs"
+          ],
+          "web_links": [
+            {
+              "domain": "truist.com",
+              "source": "Default",
+              "title": "matt locklear",
+              "url": "https://truist.com"
+            }
+          ],
+          "web_platforms": [
+            "Default"
+          ],
+          "web_source_count": 1
+        },
+        "candidate_id": "report_27461d9e9a69fb1a34dca4c8_candidate_2",
+        "disclaimers": [
+          "People Data Labs Person Search returns candidate profiles; review candidates or add stronger clues before relying on an identity match.",
+          "Social profile fields were extracted from public page data and remain subject to source availability and platform changes."
+        ],
+        "entitlement_decision": "ALLOW",
+        "evidence": [
+          {
+            "display_name": "matt locklear",
+            "matched_on": [
+              "name"
+            ],
+            "person_id": "pdl:MZ8HQoAge1niay7F58PzeQ_0000",
+            "provider": "people_data_labs",
+            "provider_person_id": "MZ8HQoAge1niay7F58PzeQ_0000",
+            "subject_profile_url": "linkedin.com/in/matt-locklear-32b554a2",
+            "type": "pdl_matched_on"
+          },
+          {
+            "display_name": "matt locklear",
+            "field": "linkedin_url",
+            "person_id": "pdl:MZ8HQoAge1niay7F58PzeQ_0000",
+            "provider": "people_data_labs",
+            "provider_person_id": "MZ8HQoAge1niay7F58PzeQ_0000",
+            "subject_profile_url": "linkedin.com/in/matt-locklear-32b554a2",
+            "type": "pdl_profile_url",
+            "url": "linkedin.com/in/matt-locklear-32b554a2"
+          },
+          {
+            "display_name": "matt locklear",
+            "field": "job_company_website",
+            "person_id": "pdl:MZ8HQoAge1niay7F58PzeQ_0000",
+            "provider": "people_data_labs",
+            "provider_person_id": "MZ8HQoAge1niay7F58PzeQ_0000",
+            "subject_profile_url": "linkedin.com/in/matt-locklear-32b554a2",
+            "type": "pdl_profile_url",
+            "url": "truist.com"
+          }
+        ],
+        "person_id": "pdl:MZ8HQoAge1niay7F58PzeQ_0000",
+        "social_accounts": [
+          {
+            "display_name": "matt locklear",
+            "person_id": "pdl:MZ8HQoAge1niay7F58PzeQ_0000",
+            "platform": "linkedin",
+            "profile_url": "https://linkedin.com/in/matt-locklear-32b554a2",
+            "source": "people_data_labs",
+            "url": "https://linkedin.com/in/matt-locklear-32b554a2",
+            "username": "matt-locklear-32b554a2"
+          }
+        ],
+        "task_id": "task_5b217eaef83d705d6580ce49",
+        "ui_sections": {
+          "insights": {
+            "data": {
+              "count": 0,
+              "items": []
+            },
+            "status": "empty"
+          },
+          "photos": {
+            "data": {
+              "authenticity_photos": [],
+              "baseline_photo_url": "",
+              "face_comparison_status": "not_applicable",
+              "identity_match_rate": 0,
+              "match_photos": []
+            },
+            "status": "empty"
+          },
+          "profile": {
+            "data": {
+              "sections": [
+                {
+                  "items": [
+                    {
+                      "label": "Full Name",
+                      "value": "matt locklear"
+                    },
+                    {
+                      "label": "Location",
+                      "value": "raleigh, north carolina, united states"
+                    },
+                    {
+                      "label": "Email",
+                      "value": "matt.locklear@truist.com"
+                    },
+                    {
+                      "label": "Profile URL",
+                      "value": "https://linkedin.com/in/matt-locklear-32b554a2"
+                    }
+                  ],
+                  "title": "Identity"
+                },
+                {
+                  "items": [
+                    {
+                      "label": "Current Role",
+                      "value": "manager, enterprise endpoint security & strategy at truist"
+                    }
+                  ],
+                  "title": "Career"
+                },
+                {
+                  "items": [
+                    {
+                      "label": "Education",
+                      "value": "the university of north carolina at chapel hill bachelor of applied science bachelors"
+                    }
+                  ],
+                  "title": "Background"
+                }
+              ]
+            },
+            "status": "data"
+          },
+          "social": {
+            "data": {
+              "private_accounts": [],
+              "profiles": [
+                {
+                  "display_handle": "matt-locklear-32b554a2",
+                  "platform": "linkedin",
+                  "url": "https://linkedin.com/in/matt-locklear-32b554a2",
+                  "username": "matt-locklear-32b554a2"
+                }
+              ]
+            },
+            "status": "data"
+          },
+          "summary": {
+            "data": {
+              "age": null,
+              "avatar_url": "",
+              "candidate_id": "report_27461d9e9a69fb1a34dca4c8_candidate_2",
+              "confidence_level": "LOW",
+              "disclaimers": [
+                "People Data Labs Person Search returns candidate profiles; review candidates or add stronger clues before relying on an identity match.",
+                "Social profile fields were extracted from public page data and remain subject to source availability and platform changes."
+              ],
+              "display_name": "matt locklear",
+              "education": "the university of north carolina at chapel hill bachelor of applied science bachelors",
+              "generate_time": 1786423531966,
+              "headline": "manager, enterprise endpoint security & strategy at truist",
+              "is_best_match": false,
+              "is_top_result": false,
+              "jobs": [
+                "manager, enterprise endpoint security & strategy at truist"
+              ],
+              "location": "raleigh, north carolina, united states",
+              "match_reasons": [
+                "name"
+              ],
+              "match_score": 35,
+              "more_social_count": 0,
+              "person_id": "pdl:MZ8HQoAge1niay7F58PzeQ_0000",
+              "primary_image": null,
+              "profile_url": "https://linkedin.com/in/matt-locklear-32b554a2",
+              "report_expires_at": 1789015510202,
+              "social_links": [
+                {
+                  "platform": "linkedin",
+                  "title": "LinkedIn",
+                  "url": "https://linkedin.com/in/matt-locklear-32b554a2"
+                }
+              ],
+              "social_platforms": [
+                "linkedin"
+              ],
+              "source_provider": "people_data_labs",
+              "source_providers": [
+                "people_data_labs"
+              ],
+              "web_links": [
+                {
+                  "platform": "default",
+                  "title": "Default",
+                  "url": "https://truist.com"
+                }
+              ]
+            },
+            "status": "data"
+          }
+        },
+        "update_time": 1786423531966
+      }
+    }
+  ]
+}
+
+2026-08-11 12:45:41,538 | INFO | search_tool.QueryChainLogger | GetTaskCandidateDetail 事件:
+{
+  "sequence_no": 12,
+  "api_sequence_no": 3,
+  "run_id": "run_1d70edb93a664d539c9c5dcc0f2d9742",
+  "input_id": "case-077",
+  "person_name": "Matt Locklear",
+  "task_id": "task_5b217eaef83d705d6580ce49",
+  "candidate_id": "report_27461d9e9a69fb1a34dca4c8_candidate_3",
+  "stage": "GetTaskCandidateDetail",
+  "attempt": 1,
+  "business_success": true
+}
+2026-08-11 12:45:41,538 | INFO | search_tool.QueryChainLogger | GetTaskCandidateDetail 脱敏请求数据: attempt=1
+{
+  "task_id": "task_5b217eaef83d705d6580ce49",
+  "candidate_id": "report_27461d9e9a69fb1a34dca4c8_candidate_3"
+}
+2026-08-11 12:45:41,538 | INFO | search_tool.QueryChainLogger | GetTaskCandidateDetail 响应数据: HTTP 200 elapsed_ms=1050
+{
+  "code": 0,
+  "message": "ok",
+  "request_id": "gw_req_08a808f88970d8e4a5abdcdd7f579866",
+  "trace_id": "trace_905de2fb3518d1b8d335c51e87d328e7",
+  "responses": [
+    {
+      "id": "req_0",
+      "success": true,
+      "code": 0,
+      "message": "ok",
+      "data": {
+        "candidate": {
+          "age": 0,
+          "avatar_url": "https://media.licdn.com/dms/image/v2/C5603AQHAt_a26s_lXg/profile-displayphoto-shrink_200_200/profile-displayphoto-shrink_200_200/0/1568961272497?e=2147483647&v=beta&t=B_TFUSbQ9ciphVxN90-qj49sGk6lQcL8YMUp9k_5ass",
+          "candidate_id": "report_27461d9e9a69fb1a34dca4c8_candidate_3",
+          "confidence_level": "LOW",
+          "display_name": "matt locklear",
+          "education": "university of california, irvine - the paul merage school of business masters; ucla extension accounting; university of california, berkeley bachelor of science bachelors",
+          "email": "matt.locklear@ey.com",
+          "evidence_count": 4,
+          "headline": "assurance manager at ey",
+          "is_best_match": false,
+          "is_top_result": false,
+          "jobs": [
+            "assurance manager at ey"
+          ],
+          "location": "Irvine, California, United States",
+          "match_reasons": [
+            "name"
+          ],
+          "match_score": 35,
+          "matched_clue_types": [],
+          "person_id": "pdl:c7cK-YBYaTYJcy71wT-7Iw_0000",
+          "primary_image": {
+            "priority": 1,
+            "reason": "profile_image",
+            "source": "profile",
+            "url": "https://media.licdn.com/dms/image/v2/C5603AQHAt_a26s_lXg/profile-displayphoto-shrink_200_200/profile-displayphoto-shrink_200_200/0/1568961272497?e=2147483647&v=beta&t=B_TFUSbQ9ciphVxN90-qj49sGk6lQcL8YMUp9k_5ass"
+          },
+          "profile_url": "https://linkedin.com/in/matt-locklear",
+          "rank_breakdown": {
+            "data_completeness": 0.9,
+            "geo_relevance": 0,
+            "public_influence": 0,
+            "social_activity": 0,
+            "social_richness": 0.1667
+          },
+          "rank_score": 0.3567,
+          "rank_version": "candidate_ranking_v2",
+          "social_links": [
+            {
+              "platform": "linkedin",
+              "url": "https://linkedin.com/in/matt-locklear",
+              "username": "matt-locklear",
+              "verification_level": "LIKELY",
+              "verification_reason": "social_profile_name_match"
+            }
+          ],
+          "social_platforms": [
+            "linkedin"
+          ],
+          "social_source_count": 1,
+          "source": "people_data_labs",
+          "source_provider": "people_data_labs",
+          "source_providers": [
+            "scrapecreators",
+            "people_data_labs"
+          ],
+          "web_links": [
+            {
+              "domain": "ey.com",
+              "source": "Default",
+              "title": "matt locklear",
+              "url": "https://ey.com"
+            }
+          ],
+          "web_platforms": [
+            "Default"
+          ],
+          "web_source_count": 1
+        },
+        "candidate_id": "report_27461d9e9a69fb1a34dca4c8_candidate_3",
+        "disclaimers": [
+          "People Data Labs Person Search returns candidate profiles; review candidates or add stronger clues before relying on an identity match.",
+          "Social profile fields were extracted from public page data and remain subject to source availability and platform changes."
+        ],
+        "entitlement_decision": "ALLOW",
+        "evidence": [
+          {
+            "display_name": "matt locklear",
+            "matched_on": [
+              "name"
+            ],
+            "person_id": "pdl:c7cK-YBYaTYJcy71wT-7Iw_0000",
+            "provider": "people_data_labs",
+            "provider_person_id": "c7cK-YBYaTYJcy71wT-7Iw_0000",
+            "subject_profile_url": "linkedin.com/in/matt-locklear",
+            "type": "pdl_matched_on"
+          },
+          {
+            "display_name": "matt locklear",
+            "field": "linkedin_url",
+            "person_id": "pdl:c7cK-YBYaTYJcy71wT-7Iw_0000",
+            "provider": "people_data_labs",
+            "provider_person_id": "c7cK-YBYaTYJcy71wT-7Iw_0000",
+            "subject_profile_url": "linkedin.com/in/matt-locklear",
+            "type": "pdl_profile_url",
+            "url": "linkedin.com/in/matt-locklear"
+          },
+          {
+            "display_name": "matt locklear",
+            "field": "job_company_website",
+            "person_id": "pdl:c7cK-YBYaTYJcy71wT-7Iw_0000",
+            "provider": "people_data_labs",
+            "provider_person_id": "c7cK-YBYaTYJcy71wT-7Iw_0000",
+            "subject_profile_url": "linkedin.com/in/matt-locklear",
+            "type": "pdl_profile_url",
+            "url": "ey.com"
+          },
+          {
+            "candidate_id": "pdl:c7cK-YBYaTYJcy71wT-7Iw_0000",
+            "image_url": "https://media.licdn.com/dms/image/v2/C5603AQHAt_a26s_lXg/profile-displayphoto-shrink_200_200/profile-displayphoto-shrink_200_200/0/1568961272497?e=2147483647&v=beta&t=B_TFUSbQ9ciphVxN90-qj49sGk6lQcL8YMUp9k_5ass",
+            "observed_time": 1786423531599,
+            "person_id": "pdl:c7cK-YBYaTYJcy71wT-7Iw_0000",
+            "provider": "social_profile",
+            "snippet": "",
+            "source": "scrapecreators",
+            "title": "Matt Locklear, CPA",
+            "type": "social_profile_source",
+            "url": "https://linkedin.com/in/matt-locklear"
+          }
+        ],
+        "person_id": "pdl:c7cK-YBYaTYJcy71wT-7Iw_0000",
+        "social_accounts": [
+          {
+            "display_name": "matt locklear",
+            "person_id": "pdl:c7cK-YBYaTYJcy71wT-7Iw_0000",
+            "platform": "linkedin",
+            "profile_url": "https://linkedin.com/in/matt-locklear",
+            "source": "people_data_labs",
+            "url": "https://linkedin.com/in/matt-locklear",
+            "username": "matt-locklear",
+            "verification_level": "LIKELY",
+            "verification_reason": "social_profile_name_match"
+          }
+        ],
+        "task_id": "task_5b217eaef83d705d6580ce49",
+        "ui_sections": {
+          "insights": {
+            "data": {
+              "count": 0,
+              "items": []
+            },
+            "status": "empty"
+          },
+          "photos": {
+            "data": {
+              "authenticity_photos": [],
+              "baseline_photo_url": "",
+              "face_comparison_status": "not_applicable",
+              "identity_match_rate": 0,
+              "match_photos": []
+            },
+            "status": "empty"
+          },
+          "profile": {
+            "data": {
+              "sections": [
+                {
+                  "items": [
+                    {
+                      "label": "Full Name",
+                      "value": "matt locklear"
+                    },
+                    {
+                      "label": "Location",
+                      "value": "Irvine, California, United States"
+                    },
+                    {
+                      "label": "Email",
+                      "value": "matt.locklear@ey.com"
+                    },
+                    {
+                      "label": "Profile URL",
+                      "value": "https://linkedin.com/in/matt-locklear"
+                    }
+                  ],
+                  "title": "Identity"
+                },
+                {
+                  "items": [
+                    {
+                      "label": "Current Role",
+                      "value": "assurance manager at ey"
+                    }
+                  ],
+                  "title": "Career"
+                },
+                {
+                  "items": [
+                    {
+                      "label": "Education",
+                      "value": "university of california, irvine - the paul merage school of business masters; ucla extension accounting; university of california, berkeley bachelor of science bachelors"
+                    }
+                  ],
+                  "title": "Background"
+                }
+              ]
+            },
+            "status": "data"
+          },
+          "social": {
+            "data": {
+              "private_accounts": [],
+              "profiles": [
+                {
+                  "display_handle": "matt-locklear",
+                  "platform": "linkedin",
+                  "url": "https://linkedin.com/in/matt-locklear",
+                  "username": "matt-locklear",
+                  "verification_level": "LIKELY",
+                  "verification_reason": "social_profile_name_match"
+                }
+              ]
+            },
+            "status": "data"
+          },
+          "summary": {
+            "data": {
+              "age": null,
+              "avatar_url": "https://media.licdn.com/dms/image/v2/C5603AQHAt_a26s_lXg/profile-displayphoto-shrink_200_200/profile-displayphoto-shrink_200_200/0/1568961272497?e=2147483647&v=beta&t=B_TFUSbQ9ciphVxN90-qj49sGk6lQcL8YMUp9k_5ass",
+              "candidate_id": "report_27461d9e9a69fb1a34dca4c8_candidate_3",
+              "confidence_level": "LOW",
+              "disclaimers": [
+                "People Data Labs Person Search returns candidate profiles; review candidates or add stronger clues before relying on an identity match.",
+                "Social profile fields were extracted from public page data and remain subject to source availability and platform changes."
+              ],
+              "display_name": "matt locklear",
+              "education": "university of california, irvine - the paul merage school of business masters; ucla extension accounting; university of california, berkeley bachelor of science bachelors",
+              "generate_time": 1786423531966,
+              "headline": "assurance manager at ey",
+              "is_best_match": false,
+              "is_top_result": false,
+              "jobs": [
+                "assurance manager at ey"
+              ],
+              "location": "Irvine, California, United States",
+              "match_reasons": [
+                "name"
+              ],
+              "match_score": 35,
+              "more_social_count": 0,
+              "person_id": "pdl:c7cK-YBYaTYJcy71wT-7Iw_0000",
+              "primary_image": {
+                "priority": 1,
+                "reason": "profile_image",
+                "source": "profile",
+                "url": "https://media.licdn.com/dms/image/v2/C5603AQHAt_a26s_lXg/profile-displayphoto-shrink_200_200/profile-displayphoto-shrink_200_200/0/1568961272497?e=2147483647&v=beta&t=B_TFUSbQ9ciphVxN90-qj49sGk6lQcL8YMUp9k_5ass"
+              },
+              "profile_url": "https://linkedin.com/in/matt-locklear",
+              "report_expires_at": 1789015510202,
+              "social_links": [
+                {
+                  "platform": "linkedin",
+                  "title": "LinkedIn",
+                  "url": "https://linkedin.com/in/matt-locklear",
+                  "verification_level": "LIKELY",
+                  "verification_reason": "social_profile_name_match"
+                }
+              ],
+              "social_platforms": [
+                "linkedin"
+              ],
+              "source_provider": "people_data_labs",
+              "source_providers": [
+                "scrapecreators",
+                "people_data_labs"
+              ],
+              "web_links": [
+                {
+                  "platform": "default",
+                  "title": "Default",
+                  "url": "https://ey.com"
+                }
+              ]
+            },
+            "status": "data"
+          }
+        },
+        "update_time": 1786423531966
+      }
+    }
+  ]
+}
+
+2026-08-11 12:45:41,548 | INFO | search_tool.QueryChainLogger | QueryEnd 事件:
+{
+  "sequence_no": 13,
+  "api_sequence_no": null,
+  "run_id": "run_1d70edb93a664d539c9c5dcc0f2d9742",
+  "input_id": "case-077",
+  "person_name": "Matt Locklear",
+  "task_id": "task_5b217eaef83d705d6580ce49",
+  "candidate_id": "",
+  "stage": "QueryEnd",
+  "attempt": 1,
+  "business_success": true
+}
+2026-08-11 12:45:41,548 | INFO | search_tool.QueryChainLogger | QueryEnd 响应数据: HTTP - elapsed_ms=-
+{
+  "status": "SUCCESS",
+  "candidate_count": 3
+}
+

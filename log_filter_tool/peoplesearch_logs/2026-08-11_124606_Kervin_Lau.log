@@ -1,0 +1,2900 @@
+2026-08-11 12:46:06,445 | INFO | search_tool.QueryChainLogger | QueryStart 事件:
+{
+  "sequence_no": 1,
+  "api_sequence_no": null,
+  "run_id": "run_1d70edb93a664d539c9c5dcc0f2d9742",
+  "input_id": "case-079",
+  "person_name": "Kervin Lau",
+  "task_id": "",
+  "candidate_id": "",
+  "stage": "QueryStart",
+  "attempt": 1,
+  "business_success": true
+}
+2026-08-11 12:46:06,445 | INFO | search_tool.QueryChainLogger | QueryStart 脱敏请求数据: attempt=1
+{
+  "input_id": "case-079",
+  "query_stage": "FULL_NAME",
+  "match_strategy": "UNION",
+  "clues": [
+    {
+      "full_name_query": {
+        "full_name": "Kervin Lau"
+      },
+      "type": "FULL_NAME"
+    }
+  ],
+  "additional_details": []
+}
+
+2026-08-11 12:46:07,429 | INFO | search_tool.QueryChainLogger | CreateIntentTask 事件:
+{
+  "sequence_no": 2,
+  "api_sequence_no": 1,
+  "run_id": "run_1d70edb93a664d539c9c5dcc0f2d9742",
+  "input_id": "case-079",
+  "person_name": "Kervin Lau",
+  "task_id": "task_86c9f1e3898ab4e336cb4ca6",
+  "candidate_id": "",
+  "stage": "CreateIntentTask",
+  "attempt": 1,
+  "business_success": true
+}
+2026-08-11 12:46:07,429 | INFO | search_tool.QueryChainLogger | CreateIntentTask 脱敏请求数据: attempt=1
+{
+  "match_strategy": "UNION",
+  "clues": [
+    {
+      "full_name_query": {
+        "full_name": "Kervin Lau"
+      },
+      "type": "FULL_NAME"
+    }
+  ],
+  "additional_details": []
+}
+2026-08-11 12:46:07,429 | INFO | search_tool.QueryChainLogger | CreateIntentTask 响应数据: HTTP 200 elapsed_ms=981
+{
+  "code": 0,
+  "message": "ok",
+  "request_id": "gw_req_0d3a5d52409d0be891b295788ecfc6bd",
+  "trace_id": "trace_95fe655b5e953eee7cde306e66d0fd4c",
+  "responses": [
+    {
+      "id": "req_0",
+      "success": true,
+      "code": 0,
+      "message": "ok",
+      "data": {
+        "accepted_query_type": "FULL_NAME",
+        "additional_details": [],
+        "cache_hit": false,
+        "can_start_real_search": true,
+        "clue_types": [
+          "FULL_NAME"
+        ],
+        "entitlement_decision": "ALLOW",
+        "expires_time": 1789015567968,
+        "match_strategy": "UNION",
+        "status": "QUEUED",
+        "task_id": "task_86c9f1e3898ab4e336cb4ca6"
+      }
+    }
+  ]
+}
+
+2026-08-11 12:46:13,507 | INFO | search_tool.QueryChainLogger | GetTask 事件:
+{
+  "sequence_no": 3,
+  "api_sequence_no": 1,
+  "run_id": "run_1d70edb93a664d539c9c5dcc0f2d9742",
+  "input_id": "case-079",
+  "person_name": "Kervin Lau",
+  "task_id": "task_86c9f1e3898ab4e336cb4ca6",
+  "candidate_id": "",
+  "stage": "GetTask",
+  "attempt": 1,
+  "business_success": true
+}
+2026-08-11 12:46:13,507 | INFO | search_tool.QueryChainLogger | GetTask 脱敏请求数据: attempt=1
+{
+  "task_id": "task_86c9f1e3898ab4e336cb4ca6"
+}
+2026-08-11 12:46:13,507 | INFO | search_tool.QueryChainLogger | GetTask 响应数据: HTTP 200 elapsed_ms=1055
+{
+  "code": 0,
+  "message": "ok",
+  "request_id": "gw_req_81c047078c400f239f91d99e82c8fc89",
+  "trace_id": "trace_7623c578a0f141416ce24d0df929b54e",
+  "responses": [
+    {
+      "id": "req_0",
+      "success": true,
+      "code": 0,
+      "message": "ok",
+      "data": {
+        "cache_hit": false,
+        "candidate_confidence_scores": [],
+        "candidate_count": 0,
+        "error_code": "",
+        "failure_reason": "",
+        "has_additional_clues": false,
+        "is_initial_search": true,
+        "no_result_reason": "",
+        "progress": {
+          "display_message": "Searching public sources",
+          "display_percent": 45,
+          "stage": "provider_search"
+        },
+        "provider_execution": "PENDING",
+        "provider_summary": {
+          "cache_hit": false,
+          "primary_provider": "",
+          "provider_execution": "PENDING",
+          "providers": [],
+          "public_sources": false,
+          "source_provider": "",
+          "source_providers": []
+        },
+        "result_type": "",
+        "status": "SEARCHING",
+        "task_id": "task_86c9f1e3898ab4e336cb4ca6",
+        "top_confidence_score": 0,
+        "update_time": 1786423569217
+      }
+    }
+  ]
+}
+
+2026-08-11 12:46:19,507 | INFO | search_tool.QueryChainLogger | GetTask 事件:
+{
+  "sequence_no": 4,
+  "api_sequence_no": 2,
+  "run_id": "run_1d70edb93a664d539c9c5dcc0f2d9742",
+  "input_id": "case-079",
+  "person_name": "Kervin Lau",
+  "task_id": "task_86c9f1e3898ab4e336cb4ca6",
+  "candidate_id": "",
+  "stage": "GetTask",
+  "attempt": 1,
+  "business_success": true
+}
+2026-08-11 12:46:19,507 | INFO | search_tool.QueryChainLogger | GetTask 脱敏请求数据: attempt=1
+{
+  "task_id": "task_86c9f1e3898ab4e336cb4ca6"
+}
+2026-08-11 12:46:19,507 | INFO | search_tool.QueryChainLogger | GetTask 响应数据: HTTP 200 elapsed_ms=975
+{
+  "code": 0,
+  "message": "ok",
+  "request_id": "gw_req_b67f8b732795e51cc669e9fdeeda1e37",
+  "trace_id": "trace_49e294354cd8e31193b4f469583deaa5",
+  "responses": [
+    {
+      "id": "req_0",
+      "success": true,
+      "code": 0,
+      "message": "ok",
+      "data": {
+        "cache_hit": false,
+        "candidate_confidence_scores": [],
+        "candidate_count": 0,
+        "error_code": "",
+        "failure_reason": "",
+        "has_additional_clues": false,
+        "is_initial_search": true,
+        "no_result_reason": "",
+        "progress": {
+          "display_message": "Searching public sources",
+          "display_percent": 45,
+          "stage": "provider_search"
+        },
+        "provider_execution": "PENDING",
+        "provider_summary": {
+          "cache_hit": false,
+          "primary_provider": "",
+          "provider_execution": "PENDING",
+          "providers": [],
+          "public_sources": false,
+          "source_provider": "",
+          "source_providers": []
+        },
+        "result_type": "",
+        "status": "SEARCHING",
+        "task_id": "task_86c9f1e3898ab4e336cb4ca6",
+        "top_confidence_score": 0,
+        "update_time": 1786423569217
+      }
+    }
+  ]
+}
+
+2026-08-11 12:46:25,510 | INFO | search_tool.QueryChainLogger | GetTask 事件:
+{
+  "sequence_no": 5,
+  "api_sequence_no": 3,
+  "run_id": "run_1d70edb93a664d539c9c5dcc0f2d9742",
+  "input_id": "case-079",
+  "person_name": "Kervin Lau",
+  "task_id": "task_86c9f1e3898ab4e336cb4ca6",
+  "candidate_id": "",
+  "stage": "GetTask",
+  "attempt": 1,
+  "business_success": true
+}
+2026-08-11 12:46:25,510 | INFO | search_tool.QueryChainLogger | GetTask 脱敏请求数据: attempt=1
+{
+  "task_id": "task_86c9f1e3898ab4e336cb4ca6"
+}
+2026-08-11 12:46:25,510 | INFO | search_tool.QueryChainLogger | GetTask 响应数据: HTTP 200 elapsed_ms=984
+{
+  "code": 0,
+  "message": "ok",
+  "request_id": "gw_req_56d0cedafbe95bb8296efdce60e91871",
+  "trace_id": "trace_d770aeabfdfb4fde295646b382a35b6e",
+  "responses": [
+    {
+      "id": "req_0",
+      "success": true,
+      "code": 0,
+      "message": "ok",
+      "data": {
+        "cache_hit": false,
+        "candidate_confidence_scores": [
+          35
+        ],
+        "candidate_count": 1,
+        "error_code": "",
+        "failure_reason": "",
+        "has_additional_clues": false,
+        "is_initial_search": true,
+        "no_result_reason": "",
+        "progress": {
+          "display_message": "Report ready",
+          "display_percent": 100,
+          "stage": "report_ready"
+        },
+        "provider_execution": "REAL_PROVIDER",
+        "provider_summary": {
+          "cache_hit": false,
+          "primary_provider": "agent_people",
+          "provider_execution": "REAL_PROVIDER",
+          "providers": [
+            "agent_people",
+            "social_profile",
+            "image_materializer",
+            "people_data_labs",
+            "search_agent"
+          ],
+          "public_sources": false,
+          "source_provider": "people_data_labs",
+          "source_providers": [
+            "people_data_labs",
+            "scrapecreators"
+          ]
+        },
+        "result_type": "single",
+        "status": "SUCCEEDED",
+        "task_id": "task_86c9f1e3898ab4e336cb4ca6",
+        "top_confidence_score": 35,
+        "update_time": 1786423582301
+      }
+    }
+  ]
+}
+
+2026-08-11 12:46:27,866 | INFO | search_tool.QueryChainLogger | GetSearchTaskDebug 事件:
+{
+  "sequence_no": 6,
+  "api_sequence_no": 1,
+  "run_id": "run_1d70edb93a664d539c9c5dcc0f2d9742",
+  "input_id": "case-079",
+  "person_name": "Kervin Lau",
+  "task_id": "task_86c9f1e3898ab4e336cb4ca6",
+  "candidate_id": "",
+  "stage": "GetSearchTaskDebug",
+  "attempt": 1,
+  "business_success": true
+}
+2026-08-11 12:46:27,866 | INFO | search_tool.QueryChainLogger | GetSearchTaskDebug 脱敏请求数据: attempt=1
+{
+  "task_id": "task_86c9f1e3898ab4e336cb4ca6",
+  "service": "worker"
+}
+2026-08-11 12:46:27,866 | INFO | search_tool.QueryChainLogger | GetSearchTaskDebug 响应数据: HTTP 200 elapsed_ms=1322
+{
+  "code": 0,
+  "message": "ok",
+  "request_id": "gw_req_3172a825d0ae23794a0285a3c21bcb92",
+  "trace_id": "trace_e60a5bac161b4bf2b808954df11a5f14",
+  "responses": [
+    {
+      "id": "req_0",
+      "success": true,
+      "code": 0,
+      "message": "ok",
+      "data": {
+        "debug": {
+          "task": {
+            "cache_hit": 0,
+            "client_request_id": "crid-1786423566447-0c5686be5b",
+            "create_time": "2026-08-11T04:46:07.968Z",
+            "entitlement_decision": "ALLOW",
+            "error_code": "",
+            "expire_time": "2026-09-10T04:46:07.968Z",
+            "finish_time": "2026-08-11T04:46:22.301Z",
+            "id": 1659,
+            "no_result_reason": "",
+            "progress_message": "Report ready",
+            "progress_percent": 100,
+            "progress_stage": "report_ready",
+            "query_type": "FULL_NAME",
+            "refine_feedback_id": "",
+            "report_id": "report_7f59e4d163d9f439c750f97d",
+            "source_report_id": "",
+            "source_task_id": "",
+            "start_time": "2026-08-11T04:46:09.217Z",
+            "status": "SUCCEEDED",
+            "task_id": "task_86c9f1e3898ab4e336cb4ca6",
+            "update_time": "2026-08-11T04:46:22.301Z"
+          },
+          "query": {
+            "additional_details_json": null,
+            "city": "",
+            "clues_json": [
+              {
+                "full_name": "Kervin Lau",
+                "type": "FULL_NAME"
+              }
+            ],
+            "country": "",
+            "create_time": "2026-08-11T04:46:07.968Z",
+            "extra_hint": "",
+            "full_name": "Kervin Lau",
+            "id": 1658,
+            "location_json": null,
+            "location_text": "",
+            "match_strategy": "UNION",
+            "media_asset_id": "",
+            "photo_type_hint": "",
+            "platform_hint": "",
+            "query_id": "query_1fb510b208fdab61cdbcb270",
+            "query_type": "FULL_NAME",
+            "raw_query": {
+              "additional_details": [],
+              "clues": [
+                {
+                  "full_name_query": {
+                    "full_name": "Kervin Lau"
+                  },
+                  "type": "FULL_NAME"
+                }
+              ],
+              "match_strategy": "UNION"
+            },
+            "task_id": "task_86c9f1e3898ab4e336cb4ca6",
+            "update_time": "2026-08-11T12:46:07.975Z",
+            "url": ""
+          },
+          "diagnosis": {
+            "agent_tool_call_count": 9,
+            "config_estimate_call_count": 0,
+            "conflict_resolution": "",
+            "conflict_warning": "",
+            "conflicting_clue_types": [],
+            "cost_complete": true,
+            "cost_consistent": true,
+            "estimated_cost_microunit": 282032,
+            "estimated_cost_scope": "TASK_TOTAL_ALL_PROVIDER_CALLS",
+            "failed_call_count": 0,
+            "fallback_reason": "LLM_NO_RESULT",
+            "fallback_resolution": "",
+            "fallback_used": true,
+            "final_reason": "",
+            "final_status": "SUCCEEDED",
+            "identity_conflict": false,
+            "identity_resolution_status": "NOT_EVALUATED",
+            "llm_content_bytes": 434,
+            "llm_http_attempt_count": 1,
+            "llm_output_status": "LLM_OUTPUT_COMPLETE",
+            "llm_partial_candidates": 0,
+            "llm_partial_response": false,
+            "llm_partial_result_usable": false,
+            "llm_partial_sources": 0,
+            "llm_reasoning_bytes": 0,
+            "llm_recoverable_candidates": 0,
+            "llm_repair_retry_used": false,
+            "llm_truncation_detected": false,
+            "no_result_call_count": 5,
+            "partial_cost_call_count": 0,
+            "pdl_billing_unit_count": 1,
+            "pdl_called": true,
+            "pdl_candidates": [
+              {
+                "candidate_id": "pdl:RNDl4HbZbzN13OUusapUDQ_0000",
+                "decision": "ELIGIBLE",
+                "display_name": "kervin lau",
+                "match_score": 35,
+                "matched_clue_types": [
+                  "FULL_NAME"
+                ],
+                "profile_fetch_called": false,
+                "profile_fetch_cost_microunit": 0,
+                "rejection_reason": "",
+                "selected": true,
+                "social_links": [
+                  "https://linkedin.com/in/kervin-lau-78410671",
+                  "https://facebook.com/kervinlau"
+                ],
+                "stage": "person_search"
+              }
+            ],
+            "pdl_decision": "called",
+            "pdl_estimated_cost_microunit": 280000,
+            "pdl_external_request_count": 1,
+            "pdl_identify_call_count": 0,
+            "pdl_identify_called": false,
+            "pdl_identify_candidate_count": 0,
+            "pdl_not_called_reason": "",
+            "pdl_person_search_call_count": 1,
+            "pdl_person_search_called": true,
+            "pdl_person_search_returned_profile_count": 1,
+            "pdl_pipeline_stages": [
+              {
+                "api_request_count": 1,
+                "billed_quantity": 1,
+                "billing_operation": "person_search_profile",
+                "candidate_count": 1,
+                "operation": "person_search",
+                "status": "success",
+                "unit_type": "returned_profile"
+              }
+            ],
+            "pdl_profile_fetch_count": 0,
+            "pdl_rejected_candidate_count": 0,
+            "pdl_rejection_reasons": [],
+            "pdl_skip_reason": "",
+            "pdl_skipped": false,
+            "pdl_usable_candidate_count": 1,
+            "people_fallback_reason": "LLM_NO_RESULT",
+            "people_fallback_used": true,
+            "pre_pdl_estimated_cost_microunit": 152,
+            "provider_request_count": 1,
+            "public_figure_eligibility": "eligible",
+            "public_figure_eligible": true,
+            "public_figure_evaluated": true,
+            "public_figure_local": "miss",
+            "public_figure_local_known": false,
+            "public_figure_remote": "miss",
+            "public_figure_remote_ambiguous": false,
+            "public_figure_remote_called": true,
+            "public_figure_remote_total": 0,
+            "public_figure_remote_usable": "unusable",
+            "public_figure_remote_usable_count": 0,
+            "public_figure_selected_wikidata_id": "",
+            "public_figure_skip_reason": "PRIMARY_NO_RESULT",
+            "report_estimated_cost_microunit": 282032,
+            "result_confidence_level": "LOW",
+            "result_pdl_skip_reason": "",
+            "result_pdl_skipped": false,
+            "result_provider": "people_data_labs",
+            "result_source_provider": "",
+            "result_stop_reason": "completed",
+            "reverse_image_estimated_cost_microunit": 0,
+            "reverse_image_fallback_reasons": [],
+            "reverse_image_fallback_used": false,
+            "reverse_image_final_provider": "",
+            "reverse_image_primary_provider": "",
+            "reverse_image_provider_attempt_count": 0,
+            "reverse_image_status": "NOT_PLANNED",
+            "reverse_image_stop_reason": "NOT_PLANNED",
+            "search_result_cache": "miss",
+            "social_identity_support": "",
+            "social_link_owner_names": [],
+            "social_profile_attempted_count": 2,
+            "social_profile_depth_skipped_count": 0,
+            "social_profile_duplicate_count": 5,
+            "social_profile_error_count": 0,
+            "social_profile_execution_skipped_count": 0,
+            "social_profile_limit_skipped_count": 0,
+            "social_profile_merged_candidate_count": 1,
+            "social_profile_no_result_count": 1,
+            "social_profile_planned_count": 2,
+            "social_profile_queue_decision_truncated_count": 0,
+            "social_profile_queue_decisions": [
+              {
+                "canonical_url": "https://linkedin.com/in/kervin-lau-78410671",
+                "decision": "CALLED",
+                "depth": 1,
+                "discovered_by": "PDL",
+                "error_code": "",
+                "no_result_reason": "PROFILE_PRIVATE_OR_UNAVAILABLE",
+                "outcome": "NO_RESULT",
+                "parent_candidate_id": "pdl:RNDl4HbZbzN13OUusapUDQ_0000",
+                "parent_evidence_id": "",
+                "parent_provider": "people_data_labs",
+                "parent_url": "",
+                "platform": "linkedin",
+                "raw_url": "linkedin.com/in/kervin-lau-78410671",
+                "skip_reason": ""
+              },
+              {
+                "canonical_url": "https://linkedin.com/in/kervin-lau-78410671",
+                "decision": "SKIPPED",
+                "depth": 1,
+                "discovered_by": "PDL",
+                "error_code": "",
+                "no_result_reason": "",
+                "outcome": "",
+                "parent_candidate_id": "pdl:RNDl4HbZbzN13OUusapUDQ_0000",
+                "parent_evidence_id": "",
+                "parent_provider": "people_data_labs",
+                "parent_url": "",
+                "platform": "linkedin",
+                "raw_url": "linkedin.com/in/kervin-lau-78410671",
+                "skip_reason": "DUPLICATE"
+              },
+              {
+                "canonical_url": "https://facebook.com/kervinlau",
+                "decision": "CALLED",
+                "depth": 1,
+                "discovered_by": "PDL",
+                "error_code": "",
+                "no_result_reason": "",
+                "outcome": "SUCCESS",
+                "parent_candidate_id": "pdl:RNDl4HbZbzN13OUusapUDQ_0000",
+                "parent_evidence_id": "",
+                "parent_provider": "people_data_labs",
+                "parent_url": "",
+                "platform": "facebook",
+                "raw_url": "facebook.com/kervinlau",
+                "skip_reason": ""
+              },
+              {
+                "canonical_url": "https://linkedin.com/in/kervin-lau-78410671",
+                "decision": "SKIPPED",
+                "depth": 1,
+                "discovered_by": "PDL",
+                "error_code": "",
+                "no_result_reason": "",
+                "outcome": "",
+                "parent_candidate_id": "",
+                "parent_evidence_id": "",
+                "parent_provider": "people_data_labs",
+                "parent_url": "",
+                "platform": "linkedin",
+                "raw_url": "linkedin.com/in/kervin-lau-78410671",
+                "skip_reason": "DUPLICATE"
+              },
+              {
+                "canonical_url": "https://facebook.com/kervinlau",
+                "decision": "SKIPPED",
+                "depth": 1,
+                "discovered_by": "PDL",
+                "error_code": "",
+                "no_result_reason": "",
+                "outcome": "",
+                "parent_candidate_id": "",
+                "parent_evidence_id": "",
+                "parent_provider": "people_data_labs",
+                "parent_url": "",
+                "platform": "facebook",
+                "raw_url": "facebook.com/kervinlau",
+                "skip_reason": "DUPLICATE"
+              },
+              {
+                "canonical_url": "https://facebook.com/kervinlau",
+                "decision": "SKIPPED",
+                "depth": 2,
+                "discovered_by": "SOCIAL_PROFILE",
+                "error_code": "",
+                "no_result_reason": "",
+                "outcome": "",
+                "parent_candidate_id": "",
+                "parent_evidence_id": "",
+                "parent_provider": "scrapecreators",
+                "parent_url": "https://facebook.com/kervinlau",
+                "platform": "facebook",
+                "raw_url": "https://facebook.com/kervinlau",
+                "skip_reason": "DUPLICATE"
+              },
+              {
+                "canonical_url": "https://facebook.com/kervinlau",
+                "decision": "SKIPPED",
+                "depth": 2,
+                "discovered_by": "SOCIAL_PROFILE",
+                "error_code": "",
+                "no_result_reason": "",
+                "outcome": "",
+                "parent_candidate_id": "",
+                "parent_evidence_id": "",
+                "parent_provider": "scrapecreators",
+                "parent_url": "https://facebook.com/kervinlau",
+                "platform": "facebook",
+                "raw_url": "https://facebook.com/kervinlau",
+                "skip_reason": "DUPLICATE"
+              }
+            ],
+            "social_profile_requested_identity_matched": false,
+            "social_profile_skip_reason": "",
+            "social_profile_status": "PARTIAL",
+            "social_profile_success_count": 1,
+            "social_profile_unmatched_profile_count": 0,
+            "social_profile_unsupported_count": 0,
+            "status_consistent": true,
+            "stop_reason": "FALLBACK_RESULT_USABLE",
+            "successful_call_count": 4,
+            "task_total_estimated_cost_microunit": 282032,
+            "unmatched_clue_types": [],
+            "unpriced_call_count": 0,
+            "unverified_requested_social_identity": false,
+            "warnings": []
+          },
+          "provider_requests": [
+            {
+              "create_time": "2026-08-11T04:46:22.27Z",
+              "error_code": "",
+              "error_message": "",
+              "finish_time": "2026-08-11T04:46:22.27Z",
+              "id": 1711,
+              "idempotency_key": "task_86c9f1e3898ab4e336cb4ca6:search_agent:full_name",
+              "provider": "search_agent",
+              "provider_request_id": "provider_req_task_86c9f1e3898ab4e336cb4ca6_sear_9b94724fa320b06a",
+              "request_payload": {
+                "clue_types": [
+                  "FULL_NAME"
+                ],
+                "max_depth": 1,
+                "max_estimated_cost_microunit": 0,
+                "max_photo_inputs": 5,
+                "max_social_urls": 6,
+                "max_tool_steps": 20,
+                "policy_version": "v1",
+                "provider": "search_agent",
+                "providers": [
+                  "agent_people",
+                  "social_profile",
+                  "image_materializer"
+                ],
+                "query_id": "query_1fb510b208fdab61cdbcb270",
+                "query_type": "FULL_NAME",
+                "task_id": "task_86c9f1e3898ab4e336cb4ca6",
+                "timeout_ms": 90000
+              },
+              "request_type": "FULL_NAME",
+              "response_ref": "cos://tool-srv-people-insight-1349591044/provider-responses/search_agent/20260811/task_86c9f1e3898ab4e336cb4ca6/gw_req_0d3a5d52409d0be891b295788ecfc6bd/succeeded-333c8d850d81a55e.json",
+              "start_time": "2026-08-11T04:46:09.225Z",
+              "status": "succeeded",
+              "task_id": "task_86c9f1e3898ab4e336cb4ca6",
+              "update_time": "2026-08-11T04:46:22.27Z"
+            }
+          ],
+          "agent_tool_calls": [
+            {
+              "billable_units": 1,
+              "billing_currency": "USD",
+              "billing_unit": "credit",
+              "billing_usage_json": [
+                {
+                  "operation": "scrapecreators_facebook_profile",
+                  "quantity": 1,
+                  "unit_type": "credit"
+                }
+              ],
+              "cache_hit": 0,
+              "call_id": "atc_9c1500d126716d19ba548266f4a06fb0",
+              "cost_breakdown_json": [
+                {
+                  "billing_model": "PER_UNIT",
+                  "currency": "USD",
+                  "estimated_cost_microunit": 1880,
+                  "operation": "scrapecreators_facebook_profile",
+                  "pricing_rule_id": "price_scrapecreators_facebook_freelance_20260810",
+                  "pricing_version": "2026-08-scrapecreators-freelance-conservative",
+                  "quantity": 1,
+                  "status": "CALCULATED",
+                  "unit_type": "credit"
+                }
+              ],
+              "cost_status": "CALCULATED",
+              "create_time": "2026-08-11T04:46:21.843Z",
+              "error_code": "",
+              "error_message": "",
+              "estimated_cost_microunit": 1880,
+              "finish_time": "2026-08-11T04:46:21.843Z",
+              "http_status": 200,
+              "non_billable_reason": "",
+              "policy_version": "v1",
+              "pricing_rule_id": "price_scrapecreators_facebook_freelance_20260810",
+              "pricing_version": "2026-08-scrapecreators-freelance-conservative",
+              "provider": "social_profile",
+              "provider_operation": "scrapecreators_facebook_profile",
+              "query_id": "query_1fb510b208fdab61cdbcb270",
+              "request_fingerprint": "1164a052806cdf6e1b5a950732cd85df91fa60b81696b3f106b53b00ae78a3d4",
+              "request_summary": {
+                "canonical_url": "https://facebook.com/kervinlau",
+                "clue_types": [
+                  "FULL_NAME"
+                ],
+                "detail_count": 0,
+                "has_location": false,
+                "has_media": false,
+                "has_name": true,
+                "has_url": true,
+                "input_url": "https://facebook.com/kervinlau",
+                "platform": "facebook",
+                "policy_version": "v1",
+                "query_type": "SOCIAL_LINK"
+              },
+              "request_type": "SOCIAL_LINK",
+              "response_ref": "cos://tool-srv-people-insight-1349591044/provider-responses/social_profile/20260811/task_86c9f1e3898ab4e336cb4ca6/gw_req_0d3a5d52409d0be891b295788ecfc6bd/success-32ced9251af171b0.json",
+              "response_summary": {
+                "cache_hit": false,
+                "confidence_level": "MEDIUM",
+                "evidence_count": 1,
+                "found": true,
+                "no_result_reason": "",
+                "profile_count": 1,
+                "provider": "social_profile",
+                "provider_cache_hit": false,
+                "social_account_count": 1
+              },
+              "start_time": "2026-08-11T04:46:15.799Z",
+              "status": "success",
+              "task_id": "task_86c9f1e3898ab4e336cb4ca6",
+              "worker_id": "worker-79f769d947-8gq88"
+            },
+            {
+              "billable_units": 0,
+              "billing_currency": "",
+              "billing_unit": "",
+              "billing_usage_json": [],
+              "cache_hit": 0,
+              "call_id": "atc_15ad1a218906e6595bffecefb203ef5f",
+              "cost_breakdown_json": [],
+              "cost_status": "NON_BILLABLE",
+              "create_time": "2026-08-11T04:46:15.772Z",
+              "error_code": "",
+              "error_message": "",
+              "estimated_cost_microunit": 0,
+              "finish_time": "2026-08-11T04:46:15.772Z",
+              "http_status": 404,
+              "non_billable_reason": "provider_reported_zero_usage",
+              "policy_version": "v1",
+              "pricing_rule_id": "",
+              "pricing_version": "",
+              "provider": "social_profile",
+              "provider_operation": "scrapecreators_linkedin_profile",
+              "query_id": "query_1fb510b208fdab61cdbcb270",
+              "request_fingerprint": "14374f8d0ff1fd1b2a816991b06a2d92b051a3b22f8909921d2db168c45e2c2c",
+              "request_summary": {
+                "canonical_url": "https://linkedin.com/in/kervin-lau-78410671",
+                "clue_types": [
+                  "FULL_NAME"
+                ],
+                "detail_count": 0,
+                "has_location": false,
+                "has_media": false,
+                "has_name": true,
+                "has_url": true,
+                "input_url": "https://linkedin.com/in/kervin-lau-78410671",
+                "platform": "linkedin",
+                "policy_version": "v1",
+                "query_type": "SOCIAL_LINK"
+              },
+              "request_type": "SOCIAL_LINK",
+              "response_ref": "cos://tool-srv-people-insight-1349591044/provider-responses/social_profile/20260811/task_86c9f1e3898ab4e336cb4ca6/gw_req_0d3a5d52409d0be891b295788ecfc6bd/no_result-414c31aef3b2f3f9.json",
+              "response_summary": {
+                "cache_hit": false,
+                "confidence_level": "",
+                "evidence_count": 0,
+                "found": false,
+                "no_result_reason": "PROFILE_PRIVATE_OR_UNAVAILABLE",
+                "profile_count": 0,
+                "provider": "social_profile",
+                "social_account_count": 0
+              },
+              "start_time": "2026-08-11T04:46:13.63Z",
+              "status": "no_result",
+              "task_id": "task_86c9f1e3898ab4e336cb4ca6",
+              "worker_id": "worker-79f769d947-8gq88"
+            },
+            {
+              "billable_units": 0,
+              "billing_currency": "",
+              "billing_unit": "",
+              "billing_usage_json": [],
+              "cache_hit": 0,
+              "call_id": "atc_553739950ce462c84c64010668845971",
+              "cost_breakdown_json": [],
+              "cost_status": "NON_BILLABLE",
+              "create_time": "2026-08-11T04:46:13.628Z",
+              "error_code": "",
+              "error_message": "",
+              "estimated_cost_microunit": 0,
+              "finish_time": "2026-08-11T04:46:13.628Z",
+              "http_status": 0,
+              "non_billable_reason": "aggregated_by_child_calls",
+              "policy_version": "v1",
+              "pricing_rule_id": "",
+              "pricing_version": "",
+              "provider": "agent_people",
+              "provider_operation": "request",
+              "query_id": "query_1fb510b208fdab61cdbcb270",
+              "request_fingerprint": "2950ef41b572a3035f611833a4bb26213445dc151946fe3fa22768244b308652",
+              "request_summary": {
+                "clue_types": [
+                  "FULL_NAME"
+                ],
+                "detail_count": 0,
+                "has_location": false,
+                "has_media": false,
+                "has_name": true,
+                "has_url": false,
+                "policy_version": "v1",
+                "query_type": "FULL_NAME"
+              },
+              "request_type": "FULL_NAME",
+              "response_ref": "",
+              "response_summary": {
+                "cache_hit": false,
+                "confidence_level": "LOW",
+                "evidence_count": 4,
+                "fallback_reason": "LLM_NO_RESULT",
+                "found": true,
+                "no_result_reason": "",
+                "pdl_billing_unit_count": 1,
+                "pdl_candidates": [
+                  {
+                    "candidate_id": "pdl:RNDl4HbZbzN13OUusapUDQ_0000",
+                    "decision": "ELIGIBLE",
+                    "display_name": "kervin lau",
+                    "match_score": 35,
+                    "matched_clue_types": [
+                      "FULL_NAME"
+                    ],
+                    "profile_fetch_called": false,
+                    "profile_fetch_cost_microunit": 0,
+                    "rejection_reason": "",
+                    "selected": true,
+                    "social_links": [
+                      "https://linkedin.com/in/kervin-lau-78410671",
+                      "https://facebook.com/kervinlau"
+                    ],
+                    "stage": "person_search"
+                  }
+                ],
+                "pdl_cost_scope": "PDL_PROVIDER_CALL_ALL_STAGES",
+                "pdl_estimated_cost_microunit": 280000,
+                "pdl_external_request_count": 1,
+                "pdl_identify_call_count": 0,
+                "pdl_identify_called": false,
+                "pdl_identify_candidate_count": 0,
+                "pdl_person_search_call_count": 1,
+                "pdl_person_search_called": true,
+                "pdl_person_search_returned_profile_count": 1,
+                "pdl_pipeline_stages": [
+                  {
+                    "api_request_count": 1,
+                    "billed_quantity": 1,
+                    "billing_operation": "person_search_profile",
+                    "candidate_count": 1,
+                    "operation": "person_search",
+                    "status": "success",
+                    "unit_type": "returned_profile"
+                  }
+                ],
+                "pdl_profile_fetch_count": 0,
+                "pdl_rejected_candidate_count": 0,
+                "pdl_rejection_reasons": [],
+                "pdl_usable_candidate_count": 1,
+                "people_pipeline_cost_scope": "LLM_PUBLIC_FIGURE_AND_PDL",
+                "people_pipeline_estimated_cost_microunit": 280152,
+                "pre_pdl_estimated_cost_microunit": 152,
+                "profile_count": 1,
+                "provider": "agent_people",
+                "provider_runs": [
+                  {
+                    "found": false,
+                    "no_result_reason": "NO_STRONG_IDENTIFIER",
+                    "provider": "person_entity_store"
+                  },
+                  {
+                    "found": false,
+                    "no_result_reason": "NO_MATCH",
+                    "provider": "llm_search"
+                  },
+                  {
+                    "found": true,
+                    "provider": "people_data_labs"
+                  }
+                ],
+                "social_account_count": 2,
+                "stop_reason": "FALLBACK_RESULT_USABLE"
+              },
+              "start_time": "2026-08-11T04:46:09.225Z",
+              "status": "success",
+              "task_id": "task_86c9f1e3898ab4e336cb4ca6",
+              "worker_id": "worker-79f769d947-8gq88"
+            },
+            {
+              "billable_units": 1,
+              "billing_currency": "USD",
+              "billing_unit": "returned_profile",
+              "billing_usage_json": [
+                {
+                  "operation": "person_search_profile",
+                  "quantity": 1,
+                  "unit_type": "returned_profile"
+                }
+              ],
+              "cache_hit": 0,
+              "call_id": "atc_2ce1919384e9c7a92675282af3b29598",
+              "cost_breakdown_json": [
+                {
+                  "billing_model": "PER_UNIT",
+                  "currency": "USD",
+                  "estimated_cost_microunit": 280000,
+                  "operation": "person_search_profile",
+                  "pricing_rule_id": "price_pdl_search_tier1_20260729",
+                  "pricing_version": "2026-07-29-pdl-self-serve-tier1",
+                  "quantity": 1,
+                  "status": "CALCULATED",
+                  "unit_type": "returned_profile"
+                }
+              ],
+              "cost_status": "CALCULATED",
+              "create_time": "2026-08-11T04:46:13.586Z",
+              "error_code": "",
+              "error_message": "",
+              "estimated_cost_microunit": 280000,
+              "finish_time": "2026-08-11T04:46:13.586Z",
+              "http_status": 0,
+              "non_billable_reason": "",
+              "policy_version": "v1",
+              "pricing_rule_id": "price_pdl_search_tier1_20260729",
+              "pricing_version": "2026-07-29-pdl-self-serve-tier1",
+              "provider": "people_data_labs",
+              "provider_operation": "person_search_profile",
+              "query_id": "query_1fb510b208fdab61cdbcb270",
+              "request_fingerprint": "f4e39f7d0511e4d103b0d02ec3806285e3891f0ea90395947188e95dca4dc795",
+              "request_summary": {
+                "clue_types": [
+                  "FULL_NAME"
+                ],
+                "detail_count": 0,
+                "has_location": false,
+                "has_media": false,
+                "has_name": true,
+                "has_url": false,
+                "policy_version": "v1",
+                "query_type": "FULL_NAME"
+              },
+              "request_type": "FULL_NAME",
+              "response_ref": "cos://tool-srv-people-insight-1349591044/provider-responses/people_data_labs/20260811/task_86c9f1e3898ab4e336cb4ca6/gw_req_0d3a5d52409d0be891b295788ecfc6bd/success-ada15aa0d539bf0f.json",
+              "response_summary": {
+                "cache_hit": false,
+                "confidence_level": "LOW",
+                "evidence_count": 4,
+                "found": true,
+                "no_result_reason": "",
+                "pdl_billing_unit_count": 1,
+                "pdl_candidates": [
+                  {
+                    "candidate_id": "pdl:RNDl4HbZbzN13OUusapUDQ_0000",
+                    "decision": "ELIGIBLE",
+                    "display_name": "kervin lau",
+                    "match_score": 35,
+                    "matched_clue_types": [
+                      "FULL_NAME"
+                    ],
+                    "profile_fetch_called": false,
+                    "profile_fetch_cost_microunit": 0,
+                    "rejection_reason": "",
+                    "selected": true,
+                    "social_links": [
+                      "https://linkedin.com/in/kervin-lau-78410671",
+                      "https://facebook.com/kervinlau"
+                    ],
+                    "stage": "person_search"
+                  }
+                ],
+                "pdl_cost_scope": "PDL_PROVIDER_CALL_ALL_STAGES",
+                "pdl_estimated_cost_microunit": 280000,
+                "pdl_external_request_count": 1,
+                "pdl_identify_call_count": 0,
+                "pdl_identify_called": false,
+                "pdl_identify_candidate_count": 0,
+                "pdl_person_search_call_count": 1,
+                "pdl_person_search_called": true,
+                "pdl_person_search_returned_profile_count": 1,
+                "pdl_pipeline_stages": [
+                  {
+                    "api_request_count": 1,
+                    "billed_quantity": 1,
+                    "billing_operation": "person_search_profile",
+                    "candidate_count": 1,
+                    "operation": "person_search",
+                    "status": "success",
+                    "unit_type": "returned_profile"
+                  }
+                ],
+                "pdl_profile_fetch_count": 0,
+                "pdl_rejected_candidate_count": 0,
+                "pdl_rejection_reasons": [],
+                "pdl_usable_candidate_count": 1,
+                "profile_count": 1,
+                "provider": "people_data_labs",
+                "social_account_count": 2
+              },
+              "start_time": "2026-08-11T04:46:13.263Z",
+              "status": "success",
+              "task_id": "task_86c9f1e3898ab4e336cb4ca6",
+              "worker_id": "worker-79f769d947-8gq88"
+            },
+            {
+              "billable_units": 0,
+              "billing_currency": "",
+              "billing_unit": "",
+              "billing_usage_json": [],
+              "cache_hit": 0,
+              "call_id": "atc_6a6e76f521fd2b4276fefae1d31bc1f1",
+              "cost_breakdown_json": [],
+              "cost_status": "NON_BILLABLE",
+              "create_time": "2026-08-11T04:46:13.262Z",
+              "error_code": "",
+              "error_message": "",
+              "estimated_cost_microunit": 0,
+              "finish_time": "2026-08-11T04:46:13.262Z",
+              "http_status": 0,
+              "non_billable_reason": "public_source_no_direct_cost",
+              "policy_version": "v1",
+              "pricing_rule_id": "",
+              "pricing_version": "",
+              "provider": "public_figure",
+              "provider_operation": "remote_lookup",
+              "query_id": "query_1fb510b208fdab61cdbcb270",
+              "request_fingerprint": "67d13c5256ad6db919c5574df36a637640f288578a2dcd475e14f31d9ce5fb76",
+              "request_summary": {
+                "clue_types": [
+                  "FULL_NAME"
+                ],
+                "detail_count": 0,
+                "has_location": false,
+                "has_media": false,
+                "has_name": true,
+                "has_url": false,
+                "policy_version": "v1",
+                "query_type": "FULL_NAME",
+                "stage": "remote_lookup"
+              },
+              "request_type": "FULL_NAME",
+              "response_ref": "",
+              "response_summary": {
+                "ambiguous": false,
+                "cache_hit": false,
+                "confidence_level": "",
+                "decision_reason": "REMOTE_NO_MATCH",
+                "eligible": true,
+                "evidence_count": 0,
+                "found": false,
+                "local_known": false,
+                "no_result_reason": "NO_PUBLIC_FIGURE_MATCH",
+                "profile_count": 0,
+                "provider": "public_figure",
+                "remote_called": true,
+                "remote_enabled": true,
+                "result_usable": false,
+                "social_account_count": 0,
+                "stage": "remote_lookup",
+                "total_profile_count": 0,
+                "usable_profile_count": 0
+              },
+              "start_time": "2026-08-11T04:46:13.129Z",
+              "status": "no_result",
+              "task_id": "task_86c9f1e3898ab4e336cb4ca6",
+              "worker_id": "worker-79f769d947-8gq88"
+            },
+            {
+              "billable_units": 0,
+              "billing_currency": "",
+              "billing_unit": "",
+              "billing_usage_json": [],
+              "cache_hit": 0,
+              "call_id": "atc_27752bfb53a115daca2c95e65e4faaf0",
+              "cost_breakdown_json": [],
+              "cost_status": "NON_BILLABLE",
+              "create_time": "2026-08-11T04:46:13.128Z",
+              "error_code": "",
+              "error_message": "",
+              "estimated_cost_microunit": 0,
+              "finish_time": "2026-08-11T04:46:13.128Z",
+              "http_status": 0,
+              "non_billable_reason": "public_source_no_direct_cost",
+              "policy_version": "v1",
+              "pricing_rule_id": "",
+              "pricing_version": "",
+              "provider": "public_figure",
+              "provider_operation": "route_decision",
+              "query_id": "query_1fb510b208fdab61cdbcb270",
+              "request_fingerprint": "19cc4f5cec31e022d114e45592a9ff2aeb77e9309739cc728b785917e9e8acd9",
+              "request_summary": {
+                "clue_types": [
+                  "FULL_NAME"
+                ],
+                "detail_count": 0,
+                "has_location": false,
+                "has_media": false,
+                "has_name": true,
+                "has_url": false,
+                "policy_version": "v1",
+                "query_type": "FULL_NAME",
+                "stage": "route_decision"
+              },
+              "request_type": "FULL_NAME",
+              "response_ref": "",
+              "response_summary": {
+                "cache_hit": false,
+                "confidence_level": "LOW",
+                "decision_reason": "PRIMARY_NO_RESULT",
+                "eligible": true,
+                "evidence_count": 0,
+                "found": false,
+                "local_known": false,
+                "no_result_reason": "NO_MATCH",
+                "profile_count": 0,
+                "provider": "llm_search",
+                "remote_called": true,
+                "remote_enabled": true,
+                "social_account_count": 0,
+                "stage": "route_decision"
+              },
+              "start_time": "2026-08-11T04:46:13.128Z",
+              "status": "success",
+              "task_id": "task_86c9f1e3898ab4e336cb4ca6",
+              "worker_id": "worker-79f769d947-8gq88"
+            },
+            {
+              "billable_units": 0,
+              "billing_currency": "",
+              "billing_unit": "",
+              "billing_usage_json": [],
+              "cache_hit": 0,
+              "call_id": "atc_ad7f53ea2becf2befed699d7497a8d37",
+              "cost_breakdown_json": [],
+              "cost_status": "NON_BILLABLE",
+              "create_time": "2026-08-11T04:46:13.126Z",
+              "error_code": "",
+              "error_message": "",
+              "estimated_cost_microunit": 0,
+              "finish_time": "2026-08-11T04:46:13.126Z",
+              "http_status": 0,
+              "non_billable_reason": "aggregated_by_backend_attempts",
+              "policy_version": "v1",
+              "pricing_rule_id": "",
+              "pricing_version": "",
+              "provider": "llm_search",
+              "provider_operation": "request",
+              "query_id": "query_1fb510b208fdab61cdbcb270",
+              "request_fingerprint": "1fe2c8806c145dd3a22f2cfd72888ef19573ac97c3a7d86cc25a4ac048601701",
+              "request_summary": {
+                "clue_types": [
+                  "FULL_NAME"
+                ],
+                "detail_count": 0,
+                "has_location": false,
+                "has_media": false,
+                "has_name": true,
+                "has_url": false,
+                "policy_version": "v1",
+                "query_type": "FULL_NAME"
+              },
+              "request_type": "FULL_NAME",
+              "response_ref": "",
+              "response_summary": {
+                "cache_hit": false,
+                "confidence_level": "LOW",
+                "evidence_count": 0,
+                "found": false,
+                "no_result_reason": "NO_MATCH",
+                "profile_count": 0,
+                "provider": "llm_search",
+                "social_account_count": 0
+              },
+              "start_time": "2026-08-11T04:46:09.228Z",
+              "status": "no_result",
+              "task_id": "task_86c9f1e3898ab4e336cb4ca6",
+              "worker_id": "worker-79f769d947-8gq88"
+            },
+            {
+              "billable_units": 973,
+              "billing_currency": "USD",
+              "billing_unit": "token",
+              "billing_usage_json": [
+                {
+                  "input_tokens": 864,
+                  "operation": "chat_completions/deepseek-v4-flash-202605",
+                  "output_tokens": 109,
+                  "unit_type": "token"
+                }
+              ],
+              "cache_hit": 0,
+              "call_id": "atc_33095ed21e5c61510da230257d2edb96",
+              "cost_breakdown_json": [
+                {
+                  "billing_model": "TOKEN",
+                  "currency": "USD",
+                  "estimated_cost_microunit": 152,
+                  "input_tokens": 864,
+                  "operation": "chat_completions/deepseek-v4-flash-202605",
+                  "output_tokens": 109,
+                  "pricing_rule_id": "price_tencent_deepseek_v4_flash_20260729",
+                  "pricing_version": "2026-07-29-tencent-intl-public",
+                  "status": "CALCULATED",
+                  "unit_type": "token"
+                }
+              ],
+              "cost_status": "CALCULATED",
+              "create_time": "2026-08-11T04:46:13.036Z",
+              "error_code": "",
+              "error_message": "",
+              "estimated_cost_microunit": 152,
+              "finish_time": "2026-08-11T04:46:13.036Z",
+              "http_status": 200,
+              "non_billable_reason": "",
+              "policy_version": "v1",
+              "pricing_rule_id": "price_tencent_deepseek_v4_flash_20260729",
+              "pricing_version": "2026-07-29-tencent-intl-public",
+              "provider": "llm_search:deepseek",
+              "provider_operation": "chat_completions/deepseek-v4-flash-202605",
+              "query_id": "query_1fb510b208fdab61cdbcb270",
+              "request_fingerprint": "1e186094220e421ec7923dac34ae302c273c1c75dd21b4f5c6f371493aff5291",
+              "request_summary": {
+                "attempt_index": 1,
+                "backend": "openai_compatible",
+                "decode_retry": false,
+                "max_tokens": 4096,
+                "model": "deepseek-v4-flash-202605",
+                "provider": "deepseek",
+                "reasoning_effort": "",
+                "thinking": "disabled"
+              },
+              "request_type": "FULL_NAME",
+              "response_ref": "cos://tool-srv-people-insight-1349591044/provider-responses/llm_search_deepseek/20260811/task_86c9f1e3898ab4e336cb4ca6/gw_req_0d3a5d52409d0be891b295788ecfc6bd/no_result-293a37689087d738.json",
+              "response_summary": {
+                "attempt_index": 1,
+                "cache_hit": false,
+                "cached_prompt_tokens": 0,
+                "completion_tokens": 109,
+                "confidence_level": "LOW",
+                "content_bytes": 434,
+                "decode_failure_position": 0,
+                "decode_retry": false,
+                "estimated_cost_microunit": 0,
+                "evidence_count": 0,
+                "finish_reason": "stop",
+                "found": false,
+                "http_attempt_count": 1,
+                "max_tokens": 4096,
+                "max_tokens_reached": false,
+                "no_result_reason": "NO_MATCH",
+                "output_status": "LLM_OUTPUT_COMPLETE",
+                "partial_candidate_count": 0,
+                "partial_response_present": false,
+                "partial_result_usable": false,
+                "partial_source_count": 0,
+                "profile_count": 0,
+                "prompt_tokens": 864,
+                "provider": "llm_search",
+                "reasoning_bytes": 0,
+                "recoverable_candidate_count": 0,
+                "social_account_count": 0,
+                "total_tokens": 973
+              },
+              "start_time": "2026-08-11T04:46:09.23Z",
+              "status": "no_result",
+              "task_id": "task_86c9f1e3898ab4e336cb4ca6",
+              "worker_id": "worker-79f769d947-8gq88"
+            },
+            {
+              "billable_units": 0,
+              "billing_currency": "",
+              "billing_unit": "",
+              "billing_usage_json": [],
+              "cache_hit": 0,
+              "call_id": "atc_8eba7d7800c8fd24b55fb151d95281a0",
+              "cost_breakdown_json": [],
+              "cost_status": "NON_BILLABLE",
+              "create_time": "2026-08-11T04:46:09.226Z",
+              "error_code": "",
+              "error_message": "",
+              "estimated_cost_microunit": 0,
+              "finish_time": "2026-08-11T04:46:09.226Z",
+              "http_status": 0,
+              "non_billable_reason": "public_source_no_direct_cost",
+              "policy_version": "v1",
+              "pricing_rule_id": "",
+              "pricing_version": "",
+              "provider": "public_figure",
+              "provider_operation": "local_lookup",
+              "query_id": "query_1fb510b208fdab61cdbcb270",
+              "request_fingerprint": "56f14e3d25b8b2ba9f244cae446d09fd95779eed6155c3f043958a5c7a6c4479",
+              "request_summary": {
+                "clue_types": [
+                  "FULL_NAME"
+                ],
+                "detail_count": 0,
+                "has_location": false,
+                "has_media": false,
+                "has_name": true,
+                "has_url": false,
+                "policy_version": "v1",
+                "query_type": "FULL_NAME",
+                "stage": "local_lookup"
+              },
+              "request_type": "FULL_NAME",
+              "response_ref": "",
+              "response_summary": {
+                "ambiguous": false,
+                "decision_reason": "LOCAL_CACHE_MISS",
+                "eligible": true,
+                "found": false,
+                "local_known": false,
+                "remote_called": false,
+                "remote_enabled": true,
+                "result_usable": false,
+                "stage": "local_lookup",
+                "total_profile_count": 0,
+                "usable_profile_count": 0
+              },
+              "start_time": "2026-08-11T04:46:09.225Z",
+              "status": "no_result",
+              "task_id": "task_86c9f1e3898ab4e336cb4ca6",
+              "worker_id": "worker-79f769d947-8gq88"
+            }
+          ],
+          "reports": [
+            {
+              "confidence_level": "LOW",
+              "create_time": "2026-08-11T04:46:22.301Z",
+              "disclaimers": [
+                "People Data Labs Person Search returns candidate profiles; review candidates or add stronger clues before relying on an identity match.",
+                "Social profile fields were extracted from public page data and remain subject to source availability and platform changes."
+              ],
+              "evidence": [
+                {
+                  "display_name": "kervin lau",
+                  "matched_on": [
+                    "name"
+                  ],
+                  "person_id": "pdl:RNDl4HbZbzN13OUusapUDQ_0000",
+                  "provider": "people_data_labs",
+                  "provider_person_id": "RNDl4HbZbzN13OUusapUDQ_0000",
+                  "subject_profile_url": "linkedin.com/in/kervin-lau-78410671",
+                  "type": "pdl_matched_on"
+                },
+                {
+                  "display_name": "kervin lau",
+                  "field": "linkedin_url",
+                  "person_id": "pdl:RNDl4HbZbzN13OUusapUDQ_0000",
+                  "provider": "people_data_labs",
+                  "provider_person_id": "RNDl4HbZbzN13OUusapUDQ_0000",
+                  "subject_profile_url": "linkedin.com/in/kervin-lau-78410671",
+                  "type": "pdl_profile_url",
+                  "url": "linkedin.com/in/kervin-lau-78410671"
+                },
+                {
+                  "display_name": "kervin lau",
+                  "field": "facebook_url",
+                  "person_id": "pdl:RNDl4HbZbzN13OUusapUDQ_0000",
+                  "provider": "people_data_labs",
+                  "provider_person_id": "RNDl4HbZbzN13OUusapUDQ_0000",
+                  "subject_profile_url": "linkedin.com/in/kervin-lau-78410671",
+                  "type": "pdl_profile_url",
+                  "url": "facebook.com/kervinlau"
+                },
+                {
+                  "display_name": "kervin lau",
+                  "field": "job_company_website",
+                  "person_id": "pdl:RNDl4HbZbzN13OUusapUDQ_0000",
+                  "provider": "people_data_labs",
+                  "provider_person_id": "RNDl4HbZbzN13OUusapUDQ_0000",
+                  "subject_profile_url": "linkedin.com/in/kervin-lau-78410671",
+                  "type": "pdl_profile_url",
+                  "url": "tighearchitecture.com"
+                },
+                {
+                  "candidate_id": "pdl:RNDl4HbZbzN13OUusapUDQ_0000",
+                  "image_url": "https://scontent-iad6-1.xx.fbcdn.net/v/t39.30808-1/467443199_10231629498373995_7466589455867151072_n.jpg?stp=dst-jpg_tt6&cstp=mx960x960&ctp=s480x480&_nc_cat=107&ccb=1-7&_nc_sid=e99d92&_nc_ohc=7_mvLnah-sIQ7kNvwH0vlus&_nc_oc=Adpap0t412KqWOhRS6lKFa9uExJ0--VAUK-VSlYYdr_wb5JB6EBD_FBCE8-ntcOEaxc&_nc_zt=24&_nc_ht=scontent-iad6-1.xx&_nc_gid=LwC5mqMkustDV4FKcvbbtA&_nc_ss=7f289&oh=00_AQEkNE5GpZjNoFxw_mE66obWlNQkOv3tur0NP0l-kr8fQg&oe=6A808F95",
+                  "observed_time": 1786423581839,
+                  "person_id": "pdl:RNDl4HbZbzN13OUusapUDQ_0000",
+                  "provider": "social_profile",
+                  "snippet": "",
+                  "source": "scrapecreators",
+                  "title": "Kervin Lau",
+                  "type": "social_profile_source",
+                  "url": "https://facebook.com/kervinlau"
+                }
+              ],
+              "expire_time": "2026-09-10T04:46:07.968Z",
+              "generate_time": "2026-08-11T04:46:22.301Z",
+              "id": 1382,
+              "profiles": [
+                {
+                  "_rank_features": {
+                    "gender": "male",
+                    "has_contact": true
+                  },
+                  "avatar_url": "https://scontent-iad6-1.xx.fbcdn.net/v/t39.30808-1/467443199_10231629498373995_7466589455867151072_n.jpg?stp=dst-jpg_tt6&cstp=mx960x960&ctp=s480x480&_nc_cat=107&ccb=1-7&_nc_sid=e99d92&_nc_ohc=7_mvLnah-sIQ7kNvwH0vlus&_nc_oc=Adpap0t412KqWOhRS6lKFa9uExJ0--VAUK-VSlYYdr_wb5JB6EBD_FBCE8-ntcOEaxc&_nc_zt=24&_nc_ht=scontent-iad6-1.xx&_nc_gid=LwC5mqMkustDV4FKcvbbtA&_nc_ss=7f289&oh=00_AQEkNE5GpZjNoFxw_mE66obWlNQkOv3tur0NP0l-kr8fQg&oe=6A808F95",
+                  "confidence_level": "LOW",
+                  "display_name": "kervin lau",
+                  "education": "sci - arc bachelor of architecture bachelors; miami dade college associate of arts associates; colegio parroquial nuestra señora de chiquinquirá",
+                  "education_items": [
+                    "sci - arc bachelor of architecture bachelors",
+                    "miami dade college associate of arts associates",
+                    "colegio parroquial nuestra señora de chiquinquirá"
+                  ],
+                  "email": "kervin@tighearchitecture.com",
+                  "emails": null,
+                  "field_provenance": {
+                    "avatar_url": [
+                      {
+                        "observed_time": 1786423581839,
+                        "provider": "scrapecreators",
+                        "source_url": "https://facebook.com/kervinlau"
+                      }
+                    ],
+                    "display_name": [
+                      {
+                        "observed_time": 1786423581839,
+                        "provider": "scrapecreators",
+                        "source_url": "https://facebook.com/kervinlau"
+                      }
+                    ],
+                    "social_links": [
+                      {
+                        "observed_time": 1786423581839,
+                        "provider": "scrapecreators",
+                        "source_url": "https://facebook.com/kervinlau"
+                      }
+                    ]
+                  },
+                  "field_source_providers": {
+                    "avatar_url": [
+                      "scrapecreators"
+                    ],
+                    "display_name": [
+                      "scrapecreators"
+                    ],
+                    "social_links": [
+                      "scrapecreators"
+                    ]
+                  },
+                  "field_sources": {
+                    "avatar_url": [
+                      "https://facebook.com/kervinlau"
+                    ],
+                    "display_name": [
+                      "https://facebook.com/kervinlau"
+                    ],
+                    "social_links": [
+                      "https://facebook.com/kervinlau"
+                    ]
+                  },
+                  "first_name": "kervin",
+                  "full_name": "kervin lau",
+                  "headline": "principal at patrick tighe architecture",
+                  "id": "RNDl4HbZbzN13OUusapUDQ_0000",
+                  "job": "principal at patrick tighe architecture",
+                  "job_company_linkedin_url": "linkedin.com/company/patrick-tighe-architecture",
+                  "job_company_name": "patrick tighe architecture",
+                  "job_company_website": "tighearchitecture.com",
+                  "job_title": "principal",
+                  "job_title_role": "professional_service",
+                  "jobs": [
+                    "principal at patrick tighe architecture"
+                  ],
+                  "last_name": "lau",
+                  "location_country": "united states",
+                  "location_locality": "los angeles",
+                  "location_name": "los angeles, california, united states",
+                  "location_region": "california",
+                  "match_score": 35,
+                  "match_source": "person_search",
+                  "matched_on": [
+                    "name"
+                  ],
+                  "person_id": "pdl:RNDl4HbZbzN13OUusapUDQ_0000",
+                  "photos": [
+                    "https://scontent-iad6-1.xx.fbcdn.net/v/t39.30808-1/467443199_10231629498373995_7466589455867151072_n.jpg?stp=dst-jpg_tt6&cstp=mx960x960&ctp=s480x480&_nc_cat=107&ccb=1-7&_nc_sid=e99d92&_nc_ohc=7_mvLnah-sIQ7kNvwH0vlus&_nc_oc=Adpap0t412KqWOhRS6lKFa9uExJ0--VAUK-VSlYYdr_wb5JB6EBD_FBCE8-ntcOEaxc&_nc_zt=24&_nc_ht=scontent-iad6-1.xx&_nc_gid=LwC5mqMkustDV4FKcvbbtA&_nc_ss=7f289&oh=00_AQEkNE5GpZjNoFxw_mE66obWlNQkOv3tur0NP0l-kr8fQg&oe=6A808F95"
+                  ],
+                  "profile_url": "linkedin.com/in/kervin-lau-78410671",
+                  "provider": "people_data_labs",
+                  "rank_features": {
+                    "gender": "male",
+                    "has_contact": true
+                  },
+                  "social_links": [
+                    {
+                      "platform": "linkedin",
+                      "url": "linkedin.com/in/kervin-lau-78410671",
+                      "username": "kervin-lau-78410671"
+                    },
+                    {
+                      "platform": "facebook",
+                      "source_url": "https://facebook.com/kervinlau",
+                      "url": "facebook.com/kervinlau",
+                      "username": "kervinlau",
+                      "verification_level": "LIKELY",
+                      "verification_reason": "social_profile_name_match"
+                    }
+                  ],
+                  "social_platforms": [
+                    "linkedin",
+                    "facebook"
+                  ],
+                  "social_profile_details": [
+                    {
+                      "avatar_url": "https://scontent-iad6-1.xx.fbcdn.net/v/t39.30808-1/467443199_10231629498373995_7466589455867151072_n.jpg?stp=dst-jpg_tt6&cstp=mx960x960&ctp=s480x480&_nc_cat=107&ccb=1-7&_nc_sid=e99d92&_nc_ohc=7_mvLnah-sIQ7kNvwH0vlus&_nc_oc=Adpap0t412KqWOhRS6lKFa9uExJ0--VAUK-VSlYYdr_wb5JB6EBD_FBCE8-ntcOEaxc&_nc_zt=24&_nc_ht=scontent-iad6-1.xx&_nc_gid=LwC5mqMkustDV4FKcvbbtA&_nc_ss=7f289&oh=00_AQEkNE5GpZjNoFxw_mE66obWlNQkOv3tur0NP0l-kr8fQg&oe=6A808F95",
+                      "display_name": "Kervin Lau",
+                      "headline": "",
+                      "observed_time": 1786423581839,
+                      "platform": "facebook",
+                      "profile_url": "https://facebook.com/kervinlau",
+                      "provider": "social_profile",
+                      "source": "scrapecreators",
+                      "source_provider": "scrapecreators",
+                      "username": "kervinlau",
+                      "verified": false
+                    }
+                  ],
+                  "source_providers": [
+                    "scrapecreators"
+                  ]
+                }
+              ],
+              "related_info": [
+                {
+                  "match_source": "person_search",
+                  "matches_count": 1,
+                  "provider": "people_data_labs"
+                }
+              ],
+              "report_id": "report_7f59e4d163d9f439c750f97d",
+              "snapshot_ref": "",
+              "social_accounts": [
+                {
+                  "platform": "linkedin",
+                  "provider": "people_data_labs",
+                  "url": "linkedin.com/in/kervin-lau-78410671",
+                  "username": "kervin-lau-78410671"
+                },
+                {
+                  "avatar_url": "https://scontent-iad6-1.xx.fbcdn.net/v/t39.30808-1/467443199_10231629498373995_7466589455867151072_n.jpg?stp=dst-jpg_tt6&cstp=mx960x960&ctp=s480x480&_nc_cat=107&ccb=1-7&_nc_sid=e99d92&_nc_ohc=7_mvLnah-sIQ7kNvwH0vlus&_nc_oc=Adpap0t412KqWOhRS6lKFa9uExJ0--VAUK-VSlYYdr_wb5JB6EBD_FBCE8-ntcOEaxc&_nc_zt=24&_nc_ht=scontent-iad6-1.xx&_nc_gid=LwC5mqMkustDV4FKcvbbtA&_nc_ss=7f289&oh=00_AQEkNE5GpZjNoFxw_mE66obWlNQkOv3tur0NP0l-kr8fQg&oe=6A808F95",
+                  "candidate_id": "pdl:RNDl4HbZbzN13OUusapUDQ_0000",
+                  "display_name": "Kervin Lau",
+                  "person_id": "pdl:RNDl4HbZbzN13OUusapUDQ_0000",
+                  "platform": "facebook",
+                  "provider": "people_data_labs",
+                  "source": "scrapecreators",
+                  "source_url": "https://facebook.com/kervinlau",
+                  "url": "facebook.com/kervinlau",
+                  "username": "kervinlau"
+                }
+              ],
+              "status": "ready",
+              "subject_summary": {
+                "avatar_materialization_attempt_count": 1,
+                "avatar_materialization_success_count": 1,
+                "candidate_photo_count": 0,
+                "candidate_photo_match_count": 0,
+                "confidence_cap": "HIGH",
+                "display_name": "kervin lau",
+                "estimated_cost_microunit": 282032,
+                "estimated_cost_scope": "TASK_TOTAL_ALL_PROVIDER_CALLS",
+                "fallback_reason": "LLM_NO_RESULT",
+                "fallback_used": true,
+                "headline": "principal at patrick tighe architecture",
+                "identity_found": true,
+                "match_score": 35,
+                "match_source": "person_search",
+                "matched_on": [
+                  "name"
+                ],
+                "matches_count": 1,
+                "pdl_billing_unit_count": 1,
+                "pdl_called": true,
+                "pdl_candidates": [
+                  {
+                    "candidate_id": "pdl:RNDl4HbZbzN13OUusapUDQ_0000",
+                    "decision": "ELIGIBLE",
+                    "display_name": "kervin lau",
+                    "match_score": 35,
+                    "matched_clue_types": [
+                      "FULL_NAME"
+                    ],
+                    "profile_fetch_called": false,
+                    "profile_fetch_cost_microunit": 0,
+                    "rejection_reason": "",
+                    "selected": true,
+                    "social_links": [
+                      "https://linkedin.com/in/kervin-lau-78410671",
+                      "https://facebook.com/kervinlau"
+                    ],
+                    "stage": "person_search"
+                  }
+                ],
+                "pdl_cost_scope": "PDL_PROVIDER_CALL_ALL_STAGES",
+                "pdl_estimated_cost_microunit": 280000,
+                "pdl_external_request_count": 1,
+                "pdl_identify_call_count": 0,
+                "pdl_identify_called": false,
+                "pdl_identify_candidate_count": 0,
+                "pdl_person_search_call_count": 1,
+                "pdl_person_search_called": true,
+                "pdl_person_search_returned_profile_count": 1,
+                "pdl_pipeline_stages": [
+                  {
+                    "api_request_count": 1,
+                    "billed_quantity": 1,
+                    "billing_operation": "person_search_profile",
+                    "candidate_count": 1,
+                    "operation": "person_search",
+                    "status": "success",
+                    "unit_type": "returned_profile"
+                  }
+                ],
+                "pdl_profile_fetch_count": 0,
+                "pdl_rejected_candidate_count": 0,
+                "pdl_rejection_reasons": [],
+                "pdl_skipped": false,
+                "pdl_usable_candidate_count": 1,
+                "people_found": true,
+                "people_pipeline_cost_scope": "LLM_PUBLIC_FIGURE_AND_PDL",
+                "people_pipeline_estimated_cost_microunit": 280152,
+                "photo_evidence_found": false,
+                "policy_version": "v1",
+                "pre_pdl_estimated_cost_microunit": 152,
+                "primary_provider": "people_data_labs",
+                "provider": "search_agent",
+                "provider_person_id": "RNDl4HbZbzN13OUusapUDQ_0000",
+                "providers": [
+                  "agent_people",
+                  "social_profile",
+                  "image_materializer"
+                ],
+                "query_type": "FULL_NAME",
+                "reverse_image_estimated_cost_microunit": 0,
+                "reverse_image_fallback_reasons": null,
+                "reverse_image_fallback_used": false,
+                "reverse_image_final_provider": "",
+                "reverse_image_primary_provider": "",
+                "reverse_image_provider_attempt_count": 0,
+                "reverse_image_status": "NOT_PLANNED",
+                "reverse_image_stop_reason": "NOT_PLANNED",
+                "social_profile_attempted_count": 2,
+                "social_profile_error_count": 0,
+                "social_profile_merged_candidate_count": 1,
+                "social_profile_no_result_count": 1,
+                "social_profile_planned_count": 2,
+                "social_profile_queue_decision_truncated_count": 0,
+                "social_profile_queue_decisions": [
+                  {
+                    "canonical_url": "https://linkedin.com/in/kervin-lau-78410671",
+                    "decision": "CALLED",
+                    "depth": 1,
+                    "discovered_by": "PDL",
+                    "error_code": "",
+                    "no_result_reason": "PROFILE_PRIVATE_OR_UNAVAILABLE",
+                    "outcome": "NO_RESULT",
+                    "parent_candidate_id": "pdl:RNDl4HbZbzN13OUusapUDQ_0000",
+                    "parent_evidence_id": "",
+                    "parent_provider": "people_data_labs",
+                    "parent_url": "",
+                    "platform": "linkedin",
+                    "raw_url": "linkedin.com/in/kervin-lau-78410671",
+                    "skip_reason": ""
+                  },
+                  {
+                    "canonical_url": "https://linkedin.com/in/kervin-lau-78410671",
+                    "decision": "SKIPPED",
+                    "depth": 1,
+                    "discovered_by": "PDL",
+                    "error_code": "",
+                    "no_result_reason": "",
+                    "outcome": "",
+                    "parent_candidate_id": "pdl:RNDl4HbZbzN13OUusapUDQ_0000",
+                    "parent_evidence_id": "",
+                    "parent_provider": "people_data_labs",
+                    "parent_url": "",
+                    "platform": "linkedin",
+                    "raw_url": "linkedin.com/in/kervin-lau-78410671",
+                    "skip_reason": "DUPLICATE"
+                  },
+                  {
+                    "canonical_url": "https://facebook.com/kervinlau",
+                    "decision": "CALLED",
+                    "depth": 1,
+                    "discovered_by": "PDL",
+                    "error_code": "",
+                    "no_result_reason": "",
+                    "outcome": "SUCCESS",
+                    "parent_candidate_id": "pdl:RNDl4HbZbzN13OUusapUDQ_0000",
+                    "parent_evidence_id": "",
+                    "parent_provider": "people_data_labs",
+                    "parent_url": "",
+                    "platform": "facebook",
+                    "raw_url": "facebook.com/kervinlau",
+                    "skip_reason": ""
+                  },
+                  {
+                    "canonical_url": "https://linkedin.com/in/kervin-lau-78410671",
+                    "decision": "SKIPPED",
+                    "depth": 1,
+                    "discovered_by": "PDL",
+                    "error_code": "",
+                    "no_result_reason": "",
+                    "outcome": "",
+                    "parent_candidate_id": "",
+                    "parent_evidence_id": "",
+                    "parent_provider": "people_data_labs",
+                    "parent_url": "",
+                    "platform": "linkedin",
+                    "raw_url": "linkedin.com/in/kervin-lau-78410671",
+                    "skip_reason": "DUPLICATE"
+                  },
+                  {
+                    "canonical_url": "https://facebook.com/kervinlau",
+                    "decision": "SKIPPED",
+                    "depth": 1,
+                    "discovered_by": "PDL",
+                    "error_code": "",
+                    "no_result_reason": "",
+                    "outcome": "",
+                    "parent_candidate_id": "",
+                    "parent_evidence_id": "",
+                    "parent_provider": "people_data_labs",
+                    "parent_url": "",
+                    "platform": "facebook",
+                    "raw_url": "facebook.com/kervinlau",
+                    "skip_reason": "DUPLICATE"
+                  },
+                  {
+                    "canonical_url": "https://facebook.com/kervinlau",
+                    "decision": "SKIPPED",
+                    "depth": 2,
+                    "discovered_by": "SOCIAL_PROFILE",
+                    "error_code": "",
+                    "no_result_reason": "",
+                    "outcome": "",
+                    "parent_candidate_id": "",
+                    "parent_evidence_id": "",
+                    "parent_provider": "scrapecreators",
+                    "parent_url": "https://facebook.com/kervinlau",
+                    "platform": "facebook",
+                    "raw_url": "https://facebook.com/kervinlau",
+                    "skip_reason": "DUPLICATE"
+                  },
+                  {
+                    "canonical_url": "https://facebook.com/kervinlau",
+                    "decision": "SKIPPED",
+                    "depth": 2,
+                    "discovered_by": "SOCIAL_PROFILE",
+                    "error_code": "",
+                    "no_result_reason": "",
+                    "outcome": "",
+                    "parent_candidate_id": "",
+                    "parent_evidence_id": "",
+                    "parent_provider": "scrapecreators",
+                    "parent_url": "https://facebook.com/kervinlau",
+                    "platform": "facebook",
+                    "raw_url": "https://facebook.com/kervinlau",
+                    "skip_reason": "DUPLICATE"
+                  }
+                ],
+                "social_profile_requested_identity_matched": false,
+                "social_profile_skipped_depth_count": 0,
+                "social_profile_skipped_duplicate_count": 5,
+                "social_profile_skipped_execution_count": 0,
+                "social_profile_skipped_limit_count": 0,
+                "social_profile_skipped_unsupported_count": 0,
+                "social_profile_status": "PARTIAL",
+                "social_profile_success_count": 1,
+                "social_profile_unmatched_profile_count": 0,
+                "stop_reason": "completed",
+                "submitted_photo_count": 0,
+                "submitted_photo_error_count": 0,
+                "submitted_photo_evidence_found": false,
+                "submitted_photo_match_count": 0,
+                "submitted_photo_no_match_count": 0,
+                "task_total_estimated_cost_microunit": 282032,
+                "tool_steps": 4,
+                "verification_state": "SUPPORTED"
+              },
+              "task_id": "task_86c9f1e3898ab4e336cb4ca6",
+              "update_time": "2026-08-11T04:46:22.301Z"
+            }
+          ],
+          "task_events": [
+            {
+              "create_time": "2026-08-11T04:46:22.301Z",
+              "error_code": "",
+              "event_id": "event_a50581e87c9d42c3b791a47a",
+              "event_time": "2026-08-11T04:46:22.301Z",
+              "event_type": "REPORT_READY",
+              "id": 4913,
+              "progress_json": {
+                "display_message": "Report ready",
+                "display_percent": 100,
+                "stage": "report_ready"
+              },
+              "report_id": "report_7f59e4d163d9f439c750f97d",
+              "status": "SUCCEEDED",
+              "task_id": "task_86c9f1e3898ab4e336cb4ca6",
+              "update_time": "2026-08-11T12:46:22.305Z"
+            },
+            {
+              "create_time": "2026-08-11T04:46:09.217Z",
+              "error_code": "",
+              "event_id": "event_12ee4b1dded19a3d70b8f087",
+              "event_time": "2026-08-11T04:46:09.217Z",
+              "event_type": "TASK_SEARCHING",
+              "id": 4912,
+              "progress_json": {
+                "display_message": "Searching public sources",
+                "display_percent": 45,
+                "stage": "provider_search"
+              },
+              "report_id": "",
+              "status": "SEARCHING",
+              "task_id": "task_86c9f1e3898ab4e336cb4ca6",
+              "update_time": "2026-08-11T12:46:09.223Z"
+            },
+            {
+              "create_time": "2026-08-11T04:46:07.968Z",
+              "error_code": "",
+              "event_id": "event_c07c74d6c5082439793caeb7",
+              "event_time": "2026-08-11T04:46:07.968Z",
+              "event_type": "TASK_QUEUED",
+              "id": 4911,
+              "progress_json": {
+                "display_message": "Queued",
+                "display_percent": 5,
+                "stage": "queued"
+              },
+              "report_id": "",
+              "status": "QUEUED",
+              "task_id": "task_86c9f1e3898ab4e336cb4ca6",
+              "update_time": "2026-08-11T12:46:07.982Z"
+            }
+          ],
+          "outbox_events": [
+            {
+              "aggregate_id": "task_86c9f1e3898ab4e336cb4ca6",
+              "aggregate_type": "search_task",
+              "available_time": "2026-08-11T04:46:07.968Z",
+              "create_time": "2026-08-11T04:46:07.968Z",
+              "event_type": "SearchTaskQueued",
+              "id": "outbox_46cd16f9630b594c7dbc11b0",
+              "payload": {
+                "app_version": "1.0.3",
+                "attempt_hint": 1,
+                "client_ip": "43.173.72.75",
+                "client_request_id": "crid-1786423566447-0c5686be5b",
+                "event_id": "outbox_46cd16f9630b594c7dbc11b0",
+                "expire_time": "2026-09-10T04:46:07.967513858Z",
+                "query_type": "FULL_NAME",
+                "queued_time": "2026-08-11T04:46:07.967513858Z",
+                "request_id": "gw_req_0d3a5d52409d0be891b295788ecfc6bd",
+                "task_id": "task_86c9f1e3898ab4e336cb4ca6",
+                "trace_id": "trace_95fe655b5e953eee7cde306e66d0fd4c"
+              },
+              "publish_time": "2026-08-11T04:46:09.219Z",
+              "retry_count": 0,
+              "source_app": "people_insight",
+              "status": "published",
+              "topic": "tool-srv.test.search-task.v1",
+              "update_time": "2026-08-11T04:46:09.219Z"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
+
+2026-08-11 12:46:28,991 | INFO | search_tool.QueryChainLogger | GetProviderCostSummary 事件:
+{
+  "sequence_no": 7,
+  "api_sequence_no": 1,
+  "run_id": "run_1d70edb93a664d539c9c5dcc0f2d9742",
+  "input_id": "case-079",
+  "person_name": "Kervin Lau",
+  "task_id": "task_86c9f1e3898ab4e336cb4ca6",
+  "candidate_id": "",
+  "stage": "GetProviderCostSummary",
+  "attempt": 1,
+  "business_success": true
+}
+2026-08-11 12:46:28,991 | INFO | search_tool.QueryChainLogger | GetProviderCostSummary 脱敏请求数据: attempt=1
+{
+  "task_id": "task_86c9f1e3898ab4e336cb4ca6",
+  "limit": 100
+}
+2026-08-11 12:46:28,991 | INFO | search_tool.QueryChainLogger | GetProviderCostSummary 响应数据: HTTP 200 elapsed_ms=1112
+{
+  "code": 0,
+  "message": "ok",
+  "request_id": "gw_req_847fae824012d225290fce50a47ba1c4",
+  "trace_id": "trace_8be4a107b4a64c13a4ca1b5c8adcdbbe",
+  "responses": [
+    {
+      "id": "req_0",
+      "success": true,
+      "code": 0,
+      "message": "ok",
+      "data": {
+        "cost_summary": {
+          "from_time": "2026-08-10T04:46:29.398285272Z",
+          "to_time": "2026-08-11T04:46:29.398285272Z",
+          "calls": [
+            {
+              "billable_units": 1,
+              "billing_currency": "USD",
+              "billing_unit": "credit",
+              "billing_usage_json": [
+                {
+                  "operation": "scrapecreators_facebook_profile",
+                  "quantity": 1,
+                  "unit_type": "credit"
+                }
+              ],
+              "cache_hit": 0,
+              "call_id": "atc_9c1500d126716d19ba548266f4a06fb0",
+              "cost_breakdown_json": [
+                {
+                  "billing_model": "PER_UNIT",
+                  "currency": "USD",
+                  "estimated_cost_microunit": 1880,
+                  "operation": "scrapecreators_facebook_profile",
+                  "pricing_rule_id": "price_scrapecreators_facebook_freelance_20260810",
+                  "pricing_version": "2026-08-scrapecreators-freelance-conservative",
+                  "quantity": 1,
+                  "status": "CALCULATED",
+                  "unit_type": "credit"
+                }
+              ],
+              "cost_status": "CALCULATED",
+              "create_time": "2026-08-11T04:46:21.843Z",
+              "estimated_cost_microunit": 1880,
+              "finish_time": "2026-08-11T04:46:21.843Z",
+              "http_status": 200,
+              "non_billable_reason": "",
+              "pricing_rule_id": "price_scrapecreators_facebook_freelance_20260810",
+              "pricing_version": "2026-08-scrapecreators-freelance-conservative",
+              "provider": "social_profile",
+              "provider_operation": "scrapecreators_facebook_profile",
+              "query_id": "query_1fb510b208fdab61cdbcb270",
+              "request_type": "SOCIAL_LINK",
+              "start_time": "2026-08-11T04:46:15.799Z",
+              "status": "success",
+              "task_id": "task_86c9f1e3898ab4e336cb4ca6",
+              "worker_id": "worker-79f769d947-8gq88"
+            },
+            {
+              "billable_units": 0,
+              "billing_currency": "",
+              "billing_unit": "",
+              "billing_usage_json": [],
+              "cache_hit": 0,
+              "call_id": "atc_15ad1a218906e6595bffecefb203ef5f",
+              "cost_breakdown_json": [],
+              "cost_status": "NON_BILLABLE",
+              "create_time": "2026-08-11T04:46:15.772Z",
+              "estimated_cost_microunit": 0,
+              "finish_time": "2026-08-11T04:46:15.772Z",
+              "http_status": 404,
+              "non_billable_reason": "provider_reported_zero_usage",
+              "pricing_rule_id": "",
+              "pricing_version": "",
+              "provider": "social_profile",
+              "provider_operation": "scrapecreators_linkedin_profile",
+              "query_id": "query_1fb510b208fdab61cdbcb270",
+              "request_type": "SOCIAL_LINK",
+              "start_time": "2026-08-11T04:46:13.63Z",
+              "status": "no_result",
+              "task_id": "task_86c9f1e3898ab4e336cb4ca6",
+              "worker_id": "worker-79f769d947-8gq88"
+            },
+            {
+              "billable_units": 0,
+              "billing_currency": "",
+              "billing_unit": "",
+              "billing_usage_json": [],
+              "cache_hit": 0,
+              "call_id": "atc_553739950ce462c84c64010668845971",
+              "cost_breakdown_json": [],
+              "cost_status": "NON_BILLABLE",
+              "create_time": "2026-08-11T04:46:13.628Z",
+              "estimated_cost_microunit": 0,
+              "finish_time": "2026-08-11T04:46:13.628Z",
+              "http_status": 0,
+              "non_billable_reason": "aggregated_by_child_calls",
+              "pricing_rule_id": "",
+              "pricing_version": "",
+              "provider": "agent_people",
+              "provider_operation": "request",
+              "query_id": "query_1fb510b208fdab61cdbcb270",
+              "request_type": "FULL_NAME",
+              "start_time": "2026-08-11T04:46:09.225Z",
+              "status": "success",
+              "task_id": "task_86c9f1e3898ab4e336cb4ca6",
+              "worker_id": "worker-79f769d947-8gq88"
+            },
+            {
+              "billable_units": 1,
+              "billing_currency": "USD",
+              "billing_unit": "returned_profile",
+              "billing_usage_json": [
+                {
+                  "operation": "person_search_profile",
+                  "quantity": 1,
+                  "unit_type": "returned_profile"
+                }
+              ],
+              "cache_hit": 0,
+              "call_id": "atc_2ce1919384e9c7a92675282af3b29598",
+              "cost_breakdown_json": [
+                {
+                  "billing_model": "PER_UNIT",
+                  "currency": "USD",
+                  "estimated_cost_microunit": 280000,
+                  "operation": "person_search_profile",
+                  "pricing_rule_id": "price_pdl_search_tier1_20260729",
+                  "pricing_version": "2026-07-29-pdl-self-serve-tier1",
+                  "quantity": 1,
+                  "status": "CALCULATED",
+                  "unit_type": "returned_profile"
+                }
+              ],
+              "cost_status": "CALCULATED",
+              "create_time": "2026-08-11T04:46:13.586Z",
+              "estimated_cost_microunit": 280000,
+              "finish_time": "2026-08-11T04:46:13.586Z",
+              "http_status": 0,
+              "non_billable_reason": "",
+              "pricing_rule_id": "price_pdl_search_tier1_20260729",
+              "pricing_version": "2026-07-29-pdl-self-serve-tier1",
+              "provider": "people_data_labs",
+              "provider_operation": "person_search_profile",
+              "query_id": "query_1fb510b208fdab61cdbcb270",
+              "request_type": "FULL_NAME",
+              "start_time": "2026-08-11T04:46:13.263Z",
+              "status": "success",
+              "task_id": "task_86c9f1e3898ab4e336cb4ca6",
+              "worker_id": "worker-79f769d947-8gq88"
+            },
+            {
+              "billable_units": 0,
+              "billing_currency": "",
+              "billing_unit": "",
+              "billing_usage_json": [],
+              "cache_hit": 0,
+              "call_id": "atc_6a6e76f521fd2b4276fefae1d31bc1f1",
+              "cost_breakdown_json": [],
+              "cost_status": "NON_BILLABLE",
+              "create_time": "2026-08-11T04:46:13.262Z",
+              "estimated_cost_microunit": 0,
+              "finish_time": "2026-08-11T04:46:13.262Z",
+              "http_status": 0,
+              "non_billable_reason": "public_source_no_direct_cost",
+              "pricing_rule_id": "",
+              "pricing_version": "",
+              "provider": "public_figure",
+              "provider_operation": "remote_lookup",
+              "query_id": "query_1fb510b208fdab61cdbcb270",
+              "request_type": "FULL_NAME",
+              "start_time": "2026-08-11T04:46:13.129Z",
+              "status": "no_result",
+              "task_id": "task_86c9f1e3898ab4e336cb4ca6",
+              "worker_id": "worker-79f769d947-8gq88"
+            },
+            {
+              "billable_units": 0,
+              "billing_currency": "",
+              "billing_unit": "",
+              "billing_usage_json": [],
+              "cache_hit": 0,
+              "call_id": "atc_27752bfb53a115daca2c95e65e4faaf0",
+              "cost_breakdown_json": [],
+              "cost_status": "NON_BILLABLE",
+              "create_time": "2026-08-11T04:46:13.128Z",
+              "estimated_cost_microunit": 0,
+              "finish_time": "2026-08-11T04:46:13.128Z",
+              "http_status": 0,
+              "non_billable_reason": "public_source_no_direct_cost",
+              "pricing_rule_id": "",
+              "pricing_version": "",
+              "provider": "public_figure",
+              "provider_operation": "route_decision",
+              "query_id": "query_1fb510b208fdab61cdbcb270",
+              "request_type": "FULL_NAME",
+              "start_time": "2026-08-11T04:46:13.128Z",
+              "status": "success",
+              "task_id": "task_86c9f1e3898ab4e336cb4ca6",
+              "worker_id": "worker-79f769d947-8gq88"
+            },
+            {
+              "billable_units": 0,
+              "billing_currency": "",
+              "billing_unit": "",
+              "billing_usage_json": [],
+              "cache_hit": 0,
+              "call_id": "atc_ad7f53ea2becf2befed699d7497a8d37",
+              "cost_breakdown_json": [],
+              "cost_status": "NON_BILLABLE",
+              "create_time": "2026-08-11T04:46:13.126Z",
+              "estimated_cost_microunit": 0,
+              "finish_time": "2026-08-11T04:46:13.126Z",
+              "http_status": 0,
+              "non_billable_reason": "aggregated_by_backend_attempts",
+              "pricing_rule_id": "",
+              "pricing_version": "",
+              "provider": "llm_search",
+              "provider_operation": "request",
+              "query_id": "query_1fb510b208fdab61cdbcb270",
+              "request_type": "FULL_NAME",
+              "start_time": "2026-08-11T04:46:09.228Z",
+              "status": "no_result",
+              "task_id": "task_86c9f1e3898ab4e336cb4ca6",
+              "worker_id": "worker-79f769d947-8gq88"
+            },
+            {
+              "billable_units": 973,
+              "billing_currency": "USD",
+              "billing_unit": "token",
+              "billing_usage_json": [
+                {
+                  "input_tokens": 864,
+                  "operation": "chat_completions/deepseek-v4-flash-202605",
+                  "output_tokens": 109,
+                  "unit_type": "token"
+                }
+              ],
+              "cache_hit": 0,
+              "call_id": "atc_33095ed21e5c61510da230257d2edb96",
+              "cost_breakdown_json": [
+                {
+                  "billing_model": "TOKEN",
+                  "currency": "USD",
+                  "estimated_cost_microunit": 152,
+                  "input_tokens": 864,
+                  "operation": "chat_completions/deepseek-v4-flash-202605",
+                  "output_tokens": 109,
+                  "pricing_rule_id": "price_tencent_deepseek_v4_flash_20260729",
+                  "pricing_version": "2026-07-29-tencent-intl-public",
+                  "status": "CALCULATED",
+                  "unit_type": "token"
+                }
+              ],
+              "cost_status": "CALCULATED",
+              "create_time": "2026-08-11T04:46:13.036Z",
+              "estimated_cost_microunit": 152,
+              "finish_time": "2026-08-11T04:46:13.036Z",
+              "http_status": 200,
+              "non_billable_reason": "",
+              "pricing_rule_id": "price_tencent_deepseek_v4_flash_20260729",
+              "pricing_version": "2026-07-29-tencent-intl-public",
+              "provider": "llm_search:deepseek",
+              "provider_operation": "chat_completions/deepseek-v4-flash-202605",
+              "query_id": "query_1fb510b208fdab61cdbcb270",
+              "request_type": "FULL_NAME",
+              "start_time": "2026-08-11T04:46:09.23Z",
+              "status": "no_result",
+              "task_id": "task_86c9f1e3898ab4e336cb4ca6",
+              "worker_id": "worker-79f769d947-8gq88"
+            },
+            {
+              "billable_units": 0,
+              "billing_currency": "",
+              "billing_unit": "",
+              "billing_usage_json": [],
+              "cache_hit": 0,
+              "call_id": "atc_8eba7d7800c8fd24b55fb151d95281a0",
+              "cost_breakdown_json": [],
+              "cost_status": "NON_BILLABLE",
+              "create_time": "2026-08-11T04:46:09.226Z",
+              "estimated_cost_microunit": 0,
+              "finish_time": "2026-08-11T04:46:09.226Z",
+              "http_status": 0,
+              "non_billable_reason": "public_source_no_direct_cost",
+              "pricing_rule_id": "",
+              "pricing_version": "",
+              "provider": "public_figure",
+              "provider_operation": "local_lookup",
+              "query_id": "query_1fb510b208fdab61cdbcb270",
+              "request_type": "FULL_NAME",
+              "start_time": "2026-08-11T04:46:09.225Z",
+              "status": "no_result",
+              "task_id": "task_86c9f1e3898ab4e336cb4ca6",
+              "worker_id": "worker-79f769d947-8gq88"
+            }
+          ],
+          "totals": [
+            {
+              "call_count": 6,
+              "config_estimate_call_count": "0",
+              "cost_complete": 1,
+              "currency": "UNSPECIFIED",
+              "non_billable_call_count": "6",
+              "partial_cost_call_count": "0",
+              "priced_call_count": "0",
+              "total_cost_microunit": "0",
+              "unpriced_call_count": "0"
+            },
+            {
+              "call_count": 3,
+              "config_estimate_call_count": "0",
+              "cost_complete": 1,
+              "currency": "USD",
+              "non_billable_call_count": "0",
+              "partial_cost_call_count": "0",
+              "priced_call_count": "3",
+              "total_cost_microunit": "282032",
+              "unpriced_call_count": "0"
+            }
+          ],
+          "by_provider": [
+            {
+              "call_count": 1,
+              "config_estimate_call_count": "0",
+              "cost_complete": 1,
+              "currency": "USD",
+              "non_billable_call_count": "0",
+              "partial_cost_call_count": "0",
+              "priced_call_count": "1",
+              "provider": "people_data_labs",
+              "total_cost_microunit": "280000",
+              "unpriced_call_count": "0"
+            },
+            {
+              "call_count": 1,
+              "config_estimate_call_count": "0",
+              "cost_complete": 1,
+              "currency": "USD",
+              "non_billable_call_count": "0",
+              "partial_cost_call_count": "0",
+              "priced_call_count": "1",
+              "provider": "social_profile",
+              "total_cost_microunit": "1880",
+              "unpriced_call_count": "0"
+            },
+            {
+              "call_count": 1,
+              "config_estimate_call_count": "0",
+              "cost_complete": 1,
+              "currency": "USD",
+              "non_billable_call_count": "0",
+              "partial_cost_call_count": "0",
+              "priced_call_count": "1",
+              "provider": "llm_search:deepseek",
+              "total_cost_microunit": "152",
+              "unpriced_call_count": "0"
+            },
+            {
+              "call_count": 3,
+              "config_estimate_call_count": "0",
+              "cost_complete": 1,
+              "currency": "UNSPECIFIED",
+              "non_billable_call_count": "3",
+              "partial_cost_call_count": "0",
+              "priced_call_count": "0",
+              "provider": "public_figure",
+              "total_cost_microunit": "0",
+              "unpriced_call_count": "0"
+            },
+            {
+              "call_count": 1,
+              "config_estimate_call_count": "0",
+              "cost_complete": 1,
+              "currency": "UNSPECIFIED",
+              "non_billable_call_count": "1",
+              "partial_cost_call_count": "0",
+              "priced_call_count": "0",
+              "provider": "llm_search",
+              "total_cost_microunit": "0",
+              "unpriced_call_count": "0"
+            },
+            {
+              "call_count": 1,
+              "config_estimate_call_count": "0",
+              "cost_complete": 1,
+              "currency": "UNSPECIFIED",
+              "non_billable_call_count": "1",
+              "partial_cost_call_count": "0",
+              "priced_call_count": "0",
+              "provider": "agent_people",
+              "total_cost_microunit": "0",
+              "unpriced_call_count": "0"
+            },
+            {
+              "call_count": 1,
+              "config_estimate_call_count": "0",
+              "cost_complete": 1,
+              "currency": "UNSPECIFIED",
+              "non_billable_call_count": "1",
+              "partial_cost_call_count": "0",
+              "priced_call_count": "0",
+              "provider": "social_profile",
+              "total_cost_microunit": "0",
+              "unpriced_call_count": "0"
+            }
+          ],
+          "by_worker": [
+            {
+              "call_count": 3,
+              "config_estimate_call_count": "0",
+              "cost_complete": 1,
+              "currency": "USD",
+              "non_billable_call_count": "0",
+              "partial_cost_call_count": "0",
+              "priced_call_count": "3",
+              "total_cost_microunit": "282032",
+              "unpriced_call_count": "0",
+              "worker_id": "worker-79f769d947-8gq88"
+            },
+            {
+              "call_count": 6,
+              "config_estimate_call_count": "0",
+              "cost_complete": 1,
+              "currency": "UNSPECIFIED",
+              "non_billable_call_count": "6",
+              "partial_cost_call_count": "0",
+              "priced_call_count": "0",
+              "total_cost_microunit": "0",
+              "unpriced_call_count": "0",
+              "worker_id": "worker-79f769d947-8gq88"
+            }
+          ],
+          "by_search": [
+            {
+              "call_count": 3,
+              "config_estimate_call_count": "0",
+              "cost_complete": 1,
+              "currency": "USD",
+              "non_billable_call_count": "0",
+              "partial_cost_call_count": "0",
+              "priced_call_count": "3",
+              "task_id": "task_86c9f1e3898ab4e336cb4ca6",
+              "total_cost_microunit": "282032",
+              "unpriced_call_count": "0"
+            },
+            {
+              "call_count": 6,
+              "config_estimate_call_count": "0",
+              "cost_complete": 1,
+              "currency": "UNSPECIFIED",
+              "non_billable_call_count": "6",
+              "partial_cost_call_count": "0",
+              "priced_call_count": "0",
+              "task_id": "task_86c9f1e3898ab4e336cb4ca6",
+              "total_cost_microunit": "0",
+              "unpriced_call_count": "0"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
+
+2026-08-11 12:46:29,994 | INFO | search_tool.QueryChainLogger | ListTaskCandidates 事件:
+{
+  "sequence_no": 8,
+  "api_sequence_no": 1,
+  "run_id": "run_1d70edb93a664d539c9c5dcc0f2d9742",
+  "input_id": "case-079",
+  "person_name": "Kervin Lau",
+  "task_id": "task_86c9f1e3898ab4e336cb4ca6",
+  "candidate_id": "",
+  "stage": "ListTaskCandidates",
+  "attempt": 1,
+  "business_success": true
+}
+2026-08-11 12:46:29,994 | INFO | search_tool.QueryChainLogger | ListTaskCandidates 脱敏请求数据: attempt=1
+{
+  "task_id": "task_86c9f1e3898ab4e336cb4ca6",
+  "page": {
+    "page_size": 100,
+    "page_token": ""
+  }
+}
+2026-08-11 12:46:29,994 | INFO | search_tool.QueryChainLogger | ListTaskCandidates 响应数据: HTTP 200 elapsed_ms=986
+{
+  "code": 0,
+  "message": "ok",
+  "request_id": "gw_req_9d3119ddaee1fab4c00ebacd7fbc6e98",
+  "trace_id": "trace_6946b5d10cd0747ae9ad9bd1abb88f2a",
+  "responses": [
+    {
+      "id": "req_0",
+      "success": true,
+      "code": 0,
+      "message": "ok",
+      "data": {
+        "empty_reason": "",
+        "items": [
+          {
+            "age": 0,
+            "avatar_url": "https://scontent-iad6-1.xx.fbcdn.net/v/t39.30808-1/467443199_10231629498373995_7466589455867151072_n.jpg?stp=dst-jpg_tt6&cstp=mx960x960&ctp=s480x480&_nc_cat=107&ccb=1-7&_nc_sid=e99d92&_nc_ohc=7_mvLnah-sIQ7kNvwH0vlus&_nc_oc=Adpap0t412KqWOhRS6lKFa9uExJ0--VAUK-VSlYYdr_wb5JB6EBD_FBCE8-ntcOEaxc&_nc_zt=24&_nc_ht=scontent-iad6-1.xx&_nc_gid=LwC5mqMkustDV4FKcvbbtA&_nc_ss=7f289&oh=00_AQEkNE5GpZjNoFxw_mE66obWlNQkOv3tur0NP0l-kr8fQg&oe=6A808F95",
+            "candidate_id": "report_7f59e4d163d9f439c750f97d_candidate_1",
+            "confidence_level": "LOW",
+            "display_name": "kervin lau",
+            "education": "sci - arc bachelor of architecture bachelors; miami dade college associate of arts associates; colegio parroquial nuestra señora de chiquinquirá",
+            "email": "kervin@tighearchitecture.com",
+            "evidence_count": 5,
+            "headline": "principal at patrick tighe architecture",
+            "is_best_match": false,
+            "is_top_result": true,
+            "jobs": [
+              "principal at patrick tighe architecture"
+            ],
+            "location": "los angeles, california, united states",
+            "match_reasons": [
+              "name"
+            ],
+            "match_score": 35,
+            "matched_clue_types": [],
+            "person_id": "pdl:RNDl4HbZbzN13OUusapUDQ_0000",
+            "primary_image": {
+              "priority": 1,
+              "reason": "profile_image",
+              "source": "profile",
+              "url": "https://scontent-iad6-1.xx.fbcdn.net/v/t39.30808-1/467443199_10231629498373995_7466589455867151072_n.jpg?stp=dst-jpg_tt6&cstp=mx960x960&ctp=s480x480&_nc_cat=107&ccb=1-7&_nc_sid=e99d92&_nc_ohc=7_mvLnah-sIQ7kNvwH0vlus&_nc_oc=Adpap0t412KqWOhRS6lKFa9uExJ0--VAUK-VSlYYdr_wb5JB6EBD_FBCE8-ntcOEaxc&_nc_zt=24&_nc_ht=scontent-iad6-1.xx&_nc_gid=LwC5mqMkustDV4FKcvbbtA&_nc_ss=7f289&oh=00_AQEkNE5GpZjNoFxw_mE66obWlNQkOv3tur0NP0l-kr8fQg&oe=6A808F95"
+            },
+            "profile_url": "https://linkedin.com/in/kervin-lau-78410671",
+            "rank_breakdown": {
+              "data_completeness": 0.9,
+              "geo_relevance": 0,
+              "public_influence": 0,
+              "social_activity": 0,
+              "social_richness": 0.3333
+            },
+            "rank_score": 0.3983,
+            "rank_version": "candidate_ranking_v2",
+            "social_links": [
+              {
+                "platform": "linkedin",
+                "url": "https://linkedin.com/in/kervin-lau-78410671",
+                "username": "kervin-lau-78410671"
+              },
+              {
+                "platform": "facebook",
+                "url": "https://facebook.com/kervinlau",
+                "username": "kervinlau",
+                "verification_level": "LIKELY",
+                "verification_reason": "social_profile_name_match"
+              }
+            ],
+            "social_platforms": [
+              "linkedin",
+              "facebook"
+            ],
+            "social_source_count": 2,
+            "source": "people_data_labs",
+            "source_provider": "people_data_labs",
+            "source_providers": [
+              "scrapecreators",
+              "people_data_labs"
+            ],
+            "web_links": [
+              {
+                "domain": "tighearchitecture.com",
+                "source": "Default",
+                "title": "kervin lau",
+                "url": "https://tighearchitecture.com"
+              }
+            ],
+            "web_platforms": [
+              "Default"
+            ],
+            "web_source_count": 1
+          }
+        ],
+        "next_page_token": "",
+        "provider_summary": {
+          "cache_hit": false,
+          "primary_provider": "agent_people",
+          "provider_execution": "REAL_PROVIDER",
+          "providers": [
+            "agent_people",
+            "social_profile",
+            "image_materializer",
+            "people_data_labs",
+            "search_agent"
+          ],
+          "public_sources": false,
+          "source_provider": "people_data_labs",
+          "source_providers": [
+            "people_data_labs",
+            "scrapecreators"
+          ]
+        },
+        "task_id": "task_86c9f1e3898ab4e336cb4ca6",
+        "update_time": 1786423582301
+      }
+    }
+  ]
+}
+
+2026-08-11 12:46:31,131 | INFO | search_tool.QueryChainLogger | GetTaskCandidateDetail 事件:
+{
+  "sequence_no": 9,
+  "api_sequence_no": 1,
+  "run_id": "run_1d70edb93a664d539c9c5dcc0f2d9742",
+  "input_id": "case-079",
+  "person_name": "Kervin Lau",
+  "task_id": "task_86c9f1e3898ab4e336cb4ca6",
+  "candidate_id": "report_7f59e4d163d9f439c750f97d_candidate_1",
+  "stage": "GetTaskCandidateDetail",
+  "attempt": 1,
+  "business_success": true
+}
+2026-08-11 12:46:31,131 | INFO | search_tool.QueryChainLogger | GetTaskCandidateDetail 脱敏请求数据: attempt=1
+{
+  "task_id": "task_86c9f1e3898ab4e336cb4ca6",
+  "candidate_id": "report_7f59e4d163d9f439c750f97d_candidate_1"
+}
+2026-08-11 12:46:31,131 | INFO | search_tool.QueryChainLogger | GetTaskCandidateDetail 响应数据: HTTP 200 elapsed_ms=1111
+{
+  "code": 0,
+  "message": "ok",
+  "request_id": "gw_req_016b45cdb3e595a29a051f58f8a3f81a",
+  "trace_id": "trace_3ae5a30b577a7135bc0f3f7e6b7eebd7",
+  "responses": [
+    {
+      "id": "req_0",
+      "success": true,
+      "code": 0,
+      "message": "ok",
+      "data": {
+        "candidate": {
+          "age": 0,
+          "avatar_url": "https://scontent-iad6-1.xx.fbcdn.net/v/t39.30808-1/467443199_10231629498373995_7466589455867151072_n.jpg?stp=dst-jpg_tt6&cstp=mx960x960&ctp=s480x480&_nc_cat=107&ccb=1-7&_nc_sid=e99d92&_nc_ohc=7_mvLnah-sIQ7kNvwH0vlus&_nc_oc=Adpap0t412KqWOhRS6lKFa9uExJ0--VAUK-VSlYYdr_wb5JB6EBD_FBCE8-ntcOEaxc&_nc_zt=24&_nc_ht=scontent-iad6-1.xx&_nc_gid=LwC5mqMkustDV4FKcvbbtA&_nc_ss=7f289&oh=00_AQEkNE5GpZjNoFxw_mE66obWlNQkOv3tur0NP0l-kr8fQg&oe=6A808F95",
+          "candidate_id": "report_7f59e4d163d9f439c750f97d_candidate_1",
+          "confidence_level": "LOW",
+          "display_name": "kervin lau",
+          "education": "sci - arc bachelor of architecture bachelors; miami dade college associate of arts associates; colegio parroquial nuestra señora de chiquinquirá",
+          "email": "kervin@tighearchitecture.com",
+          "evidence_count": 5,
+          "headline": "principal at patrick tighe architecture",
+          "is_best_match": false,
+          "is_top_result": true,
+          "jobs": [
+            "principal at patrick tighe architecture"
+          ],
+          "location": "los angeles, california, united states",
+          "match_reasons": [
+            "name"
+          ],
+          "match_score": 35,
+          "matched_clue_types": [],
+          "person_id": "pdl:RNDl4HbZbzN13OUusapUDQ_0000",
+          "primary_image": {
+            "priority": 1,
+            "reason": "profile_image",
+            "source": "profile",
+            "url": "https://scontent-iad6-1.xx.fbcdn.net/v/t39.30808-1/467443199_10231629498373995_7466589455867151072_n.jpg?stp=dst-jpg_tt6&cstp=mx960x960&ctp=s480x480&_nc_cat=107&ccb=1-7&_nc_sid=e99d92&_nc_ohc=7_mvLnah-sIQ7kNvwH0vlus&_nc_oc=Adpap0t412KqWOhRS6lKFa9uExJ0--VAUK-VSlYYdr_wb5JB6EBD_FBCE8-ntcOEaxc&_nc_zt=24&_nc_ht=scontent-iad6-1.xx&_nc_gid=LwC5mqMkustDV4FKcvbbtA&_nc_ss=7f289&oh=00_AQEkNE5GpZjNoFxw_mE66obWlNQkOv3tur0NP0l-kr8fQg&oe=6A808F95"
+          },
+          "profile_url": "https://linkedin.com/in/kervin-lau-78410671",
+          "rank_breakdown": {
+            "data_completeness": 0.9,
+            "geo_relevance": 0,
+            "public_influence": 0,
+            "social_activity": 0,
+            "social_richness": 0.3333
+          },
+          "rank_score": 0.3983,
+          "rank_version": "candidate_ranking_v2",
+          "social_links": [
+            {
+              "platform": "linkedin",
+              "url": "https://linkedin.com/in/kervin-lau-78410671",
+              "username": "kervin-lau-78410671"
+            },
+            {
+              "platform": "facebook",
+              "url": "https://facebook.com/kervinlau",
+              "username": "kervinlau",
+              "verification_level": "LIKELY",
+              "verification_reason": "social_profile_name_match"
+            }
+          ],
+          "social_platforms": [
+            "linkedin",
+            "facebook"
+          ],
+          "social_source_count": 2,
+          "source": "people_data_labs",
+          "source_provider": "people_data_labs",
+          "source_providers": [
+            "scrapecreators",
+            "people_data_labs"
+          ],
+          "web_links": [
+            {
+              "domain": "tighearchitecture.com",
+              "source": "Default",
+              "title": "kervin lau",
+              "url": "https://tighearchitecture.com"
+            }
+          ],
+          "web_platforms": [
+            "Default"
+          ],
+          "web_source_count": 1
+        },
+        "candidate_id": "report_7f59e4d163d9f439c750f97d_candidate_1",
+        "disclaimers": [
+          "People Data Labs Person Search returns candidate profiles; review candidates or add stronger clues before relying on an identity match.",
+          "Social profile fields were extracted from public page data and remain subject to source availability and platform changes."
+        ],
+        "entitlement_decision": "ALLOW",
+        "evidence": [
+          {
+            "display_name": "kervin lau",
+            "matched_on": [
+              "name"
+            ],
+            "person_id": "pdl:RNDl4HbZbzN13OUusapUDQ_0000",
+            "provider": "people_data_labs",
+            "provider_person_id": "RNDl4HbZbzN13OUusapUDQ_0000",
+            "subject_profile_url": "linkedin.com/in/kervin-lau-78410671",
+            "type": "pdl_matched_on"
+          },
+          {
+            "display_name": "kervin lau",
+            "field": "linkedin_url",
+            "person_id": "pdl:RNDl4HbZbzN13OUusapUDQ_0000",
+            "provider": "people_data_labs",
+            "provider_person_id": "RNDl4HbZbzN13OUusapUDQ_0000",
+            "subject_profile_url": "linkedin.com/in/kervin-lau-78410671",
+            "type": "pdl_profile_url",
+            "url": "linkedin.com/in/kervin-lau-78410671"
+          },
+          {
+            "display_name": "kervin lau",
+            "field": "facebook_url",
+            "person_id": "pdl:RNDl4HbZbzN13OUusapUDQ_0000",
+            "provider": "people_data_labs",
+            "provider_person_id": "RNDl4HbZbzN13OUusapUDQ_0000",
+            "subject_profile_url": "linkedin.com/in/kervin-lau-78410671",
+            "type": "pdl_profile_url",
+            "url": "facebook.com/kervinlau"
+          },
+          {
+            "display_name": "kervin lau",
+            "field": "job_company_website",
+            "person_id": "pdl:RNDl4HbZbzN13OUusapUDQ_0000",
+            "provider": "people_data_labs",
+            "provider_person_id": "RNDl4HbZbzN13OUusapUDQ_0000",
+            "subject_profile_url": "linkedin.com/in/kervin-lau-78410671",
+            "type": "pdl_profile_url",
+            "url": "tighearchitecture.com"
+          },
+          {
+            "candidate_id": "pdl:RNDl4HbZbzN13OUusapUDQ_0000",
+            "image_url": "https://scontent-iad6-1.xx.fbcdn.net/v/t39.30808-1/467443199_10231629498373995_7466589455867151072_n.jpg?stp=dst-jpg_tt6&cstp=mx960x960&ctp=s480x480&_nc_cat=107&ccb=1-7&_nc_sid=e99d92&_nc_ohc=7_mvLnah-sIQ7kNvwH0vlus&_nc_oc=Adpap0t412KqWOhRS6lKFa9uExJ0--VAUK-VSlYYdr_wb5JB6EBD_FBCE8-ntcOEaxc&_nc_zt=24&_nc_ht=scontent-iad6-1.xx&_nc_gid=LwC5mqMkustDV4FKcvbbtA&_nc_ss=7f289&oh=00_AQEkNE5GpZjNoFxw_mE66obWlNQkOv3tur0NP0l-kr8fQg&oe=6A808F95",
+            "observed_time": 1786423581839,
+            "person_id": "pdl:RNDl4HbZbzN13OUusapUDQ_0000",
+            "provider": "social_profile",
+            "snippet": "",
+            "source": "scrapecreators",
+            "title": "Kervin Lau",
+            "type": "social_profile_source",
+            "url": "https://facebook.com/kervinlau"
+          }
+        ],
+        "person_id": "pdl:RNDl4HbZbzN13OUusapUDQ_0000",
+        "social_accounts": [
+          {
+            "display_name": "kervin lau",
+            "person_id": "pdl:RNDl4HbZbzN13OUusapUDQ_0000",
+            "platform": "linkedin",
+            "profile_url": "https://linkedin.com/in/kervin-lau-78410671",
+            "source": "people_data_labs",
+            "url": "https://linkedin.com/in/kervin-lau-78410671",
+            "username": "kervin-lau-78410671"
+          },
+          {
+            "display_name": "kervin lau",
+            "person_id": "pdl:RNDl4HbZbzN13OUusapUDQ_0000",
+            "platform": "facebook",
+            "profile_url": "https://linkedin.com/in/kervin-lau-78410671",
+            "source": "people_data_labs",
+            "url": "https://facebook.com/kervinlau",
+            "username": "kervinlau",
+            "verification_level": "LIKELY",
+            "verification_reason": "social_profile_name_match"
+          }
+        ],
+        "task_id": "task_86c9f1e3898ab4e336cb4ca6",
+        "ui_sections": {
+          "insights": {
+            "data": {
+              "count": 0,
+              "items": []
+            },
+            "status": "empty"
+          },
+          "photos": {
+            "data": {
+              "authenticity_photos": [],
+              "baseline_photo_url": "",
+              "face_comparison_status": "not_applicable",
+              "identity_match_rate": 0,
+              "match_photos": []
+            },
+            "status": "empty"
+          },
+          "profile": {
+            "data": {
+              "sections": [
+                {
+                  "items": [
+                    {
+                      "label": "Full Name",
+                      "value": "kervin lau"
+                    },
+                    {
+                      "label": "Location",
+                      "value": "los angeles, california, united states"
+                    },
+                    {
+                      "label": "Email",
+                      "value": "kervin@tighearchitecture.com"
+                    },
+                    {
+                      "label": "Profile URL",
+                      "value": "https://linkedin.com/in/kervin-lau-78410671"
+                    }
+                  ],
+                  "title": "Identity"
+                },
+                {
+                  "items": [
+                    {
+                      "label": "Current Role",
+                      "value": "principal at patrick tighe architecture"
+                    }
+                  ],
+                  "title": "Career"
+                },
+                {
+                  "items": [
+                    {
+                      "label": "Education",
+                      "value": "sci - arc bachelor of architecture bachelors; miami dade college associate of arts associates; colegio parroquial nuestra señora de chiquinquirá"
+                    }
+                  ],
+                  "title": "Background"
+                }
+              ]
+            },
+            "status": "data"
+          },
+          "social": {
+            "data": {
+              "private_accounts": [],
+              "profiles": [
+                {
+                  "display_handle": "kervin-lau-78410671",
+                  "platform": "linkedin",
+                  "url": "https://linkedin.com/in/kervin-lau-78410671",
+                  "username": "kervin-lau-78410671"
+                },
+                {
+                  "display_handle": "kervinlau",
+                  "platform": "facebook",
+                  "url": "https://facebook.com/kervinlau",
+                  "username": "kervinlau",
+                  "verification_level": "LIKELY",
+                  "verification_reason": "social_profile_name_match"
+                }
+              ]
+            },
+            "status": "data"
+          },
+          "summary": {
+            "data": {
+              "age": null,
+              "avatar_url": "https://scontent-iad6-1.xx.fbcdn.net/v/t39.30808-1/467443199_10231629498373995_7466589455867151072_n.jpg?stp=dst-jpg_tt6&cstp=mx960x960&ctp=s480x480&_nc_cat=107&ccb=1-7&_nc_sid=e99d92&_nc_ohc=7_mvLnah-sIQ7kNvwH0vlus&_nc_oc=Adpap0t412KqWOhRS6lKFa9uExJ0--VAUK-VSlYYdr_wb5JB6EBD_FBCE8-ntcOEaxc&_nc_zt=24&_nc_ht=scontent-iad6-1.xx&_nc_gid=LwC5mqMkustDV4FKcvbbtA&_nc_ss=7f289&oh=00_AQEkNE5GpZjNoFxw_mE66obWlNQkOv3tur0NP0l-kr8fQg&oe=6A808F95",
+              "candidate_id": "report_7f59e4d163d9f439c750f97d_candidate_1",
+              "confidence_level": "LOW",
+              "disclaimers": [
+                "People Data Labs Person Search returns candidate profiles; review candidates or add stronger clues before relying on an identity match.",
+                "Social profile fields were extracted from public page data and remain subject to source availability and platform changes."
+              ],
+              "display_name": "kervin lau",
+              "education": "sci - arc bachelor of architecture bachelors; miami dade college associate of arts associates; colegio parroquial nuestra señora de chiquinquirá",
+              "generate_time": 1786423582301,
+              "headline": "principal at patrick tighe architecture",
+              "is_best_match": false,
+              "is_top_result": true,
+              "jobs": [
+                "principal at patrick tighe architecture"
+              ],
+              "location": "los angeles, california, united states",
+              "match_reasons": [
+                "name"
+              ],
+              "match_score": 35,
+              "more_social_count": 0,
+              "person_id": "pdl:RNDl4HbZbzN13OUusapUDQ_0000",
+              "primary_image": {
+                "priority": 1,
+                "reason": "profile_image",
+                "source": "profile",
+                "url": "https://scontent-iad6-1.xx.fbcdn.net/v/t39.30808-1/467443199_10231629498373995_7466589455867151072_n.jpg?stp=dst-jpg_tt6&cstp=mx960x960&ctp=s480x480&_nc_cat=107&ccb=1-7&_nc_sid=e99d92&_nc_ohc=7_mvLnah-sIQ7kNvwH0vlus&_nc_oc=Adpap0t412KqWOhRS6lKFa9uExJ0--VAUK-VSlYYdr_wb5JB6EBD_FBCE8-ntcOEaxc&_nc_zt=24&_nc_ht=scontent-iad6-1.xx&_nc_gid=LwC5mqMkustDV4FKcvbbtA&_nc_ss=7f289&oh=00_AQEkNE5GpZjNoFxw_mE66obWlNQkOv3tur0NP0l-kr8fQg&oe=6A808F95"
+              },
+              "profile_url": "https://linkedin.com/in/kervin-lau-78410671",
+              "report_expires_at": 1789015567968,
+              "social_links": [
+                {
+                  "platform": "linkedin",
+                  "title": "LinkedIn",
+                  "url": "https://linkedin.com/in/kervin-lau-78410671"
+                },
+                {
+                  "platform": "facebook",
+                  "title": "Facebook",
+                  "url": "https://facebook.com/kervinlau",
+                  "verification_level": "LIKELY",
+                  "verification_reason": "social_profile_name_match"
+                }
+              ],
+              "social_platforms": [
+                "linkedin",
+                "facebook"
+              ],
+              "source_provider": "people_data_labs",
+              "source_providers": [
+                "scrapecreators",
+                "people_data_labs"
+              ],
+              "web_links": [
+                {
+                  "platform": "default",
+                  "title": "Default",
+                  "url": "https://tighearchitecture.com"
+                }
+              ]
+            },
+            "status": "data"
+          }
+        },
+        "update_time": 1786423582301
+      }
+    }
+  ]
+}
+
+2026-08-11 12:46:31,146 | INFO | search_tool.QueryChainLogger | QueryEnd 事件:
+{
+  "sequence_no": 10,
+  "api_sequence_no": null,
+  "run_id": "run_1d70edb93a664d539c9c5dcc0f2d9742",
+  "input_id": "case-079",
+  "person_name": "Kervin Lau",
+  "task_id": "task_86c9f1e3898ab4e336cb4ca6",
+  "candidate_id": "",
+  "stage": "QueryEnd",
+  "attempt": 1,
+  "business_success": true
+}
+2026-08-11 12:46:31,146 | INFO | search_tool.QueryChainLogger | QueryEnd 响应数据: HTTP - elapsed_ms=-
+{
+  "status": "SUCCESS",
+  "candidate_count": 1
+}
+
