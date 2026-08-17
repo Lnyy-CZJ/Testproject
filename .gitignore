@@ -24,9 +24,3 @@ venv/
 
 # Node
 node_modules/
-
-# AItestcase_Agents 运行时产物（不入库）
-AItestcase_Agents/runtime/
-AItestcase_Agents/output/
-AItestcase_Agents/apilog.log
-AItestcase_Agents/my_pdl_enrichment.jsonl
