@@ -10,7 +10,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
-from app.api import admin, audit, auth, configuration, health, internal, tools
+from app.api import admin, audit, auth, configuration, health, internal, llm, tools
 from app.core.config import get_settings
 from app.core.errors import PlatformError
 
@@ -70,13 +70,14 @@ def error_response(request: Request, status_code: int, code: str, message: str) 
     )
 
 
-app = FastAPI(title="测试开发平台 API", version="1.0.0")
+app = FastAPI(title="测试开发平台 API", version=settings.read_platform_version())
 app.add_middleware(RequestIdMiddleware)
 app.include_router(health.router, prefix="/api/v1")
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(tools.router, prefix="/api/v1")
 app.include_router(admin.router, prefix="/api/v1")
 app.include_router(configuration.router, prefix="/api/v1")
+app.include_router(llm.router, prefix="/api/v1")
 app.include_router(audit.router, prefix="/api/v1")
 app.include_router(internal.router, prefix="/api/v1")
 

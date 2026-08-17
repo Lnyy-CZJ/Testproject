@@ -1,0 +1,81 @@
+services:
+  api-test-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
+      args:
+        APP_REVISION: ${API_AGENT_REVISION:-local}
+    image: ${API_AGENT_IMAGE:-api-test-agent:${API_RELEASE:-0.1.0-local}}
+    user: "10002:10002"
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid
+    environment:
+      AGENT_DATA_DIR: /data
+      AGENT_WEB_PORT: "5005"
+      AGENT_TOOL_ID: api-test-agent
+      AGENT_BASE_PATH: /api-test-agent
+      PLATFORM_RUNTIME_ENV: ${PLATFORM_RUNTIME_ENV:-dev}
+      PLATFORM_API_URL: ${PLATFORM_API_URL:-http://host.docker.internal:8000/api/v1}
+      PLATFORM_CLIENT_TOKEN_FILE: /run/secrets/platform-client-token
+      API_EXECUTION_ENABLED: "false"
+      DATABASE_PERSIST_ENABLED: "false"
+      API_EXECUTION_TARGETS: "[]"
+    volumes:
+      - ./runtime/${PLATFORM_RUNTIME_ENV:-dev}/api:/data
+      - ${API_PLATFORM_CLIENT_TOKEN_FILE:-./secrets/dev/platform-client-token}:/run/secrets/platform-client-token:ro
+    ports:
+      - "5005:5005"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5005/health', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  api-execution-controller:
+    profiles: ["s2"]
+    build:
+      context: .
+      dockerfile: Dockerfile.controller
+      args:
+        APP_REVISION: ${API_AGENT_REVISION:-local}
+    image: ${API_EXECUTION_CONTROLLER_IMAGE:-api-execution-controller:${API_RELEASE:-0.1.0-local}}
+    environment:
+      CONTROLLER_TOKEN_FILE: /run/secrets/controller-token
+      CONTROLLER_RUNS_ROOT: /runs
+      EXECUTOR_IMAGE: ${API_EXECUTOR_IMAGE:-api-test-executor:${API_RELEASE:-0.1.0-local}}
+      EXECUTOR_NETWORK: api-executor
+      EXECUTOR_PROXY_URL: http://api-egress-proxy:5011
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./runtime/${PLATFORM_RUNTIME_ENV:-dev}/api/runs:/runs
+      - ${API_CONTROLLER_TOKEN_FILE:-./secrets/dev/controller-token}:/run/secrets/controller-token:ro
+    networks: [control]
+
+  api-egress-proxy:
+    profiles: ["s2"]
+    build:
+      context: .
+      dockerfile: Dockerfile.egress
+      args:
+        APP_REVISION: ${API_AGENT_REVISION:-local}
+    image: ${API_EGRESS_PROXY_IMAGE:-api-egress-proxy:${API_RELEASE:-0.1.0-local}}
+    read_only: true
+    environment:
+      REGISTERED_TARGETS: "[]"
+    networks: [api-executor]
+
+  api-test-executor-image:
+    profiles: ["build"]
+    build:
+      context: .
+      dockerfile: Dockerfile.executor
+      args:
+        APP_REVISION: ${API_AGENT_REVISION:-local}
+    image: ${API_EXECUTOR_IMAGE:-api-test-executor:${API_RELEASE:-0.1.0-local}}
+    entrypoint: ["python", "-c", "print('executor image ready')"]
+
+networks:
+  control:
+  api-executor:
+    internal: true

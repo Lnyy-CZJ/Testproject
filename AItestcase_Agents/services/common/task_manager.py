@@ -382,6 +382,8 @@ class TaskManager:
             elif kind in {"review_ai", "case_review_ai"}:
                 latest.setdefault(kind, {}).update(result.get(kind, {}))
                 latest[kind]["status"] = "ready"
+                if result.get("token_usage"):
+                    latest["token_usage"] = result["token_usage"]
                 self._return_to_review(latest, stage=f"{kind}_ready", error_code=None, error_message=None, exit_code=exit_code)
             else:
                 collected = self.result_collector(task_id, task_dir, self._read_runner_result(task_id))

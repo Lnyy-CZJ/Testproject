@@ -1,0 +1,31 @@
+openapi: 3.0.3
+info:
+  title: Login API
+  version: 1.0.0
+servers:
+  - url: https://gateway.example.test
+paths:
+  /login/{tenant_id}:
+    post:
+      x-sla-ms: 1200
+      operationId: login
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username]
+              properties:
+                username: {type: string}
+      responses:
+        "200":
+          description: success
+        "401":
+          description: unauthorized

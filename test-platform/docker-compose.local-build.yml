@@ -1,0 +1,35 @@
+services:
+  functional-test-agent:
+    build:
+      context: ../functional-test-agent
+      dockerfile: Dockerfile
+      args:
+        APP_REVISION: ${FUNCTIONAL_AGENT_REVISION:-f1a6260}
+
+  api-test-agent:
+    build:
+      context: ../api-test-agent
+      dockerfile: Dockerfile.agent
+      args:
+        APP_REVISION: ${API_AGENT_REVISION:-f1a6260}
+
+  api-execution-controller:
+    build:
+      context: ../api-test-agent
+      dockerfile: Dockerfile.controller
+      args:
+        APP_REVISION: ${API_AGENT_REVISION:-f1a6260}
+
+  api-egress-proxy:
+    build:
+      context: ../api-test-agent
+      dockerfile: Dockerfile.egress
+      args:
+        APP_REVISION: ${API_AGENT_REVISION:-f1a6260}
+
+  api-test-executor-image:
+    build:
+      context: ../api-test-agent
+      dockerfile: Dockerfile.executor
+      args:
+        APP_REVISION: ${API_AGENT_REVISION:-f1a6260}

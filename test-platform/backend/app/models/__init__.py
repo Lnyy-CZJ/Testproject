@@ -25,6 +25,7 @@ from app.models.identity import (
     User,
     UserRole,
 )
+from app.models.llm import LlmProfile, ToolLlmBinding
 from app.models.tool import Tool
 
 __all__ = [
@@ -37,6 +38,7 @@ __all__ = [
     "CredentialItem",
     "Environment",
     "LoginThrottle",
+    "LlmProfile",
     "Permission",
     "PlatformSession",
     "Role",
@@ -45,6 +47,7 @@ __all__ = [
     "SecretVersion",
     "Tool",
     "ToolClient",
+    "ToolLlmBinding",
     "User",
     "UserRole",
 ]

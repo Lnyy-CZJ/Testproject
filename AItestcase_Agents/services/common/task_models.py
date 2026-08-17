@@ -54,6 +54,7 @@ class PublicTaskModel(BaseModel):
     project_name: str
     module_id: str
     module_name: str
+    title: str = ""
     environment: str
     created_at: str
     started_at: str | None = None
@@ -83,12 +84,48 @@ class PublicTaskModel(BaseModel):
     current_versions: dict[str, Any] = Field(default_factory=dict)
     completed_stages: list[str] = Field(default_factory=list)
     current_attempt_id: str | None = None
+    progress: dict[str, Any] = Field(default_factory=dict)
+    ui_capabilities: dict[str, bool] = Field(default_factory=dict)
+    test_point_count: int = 0
+    test_case_count: int = 0
+    test_point_review_version: int | None = None
+    test_case_review_version: int | None = None
+    token_usage: dict[str, Any] = Field(default_factory=dict)
 
 
 def public_task(record: dict[str, Any]) -> dict[str, Any]:
     """按显式模型移除 PID、路径和其他内部字段。"""
 
-    payload = PublicTaskModel.model_validate(record).model_dump()
+    source = dict(record)
+    raw_usage = source.get("token_usage") or {}
+    safe_stages = {}
+    for stage, usage in (raw_usage.get("stages") or {}).items():
+        if isinstance(stage, str) and isinstance(usage, dict):
+            safe_stages[stage[:64]] = {key: max(0, int(usage.get(key, 0) or 0)) for key in ("input_tokens", "output_tokens", "total_tokens", "calls", "reported_calls")}
+    source["token_usage"] = {"stages": safe_stages, "totals": {key: sum(value[key] for value in safe_stages.values()) for key in ("input_tokens", "output_tokens", "total_tokens")}}
+    source["title"] = str(source.get("title") or f"{source.get('project_name', '')} / {source.get('module_name', '')}").strip(" / ")
+    summary = source.get("result_summary") or {}
+    review = source.get("review") or {}
+    case_review = source.get("case_review") or {}
+    point_source = source.get("review_source") or {}
+    case_source = source.get("case_review_source") or {}
+    source["test_point_count"] = int(review.get("test_point_count") or point_source.get("test_point_count") or summary.get("test_point_count") or 0)
+    source["test_case_count"] = int(case_review.get("test_case_count") or case_source.get("test_case_count") or summary.get("test_case_count") or 0)
+    source["test_point_review_version"] = review.get("version")
+    source["test_case_review_version"] = case_review.get("version")
+    completed_items = source["test_case_count"] or source["test_point_count"]
+    source["progress"] = {
+        "stage": str(source.get("stage") or "queued"),
+        "completed_items": completed_items,
+        "total_items": None,
+    }
+    source["ui_capabilities"] = {
+        "workbench_v2": bool(source.get("workbench_v2_enabled", False)),
+        "mindmap_edit": bool(source.get("workbench_v2_enabled", False)),
+        "table_edit": bool(source.get("workbench_v2_enabled", False)),
+        "table_readonly": False,
+    }
+    payload = PublicTaskModel.model_validate(source).model_dump()
     # 嵌套 Review 元数据也执行字段白名单，避免相对路径逐步演变成公共协议。
     payload["review"] = {key: payload["review"].get(key) for key in ("version", "sha256", "confirmed_at", "test_point_count") if key in payload["review"]}
     payload["review_draft"] = {key: payload["review_draft"].get(key) for key in ("revision", "content_sha256", "saved_by_username", "saved_at") if key in payload["review_draft"]}

@@ -186,7 +186,7 @@
       "rule_id": "COST-001",
       "category": "cost",
       "severity": "P0",
-      "title": "分项成本与任务总成本一致",
+      "title": "分项、阶段与任务总成本一致",
       "required_evidence": ["GetSearchTaskDebug", "GetProviderCostSummary"]
     },
     {
@@ -280,7 +280,7 @@
       "file": "f01_public_figure_local_hit.log",
       "format": "gateway",
       "title": "Public Figure Local 命中：跳过 LLM、Wiki、PDL，成本为缓存不计费",
-      "expected_verdict": "NORMAL",
+      "expected_verdict": "INCOMPLETE_EVIDENCE",
       "expected_methods": [
         "CreateIntentTask",
         "GetTask",
@@ -293,6 +293,7 @@
         "STATE-001": "PASS",
         "STOP-001": "PASS",
         "CAND-001": "PASS",
+        "CAND-003": "UNKNOWN",
         "COST-001": "PASS",
         "COST-002": "PASS"
       }
@@ -302,7 +303,7 @@
       "file": "f02_wiki_unique_hit_skip_pdl.log",
       "format": "gateway",
       "title": "LLM 弱结果后 Wiki 唯一可靠命中：Wiki 在 PDL 前且 PDL 被跳过",
-      "expected_verdict": "NORMAL",
+      "expected_verdict": "INCOMPLETE_EVIDENCE",
       "expected_methods": [
         "CreateIntentTask",
         "GetTask",
@@ -316,6 +317,7 @@
         "LLM-001": "PASS",
         "STATE-001": "PASS",
         "CAND-001": "PASS",
+        "CAND-003": "UNKNOWN",
         "COST-001": "PASS",
         "STOP-001": "PASS"
       }
@@ -345,7 +347,7 @@
       "file": "f04_wiki_ambiguous_then_pdl_weak.log",
       "format": "gateway",
       "title": "Wiki 同名歧义后允许 PDL fallback；PDL 多个弱候选不解释为可靠命中",
-      "expected_verdict": "NORMAL",
+      "expected_verdict": "INCOMPLETE_EVIDENCE",
       "expected_methods": [
         "CreateIntentTask",
         "GetTask",
@@ -357,7 +359,8 @@
         "ROUTE-004": "PASS",
         "PDL-001": "PASS",
         "PDL-002": "PASS",
-        "CAND-002": "PASS",
+        "CAND-002": "UNKNOWN",
+        "CAND-003": "UNKNOWN",
         "STATE-001": "PASS"
       }
     },
@@ -366,7 +369,7 @@
       "file": "f05_llm_truncated.log",
       "format": "gateway",
       "title": "LLM 达到 max_tokens 截断：finish_reason、token、可恢复候选和重试诊断完整",
-      "expected_verdict": "NORMAL",
+      "expected_verdict": "INCOMPLETE_EVIDENCE",
       "expected_methods": [
         "CreateIntentTask",
         "GetTask",
@@ -377,6 +380,7 @@
       "expected_rules": {
         "LLM-001": "PASS",
         "LLM-002": "PASS",
+        "CAND-003": "UNKNOWN",
         "STATE-001": "PASS"
       }
     },
@@ -399,6 +403,7 @@
         "SOCIAL-002": "PASS",
         "SOCIAL-003": "PASS",
         "SOCIAL-004": "PASS",
+        "CAND-002": "PASS",
         "CAND-003": "PASS",
         "CAND-004": "PASS",
         "PDL-001": "PASS"
@@ -458,7 +463,7 @@
       ],
       "expected_rules": {
         "COST-001": "FAIL",
-        "COST-002": "PASS"
+        "COST-002": "UNKNOWN"
       }
     },
     {

@@ -25,8 +25,13 @@ from people_search_ai import (  # noqa: E402
     limit_evidence_packet,
     summarize_with_ai,
 )
+from people_search_analyzer import analyze_people_search_log  # noqa: E402
 from people_search_rules import (  # noqa: E402
     build_evidence_packet,
+    check_cost_consistency,
+    check_face_comparison_semantics,
+    check_reverse_image_route,
+    check_terminal_status,
     redact_for_ai,
     redact_for_response,
     render_rule_report,
@@ -117,6 +122,22 @@ class RouteOrderNoneStartTimeTests(unittest.TestCase):
         checks, _verdict, _warnings = run_all_checks(snapshot)
         route2 = next(c for c in checks if c["rule_id"] == "ROUTE-002")
         self.assertEqual(route2["outcome"], "FAIL")
+
+    def test_unknown_policy_downgrades_negative_cache_route_to_warn(self):
+        """缺少规则版本时，Local negative cache 只能判为待确认。"""
+        snapshot = _base_snapshot(
+            diagnosis={
+                "final_status": "SUCCEEDED",
+                "stop_reason": "MATCHED",
+                "public_figure_local": "negative_cache_hit",
+                "llm_search_call_count": 1,
+            },
+            timeline=[{"provider": "llm_search", "status": "success"}],
+        )
+        checks, _verdict, _warnings = run_all_checks(snapshot)
+        route1 = next(check for check in checks if check["rule_id"] == "ROUTE-001")
+        self.assertEqual(route1["outcome"], "WARN")
+        self.assertIn("policy_version", route1["actual"])
 
 
 class EvidencePacketRedactionTests(unittest.TestCase):
@@ -352,6 +373,168 @@ class SummarizeReturnPacketTests(unittest.TestCase):
         self.assertEqual(status["status"], "SUCCESS")
         self.assertIsNotNone(packet)
         self.assertEqual(len(calls), 1)
+
+
+class SnapshotContractCompletionTests(unittest.TestCase):
+    """补齐 PRD §6.2 的任务字段，并保留候选规则所需稳定标识。"""
+
+    def test_photo_and_client_request_fields_are_extracted(self):
+        fixture = Path(__file__).parent / "fixtures/people_search/f08_image_lens_vision_face_not_connected.log"
+        snapshot = analyze_people_search_log(fixture.read_text(encoding="utf-8"))["snapshot"]
+        self.assertEqual(snapshot["task"]["photo_count"], 1)
+        self.assertEqual(snapshot["task"]["client_request_id"], "crid_f08_0000000000000001")
+
+    def test_task_social_links_come_from_input_not_first_candidate(self):
+        fixture = Path(__file__).parent / "fixtures/people_search/f06_social_link_queue_dedupe.log"
+        snapshot = analyze_people_search_log(fixture.read_text(encoding="utf-8"))["snapshot"]
+        self.assertEqual(snapshot["task"]["social_links"], ["https://www.instagram.com/carol.fixture/"])
+
+    def test_candidate_projection_preserves_rule_fields(self):
+        log_text = """GetTask 响应数据: HTTP 200 elapsed_ms=1
+{"task_id":"t1","status":"SUCCEEDED","candidate_count":1,"top_confidence_score":90}
+ListTaskCandidates 响应数据: HTTP 200 elapsed_ms=1
+{"task_id":"t1","items":[{"candidate_id":"c1","person_id":"p1","wikidata_id":"Q1","canonical_url":"https://x.com/u","decision":"SELECTED","selected":true,"source_provider":"pdl","source_providers":["pdl","social_profile"],"match_score":90}]}
+{"debug":{"task_id":"t1","policy_version":"people_image_v1","agent_tool_calls":[],"diagnosis":{"final_status":"SUCCEEDED","stop_reason":"MATCHED"}}}
+"""
+        candidate = analyze_people_search_log(log_text)["snapshot"]["candidates"][0]
+        self.assertEqual(candidate["wikidata_id"], "Q1")
+        self.assertEqual(candidate["canonical_url"], "https://x.com/u")
+        self.assertTrue(candidate["selected"])
+        self.assertEqual(candidate["source_providers"], ["pdl", "social_profile"])
+
+
+class RealSchemaCompatibilityTests(unittest.TestCase):
+    """真实 QueryChainLogger 字段必须与夹具旧字段得到一致的业务语义。"""
+
+    def test_real_log_recognizes_llm_pdl_and_social_merge(self):
+        log_path = Path(__file__).parent.parent / "peoplesearch_logs/2026-08-11_124423_Walter_Lau.log"
+        result = analyze_people_search_log(log_path.read_text(encoding="utf-8"))
+        checks, _verdict, _warnings = run_all_checks(result["snapshot"])
+        by_id = {check["rule_id"]: check for check in checks}
+        self.assertNotEqual(by_id["LLM-001"]["outcome"], "NOT_APPLICABLE")
+        self.assertEqual(by_id["PDL-001"]["outcome"], "PASS")
+        self.assertEqual(by_id["SOCIAL-003"]["outcome"], "PASS")
+        self.assertEqual(by_id["SOCIAL-004"]["outcome"], "PASS")
+
+
+class EvidenceVerdictRegressionTests(unittest.TestCase):
+    """关键证据缺失或来源被截断时不得返回 NORMAL。"""
+
+    def test_missing_candidate_detail_makes_candidate_comparison_unknown(self):
+        fixture = Path(__file__).parent / "fixtures/people_search/f01_public_figure_local_hit.log"
+        result = analyze_people_search_log(fixture.read_text(encoding="utf-8"))
+        checks, verdict, _warnings = run_all_checks(result["snapshot"])
+        cand3 = next(check for check in checks if check["rule_id"] == "CAND-003")
+        self.assertEqual(cand3["outcome"], "UNKNOWN")
+        self.assertEqual(verdict, "INCOMPLETE_EVIDENCE")
+
+    def test_source_truncated_never_returns_normal(self):
+        snapshot = _base_snapshot()
+        snapshot["coverage"]["source_truncated"] = True
+        _checks, verdict, _warnings = run_all_checks(snapshot)
+        self.assertEqual(verdict, "INCOMPLETE_EVIDENCE")
+
+
+class RuleSemanticRegressionTests(unittest.TestCase):
+    """覆盖图片、人脸、缓存与多币种规则的确定性语义。"""
+
+    def test_image_not_planned_requires_skip_reason(self):
+        fixture = Path(__file__).parent / "fixtures/people_search/f08_image_lens_vision_face_not_connected.log"
+        snapshot = analyze_people_search_log(fixture.read_text(encoding="utf-8"))["snapshot"]
+        snapshot["timeline"] = []
+        snapshot["diagnosis"]["reverse_image"] = {"planned": False}
+        image1 = next(check for check in check_reverse_image_route(snapshot) if check["rule_id"] == "IMAGE-001")
+        self.assertEqual(image1["outcome"], "FAIL")
+
+    def test_face_mismatch_conflicts_with_not_performed(self):
+        fixture = Path(__file__).parent / "fixtures/people_search/f08_image_lens_vision_face_not_connected.log"
+        snapshot = analyze_people_search_log(fixture.read_text(encoding="utf-8"))["snapshot"]
+        snapshot["candidate_details"] = [{"face_comparison": {"status": "mismatch", "score": 0}}]
+        face = check_face_comparison_semantics(snapshot)[0]
+        self.assertEqual(face["outcome"], "FAIL")
+
+    def test_cache_hit_with_nonzero_cost_fails(self):
+        snapshot = _base_snapshot(
+            coverage={"debug": True, "cost_summary": True},
+            cost={"total_estimated_cost_microunit": 10, "items": [
+                {"provider": "p", "cost_status": "CALCULATED", "cache_hit": 1,
+                 "estimated_cost_microunit": 10},
+            ]},
+            debug={"agent_tool_calls": [
+                {"provider": "p", "status": "success", "cache_hit": True,
+                 "cost_status": "CALCULATED"},
+            ]},
+        )
+        cost2 = next(check for check in check_cost_consistency(snapshot) if check["rule_id"] == "COST-002")
+        self.assertEqual(cost2["outcome"], "FAIL")
+
+    def test_multi_currency_cost_is_unknown(self):
+        snapshot = _base_snapshot(
+            coverage={"debug": True, "cost_summary": True},
+            cost={"totals": [
+                {"currency": "USD", "total_cost_microunit": "10"},
+                {"currency": "EUR", "total_cost_microunit": "20"},
+            ], "calls": [{"estimated_cost_microunit": 30}]},
+        )
+        cost1 = next(check for check in check_cost_consistency(snapshot) if check["rule_id"] == "COST-001")
+        self.assertEqual(cost1["outcome"], "UNKNOWN")
+
+
+class RichChainAnalysisRegressionTests(unittest.TestCase):
+    """同一日志应展示 Provider 业务结果，并识别业务终态与阶段成本矛盾。"""
+
+    def test_zero_candidate_exhausted_task_cannot_be_succeeded(self):
+        snapshot = _base_snapshot(
+            task={"task_id": "t1", "final_status": "SUCCEEDED", "candidate_count": 0},
+            get_task_data={
+                "status": "SUCCEEDED", "candidate_count": 0,
+                "result_type": "none", "no_result_reason": "",
+            },
+            diagnosis={
+                "final_status": "SUCCEEDED",
+                "stop_reason": "PROVIDERS_EXHAUSTED_NO_MATCH",
+                "status_consistent": True,
+            },
+        )
+        state = check_terminal_status(snapshot)[0]
+        self.assertEqual(state["outcome"], "FAIL")
+        self.assertIn("NO_RESULT", state["expected"])
+
+    def test_real_provider_summary_drives_pdl_and_image_rules(self):
+        log_text = """CreateIntentTask 脱敏请求数据: attempt=1
+{"clues":[{"type":"FULL_NAME","full_name_query":{"full_name":"Sabrena Jo"}},{"type":"PHOTO","photo_query":{"photo_url":"https://image.example/a.jpg"}}]}
+GetTask 响应数据: HTTP 200 elapsed_ms=1
+{"task_id":"t1","status":"SUCCEEDED","candidate_count":0,"top_confidence_score":0,"result_type":"none","no_result_reason":""}
+ListTaskCandidates 响应数据: HTTP 200 elapsed_ms=1
+{"task_id":"t1","items":[]}
+GetSearchTaskDebug 响应数据: HTTP 200 elapsed_ms=1
+{"debug":{"task_id":"t1","agent_tool_calls":[
+{"provider":"llm_search:deepseek","provider_operation":"chat_completions/model","status":"no_result","start_time":"2026-08-10T08:00:00Z","estimated_cost_microunit":162,"cost_status":"CALCULATED","response_summary":{"no_result_reason":"NO_MATCH","output_status":"LLM_OUTPUT_COMPLETE","finish_reason":"stop","total_tokens":1053}},
+{"provider":"people_data_labs","provider_operation":"request","status":"no_result","start_time":"2026-08-10T08:00:01Z","response_summary":{"no_result_reason":"NO_MATCH","pdl_identify_call_count":0,"pdl_person_search_call_count":1,"pdl_person_search_returned_profile_count":0,"pdl_usable_candidate_count":0}},
+{"provider":"searchapi_google_lens","provider_operation":"google_lens_search","status":"no_result","start_time":"2026-08-10T08:00:02Z","response_summary":{"no_result_reason":"NO_IMAGE_MATCH"}},
+{"provider":"google_vision","provider_operation":"web_detection","status":"no_result","start_time":"2026-08-10T08:00:03Z","response_summary":{"no_result_reason":"NO_IMAGE_MATCH"}}
+],"diagnosis":{"final_status":"SUCCEEDED","stop_reason":"PROVIDERS_EXHAUSTED_NO_MATCH","pdl_identify_call_count":0,"pdl_person_search_call_count":1,"reverse_image_primary_provider":"searchapi_google_lens","reverse_image_final_provider":"google_vision","reverse_image_fallback_used":true,"reverse_image_status":"NO_RESULT","reverse_image_stop_reason":"NO_PUBLIC_MATCH","pre_pdl_estimated_cost_microunit":0}}}
+GetProviderCostSummary 响应数据: HTTP 200 elapsed_ms=1
+{"task_id":"t1","cost_summary":{"total_estimated_cost_microunit":162,"items":[{"provider":"llm_search:deepseek","estimated_cost_microunit":162,"cost_status":"CALCULATED"}]}}
+"""
+        result = analyze_people_search_log(log_text)
+        checks, _verdict, _warnings = run_all_checks(result["snapshot"])
+        by_id = {check["rule_id"]: check for check in checks}
+        self.assertEqual(by_id["PDL-001"]["outcome"], "PASS")
+        self.assertEqual(by_id["IMAGE-001"]["outcome"], "PASS")
+        self.assertEqual(by_id["IMAGE-002"]["outcome"], "PASS")
+        self.assertEqual(by_id["COST-001"]["outcome"], "FAIL")
+
+        llm_call = result["snapshot"]["timeline"][0]
+        self.assertEqual(llm_call["no_result_reason"], "NO_MATCH")
+        self.assertEqual(llm_call["result_details"]["output_status"], "LLM_OUTPUT_COMPLETE")
+        report = render_rule_report(result)
+        self.assertIn("NO_IMAGE_MATCH", report)
+        self.assertIn("LLM_OUTPUT_COMPLETE", report)
+
+        packet = build_evidence_packet(result)
+        self.assertEqual(packet["diagnosis_summary"]["reverse_image_status"], "NO_RESULT")
+        self.assertEqual(packet["diagnosis_summary"]["pre_pdl_estimated_cost_microunit"], 0)
 
 
 if __name__ == "__main__":

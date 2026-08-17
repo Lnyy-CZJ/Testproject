@@ -1,0 +1,16 @@
+# 仅 Controller 持有 Docker Socket；Web、Egress 与 Executor 不使用本镜像。
+FROM python:3.12-slim
+
+ARG APP_REVISION=unknown
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    APP_REVISION=${APP_REVISION}
+WORKDIR /app
+COPY requirements-controller.lock ./
+RUN pip install --no-cache-dir -r requirements-controller.lock \
+    && useradd --create-home --uid 10004 controller
+COPY --chown=controller:controller services/__init__.py ./services/__init__.py
+COPY --chown=controller:controller services/execution_controller ./services/execution_controller
+USER controller
+EXPOSE 5010
+CMD ["gunicorn", "services.execution_controller.app:create_app()", "--bind", "0.0.0.0:5010", "--workers", "1", "--threads", "4", "--access-logfile", "-", "--error-logfile", "-"]

@@ -1,11 +1,13 @@
 from datetime import datetime
 
 import httpx
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import event
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.core.config import Settings
 from app.db.session import get_db
 from app.main import app
 from app.models.tool import Tool
@@ -51,10 +53,24 @@ def test_live_and_ready(client: TestClient) -> None:
     assert client.get("/api/v1/health/live").json() == {
         "service": "platform-api",
         "status": "ok",
+        "version": "1.01.000",
     }
     ready_response = client.get("/api/v1/health/ready")
     assert ready_response.status_code == 200
-    assert ready_response.json() == {"service": "platform-api", "status": "ready"}
+    assert ready_response.json() == {
+        "service": "platform-api",
+        "status": "ready",
+        "version": "1.01.000",
+    }
+
+
+def test_platform_version_rejects_invalid_format(tmp_path) -> None:
+    """验证错误位数的版本不会进入健康接口或发布产物。"""
+
+    version_file = tmp_path / "VERSION"
+    version_file.write_text("1.0.0\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="平台版本必须符合"):
+        Settings(platform_version_file=str(version_file)).read_platform_version()
 
 
 def test_tools_are_sorted_and_disabled_items_are_hidden(

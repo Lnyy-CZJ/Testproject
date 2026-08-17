@@ -1,6 +1,8 @@
 import type { PropsWithChildren } from "react";
 import { NavLink } from "react-router-dom";
 
+import { useToolCatalog } from "../context/ToolCatalogContext";
+import { domainMeta, domainOrder } from "../data/capabilityCatalog";
 import type { AuthState } from "../types/platform";
 
 /** 提供统一的桌面工程工作台页头、权限导航、环境上下文和页脚。 */
@@ -17,6 +19,16 @@ export function AppShell({
   onLogout?: () => void;
 }>) {
   const has = (permission: string) => auth?.platform_permissions.includes(permission);
+  const { groups, loading, error } = useToolCatalog();
+  const managementPath = has("platform.user.manage")
+    ? "/admin/users"
+    : has("platform.role.manage")
+      ? "/admin/roles"
+      : has("platform.llm.manage") || has("platform.llm.secret.manage")
+        ? "/settings/llm"
+        : has("platform.config.manage") || has("platform.secret.manage")
+          ? "/settings/config"
+          : has("platform.audit.view") ? "/audit" : null;
 
   return (
     <>
@@ -28,15 +40,10 @@ export function AppShell({
           </NavLink>
           {auth && (
             <nav className="primary-nav" aria-label="主导航">
-              <NavLink to="/" end>概览</NavLink>
-              <NavLink to="/#tools">工具</NavLink>
-              {(has("platform.config.manage") || has("platform.secret.manage")) && (
-                <NavLink to="/settings/config">配置</NavLink>
-              )}
-              {(has("platform.user.manage") || has("platform.role.manage")) && (
-                <NavLink to="/admin/users">权限</NavLink>
-              )}
-              {has("platform.audit.view") && <NavLink to="/audit">审计</NavLink>}
+              <NavLink to="/" end>工作台</NavLink>
+              {!loading && !error && domainOrder.map((domainId) => groups[domainId].length > 0 && (
+                <NavLink key={domainId} to={`/${domainId}`}>{domainMeta[domainId].title}</NavLink>
+              ))}
             </nav>
           )}
           {auth && (
@@ -55,6 +62,7 @@ export function AppShell({
                 </label>
               )}
               <NavLink className="current-user" to="/account">{auth.user.display_name}</NavLink>
+              {managementPath && <NavLink className="management-link" to={managementPath}>平台管理</NavLink>}
               <button className="text-button" type="button" onClick={onLogout}>退出</button>
             </div>
           )}
@@ -63,7 +71,7 @@ export function AppShell({
       <main>{children}</main>
       <footer>
         <span>测试开发平台</span>
-        <span>工具独立运行，平台统一身份与配置</span>
+        <span>能力独立运行，平台统一身份、权限与配置</span>
       </footer>
     </>
   );

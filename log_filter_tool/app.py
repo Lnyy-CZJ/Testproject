@@ -601,10 +601,12 @@ def create_app(base_path=None):
             data = {
                 "analyzer_version": ANALYZER_VERSION,
                 "ruleset_version": RULESET_VERSION,
+                "policy_version": snapshot.get("policy_version"),
                 "verdict": verdict,
                 "task": snapshot["task"],
                 "coverage": snapshot["coverage"],
                 "timeline": snapshot["timeline"],
+                "diagnosis": redact_for_response(snapshot["diagnosis"]),
                 "checks": redact_for_response(checks),
                 "cost": snapshot["cost"],
                 "ai": ai_status,

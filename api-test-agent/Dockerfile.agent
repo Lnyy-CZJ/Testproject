@@ -1,0 +1,16 @@
+# 单 worker 保证 API 服务只有一个持久化队列调度器。
+FROM python:3.12-slim
+
+ARG APP_REVISION=unknown
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    APP_REVISION=${APP_REVISION}
+WORKDIR /app
+COPY requirements-agent.lock ./
+RUN pip install --no-cache-dir -r requirements-agent.lock \
+    && useradd --create-home --uid 10002 agent
+COPY --chown=agent:agent . .
+RUN mkdir -p /app/runtime/api && chown -R agent:agent /app/runtime/api
+USER agent
+EXPOSE 5005
+CMD ["gunicorn", "services.api_agent.app:create_app()", "--bind", "0.0.0.0:5005", "--workers", "1", "--threads", "8", "--access-logfile", "-", "--error-logfile", "-"]

@@ -51,7 +51,7 @@ class AnalyzeEndpointTests(unittest.TestCase):
         self.assertEqual(data["ai"], {"status": "DISABLED"})
         self.assertNotIn("model", data["ai"])
         # 结构化字段齐全
-        for field in ("task", "coverage", "timeline", "checks", "cost"):
+        for field in ("task", "coverage", "timeline", "diagnosis", "checks", "cost"):
             self.assertIn(field, data)
         self.assertIsInstance(data["checks"], list)
         self.assertEqual(len(data["checks"]), 24)
@@ -235,6 +235,13 @@ class PageRenderingTests(unittest.TestCase):
         self.assertIn('id="people-search-analysis"', html)
         self.assertIn('id="people-search-report"', html)
         self.assertIn('id="people-search-status"', html)
+        self.assertIn('id="people-verdict-panel"', html)
+        self.assertIn('id="people-ai-status"', html)
+        self.assertIn('id="people-coverage-list"', html)
+        self.assertIn('id="people-issue-list"', html)
+        self.assertIn('id="people-diagnosis-list"', html)
+        self.assertIn('id="people-timeline"', html)
+        self.assertIn('id="people-cost-summary"', html)
         # 复制与导出
         self.assertIn('id="copy-report-btn"', html)
         self.assertIn('id="export-report-btn"', html)
@@ -246,6 +253,10 @@ class PageRenderingTests(unittest.TestCase):
         self.assertIn("function exportReport()", html)
         # 使用 textContent 写入报告，不渲染任意 HTML
         self.assertIn("reportEl.textContent", html)
+        self.assertIn("function renderPeopleSearchAnalysis(data)", html)
+        # method 自定义选择器必须可由键盘操作并暴露展开状态。
+        self.assertIn('aria-expanded="false"', html)
+        self.assertIn("e.key === 'Enter' || e.key === ' '", html)
         # 导出复用 /export 且传 analysis_report
         self.assertIn("exportLog('analysis_report'", html)
 

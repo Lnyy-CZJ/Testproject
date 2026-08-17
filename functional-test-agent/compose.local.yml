@@ -1,0 +1,29 @@
+services:
+  functional-test-agent:
+    build:
+      context: .
+      args:
+        APP_REVISION: ${FUNCTIONAL_AGENT_REVISION:-local}
+    image: ${FUNCTIONAL_AGENT_IMAGE:-functional-test-agent:0.1.0-local}
+    user: "10001:10001"
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid
+    environment:
+      AGENT_DATA_DIR: /data
+      AGENT_WEB_PORT: "5004"
+      AGENT_TOOL_ID: functional-test-agent
+      AGENT_BASE_PATH: /functional-test-agent
+      PLATFORM_RUNTIME_ENV: ${PLATFORM_RUNTIME_ENV:-dev}
+      PLATFORM_API_URL: ${PLATFORM_API_URL:-http://host.docker.internal:8000/api/v1}
+      PLATFORM_CLIENT_TOKEN_FILE: /run/secrets/platform-client-token
+    volumes:
+      - ./runtime/${PLATFORM_RUNTIME_ENV:-dev}/functional:/data
+      - ${FUNCTIONAL_PLATFORM_CLIENT_TOKEN_FILE:-./secrets/dev/platform-client-token}:/run/secrets/platform-client-token:ro
+    ports:
+      - "5004:5004"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5004/health', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 5

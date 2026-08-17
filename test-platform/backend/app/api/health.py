@@ -3,6 +3,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.db.session import get_db
 from app.schemas.health import ServiceHealthResponse
 
@@ -19,7 +20,7 @@ def live() -> ServiceHealthResponse:
         ServiceHealthResponse: 固定的进程存活响应，不访问数据库。
     """
 
-    return ServiceHealthResponse(status="ok")
+    return ServiceHealthResponse(status="ok", version=get_settings().read_platform_version())
 
 
 @router.get("/ready", response_model=ServiceHealthResponse)
@@ -39,4 +40,4 @@ def ready(database: Session = Depends(get_db)) -> ServiceHealthResponse:
         database.execute(text("SELECT 1"))
     except SQLAlchemyError as exc:
         raise HTTPException(status_code=503, detail="平台数据库暂时不可用") from exc
-    return ServiceHealthResponse(status="ready")
+    return ServiceHealthResponse(status="ready", version=get_settings().read_platform_version())

@@ -22,6 +22,7 @@ from app.models.configuration import (
     Secret,
     SecretVersion,
 )
+from app.models.llm import ToolLlmBinding
 from app.schemas.auth import MessageResponse
 from app.schemas.configuration import (
     ConfigDefinitionResponse,
@@ -47,6 +48,14 @@ def _can_manage_config(database: Session, context: AuthContext, owner_type: str,
 
     if owner_type == "platform":
         return has_platform_permission(database, context.user.id, "platform.config.manage")
+    if owner_type == "llm_profile":
+        return has_platform_permission(database, context.user.id, "platform.llm.manage")
+    if owner_type == "llm_binding":
+        binding = database.get(ToolLlmBinding, owner_id)
+        return binding is not None and (
+            has_platform_permission(database, context.user.id, "platform.llm.manage")
+            or has_tool_permission(database, context.user.id, "tool.config.manage", binding.tool_id)
+        )
     return has_tool_permission(database, context.user.id, "tool.config.manage", owner_id)
 
 
@@ -55,6 +64,14 @@ def _can_manage_secret(database: Session, context: AuthContext, owner_type: str,
 
     if owner_type == "platform":
         return has_platform_permission(database, context.user.id, "platform.secret.manage")
+    if owner_type == "llm_profile":
+        return has_platform_permission(database, context.user.id, "platform.llm.secret.manage")
+    if owner_type == "llm_binding":
+        binding = database.get(ToolLlmBinding, owner_id)
+        return binding is not None and (
+            has_platform_permission(database, context.user.id, "platform.llm.secret.manage")
+            or has_tool_permission(database, context.user.id, "tool.secret.manage", binding.tool_id)
+        )
     return has_tool_permission(database, context.user.id, "tool.secret.manage", owner_id)
 
 
@@ -284,6 +301,9 @@ def _validate_release(database: Session, row: ConfigRelease) -> None:
                 raise PlatformError(422, "CONFIG_VALIDATION_FAILED", f"缺少 Secret：{definition.display_name}")
         elif definition.id not in items and definition.default_value is None:
             raise PlatformError(422, "CONFIG_VALIDATION_FAILED", f"缺少配置：{definition.display_name}")
+    if row.owner_type in {"llm_profile", "llm_binding"}:
+        from app.services.llm import validate_llm_release
+        validate_llm_release(database, row)
 
 
 def _freeze_secret_versions(database: Session, row: ConfigRelease) -> None:

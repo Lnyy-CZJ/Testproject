@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-08-17T02:40:03.131151+00:00",
+  "workspace": "/Users/admin/Testproject",
+  "source_root": "/Users/admin/Testproject/AItestcase_Agents",
+  "git_head": "f1a6260d44a99eb4f291ab422bd2776f4c17148c",
+  "reserved_tag": "ai-agents-split-baseline-20260817",
+  "tag_created": false,
+  "git_status": [
+    " M AItestcase_Agents/services/common/case_review.py",
+    " M AItestcase_Agents/services/common/review.py",
+    " M AItestcase_Agents/services/common/static/agent-workbench.js",
+    " M AItestcase_Agents/services/common/static/case-review-workbench.js",
+    " M AItestcase_Agents/services/common/static/review-workbench.js",
+    " M AItestcase_Agents/services/common/task_models.py",
+    " M AItestcase_Agents/services/common/templates/base.html",
+    " M AItestcase_Agents/services/common/templates/index.html",
+    " M AItestcase_Agents/services/common/templates/task_detail.html",
+    " M AItestcase_Agents/services/common/versioned_review.py",
+    " M AItestcase_Agents/services/common/web.py",
+    " M AItestcase_Agents/tests/services/test_web_routes.py",
+    " M log_filter_tool/app.py",
+    " M \"log_filter_tool/docs/V4_People_Insight_\\346\\243\\200\\347\\264\\242\\346\\227\\245\\345\\277\\227\\345\\210\\206\\346\\236\\220_\\345\\274\\200\\345\\217\\221\\350\\256\\276\\350\\256\\241\\344\\270\\216\\350\\256\\241\\345\\210\\222.md\"",
+    " M log_filter_tool/people_search_ai.py",
+    " M log_filter_tool/people_search_analyzer.py",
+    " M log_filter_tool/people_search_rules.py",
+    " M log_filter_tool/skills/people-search-log-analyzer/SKILL.md",
+    " M log_filter_tool/templates/index.html",
+    " M log_filter_tool/tests/fixtures/people_search/contracts.json",
+    " M log_filter_tool/tests/test_people_search_phase0.py",
+    " M log_filter_tool/tests/test_people_search_phase2.py",
+    " M log_filter_tool/tests/test_people_search_phase3.py",
+    " M log_filter_tool/tests/test_people_search_phase4.py",
+    " M log_filter_tool/tests/test_people_search_review_fixes.py",
+    " M test-platform/README.md",
+    " M test-platform/backend/tests/test_migrations.py",
+    " M test-platform/docker-compose.yml",
+    "?? AItestcase_Agents/services/common/static/functional-workbench-v2.css",
+    "?? AItestcase_Agents/services/common/static/functional-workbench-v2.mjs",
+    "?? AItestcase_Agents/services/common/static/mindmap-domain.mjs",
+    "?? AItestcase_Agents/services/common/static/mindmap-view.mjs",
+    "?? AItestcase_Agents/services/common/static/vendor/",
+    "?? AItestcase_Agents/tests/ui/",
+    "?? design-qa.md",
+    "?? test-platform/backend/alembic/versions/20260816_0014_add_functional_workbench_v2.py",
+    "?? \"test-platform/docs/\\344\\270\\244\\344\\270\\252AI\\346\\265\\213\\350\\257\\225\\346\\231\\272\\350\\203\\275\\344\\275\\223\\346\\272\\220\\347\\240\\201\\347\\211\\251\\347\\220\\206\\346\\213\\206\\345\\210\\206\\344\\270\\216\\347\\213\\254\\347\\253\\213\\345\\217\\221\\345\\270\\203_PRD.md\"",
+    "?? \"test-platform/docs/\\344\\270\\244\\344\\270\\252AI\\346\\265\\213\\350\\257\\225\\346\\231\\272\\350\\203\\275\\344\\275\\223\\346\\272\\220\\347\\240\\201\\347\\211\\251\\347\\220\\206\\346\\213\\206\\345\\210\\206\\344\\270\\216\\347\\213\\254\\347\\253\\213\\345\\217\\221\\345\\270\\203_\\345\\274\\200\\345\\217\\221\\350\\256\\276\\350\\256\\241\\344\\270\\216\\350\\256\\241\\345\\210\\222.md\"",
+    "?? \"test-platform/docs/\\345\\212\\237\\350\\203\\275\\346\\265\\213\\350\\257\\225\\346\\231\\272\\350\\203\\275\\344\\275\\223\\350\\204\\221\\345\\233\\276Review\\344\\270\\216\\344\\273\\273\\345\\212\\241\\345\\267\\245\\344\\275\\234\\345\\217\\260\\346\\224\\271\\350\\277\\233_PRD.md\"",
+    "?? \"test-platform/docs/\\345\\212\\237\\350\\203\\275\\346\\265\\213\\350\\257\\225\\346\\231\\272\\350\\203\\275\\344\\275\\223\\350\\204\\221\\345\\233\\276Review\\344\\270\\216\\344\\273\\273\\345\\212\\241\\345\\267\\245\\344\\275\\234\\345\\217\\260\\346\\224\\271\\350\\277\\233_\\345\\274\\200\\345\\217\\221\\350\\256\\276\\350\\256\\241\\344\\270\\216\\350\\256\\241\\345\\210\\222.md\""
+  ],
+  "tests": {
+    "agents_pytest": "115 passed",
+    "functional_ui_node": "8 passed",
+    "platform_backend_pytest": "17 passed with 1 existing deprecation warning",
+    "platform_frontend": "9 passed; production build passed",
+    "platform_compose_config": "passed",
+    "platform_nginx": "passed",
+    "platform_runtime_smoke": "blocked: local administrator login returned 401; credentials were not reset"
+  },
+  "protected_trees": {
+    "historical_output": {
+      "file_count": 202,
+      "total_bytes": 2643528,
+      "tree_sha256": "032a5c4a012abd4fe0597ae3298c4131079cb1565d026ca5cb53678c9f911412"
+    },
+    "functional_runtime": {
+      "file_count": 74,
+      "total_bytes": 845624,
+      "tree_sha256": "67d271ba0c2f3cc1f99ac35fdddbd04a35f2796b89d05cd12dea6486d77c92c1"
+    },
+    "api_runtime": {
+      "file_count": 69,
+      "total_bytes": 210836,
+      "tree_sha256": "4d5625551f6e0148c178751576e4c3021c64824effec306856945f06a0dbdec4"
+    }
+  },
+  "security_defaults": {
+    "API_EXECUTION_ENABLED": false,
+    "DATABASE_PERSIST_ENABLED": false,
+    "ALLOWED_TARGETS": []
+  }
+}

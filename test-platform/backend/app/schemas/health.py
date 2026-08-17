@@ -8,3 +8,4 @@ class ServiceHealthResponse(BaseModel):
 
     service: Literal["platform-api"] = "platform-api"
     status: Literal["ok", "ready"]
+    version: str

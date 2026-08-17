@@ -128,3 +128,40 @@ export interface AuditEvent {
   request_id: string | null;
   detail: string;
 }
+
+export interface LlmProfile {
+  id: string;
+  name: string;
+  description: string;
+  protocol: string;
+  is_archived: boolean;
+  environment_id: string;
+  active_release_id: string | null;
+  active_release_version: number | null;
+  api_key_configured: boolean;
+  binding_count: number;
+}
+
+export interface LlmBinding {
+  id: string;
+  tool_id: string;
+  capability_key: string;
+  display_name: string;
+  description: string;
+  environment_id: string;
+  active_release_id: string | null;
+  active_release_version: number | null;
+  profile_id: string | null;
+  enabled: boolean | null;
+  api_key_override_configured: boolean;
+}
+
+export interface LlmEffectiveConfig {
+  status: string;
+  binding_id: string;
+  profile_name: string;
+  model: string;
+  base_url: string;
+  snapshot_id: string;
+  api_key_configured: boolean;
+}

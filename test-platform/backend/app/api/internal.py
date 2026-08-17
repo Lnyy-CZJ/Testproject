@@ -43,6 +43,7 @@ from app.services.secret_store import (
     load_secret_cipher,
     replace_secret,
 )
+from app.services.llm import resolve_llm_snapshot
 
 
 router = APIRouter(prefix="/internal", tags=["internal"])
@@ -118,6 +119,7 @@ def runtime_config(
     settings: Annotated[Settings, Depends(get_settings)],
     response: Response,
     include_secrets: bool = True,
+    llm_capability: str | None = None,
 ) -> RuntimeConfigResponse:
     """返回工具/环境绑定的配置快照。
 
@@ -225,6 +227,14 @@ def runtime_config(
     context.client.last_used_at = datetime.now(UTC)
     database.commit()
     response.headers["Cache-Control"] = "no-store"
+    llm_snapshot = None
+    if llm_capability:
+        llm_snapshot = resolve_llm_snapshot(
+            database, settings, environment_id, tool_id, llm_capability,
+            include_secrets=include_secrets,
+        )
+        if include_secrets:
+            configured_secret_keys.add("LLM_API_KEY")
     return RuntimeConfigResponse(
         tool_id=tool_id,
         environment=environment_id,
@@ -234,6 +244,7 @@ def runtime_config(
         secrets=secret_values,
         credential_metadata=metadata,
         configured_secret_keys=sorted(configured_secret_keys),
+        llm=llm_snapshot,
     )
 
 

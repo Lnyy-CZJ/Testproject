@@ -118,7 +118,6 @@ class AIConfigTests(unittest.TestCase):
         with NamedTemporaryFile("w", suffix=".key", delete=False, encoding="utf-8") as f:
             f.write("secret-api-key\n")
             key_path = f.name
-
         try:
             cfg = load_ai_config(environ={
                 "PEOPLE_SEARCH_ANALYZER_AI_ENABLED": "true",
@@ -136,6 +135,47 @@ class AIConfigTests(unittest.TestCase):
         self.assertEqual(cfg.timeout_seconds, 20)
         self.assertEqual(cfg.max_evidence_bytes, 512 * 1024)
 
+    def test_platform_source_reads_one_snapshot_without_env_fallback(self):
+        """平台模式只使用内部快照，并保留日志工具的显式参数。"""
+        with NamedTemporaryFile("w", delete=False, encoding="utf-8") as token_file:
+            token_file.write("t" * 40)
+            token_path = token_file.name
+        opener = RecordingURLOpen(body_json={
+            "tool_id": "log-filter", "environment": "dev",
+            "llm": {
+                "status": "ready", "base_url": "https://example.com/v1",
+                "model": "shared-model", "api_key": "platform-key",
+                "temperature": 0.1, "max_tokens": 3400, "timeout_seconds": 28,
+                "snapshot_id": "llms_test", "profile_release_id": "rel_p",
+                "binding_release_id": "rel_b",
+            },
+        })
+        cfg = load_ai_config(environ={
+            "LOG_FILTER_LLM_CONFIG_SOURCE": "platform",
+            "PLATFORM_API_URL": "http://platform-api:8000/api/v1",
+            "PLATFORM_CLIENT_TOKEN_FILE": token_path,
+            "PLATFORM_RUNTIME_ENV": "dev",
+            "PEOPLE_SEARCH_ANALYZER_AI_ENABLED": "true",
+            "PEOPLE_SEARCH_ANALYZER_LLM_MODEL": "must-not-be-used",
+        }, _urlopen=opener)
+        self.assertTrue(cfg.callable)
+        self.assertEqual(cfg.model, "shared-model")
+        self.assertEqual(cfg.endpoint, "https://example.com/v1/chat/completions")
+        self.assertEqual((cfg.temperature, cfg.max_tokens, cfg.timeout_seconds), (0.1, 3400, 28))
+        self.assertEqual(cfg.snapshot_id, "llms_test")
+
+    def test_platform_source_failure_never_falls_back_to_env_key(self):
+        """平台身份或配置失败时返回稳定错误，不能静默使用旧 Secret。"""
+        cfg = load_ai_config(environ={
+            "LOG_FILTER_LLM_CONFIG_SOURCE": "platform",
+            "PEOPLE_SEARCH_ANALYZER_AI_ENABLED": "true",
+            "PEOPLE_SEARCH_ANALYZER_LLM_ENDPOINT": "https://legacy.example/v1/chat/completions",
+            "PEOPLE_SEARCH_ANALYZER_LLM_MODEL": "legacy-model",
+            "PEOPLE_SEARCH_ANALYZER_LLM_API_KEY_FILE": "/legacy/key",
+        })
+        self.assertFalse(cfg.callable)
+        self.assertEqual(cfg.config_error_code, "LLM_CONFIG_UNAVAILABLE")
+
 
 class SkillLoadingTests(unittest.TestCase):
     def test_skill_strips_frontmatter_and_keeps_body(self):
@@ -150,6 +190,7 @@ class SkillLoadingTests(unittest.TestCase):
         self.assertIn("日志不足，无法判断", skill)
         self.assertIn("face_comparison_status=not_performed 不等于相似度 0%", skill)
         self.assertIn("不新增「已确认异常」", skill)
+        self.assertIn("不得把 microunit 换算", skill)
 
 
 # ---------------------------------------------------------------------------
@@ -183,7 +224,7 @@ class CallLLMDegradationTests(unittest.TestCase):
         payload = json.loads(opener.last_request.data)
         self.assertEqual(payload["model"], "m")
         self.assertEqual(payload["temperature"], 0.1)
-        self.assertEqual(payload["max_tokens"], 2000)
+        self.assertEqual(payload["max_tokens"], 3400)
         messages = payload["messages"]
         self.assertEqual(messages[0]["role"], "system")
         self.assertEqual(messages[0]["content"], "INST")
@@ -227,6 +268,19 @@ class CallLLMDegradationTests(unittest.TestCase):
         self.assertIsNone(content)
         self.assertEqual(status["status"], "FAILED")
         self.assertEqual(status["error_code"], "INVALID_RESPONSE")
+
+    def test_length_truncated_response_degrades_to_rule_report(self):
+        """模型达到输出上限时不得把半截回答作为成功结果展示。"""
+        opener = RecordingURLOpen(body_json={
+            "choices": [{
+                "finish_reason": "length",
+                "message": {"content": "未完成的分析"},
+            }],
+        })
+        content, status = call_llm("INST", "{}", self.cfg, _urlopen=opener)
+        self.assertIsNone(content)
+        self.assertEqual(status["status"], "FAILED")
+        self.assertEqual(status["error_code"], "OUTPUT_TRUNCATED")
 
     def test_url_error_network_unreachable_degrade(self):
         opener = RecordingURLOpen(

@@ -371,10 +371,16 @@ class TestPeopleSearchFixtures(unittest.TestCase):
     def test_verdict_consistent_with_expected_rules(self):
         for fixture in self.fixtures:
             has_fail = "FAIL" in fixture["expected_rules"].values()
+            has_unknown = "UNKNOWN" in fixture["expected_rules"].values()
             if has_fail:
                 self.assertEqual(
                     fixture["expected_verdict"], "ISSUES_FOUND",
                     f"{fixture['name']} 存在 FAIL 规则但结论不是 ISSUES_FOUND",
+                )
+            elif has_unknown:
+                self.assertEqual(
+                    fixture["expected_verdict"], "INCOMPLETE_EVIDENCE",
+                    f"{fixture['name']} 存在 UNKNOWN 规则但结论不是 INCOMPLETE_EVIDENCE",
                 )
             else:
                 self.assertEqual(

@@ -557,6 +557,50 @@ def _parse_timestamp(value):
     return parsed.timestamp()
 
 
+def _pick_present_fields(source, field_names):
+    """从 Provider 摘要中提取允许展示的非敏感诊断字段。"""
+    if not isinstance(source, dict):
+        return {}
+    return {
+        field: source.get(field)
+        for field in field_names
+        if source.get(field) is not None and source.get(field) != ""
+    }
+
+
+def _build_call_result_details(call):
+    """构造调用级业务结果，供规则、报告和 LLM 解释完整执行链路。
+
+    仅保留计数、状态、路由和计费字段，不复制 response_ref、请求指纹或
+    原始 Provider 响应，避免扩大对外证据和 AI 输入中的敏感信息范围。
+    """
+    response = call.get("response_summary")
+    request = call.get("request_summary")
+    result_fields = (
+        "output_status", "finish_reason", "max_tokens", "max_tokens_reached",
+        "reasoning_bytes", "decode_retry", "http_attempt_count", "total_tokens",
+        "prompt_tokens", "completion_tokens", "recoverable_candidate_count",
+        "partial_candidate_count", "partial_response_present", "partial_result_usable",
+        "decision_reason", "stage", "eligible", "ambiguous", "local_known",
+        "remote_called", "result_usable", "total_profile_count", "usable_profile_count",
+        "pdl_identify_call_count", "pdl_person_search_call_count",
+        "pdl_person_search_returned_profile_count", "pdl_usable_candidate_count",
+        "pdl_external_request_count", "pdl_billing_unit_count", "pdl_pipeline_stages",
+        "fallback_reason", "provider_runs", "stop_reason",
+    )
+    request_fields = (
+        "query_type", "stage", "backend", "model", "thinking",
+        "reasoning_effort", "attempt_index", "decode_retry", "max_tokens",
+    )
+    return {
+        **_pick_present_fields(response, result_fields),
+        **{
+            f"request_{key}": value
+            for key, value in _pick_present_fields(request, request_fields).items()
+        },
+    }
+
+
 def _build_timeline(debug_records, warnings):
     """从 GetSearchTaskDebug 的 agent_tool_calls 构建工具时间线（设计 §7.3）。"""
     if not debug_records:
@@ -572,6 +616,9 @@ def _build_timeline(debug_records, warnings):
     for call_index, call in enumerate(tool_calls):
         if not isinstance(call, dict):
             continue
+        response_summary = call.get("response_summary")
+        response_summary = response_summary if isinstance(response_summary, dict) else {}
+        result_details = _build_call_result_details(call)
         entries.append(
             {
                 "provider": call.get("provider"),
@@ -581,13 +628,27 @@ def _build_timeline(debug_records, warnings):
                 "finish_time": call.get("finish_time"),
                 "http_status": call.get("http_status"),
                 "cache_hit": bool(call.get("cache_hit")),
-                "candidate_count": call.get("candidate_count"),
+                "candidate_count": (
+                    call.get("candidate_count")
+                    if call.get("candidate_count") is not None
+                    else response_summary.get("profile_count")
+                ),
                 "error_code": call.get("error_code") or "",
                 "cost_status": call.get("cost_status"),
                 "estimated_cost_microunit": call.get("estimated_cost_microunit"),
+                "billing_currency": call.get("billing_currency") or "",
+                "billing_unit": call.get("billing_unit") or "",
+                "billable_units": call.get("billable_units"),
+                "non_billable_reason": call.get("non_billable_reason") or "",
+                "no_result_reason": response_summary.get("no_result_reason") or "",
+                "decision_reason": response_summary.get("decision_reason") or "",
+                "found": response_summary.get("found"),
+                "evidence_count": response_summary.get("evidence_count"),
+                "social_account_count": response_summary.get("social_account_count"),
+                "result_details": result_details,
                 # LLM 调用分类信息，供 LLM-001/LLM-002 按时间顺序核对（审查修复）
-                "result_class": call.get("result_class"),
-                "finish_reason": call.get("finish_reason"),
+                "result_class": call.get("result_class") or call.get("status"),
+                "finish_reason": call.get("finish_reason") or response_summary.get("finish_reason"),
                 "source": {
                     "method": debug_record["method"],
                     "json_path": f"debug.agent_tool_calls[{call_index}]",
@@ -677,6 +738,47 @@ def _normalize_social_links(links):
     return normalized
 
 
+def _extract_input_summary(create_request):
+    """从创建任务请求提取用户原始线索摘要。
+
+    参数说明:
+        create_request (dict | None): CreateIntentTask 的 params 数据。
+
+    返回值:
+        tuple: ``(full_name, clue_types, social_links, photo_count)``。
+
+    异常说明:
+        未知或不完整字段按空值处理，不影响其他日志继续分析。
+    """
+    full_name = None
+    clue_types = []
+    social_links = []
+    photo_count = 0
+    clues = create_request.get("clues") if isinstance(create_request, dict) else None
+    if not isinstance(clues, list):
+        return full_name, clue_types, social_links, photo_count
+    for clue in clues:
+        if not isinstance(clue, dict):
+            continue
+        clue_type = clue.get("type")
+        if clue_type and clue_type not in clue_types:
+            clue_types.append(clue_type)
+        if clue_type == "FULL_NAME":
+            query = clue.get("full_name_query")
+            if full_name is None and isinstance(query, dict):
+                full_name = query.get("full_name")
+        elif clue_type == "SOCIAL_LINK":
+            query = clue.get("social_link_query")
+            if isinstance(query, dict) and query.get("url"):
+                social_links.append(query["url"])
+        elif clue_type == "PHOTO":
+            query = clue.get("photo_query")
+            # PHOTO 线索本身即代表一张输入图片；URL/Base64 是否完整由解析告警处理。
+            if isinstance(query, dict) or clue.get("photo_url") or clue.get("photo_base64"):
+                photo_count += 1
+    return full_name, clue_types, social_links, photo_count
+
+
 def build_snapshot(records, stage_events, selected_task_id, warnings):
     """构建统一任务快照（设计 §7.1）。"""
     responses = _responses_by_method(records)
@@ -696,20 +798,9 @@ def build_snapshot(records, stage_events, selected_task_id, warnings):
             request_ids.append(record["request_id"])
 
     create_request = _first_request_data(records, "CreateIntentTask")
-    full_name = None
-    clue_types = []
-    if isinstance(create_request, dict):
-        clues = create_request.get("clues")
-        if isinstance(clues, list):
-            for clue in clues:
-                if not isinstance(clue, dict):
-                    continue
-                clue_type = clue.get("type")
-                if clue_type and clue_type not in clue_types:
-                    clue_types.append(clue_type)
-                name_query = clue.get("full_name_query")
-                if full_name is None and isinstance(name_query, dict):
-                    full_name = name_query.get("full_name")
+    full_name, clue_types, input_social_links, photo_count = _extract_input_summary(
+        create_request
+    )
     if full_name is None:
         for event in stage_events:
             if event.get("person_name"):
@@ -756,6 +847,14 @@ def build_snapshot(records, stage_events, selected_task_id, warnings):
                         "is_top_result": bool(item.get("is_top_result")),
                         "is_best_match": bool(item.get("is_best_match")),
                         "source_provider": item.get("source_provider"),
+                        "source_providers": item.get("source_providers") or [],
+                        "decision": item.get("decision"),
+                        "selected": item.get("selected"),
+                        "wikidata_id": item.get("wikidata_id"),
+                        "canonical_url": item.get("canonical_url"),
+                        "profile_url": item.get("profile_url"),
+                        "avatar_url": item.get("avatar_url"),
+                        "match_reasons": item.get("match_reasons") or [],
                         "social_links": _normalize_social_links(item.get("social_links")),
                     }
                 )
@@ -780,8 +879,9 @@ def build_snapshot(records, stage_events, selected_task_id, warnings):
         if isinstance(data, dict):
             candidate_details.append(data)
 
+    timeline = _build_timeline(debug_records, warnings)
     coverage = {
-        "create_task": bool(records and any(r["method"] == "CreateIntentTask" for r in records)),
+        "create_task": bool(create_request or create_responses),
         "get_task": bool(get_task_records),
         "candidate_list": bool(candidate_list_records),
         "candidate_detail": bool(responses.get("GetTaskCandidateDetail")),
@@ -797,21 +897,30 @@ def build_snapshot(records, stage_events, selected_task_id, warnings):
         "task": {
             "task_id": selected_task_id,
             "query_id": query_id,
+            "client_request_id": (
+                create_request.get("client_request_id")
+                if isinstance(create_request, dict)
+                else None
+            ),
             "trace_ids": trace_ids,
             "request_ids": request_ids,
             "full_name": full_name,
             "clue_types": clue_types,
-            "social_links": candidates[0]["social_links"] if candidates else [],
-            "photo_count": 0,
+            "social_links": input_social_links,
+            "photo_count": photo_count,
             "final_status": final_status,
             "candidate_count": candidate_count,
             "top_confidence_score": top_confidence_score,
+            "result_type": final_task_data.get("result_type") if isinstance(final_task_data, dict) else None,
+            "no_result_reason": final_task_data.get("no_result_reason") if isinstance(final_task_data, dict) else None,
+            "progress": final_task_data.get("progress") if isinstance(final_task_data, dict) else None,
         },
         "coverage": coverage,
-        "timeline": _build_timeline(debug_records, warnings),
+        "timeline": timeline,
         "candidates": candidates,
         "candidate_details": candidate_details,
         "diagnosis": diagnosis,
+        "policy_version": debug_body.get("policy_version") if isinstance(debug_body, dict) else None,
         "debug": debug_body,
         "get_task_data": final_task_data,
         "create_request": create_request,
@@ -856,7 +965,20 @@ def analyze_people_search_log(log_text, requested_task_id=None):
     result["selection_error"] = selection_error
     if selection_error is not None:
         return result
-    result["snapshot"] = build_snapshot(selected, stage_events, selected_task_id, warnings)
+    selected_stage_events = stage_events
+    if selected_task_id:
+        task_events = [
+            event for event in stage_events
+            if event.get("task_id") == selected_task_id
+        ]
+        # 有带 task_id 的事件时只使用当前任务，避免显式选择后从其他任务回填姓名。
+        if task_events:
+            selected_stage_events = task_events
+        else:
+            selected_stage_events = [event for event in stage_events if not event.get("task_id")]
+    result["snapshot"] = build_snapshot(
+        selected, selected_stage_events, selected_task_id, warnings
+    )
     return result
 
 

@@ -98,6 +98,140 @@
         gap: 14px;
       }
 
+      .people-analysis-overview {
+        display: grid;
+        gap: 16px;
+      }
+
+      .verdict-panel,
+      .analysis-panel {
+        border: 1px solid #d8e0ed;
+        border-radius: 12px;
+        background: #ffffff;
+      }
+
+      .verdict-panel {
+        padding: 18px 20px;
+        border-left: 4px solid #6e6e73;
+      }
+
+      .verdict-panel[data-verdict="NORMAL"] { border-left-color: #1f8a4c; }
+      .verdict-panel[data-verdict="ISSUES_FOUND"] { border-left-color: #c9342f; }
+      .verdict-panel[data-verdict="NEEDS_CONFIRMATION"] { border-left-color: #b26a00; }
+      .verdict-panel[data-verdict="INCOMPLETE_EVIDENCE"] { border-left-color: #6e6e73; }
+
+      .verdict-title {
+        margin: 0;
+        font-size: 20px;
+      }
+
+      .verdict-detail {
+        margin: 6px 0 0;
+        color: #526070;
+      }
+
+      .ai-status {
+        margin: 8px 0 0;
+        font-size: 13px;
+        color: #526070;
+      }
+
+      .ai-status.success { color: #1d6b32; }
+      .ai-status.failed { color: #8a1f1f; }
+
+      .analysis-grid {
+        display: grid;
+        grid-template-columns: minmax(260px, 0.8fr) minmax(420px, 1.2fr);
+        gap: 16px;
+      }
+
+      .analysis-panel {
+        padding: 16px;
+        overflow: hidden;
+      }
+
+      .analysis-panel h3 {
+        margin: 0 0 12px;
+        font-size: 16px;
+      }
+
+      .coverage-list {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+      }
+
+      .coverage-item {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 8px 10px;
+        border-radius: 8px;
+        background: #f5f7fb;
+        font-size: 13px;
+      }
+
+      .coverage-item .present { color: #1d6b32; }
+      .coverage-item .missing { color: #8a1f1f; }
+
+      .issue-list {
+        display: grid;
+        gap: 8px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .issue-item {
+        padding: 10px 12px;
+        border-left: 3px solid #6e6e73;
+        background: #f5f7fb;
+        font-size: 13px;
+        line-height: 1.5;
+      }
+
+      .issue-item.fail { border-left-color: #c9342f; }
+      .issue-item.warn { border-left-color: #b26a00; }
+
+      .analysis-table {
+        min-width: 1180px;
+        font-size: 13px;
+      }
+
+      .analysis-table .diagnostic-cell {
+        min-width: 300px;
+        max-width: 460px;
+        white-space: normal;
+        line-height: 1.45;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 12px;
+      }
+
+      .diagnosis-list {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px 24px;
+        margin: 0;
+      }
+
+      .diagnosis-list div {
+        display: grid;
+        grid-template-columns: minmax(150px, 0.8fr) minmax(0, 1.2fr);
+        gap: 12px;
+        padding: 7px 0;
+        border-bottom: 1px solid rgba(0, 0, 0, .08);
+      }
+
+      .diagnosis-list dt { color: #526070; }
+      .diagnosis-list dd { margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+      .analysis-report-details summary {
+        margin: 4px 0 10px;
+        color: #2457d6;
+        font-weight: 650;
+        cursor: pointer;
+      }
+
       .analysis-summary {
         display: grid;
         grid-template-columns: repeat(5, minmax(110px, 1fr));
@@ -365,6 +499,11 @@
           grid-template-columns: repeat(2, minmax(110px, 1fr));
         }
 
+        .analysis-grid,
+        .coverage-list {
+          grid-template-columns: 1fr;
+        }
+
         .result-header,
         .field-header {
           align-items: stretch;
@@ -379,7 +518,7 @@
   </head>
   <body>
     <main>
-      <h1>Log 过滤工具</h1>
+      <h1>质量分析 · Log 过滤工具</h1>
 
       {% if platform_home_url %}
         <p><a href="{{ platform_home_url }}">返回测试开发平台</a></p>
@@ -398,7 +537,7 @@
         <section class="toolbar">
           <div class="multi-select" id="multi-select">
             <label for="method-toggle">method</label>
-            <div class="multi-select-toggle" id="method-toggle" tabindex="0">
+            <div class="multi-select-toggle" id="method-toggle" tabindex="0" role="button" aria-haspopup="true" aria-expanded="false" aria-controls="method-dropdown">
               <span class="multi-select-toggle-text" id="method-toggle-text">全部</span>
               <span class="multi-select-toggle-arrow">&#9660;</span>
             </div>
@@ -542,7 +681,7 @@
         </section>
       {% endif %}
 
-      <section id="people-search-analysis" hidden>
+      <section id="people-search-analysis" tabindex="-1" hidden>
         <div class="result-header">
           <h2>检索链路分析</h2>
           <div class="result-tools">
@@ -551,7 +690,39 @@
             <button type="button" id="export-report-btn" onclick="exportReport()">导出Markdown</button>
           </div>
         </div>
-        <pre id="people-search-report"></pre>
+        <div class="people-analysis-overview" id="people-analysis-overview">
+          <div class="verdict-panel" id="people-verdict-panel">
+            <h3 class="verdict-title" id="people-verdict-title">等待分析</h3>
+            <p class="verdict-detail" id="people-task-summary"></p>
+            <p class="ai-status" id="people-ai-status">AI 分析状态：等待分析</p>
+          </div>
+          <div class="analysis-grid">
+            <section class="analysis-panel">
+              <h3>日志覆盖度</h3>
+              <div class="coverage-list" id="people-coverage-list"></div>
+            </section>
+            <section class="analysis-panel">
+              <h3>问题与待确认项</h3>
+              <ul class="issue-list" id="people-issue-list"></ul>
+            </section>
+          </div>
+          <section class="analysis-panel">
+            <h3>任务结果与关键诊断</h3>
+            <dl class="diagnosis-list" id="people-diagnosis-list"></dl>
+          </section>
+          <section class="analysis-panel">
+            <h3>实际调用时间线</h3>
+            <div class="table-scroll" id="people-timeline"></div>
+          </section>
+          <section class="analysis-panel">
+            <h3>成本摘要</h3>
+            <div id="people-cost-summary"></div>
+          </section>
+          <details class="analysis-report-details">
+            <summary>查看完整 Markdown 报告</summary>
+            <pre id="people-search-report"></pre>
+          </details>
+        </div>
       </section>
     </main>
     <script>
@@ -594,7 +765,19 @@
             selectionSnapshot = getSelectionSignature();
           }
           dropdown.classList.toggle('open');
+          toggle.setAttribute('aria-expanded', dropdown.classList.contains('open') ? 'true' : 'false');
           toggle.focus();
+        });
+
+        /** 让自定义 method 选择器具备原生按钮一致的键盘行为。 */
+        toggle.addEventListener('keydown', function(e) {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            toggle.click();
+          } else if (e.key === 'Escape' && dropdown.classList.contains('open')) {
+            dropdown.classList.remove('open');
+            toggle.setAttribute('aria-expanded', 'false');
+          }
         });
 
         document.addEventListener('click', function(e) {
@@ -602,6 +785,7 @@
             var selectionChanged = selectionSnapshot !== getSelectionSignature();
             var clickedInteractiveControl = e.target.closest('button, input, textarea, a');
             dropdown.classList.remove('open');
+            toggle.setAttribute('aria-expanded', 'false');
             if (selectionChanged && !clickedInteractiveControl) {
               form.requestSubmit();
             }
@@ -805,6 +989,177 @@
         });
       }
 
+      /** 清空并返回指定分析视图容器。 */
+      function clearAnalysisNode(id) {
+        var node = document.getElementById(id);
+        node.textContent = '';
+        return node;
+      }
+
+      /** 使用纯 DOM/textContent 渲染结构化结果，避免日志字段被当作 HTML 执行。 */
+      function renderPeopleSearchAnalysis(data) {
+        var verdictLabels = {
+          NORMAL: '未发现异常',
+          ISSUES_FOUND: '发现已确认异常',
+          NEEDS_CONFIRMATION: '需要后端确认',
+          INCOMPLETE_EVIDENCE: '日志证据不足'
+        };
+        var verdict = data.verdict || 'INCOMPLETE_EVIDENCE';
+        var verdictPanel = document.getElementById('people-verdict-panel');
+        verdictPanel.setAttribute('data-verdict', verdict);
+        document.getElementById('people-verdict-title').textContent = verdictLabels[verdict] || verdict;
+
+        var task = data.task || {};
+        var clues = Array.isArray(task.clue_types) ? task.clue_types.join('、') : '未知';
+        document.getElementById('people-task-summary').textContent =
+          (task.full_name || '未提取姓名') + ' · task_id=' + (task.task_id || '未知') +
+          ' · 线索=' + clues + ' · 终态=' + (task.final_status || '未知') +
+          ' · 候选=' + (task.candidate_count === undefined ? '未知' : task.candidate_count) +
+          ' · result_type=' + (task.result_type || '—') +
+          ' · no_result_reason=' + (task.no_result_reason || '—');
+
+        var aiStatus = (data.ai || {}).status || 'DISABLED';
+        var aiStatusEl = document.getElementById('people-ai-status');
+        var aiLabels = {
+          SUCCESS: 'AI 分析状态：已生成独立解释',
+          DISABLED: 'AI 分析状态：未启用，当前内容来自确定性规则',
+          FAILED: 'AI 分析状态：调用失败，已降级为确定性规则报告'
+        };
+        aiStatusEl.className = 'ai-status ' + (aiStatus === 'SUCCESS' ? 'success' :
+          (aiStatus === 'FAILED' ? 'failed' : ''));
+        aiStatusEl.textContent = aiLabels[aiStatus] || ('AI 分析状态：' + aiStatus);
+
+        var coverageLabels = {
+          create_task: '创建任务', get_task: '任务终态', candidate_list: '候选列表',
+          candidate_detail: '候选详情', debug: '调试链路', cost_summary: '成本汇总'
+        };
+        var coverageList = clearAnalysisNode('people-coverage-list');
+        Object.keys(coverageLabels).forEach(function(key) {
+          var item = document.createElement('div');
+          item.className = 'coverage-item';
+          var label = document.createElement('span');
+          label.textContent = coverageLabels[key];
+          var state = document.createElement('span');
+          var present = Boolean((data.coverage || {})[key]);
+          state.className = present ? 'present' : 'missing';
+          state.textContent = present ? '已包含' : '缺失';
+          item.appendChild(label);
+          item.appendChild(state);
+          coverageList.appendChild(item);
+        });
+
+        var issueList = clearAnalysisNode('people-issue-list');
+        var issues = (data.checks || []).filter(function(check) {
+          return ['FAIL', 'WARN', 'UNKNOWN'].indexOf(check.outcome) !== -1;
+        });
+        if (!issues.length) {
+          var emptyIssue = document.createElement('li');
+          emptyIssue.className = 'issue-item';
+          emptyIssue.textContent = '当前规则范围内没有异常或待确认项。';
+          issueList.appendChild(emptyIssue);
+        } else {
+          issues.forEach(function(check) {
+            var item = document.createElement('li');
+            item.className = 'issue-item ' + (check.outcome === 'FAIL' ? 'fail' : 'warn');
+            item.textContent = check.rule_id + ' · ' + check.title + ' — ' + (check.actual || check.outcome);
+            issueList.appendChild(item);
+          });
+        }
+
+        var diagnosisList = clearAnalysisNode('people-diagnosis-list');
+        var diagnosis = data.diagnosis || {};
+        var diagnosisFields = [
+          ['业务停止原因', diagnosis.stop_reason],
+          ['状态自检', diagnosis.status_consistent],
+          ['LLM 输出', diagnosis.llm_output_status || diagnosis.llm_result_status],
+          ['LLM 截断', diagnosis.llm_truncation_detected],
+          ['PDL Identify / Search', String(diagnosis.pdl_identify_call_count || 0) + ' / ' + String(diagnosis.pdl_person_search_call_count || 0)],
+          ['PDL 返回 / 可用', String(diagnosis.pdl_person_search_returned_profile_count || 0) + ' / ' + String(diagnosis.pdl_usable_candidate_count || 0)],
+          ['图片反查', diagnosis.reverse_image_status],
+          ['图片停止原因', diagnosis.reverse_image_stop_reason],
+          ['图片主工具 → 最终工具', (diagnosis.reverse_image_primary_provider || '—') + ' → ' + (diagnosis.reverse_image_final_provider || '—')],
+          ['Social Profile', diagnosis.social_profile_status],
+          ['Face Comparison', diagnosis.face_comparison_status],
+          ['PDL 前阶段成本', diagnosis.pre_pdl_estimated_cost_microunit]
+        ];
+        diagnosisFields.forEach(function(entry) {
+          var group = document.createElement('div');
+          var term = document.createElement('dt');
+          var description = document.createElement('dd');
+          term.textContent = entry[0];
+          description.textContent = entry[1] === null || entry[1] === undefined || entry[1] === ''
+            ? '—' : String(entry[1]);
+          group.appendChild(term);
+          group.appendChild(description);
+          diagnosisList.appendChild(group);
+        });
+
+        var timelineContainer = clearAnalysisNode('people-timeline');
+        var timeline = data.timeline || [];
+        if (!timeline.length) {
+          timelineContainer.textContent = '缺少 agent_tool_calls，Provider 顺序无法判断。';
+        } else {
+          var table = document.createElement('table');
+          table.className = 'analysis-table';
+          var header = document.createElement('tr');
+          ['#', 'Provider', 'Operation', '状态', '业务结果', '关键诊断', 'HTTP', '缓存', '成本'].forEach(function(text) {
+            var th = document.createElement('th');
+            th.textContent = text;
+            header.appendChild(th);
+          });
+          var thead = document.createElement('thead');
+          thead.appendChild(header);
+          table.appendChild(thead);
+          var tbody = document.createElement('tbody');
+          timeline.forEach(function(call, index) {
+            var row = document.createElement('tr');
+            var businessResult = [call.no_result_reason, call.decision_reason,
+              call.found === null || call.found === undefined ? '' : 'found=' + String(call.found),
+              call.candidate_count === null || call.candidate_count === undefined ? '' : 'candidates=' + String(call.candidate_count)]
+              .filter(Boolean).join(' · ');
+            var diagnosticText = Object.keys(call.result_details || {}).map(function(key) {
+              var value = call.result_details[key];
+              return key + '=' + (typeof value === 'object' ? JSON.stringify(value) : String(value));
+            }).join(' · ');
+            var callCost = [call.cost_status,
+              call.estimated_cost_microunit === null || call.estimated_cost_microunit === undefined
+                ? '' : call.estimated_cost_microunit]
+              .filter(function(value) { return value !== '' && value !== null && value !== undefined; })
+              .join(' · ');
+            [index + 1, call.provider, call.operation, call.status, businessResult,
+             diagnosticText, call.http_status, call.cache_hit ? '是' : '否', callCost].forEach(function(value, cellIndex) {
+              var td = document.createElement('td');
+              if (cellIndex === 5) td.className = 'diagnostic-cell';
+              td.textContent = value === null || value === undefined ? '' : String(value);
+              row.appendChild(td);
+            });
+            tbody.appendChild(row);
+          });
+          table.appendChild(tbody);
+          timelineContainer.appendChild(table);
+        }
+
+        var costContainer = clearAnalysisNode('people-cost-summary');
+        var cost = data.cost || {};
+        var totals = Array.isArray(cost.totals) ? cost.totals : [];
+        if (totals.length) {
+          totals.forEach(function(total) {
+            var line = document.createElement('p');
+            line.textContent = (total.currency || 'UNSPECIFIED') + ': ' +
+              (total.total_cost_microunit || 0) + ' microunit · 完整=' +
+              (total.cost_complete ? '是' : '否') + ' · 未定价=' +
+              (total.unpriced_call_count || 0);
+            costContainer.appendChild(line);
+          });
+        } else {
+          var totalLine = document.createElement('p');
+          totalLine.textContent = cost.total_estimated_cost_microunit === undefined
+            ? '缺少可核对的成本总计。'
+            : '任务总成本：' + cost.total_estimated_cost_microunit + ' microunit';
+          costContainer.appendChild(totalLine);
+        }
+      }
+
       /**
        * 调用检索链路分析接口，用 textContent 写入报告，不渲染任意 HTML。
        * 失败时保留原日志和现有过滤结果，仅展示错误信息。
@@ -836,15 +1191,20 @@
           .then(function(response) {
             return response.json().then(function(payload) {
               if (!response.ok) {
-                throw new Error(payload.message || '分析失败');
+                var taskIds = payload.detected_task_ids || [];
+                var detail = taskIds.length ? '：' + taskIds.join('、') : '';
+                throw new Error((payload.message || '分析失败') + detail);
               }
               return payload;
             });
           })
           .then(function(payload) {
             var data = payload.data || {};
+            renderPeopleSearchAnalysis(data);
             reportEl.textContent = data.report_markdown || '';
             statusEl.textContent = data.verdict || '完成';
+            section.scrollIntoView({block: 'start'});
+            section.focus({preventScroll: true});
             showActionMessage('分析完成：' + (data.verdict || ''), false);
           })
           .catch(function(error) {

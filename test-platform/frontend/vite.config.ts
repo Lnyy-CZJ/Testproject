@@ -13,6 +13,9 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   plugins: [react()],
   server: {
+    fs: {
+      allow: [".."],
+    },
     proxy: {
       "/api": "http://127.0.0.1:8000",
       "/trackevents": "http://127.0.0.1:8080",

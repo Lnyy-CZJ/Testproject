@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="{{ settings.base_path }}/static/agent-workbench.css">
   {% block styles %}{% endblock %}
 </head>
-<body data-base-path="{{ settings.base_path }}" data-csrf="{{ csrf_token }}">
+<body class="{% block body_class %}{% endblock %}" data-base-path="{{ settings.base_path }}" data-csrf="{{ csrf_token }}">
   <header class="topbar">
     <a class="platform-link" href="{{ platform_home_url }}">‹ 返回测试开发平台</a>
     <span class="environment-badge">{{ settings.runtime_environment|upper }}</span>

@@ -1,4 +1,5 @@
 import type { Tool, ToolHealthState } from "../types/tool";
+import { isSafeEntryUrl } from "../data/capabilityCatalog";
 import { ServiceStatus } from "./ServiceStatus";
 
 /** 将单个工具元数据和运行状态渲染为可访问的导航卡片。 */
@@ -9,6 +10,7 @@ export function ToolCard({
   tool: Tool;
   health: ToolHealthState;
 }) {
+  const safeEntry = isSafeEntryUrl(tool.entry_url);
   // 显式维护小型工具图标映射，未知类型安全回退到平台默认样式。
   const iconPresentation =
     {
@@ -40,9 +42,7 @@ export function ToolCard({
           <li key={feature}>{feature}</li>
         ))}
       </ul>
-      <a className="tool-link" href={tool.entry_url}>
-        打开工具 <span aria-hidden="true">›</span>
-      </a>
+      {safeEntry ? <a className="tool-link" href={tool.entry_url}>打开工具 <span aria-hidden="true">›</span></a> : <span className="tool-link tool-link-disabled">入口不可用</span>}
     </article>
   );
 }

@@ -1,3 +1,4 @@
+import re
 from functools import lru_cache
 from pathlib import Path
 
@@ -35,6 +36,7 @@ class Settings(BaseSettings):
     audit_retention_days: int = 180
     credential_refresh_window_seconds: int = 3600
     credential_agent_interval_seconds: int = 60
+    platform_version_file: str = str(Path(__file__).resolve().parents[3] / "VERSION")
 
     model_config = SettingsConfigDict(case_sensitive=False)
 
@@ -51,6 +53,22 @@ class Settings(BaseSettings):
         if self.bootstrap_token_file:
             return Path(self.bootstrap_token_file).read_text(encoding="utf-8").strip()
         return self.bootstrap_token.strip()
+
+    def read_platform_version(self) -> str:
+        """
+        读取并校验当前部署的平台版本。
+
+        返回值:
+            str: 格式为“主版本.两位平台版本.三位发布序号”的版本号。
+        异常说明:
+            OSError: 版本文件不可读取时继续抛出，避免发布版本来源不明。
+            ValueError: 版本格式不符合约定时阻止服务启动。
+        """
+
+        version = Path(self.platform_version_file).read_text(encoding="utf-8").strip()
+        if not re.fullmatch(r"\d+\.\d{2}\.\d{3}", version):
+            raise ValueError("平台版本必须符合 主版本.两位平台版本.三位发布序号")
+        return version
 
 
 @lru_cache

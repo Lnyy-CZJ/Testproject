@@ -711,7 +711,7 @@ HTML_TEMPLATE = r"""<!doctype html>
       <div class="platform-brand">
         <span class="platform-mark" aria-hidden="true">T</span>
         <span>测试开发平台</span>
-        <span class="header-context">埋点测试</span>
+        <span class="header-context">质量分析 · 埋点分析</span>
       </div>
       __PLATFORM_HOME_LINK__
     </div>

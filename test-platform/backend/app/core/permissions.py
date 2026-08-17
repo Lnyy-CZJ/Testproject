@@ -10,6 +10,8 @@ PLATFORM_PERMISSIONS = {
     "platform.audit.export",
     "platform.config.manage",
     "platform.secret.manage",
+    "platform.llm.manage",
+    "platform.llm.secret.manage",
 }
 
 TOOL_PERMISSIONS = {

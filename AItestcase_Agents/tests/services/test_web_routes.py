@@ -21,7 +21,7 @@ class FakePlatformClient:
 
     snapshot = {
         "tool_id": "", "environment": "dev", "release_id": "rel_test", "release_version": 1,
-        "normal": {"QUEUE_MAX_WAITING": 5, "UPLOAD_MAX_BYTES": 5 * 1024 * 1024, "UPLOAD_MAX_CHARACTERS": 500_000, "ONLINE_REVIEW_ENABLED": True, "REVIEW_AI_ENABLED": True, "ONLINE_CASE_REVIEW_ENABLED": True, "CASE_REVIEW_AI_ENABLED": True},
+        "normal": {"QUEUE_MAX_WAITING": 5, "UPLOAD_MAX_BYTES": 5 * 1024 * 1024, "UPLOAD_MAX_CHARACTERS": 500_000, "ONLINE_REVIEW_ENABLED": True, "REVIEW_AI_ENABLED": True, "ONLINE_CASE_REVIEW_ENABLED": True, "CASE_REVIEW_AI_ENABLED": True, "FUNCTIONAL_WORKBENCH_V2_ENABLED": False},
         "secrets": {"LLM_API_KEY": "sentinel"}, "configured_secret_keys": ["LLM_API_KEY"],
     }
 
@@ -167,6 +167,55 @@ def test_create_list_owner_and_version_visibility(tmp_path: Path, agent_type: st
     assert client.get(f"{base}/api/v1/tasks/{task['id']}", headers=headers("admin", "tool.result.view,task.view.all")).status_code == 200
 
 
+def test_functional_workbench_v2_title_filters_and_capabilities(tmp_path: Path) -> None:
+    """V2 开关只影响功能页面，并公开安全标题、真实阶段和只读表格能力。"""
+
+    client, app = make_client(tmp_path, "functional")
+    app.extensions["platform_client"].snapshot["normal"]["FUNCTIONAL_WORKBENCH_V2_ENABLED"] = True
+    created = client.post(
+        "/functional-test-agent/api/v1/tasks", headers=headers(),
+        data={
+            "title": "登录回归", "operation": "generate_test_points", "project_name": "项目 A",
+            "module_name": "登录", "environment": "dev",
+            "document_file": (io.BytesIO(b"# login"), "login.md"),
+        }, content_type="multipart/form-data",
+    )
+    assert created.status_code == 202
+    task = created.get_json()
+    assert task["title"] == "登录回归"
+    assert task["progress"] == {"stage": "queued", "completed_items": 0, "total_items": None}
+    assert task["ui_capabilities"] == {"workbench_v2": True, "mindmap_edit": True, "table_edit": True, "table_readonly": False}
+    record = app.extensions["task_store"].load(task["id"])
+    record["token_usage"] = {"stages": {"test_points_generation": {"input_tokens": 12, "output_tokens": 8, "total_tokens": 20, "calls": 1, "reported_calls": 1}}}
+    app.extensions["task_store"].save(record)
+    detail = client.get(f"/functional-test-agent/api/v1/tasks/{task['id']}", headers=headers()).get_json()
+    assert detail["token_usage"]["totals"]["total_tokens"] == 20
+    home = client.get("/functional-test-agent/", headers=headers())
+    assert home.status_code == 200
+    html = home.get_data(as_text=True)
+    assert "功能测试任务" in html and "functional-workbench-v2.mjs" in html
+    assert "新建功能测试生成任务" in html and "删除任务" not in html
+    listed = client.get("/functional-test-agent/api/v1/tasks?q=登录回归&status=pending&date=2026-01-01", headers=headers())
+    assert listed.status_code == 200 and listed.get_json()["total"] == 0
+    invalid_date = client.get("/functional-test-agent/api/v1/tasks?date=2026/01/01", headers=headers())
+    assert invalid_date.status_code == 422
+    assert client.get("/functional-test-agent/api/v1/tasks?status=unknown", headers=headers()).status_code == 422
+    assert client.get("/functional-test-agent/api/v1/tasks?operation=unknown", headers=headers()).status_code == 422
+    readiness = client.get("/functional-test-agent/api/v1/readiness", headers=headers(permissions="tool.view"))
+    assert readiness.get_json()["functional_workbench_v2_enabled"] is True
+
+
+def test_api_agent_does_not_enable_functional_workbench(tmp_path: Path) -> None:
+    """功能工作台开关不得改变 API 智能体页面与 readiness。"""
+
+    client, app = make_client(tmp_path, "api")
+    app.extensions["platform_client"].snapshot["normal"]["FUNCTIONAL_WORKBENCH_V2_ENABLED"] = True
+    home = client.get("/api-test-agent/", headers=headers())
+    assert "functional-workbench-v2.mjs" not in home.get_data(as_text=True)
+    readiness = client.get("/api-test-agent/api/v1/readiness", headers=headers(permissions="tool.view"))
+    assert readiness.get_json()["functional_workbench_v2_enabled"] is False
+
+
 def test_csrf_permissions_and_api_execution_disabled(tmp_path: Path) -> None:
     client, _app = make_client(tmp_path, "api")
     missing_csrf = headers()
@@ -296,11 +345,20 @@ def test_online_review_cas_confirm_and_ai_queue(tmp_path: Path) -> None:
     assert b"data-review-workbench" in page.data
     assert b"review-workbench.js" in page.data
     assert "下载本地副本" in page.get_data(as_text=True)
+    assert "查看内容" in page.get_data(as_text=True)
+    preview = client.get(f"{base}/api/v1/tasks/{task_id}/artifacts/artifact_points/preview", headers=headers())
+    assert preview.status_code == 200
+    assert preview.get_json()["format"] == "json"
+    assert "TP001" in preview.get_json()["content"]
+    assert client.get(f"{base}/api/v1/tasks/{task_id}/artifacts/missing/preview", headers=headers()).status_code == 404
 
     loaded = client.get(f"{base}/api/v1/tasks/{task_id}/review", headers=headers())
     assert loaded.status_code == 200
     initial = loaded.get_json()
     assert initial["revision"] == 0
+    generated = client.get(f"{base}/api/v1/tasks/{task_id}/review?kind=generated", headers=headers())
+    assert generated.status_code == 200 and generated.get_json()["editable"] is False
+    assert client.get(f"{base}/api/v1/tasks/{task_id}/review?kind=unknown", headers=headers()).status_code == 422
     saved = client.put(
         f"{base}/api/v1/tasks/{task_id}/review-draft", headers={**headers(), "Content-Type": "application/json"},
         json={"revision": 0, "sha256": initial["sha256"], "points": points},
@@ -336,6 +394,8 @@ def test_online_review_cas_confirm_and_ai_queue(tmp_path: Path) -> None:
     assert (task_dir / confirmed["relative_path"]).is_file()
     assert hashlib.sha256((task_dir / confirmed["relative_path"]).read_bytes()).hexdigest()
     assert "relative_path" not in resumed.get_json()["review"]
+    confirmed_view = client.get(f"{base}/api/v1/tasks/{task_id}/review?kind=confirmed&version=1", headers=headers())
+    assert confirmed_view.status_code == 200 and confirmed_view.get_json()["editable"] is False
 
 
 def test_online_review_owner_csrf_and_api_agent_fail_closed(tmp_path: Path) -> None:
@@ -378,6 +438,8 @@ def test_online_case_review_ai_and_confirm_publish(tmp_path: Path) -> None:
     assert b"data-case-review-workbench" in page.data
     assert b"case-review-workbench.js" in page.data
     loaded = client.get(f"{base}/api/v1/tasks/{task_id}/case-review", headers=headers()).get_json()
+    generated_view = client.get(f"{base}/api/v1/tasks/{task_id}/case-review?kind=generated", headers=headers())
+    assert generated_view.status_code == 200 and generated_view.get_json()["editable"] is False
     saved_response = client.put(
         f"{base}/api/v1/tasks/{task_id}/case-review-draft", headers={**headers(), "Content-Type": "application/json"},
         json={"revision": 0, "sha256": loaded["sha256"], "cases": cases},
@@ -406,6 +468,8 @@ def test_online_case_review_ai_and_confirm_publish(tmp_path: Path) -> None:
     )
     assert retried.status_code == 200
     assert retried.get_json()["case_review"]["version"] == confirmed.get_json()["case_review"]["version"]
+    confirmed_view = client.get(f"{base}/api/v1/tasks/{task_id}/case-review?kind=confirmed&version=1", headers=headers())
+    assert confirmed_view.status_code == 200 and confirmed_view.get_json()["editable"] is False
 
 
 def test_admin_task_list_survives_schema_incompatible_records(tmp_path: Path) -> None:

@@ -6,6 +6,7 @@ WORKDIR /workspace/frontend
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 
+COPY VERSION /workspace/VERSION
 COPY frontend/ ./
 COPY web/ /workspace/web/
 RUN npm run build

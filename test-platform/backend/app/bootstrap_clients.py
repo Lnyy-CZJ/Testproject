@@ -12,7 +12,7 @@ from app.models.identity import ToolClient
 
 CLIENT_CAPABILITIES = {
     "trackevents": ["audit.write", "config.ack"],
-    "log-filter": ["audit.write", "config.ack"],
+    "log-filter": ["audit.write", "config.read", "config.ack"],
     "truthy-search": ["config.read", "config.ack", "audit.write", "credential.status.write"],
     "api-autotest": [
         "config.read", "config.ack", "audit.write",

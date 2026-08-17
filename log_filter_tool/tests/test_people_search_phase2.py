@@ -188,7 +188,7 @@ class ReportRenderingTests(unittest.TestCase):
     def test_report_contains_timeline_table(self):
         result = analyze_fixture("f03_wiki_unique_but_pdl_called.log")
         report = render_rule_report(result)
-        self.assertIn("| # | Provider | Operation |", report)
+        self.assertIn("| # | Provider / Operation | 技术/业务状态 | 业务结果 |", report)
         self.assertIn("wiki_remote", report)
         self.assertIn("people_data_labs", report)
 
@@ -297,7 +297,11 @@ class RealLogRuleTests(unittest.TestCase):
                 expected_ids = {r["rule_id"] for r in CONTRACTS["rules"]}
                 self.assertEqual(rule_ids, expected_ids, path.name)
                 # 真实日志应正常或仅有 WARN
-                self.assertIn(verdict, ("NORMAL", "NEEDS_CONFIRMATION", "ISSUES_FOUND"), path.name)
+                self.assertIn(
+                    verdict,
+                    ("NORMAL", "NEEDS_CONFIRMATION", "INCOMPLETE_EVIDENCE", "ISSUES_FOUND"),
+                    path.name,
+                )
                 # 无规则异常
                 rule_errors = [w for w in warnings if w.get("code") == "RULE_ERROR"]
                 self.assertEqual(rule_errors, [], path.name)

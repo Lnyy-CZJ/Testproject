@@ -470,7 +470,7 @@ CHECKS = (
 | CAND-002 | score/confidence/decision/selected 不矛盾 | Debug、List/Detail |
 | CAND-003 | matched_clue_types 在 Debug、List、Detail 中一致 | Debug、List/Detail |
 | CAND-004 | 相同稳定标识的跨 Provider 候选不重复 | List/Detail |
-| COST-001 | 分项成本与任务总成本一致 | Debug、Cost |
+| COST-001 | 分项、阶段与任务总成本一致 | Debug、Cost |
 | COST-002 | UNPRICED 不作为免费，缓存调用不重复计费 | tool calls、Cost |
 | STOP-001 | result、diagnosis 和 Report 的 stop_reason 一致 | GetTask、Debug、Report |
 

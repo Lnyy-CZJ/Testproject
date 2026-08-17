@@ -1,0 +1,2 @@
+syntax = "proto3";
+service UserService { rpc GetUser (UserRequest) returns (UserReply); }

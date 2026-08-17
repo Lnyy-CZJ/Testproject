@@ -14,7 +14,7 @@ from flask import Flask, Response, g, jsonify, render_template, request, send_fi
 from jinja2 import ChoiceLoader, FileSystemLoader
 from pydantic import ValidationError
 
-from services.common.artifacts import load_registry, resolve_artifact
+from services.common.artifacts import load_registry, preview_artifact, resolve_artifact
 from services.common.audit import emit_audit
 from services.common.case_review import CaseReviewService, parse_cases
 from services.common.config import ServiceSettings
@@ -88,6 +88,7 @@ def _new_record(task_id: str, settings: ServiceSettings, identity, form: dict[st
         "project_name": form["project_name"],
         "module_id": safe_slug(form["module_name"], "module"),
         "module_name": form["module_name"],
+        "title": form.get("title") or f"{form['project_name']} / {form['module_name']}",
         "environment": settings.runtime_environment,
         "created_at": now.isoformat(),
         "started_at": None,
@@ -234,6 +235,7 @@ def create_agent_app(
                 "review_ai_enabled": bool(normal.get("REVIEW_AI_ENABLED", False)) if settings.agent_type == "functional" else False,
                 "online_case_review_enabled": bool(normal.get("ONLINE_CASE_REVIEW_ENABLED", False)) if settings.agent_type == "functional" else False,
                 "case_review_ai_enabled": bool(normal.get("CASE_REVIEW_AI_ENABLED", False)) if settings.agent_type == "functional" else False,
+                "functional_workbench_v2_enabled": bool(normal.get("FUNCTIONAL_WORKBENCH_V2_ENABLED", False)) if settings.agent_type == "functional" else False,
             })
         except ServiceError:
             return jsonify({"status": "not_ready", "storage_writable": storage_writable, "configuration_available": False}), 503
@@ -242,11 +244,17 @@ def create_agent_app(
     def index():
         identity = current_identity()
         require_permission(identity, "tool.view")
-        records = safe_public_tasks([item for item in store.list() if item.get("created_by_user_id") == identity.user_id or "task.view.all" in identity.permissions])
+        _snapshot, normal = safe_limits()
+        workbench_v2 = settings.agent_type == "functional" and bool(normal.get("FUNCTIONAL_WORKBENCH_V2_ENABLED", False))
+        source_records = [item for item in store.list() if item.get("created_by_user_id") == identity.user_id or "task.view.all" in identity.permissions]
+        for item in source_records:
+            item["workbench_v2_enabled"] = workbench_v2
+        records = safe_public_tasks(source_records)
         return render_template(
             "index.html", title=title, description=description, settings=settings,
-            tasks=records[:20], agent_type=settings.agent_type,
+            tasks=records[:500] if workbench_v2 else records[:20], agent_type=settings.agent_type,
             csrf_token=request.cookies.get("tp_csrf", ""), platform_home_url=settings.platform_home_url,
+            functional_workbench_v2=workbench_v2,
         )
 
     @app.get(f"{settings.base_path}/tasks/<task_id>")
@@ -255,6 +263,8 @@ def create_agent_app(
         _snapshot, normal = safe_limits()
         online_review_enabled = settings.agent_type == "functional" and bool(normal.get("ONLINE_REVIEW_ENABLED", False))
         online_case_review_enabled = settings.agent_type == "functional" and bool(normal.get("ONLINE_CASE_REVIEW_ENABLED", False))
+        workbench_v2 = settings.agent_type == "functional" and bool(normal.get("FUNCTIONAL_WORKBENCH_V2_ENABLED", False))
+        record["workbench_v2_enabled"] = workbench_v2
         return render_template(
             "task_detail.html", title=title, settings=settings, task=public_task(record),
             artifacts=load_registry(store, task_id), csrf_token=request.cookies.get("tp_csrf", ""),
@@ -264,6 +274,7 @@ def create_agent_app(
             can_edit_review="tool.execute" in identity.permissions,
             online_case_review_enabled=online_case_review_enabled,
             case_review_ai_enabled=online_case_review_enabled and bool(normal.get("CASE_REVIEW_AI_ENABLED", False)),
+            functional_workbench_v2=workbench_v2,
         )
 
     @app.post(f"{settings.base_path}/api/v1/tasks")
@@ -282,8 +293,11 @@ def create_agent_app(
             raise ServiceError(422, "INVALID_INPUT", "任务环境必须与当前部署环境一致")
         project_name = request.form.get("project_name", "").strip()
         module_name = request.form.get("module_name", "").strip()
+        task_title = request.form.get("title", "").strip()
         if not 1 <= len(project_name) <= 128 or not 1 <= len(module_name) <= 128:
             raise ServiceError(422, "INVALID_INPUT", "项目和模块名称长度必须为 1～128 字符")
+        if task_title and len(task_title) > 128:
+            raise ServiceError(422, "INVALID_INPUT", "任务标题长度不能超过 128 字符")
         additional_context = request.form.get("additional_context", "").strip()
         if len(additional_context) > 4_000:
             raise ServiceError(422, "INVALID_INPUT", "补充说明超过长度上限")
@@ -324,7 +338,7 @@ def create_agent_app(
             input_name = "source.json" if is_test_points else f"source{extension}"
             input_path = task_dir / "input" / input_name
             atomic_write_bytes(input_path, data)
-            form = {"operation": operation, "project_name": project_name, "module_name": module_name}
+            form = {"operation": operation, "project_name": project_name, "module_name": module_name, "title": task_title}
             record = _new_record(task_id, settings, identity, form)
             record["artifacts_expire_at"] = (
                 datetime.now(UTC) + timedelta(days=int(normal.get("TASK_ARTIFACT_RETENTION_DAYS", 90)))
@@ -352,6 +366,7 @@ def create_agent_app(
             outcome="success", actor_user_id=identity.user_id, actor_username=identity.username,
             metadata={"operation": operation, "environment": settings.runtime_environment},
         )
+        record["workbench_v2_enabled"] = settings.agent_type == "functional" and bool(normal.get("FUNCTIONAL_WORKBENCH_V2_ENABLED", False))
         return jsonify(public_task(record)), 202
 
     @app.get(f"{settings.base_path}/api/v1/tasks")
@@ -362,17 +377,39 @@ def create_agent_app(
         page_size = min(100, max(1, request.args.get("page_size", 20, type=int)))
         status = request.args.get("status")
         operation = request.args.get("operation")
+        query = request.args.get("q", "").strip().casefold()[:128]
+        created_date = request.args.get("date", "").strip()
+        allowed_statuses = {"pending", "running", "waiting_review", "waiting_contract_review", "waiting_case_review", "waiting_execution_confirmation", "succeeded", "failed", "cancelled", "partial_success"}
+        if status and status not in allowed_statuses:
+            raise ServiceError(422, "INVALID_INPUT", "任务状态筛选值不受支持")
+        if operation and operation not in operations:
+            raise ServiceError(422, "INVALID_INPUT", "操作类型筛选值不受支持")
         visible = [item for item in store.list() if item.get("created_by_user_id") == identity.user_id or "task.view.all" in identity.permissions]
         if status:
             visible = [item for item in visible if item.get("status") == status]
         if operation:
             visible = [item for item in visible if item.get("operation") == operation]
+        if query:
+            visible = [item for item in visible if any(query in str(item.get(key, "")).casefold() for key in ("id", "title", "project_name", "module_name"))]
+        if created_date:
+            try:
+                datetime.strptime(created_date, "%Y-%m-%d")
+            except ValueError as exc:
+                raise ServiceError(422, "INVALID_INPUT", "日期必须使用 YYYY-MM-DD") from exc
+            visible = [item for item in visible if str(item.get("created_at", ""))[:10] == created_date]
+        visible.sort(key=lambda item: (str(item.get("created_at", "")), str(item.get("id", ""))), reverse=True)
+        _snapshot, normal = safe_limits()
+        workbench_v2 = settings.agent_type == "functional" and bool(normal.get("FUNCTIONAL_WORKBENCH_V2_ENABLED", False))
+        for item in visible:
+            item["workbench_v2_enabled"] = workbench_v2
         start = (page - 1) * page_size
         return jsonify({"items": safe_public_tasks(visible[start:start + page_size]), "total": len(visible), "page": page, "page_size": page_size})
 
     @app.get(f"{settings.base_path}/api/v1/tasks/<task_id>")
     def task_detail(task_id: str):
         record, _identity = get_task(task_id)
+        _snapshot, normal = safe_limits()
+        record["workbench_v2_enabled"] = settings.agent_type == "functional" and bool(normal.get("FUNCTIONAL_WORKBENCH_V2_ENABLED", False))
         payload = public_task(record)
         payload["artifacts"] = load_registry(store, task_id)
         payload["can_cancel"] = record.get("status") not in {"succeeded", "failed", "cancelled"}
@@ -402,8 +439,12 @@ def create_agent_app(
             raise ServiceError(403, "FEATURE_DISABLED", "在线 Review 尚未启用")
         if record.get("artifacts_expired"):
             raise ServiceError(410, "ARTIFACT_EXPIRED", "Review 文件已过期")
-        payload = review_service.load(task_id)
+        kind = request.args.get("kind", "draft")
+        version = request.args.get("version", type=int)
+        payload = review_service.load_version(task_id, kind=kind, version=version)
         payload.update({"editable": record.get("status") == "waiting_review" and "tool.execute" in identity.permissions, "task_status": record.get("status"), "stage": record.get("stage"), "review_ai": record.get("review_ai", {}), "review_ai_enabled": bool(normal.get("REVIEW_AI_ENABLED", False))})
+        if kind != "draft":
+            payload["editable"] = False
         return jsonify(payload)
 
     @app.put(f"{settings.base_path}/api/v1/tasks/<task_id>/review-draft")
@@ -667,13 +708,17 @@ def create_agent_app(
             raise ServiceError(403, "FEATURE_DISABLED", "在线测试用例 Review 尚未启用")
         if record.get("artifacts_expired"):
             raise ServiceError(410, "ARTIFACT_EXPIRED", "测试用例 Review 文件已过期")
-        payload = case_review_service.load(task_id, **case_limits(normal))
+        kind = request.args.get("kind", "draft")
+        version = request.args.get("version", type=int)
+        payload = case_review_service.load_version(task_id, kind=kind, version=version, **case_limits(normal))
         payload.update({
             "editable": record.get("status") == "waiting_case_review" and "tool.execute" in identity.permissions,
             "task_status": record.get("status"), "stage": record.get("stage"),
             "test_points": case_point_summaries(task_id), "case_review_ai": record.get("case_review_ai", {}),
             "case_review_ai_enabled": bool(normal.get("CASE_REVIEW_AI_ENABLED", False)),
         })
+        if kind != "draft":
+            payload["editable"] = False
         return jsonify(payload)
 
     @app.put(f"{settings.base_path}/api/v1/tasks/<task_id>/case-review-draft")
@@ -946,5 +991,26 @@ def create_agent_app(
             metadata={"task_id": task_id, "artifact_type": item.get("type")},
         )
         return send_file(path, as_attachment=True, download_name=item["name"], max_age=0)
+
+    @app.get(f"{settings.base_path}/api/v1/tasks/<task_id>/artifacts/<artifact_id>/preview")
+    def artifact_preview(task_id: str, artifact_id: str):
+        """按登记 ID 预览白名单文本或 XLSX 内容，绝不接受客户端路径。"""
+
+        record, identity = get_task(task_id)
+        if record.get("artifacts_expired"):
+            raise ServiceError(410, "ARTIFACT_EXPIRED", "任务产物已过期")
+        try:
+            path, item = resolve_artifact(store, task_id, artifact_id)
+            payload = preview_artifact(path)
+        except FileNotFoundError:
+            raise ServiceError(404, "ARTIFACT_NOT_READY", "产物不存在") from None
+        except ValueError as exc:
+            raise ServiceError(415, "ARTIFACT_PREVIEW_UNSUPPORTED", str(exc)) from None
+        emit_audit(
+            client, action="agent.artifact.preview", resource_type="agent_artifact", resource_id=artifact_id,
+            outcome="success", actor_user_id=identity.user_id, actor_username=identity.username,
+            metadata={"task_id": task_id, "artifact_type": item.get("type")},
+        )
+        return jsonify({"name": item["name"], **payload})
 
     return app

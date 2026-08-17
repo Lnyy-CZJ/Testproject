@@ -89,7 +89,9 @@ services:
       SESSION_ABSOLUTE_HOURS: "${SESSION_ABSOLUTE_HOURS:-24}"
       LOGIN_FAILURE_LIMIT: "${LOGIN_FAILURE_LIMIT:-5}"
       LOGIN_LOCK_MINUTES: "${LOGIN_LOCK_MINUTES:-15}"
+      PLATFORM_VERSION_FILE: /run/platform-version
     volumes:
+      - ./VERSION:/run/platform-version:ro
       - ./.runtime-secrets/${PLATFORM_RUNTIME_ENV:-dev}/bootstrap-token:/run/secrets/platform-bootstrap-token:ro
       - ./.runtime-secrets/${PLATFORM_RUNTIME_ENV:-dev}-kek.json:/run/secrets/platform-kek.json:ro
     expose:
@@ -168,6 +170,8 @@ services:
       PLATFORM_RUNTIME_ENV: "${PLATFORM_RUNTIME_ENV:-dev}"
       PEOPLE_SEARCH_ANALYZER_ENABLED: "true"
       PEOPLE_SEARCH_ANALYZER_AI_ENABLED: "true"
+      # 在三个 LLM Release 发布前保持 env；发布验收后由本地 .env 显式切为 platform。
+      LOG_FILTER_LLM_CONFIG_SOURCE: "${LOG_FILTER_LLM_CONFIG_SOURCE:-env}"
       PEOPLE_SEARCH_ANALYZER_LLM_ENDPOINT: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
       PEOPLE_SEARCH_ANALYZER_LLM_MODEL: "deepseek-v4-flash"
       PEOPLE_SEARCH_ANALYZER_LLM_API_KEY_FILE: "/run/secrets/llm-api-key"
@@ -175,6 +179,7 @@ services:
       # 页面提示使用宿主机路径，容器实际写入对应的 /exports 目录。
       - ${LOG_EXPORT_HOST_DIR:-/Users/admin/Documents/log}:/exports
       - ./.runtime-secrets/log-filter-client-token:/run/secrets/platform-client-token:ro
+      # 仅保留到 LLM Profile/Binding 发布并完成 platform 模式验收。
       - ./.runtime-secrets/llm-api-key:/run/secrets/llm-api-key:ro
     expose:
       - "5001"
@@ -260,9 +265,7 @@ services:
     restart: unless-stopped
 
   functional-test-agent:
-    build:
-      context: ../AItestcase_Agents
-      dockerfile: Dockerfile.functional-agent
+    image: "${AGENT_IMAGE_REGISTRY:-}${FUNCTIONAL_AGENT_IMAGE:-functional-test-agent:0.1.0-local.20260817.f1a6260}"
     environment:
       AGENT_TOOL_ID: functional-test-agent
       AGENT_BASE_PATH: /functional-test-agent
@@ -273,9 +276,9 @@ services:
       PLATFORM_API_URL: http://platform-api:8000/api/v1
       PLATFORM_CLIENT_TOKEN_FILE: /run/secrets/platform-client-token
       PLATFORM_RUNTIME_ENV: "${PLATFORM_RUNTIME_ENV:-dev}"
-      APP_REVISION: "${APP_REVISION:-local}"
+      APP_REVISION: "${FUNCTIONAL_AGENT_REVISION:-f1a6260}"
     volumes:
-      - ../AItestcase_Agents/runtime/${PLATFORM_RUNTIME_ENV:-dev}/functional:/app/runtime/${PLATFORM_RUNTIME_ENV:-dev}/functional
+      - ../functional-test-agent/runtime/${PLATFORM_RUNTIME_ENV:-dev}/functional:/app/runtime/${PLATFORM_RUNTIME_ENV:-dev}/functional
       - ./.runtime-secrets/${PLATFORM_RUNTIME_ENV:-dev}/functional-test-agent-client-token:/run/secrets/platform-client-token:ro
     expose:
       - "5004"
@@ -300,9 +303,7 @@ services:
     restart: unless-stopped
 
   api-test-agent:
-    build:
-      context: ../AItestcase_Agents
-      dockerfile: Dockerfile.api-agent
+    image: "${AGENT_IMAGE_REGISTRY:-}${API_AGENT_IMAGE:-api-test-agent:0.1.0-local.20260817.f1a6260}"
     environment:
       AGENT_TOOL_ID: api-test-agent
       AGENT_BASE_PATH: /api-test-agent
@@ -313,16 +314,16 @@ services:
       PLATFORM_API_URL: http://platform-api:8000/api/v1
       PLATFORM_CLIENT_TOKEN_FILE: /run/secrets/platform-client-token
       PLATFORM_RUNTIME_ENV: "${PLATFORM_RUNTIME_ENV:-dev}"
-      APP_REVISION: "${APP_REVISION:-local}"
+      APP_REVISION: "${API_AGENT_REVISION:-f1a6260}"
       # 默认关闭；仅本机无生产数据试点可通过显式环境变量开启。
       API_EXECUTION_ENABLED: "${API_EXECUTION_ENABLED:-false}"
       API_EXECUTION_CONTROLLER_URL: http://api-execution-controller:5010
       API_EXECUTION_CONTROLLER_TOKEN_FILE: /run/secrets/controller-token
-      API_EXECUTION_TARGETS: '${API_EXECUTION_TARGETS:-[{"target_id":"local-platform-dev","environment":"dev","internal_base_url":"http://platform-gateway","masked_base_url":"http://127.0.0.1:8080","allow_write_methods":true}]}'
-      DATABASE_PERSIST_ENABLED: "false"
-      ALLOWED_TARGETS: "[]"
+      API_EXECUTION_TARGETS: '${API_EXECUTION_TARGETS:-[]}'
+      DATABASE_PERSIST_ENABLED: "${DATABASE_PERSIST_ENABLED:-false}"
+      ALLOWED_TARGETS: '${ALLOWED_TARGETS:-[]}'
     volumes:
-      - ../AItestcase_Agents/runtime/${PLATFORM_RUNTIME_ENV:-dev}/api:/app/runtime/${PLATFORM_RUNTIME_ENV:-dev}/api
+      - ../api-test-agent/runtime/${PLATFORM_RUNTIME_ENV:-dev}/api:/app/runtime/${PLATFORM_RUNTIME_ENV:-dev}/api
       - ./.runtime-secrets/${PLATFORM_RUNTIME_ENV:-dev}/api-test-agent-client-token:/run/secrets/platform-client-token:ro
       - ./.runtime-secrets/${PLATFORM_RUNTIME_ENV:-dev}/api-execution-controller-token:/run/secrets/controller-token:ro
     expose:
@@ -350,20 +351,18 @@ services:
   # 独立 Controller 是唯一可访问 Docker Socket 的服务；Web 服务不会继承该挂载。
   api-execution-controller:
     profiles: ["s2-execution"]
-    build:
-      context: ../AItestcase_Agents
-      dockerfile: Dockerfile.execution-controller
+    image: "${AGENT_IMAGE_REGISTRY:-}${API_EXECUTION_CONTROLLER_IMAGE:-api-execution-controller:0.1.0-local.20260817.f1a6260}"
     environment:
       CONTROLLER_TOKEN_FILE: /run/secrets/controller-token
-      CONTROLLER_RUNS_ROOT: "${API_AGENT_RUNTIME_HOST_ROOT:-/Users/admin/Testproject/AItestcase_Agents/runtime/dev/api}/tasks"
-      EXECUTOR_IMAGE: "api-test-executor:${APP_REVISION:-local}"
+      CONTROLLER_RUNS_ROOT: "${API_AGENT_RUNTIME_HOST_ROOT:-/Users/admin/Testproject/api-test-agent/runtime/dev/api}/tasks"
+      EXECUTOR_IMAGE: "${AGENT_IMAGE_REGISTRY:-}${API_EXECUTOR_IMAGE:-api-test-executor:0.1.0-local.20260817.f1a6260}"
       EXECUTOR_NETWORK: "test-platform-${PLATFORM_RUNTIME_ENV:-dev}-api-executor"
       EXECUTOR_PROXY_URL: http://api-egress-proxy:5011
       RESOURCE_POLICY_ID: local-restricted-v1
       EGRESS_POLICY_ID: local-platform-v1
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - "${API_AGENT_RUNTIME_HOST_ROOT:-/Users/admin/Testproject/AItestcase_Agents/runtime/dev/api}:${API_AGENT_RUNTIME_HOST_ROOT:-/Users/admin/Testproject/AItestcase_Agents/runtime/dev/api}"
+      - "${API_AGENT_RUNTIME_HOST_ROOT:-/Users/admin/Testproject/api-test-agent/runtime/dev/api}:${API_AGENT_RUNTIME_HOST_ROOT:-/Users/admin/Testproject/api-test-agent/runtime/dev/api}"
       - ./.runtime-secrets/${PLATFORM_RUNTIME_ENV:-dev}/api-execution-controller-token:/run/secrets/controller-token:ro
     # Docker Socket 本身等同宿主高权限；只允许此隔离服务以 root 访问，Web/Executor 均保持非 root。
     user: "0:0"
@@ -389,11 +388,9 @@ services:
   # 出口代理同时连接 Executor 隔离网和平台默认网，只允许登记的本机测试目标。
   api-egress-proxy:
     profiles: ["s2-execution"]
-    build:
-      context: ../AItestcase_Agents
-      dockerfile: Dockerfile.egress-proxy
+    image: "${AGENT_IMAGE_REGISTRY:-}${API_EGRESS_PROXY_IMAGE:-api-egress-proxy:0.1.0-local.20260817.f1a6260}"
     environment:
-      REGISTERED_TARGETS: '${API_EGRESS_TARGETS:-[{"target_id":"local-platform-dev","schemes":["http"],"hosts":["platform-gateway"],"ports":[80],"path_prefixes":["/api/v1/"],"allowed_cidrs":["172.16.0.0/12"]}]}'
+      REGISTERED_TARGETS: '${API_EGRESS_TARGETS:-[]}'
     expose:
       - "5011"
     init: true
@@ -419,10 +416,7 @@ services:
   # 仅用于构建固定 Executor 镜像，不作为常驻服务启动。
   api-test-executor-image:
     profiles: ["s2-build"]
-    image: "api-test-executor:${APP_REVISION:-local}"
-    build:
-      context: ../AItestcase_Agents
-      dockerfile: Dockerfile.api-executor
+    image: "${AGENT_IMAGE_REGISTRY:-}${API_EXECUTOR_IMAGE:-api-test-executor:0.1.0-local.20260817.f1a6260}"
     network_mode: none
 
 volumes:

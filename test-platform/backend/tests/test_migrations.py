@@ -82,9 +82,15 @@ def test_empty_database_upgrade_is_repeatable_and_downgrade_is_scoped(
     assert [row[0] for row in connection.execute(
         "SELECT id FROM environments ORDER BY sort_order"
     ).fetchall()] == ["dev", "prod"]
-    assert connection.execute("SELECT COUNT(*) FROM permissions").fetchone()[0] == 17
+    assert connection.execute("SELECT COUNT(*) FROM permissions").fetchone()[0] == 19
     assert connection.execute("SELECT COUNT(*) FROM roles WHERE is_builtin = 1").fetchone()[0] == 5
-    assert connection.execute("SELECT COUNT(*) FROM config_definitions").fetchone()[0] == 98
+    assert connection.execute("SELECT COUNT(*) FROM config_definitions").fetchone()[0] == 130
+    assert connection.execute("SELECT COUNT(*) FROM llm_profiles").fetchone()[0] == 1
+    assert connection.execute("SELECT COUNT(*) FROM tool_llm_bindings").fetchone()[0] == 3
+    assert [row[0] for row in connection.execute(
+        "SELECT permission_code FROM role_grants WHERE role_id='role_platform_admin' "
+        "AND permission_code LIKE 'platform.llm.%' ORDER BY permission_code"
+    ).fetchall()] == ["platform.llm.manage", "platform.llm.secret.manage"]
     review_defaults = connection.execute(
         "SELECT key, default_value FROM config_definitions "
         "WHERE owner_id='functional-test-agent' AND key IN ('ONLINE_REVIEW_ENABLED','REVIEW_AI_ENABLED') ORDER BY key"
@@ -120,6 +126,30 @@ def test_empty_database_upgrade_is_repeatable_and_downgrade_is_scoped(
     assert [(row[0], bool(row[1])) for row in dev_case_values] == [
         ("CASE_REVIEW_AI_ENABLED", True), ("ONLINE_CASE_REVIEW_ENABLED", True),
     ]
+
+    workbench = connection.execute(
+        "SELECT default_value, sensitivity, apply_mode FROM config_definitions "
+        "WHERE id='functional-test-agent.FUNCTIONAL_WORKBENCH_V2_ENABLED'"
+    ).fetchone()
+    assert workbench is not None
+    assert json.loads(workbench[0]) is False
+    assert (workbench[1], workbench[2]) == ("normal", "next_task")
+
+    # 0014 只登记工作台开关，精确降级后必须保留 0013 的两个定义。
+    connection.close()
+    run_alembic(database_url, "downgrade", "20260815_0013")
+    connection = sqlite3.connect(database_path)
+    assert connection.execute("SELECT COUNT(*) FROM config_definitions").fetchone()[0] == 100
+    assert connection.execute(
+        "SELECT COUNT(*) FROM config_definitions WHERE id LIKE 'api-autotest.ADMIN_OPERATOR_%'"
+    ).fetchone()[0] == 2
+    assert connection.execute(
+        "SELECT COUNT(*) FROM config_definitions WHERE key='FUNCTIONAL_WORKBENCH_V2_ENABLED'"
+    ).fetchone()[0] == 0
+    connection.close()
+    run_alembic(database_url, "upgrade", "head")
+    connection = sqlite3.connect(database_path)
+    connection.row_factory = sqlite3.Row
 
     # 0012 可精确回滚到 0011，并保留已有测试点 Review 配置。
     connection.close()

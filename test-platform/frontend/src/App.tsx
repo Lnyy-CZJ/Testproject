@@ -18,11 +18,13 @@ import {
   useNavigate,
 } from "react-router-dom";
 
-import { ApiError, apiJson, fetchToolHealth, fetchTools, request } from "./api/client";
+import { ApiError, apiJson, fetchTools, request } from "./api/client";
+import platformVersionSource from "../../VERSION?raw";
 import { AppShell } from "./components/AppShell";
-import { Hero } from "./components/Hero";
-import { Roadmap } from "./components/Roadmap";
+import { CapabilityCard } from "./components/CapabilityCard";
+import { CapabilityDomainPage } from "./components/CapabilityDomainPage";
 import { ToolGrid } from "./components/ToolGrid";
+import { ToolCatalogProvider, useToolCatalog } from "./context/ToolCatalogContext";
 import type {
   AdminUser,
   AuditEvent,
@@ -31,12 +33,17 @@ import type {
   ConfigRelease,
   CredentialMetadata,
   PermissionDefinition,
+  LlmBinding,
+  LlmEffectiveConfig,
+  LlmProfile,
   Role,
   RoleGrant,
   SecretMetadata,
   UserSession,
 } from "./types/platform";
-import type { Tool, ToolHealthState } from "./types/tool";
+import type { Tool } from "./types/tool";
+
+const PLATFORM_VERSION = platformVersionSource.trim();
 
 interface AuthContextValue {
   auth: AuthState | null;
@@ -137,15 +144,44 @@ function LoginPage() {
   }
 
   return (
-    <AuthLayout eyebrow="TEST PLATFORM" title="登录工程工作台" copy="使用平台账号访问已授权工具、配置和测试结果。">
-      <form className="auth-form" onSubmit={submit}>
-        <label>用户名<input autoFocus autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} required /></label>
-        <label>密码<input type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required /></label>
-        {error && <InlineMessage kind="error">{error}</InlineMessage>}
+    <LoginLayout>
+      <form className="auth-form login-form" onSubmit={submit}>
+        <label>用户名<input autoFocus autoComplete="username" placeholder="请输入用户名" value={username} onChange={(event) => setUsername(event.target.value)} required /></label>
+        <label>密码<input type="password" autoComplete="current-password" placeholder="请输入密码" aria-invalid={Boolean(error)} aria-describedby={error ? "login-error" : undefined} value={password} onChange={(event) => setPassword(event.target.value)} required /></label>
+        {error && <div id="login-error"><InlineMessage kind="error">{error}</InlineMessage></div>}
         <button className="primary-button" disabled={submitting}>{submitting ? "正在验证…" : "登录"}</button>
       </form>
-    </AuthLayout>
+    </LoginLayout>
   );
+}
+
+function LoginLayout({ children }: PropsWithChildren) {
+  return <div className="login-shell">
+    <header className="login-header">
+      <div className="login-header-content">
+        <span className="brand"><span className="brand-mark" aria-hidden="true">T</span><span>测试开发平台</span></span>
+        <nav className="login-capabilities" aria-label="平台能力预览"><span>工作台</span><span>AI 测试</span><span>自动化</span><span>质量分析</span><span>专项评测</span></nav>
+        <div className="login-header-meta"><span>DEV</span><span>工程工作台</span></div>
+      </div>
+    </header>
+    <main className="login-page">
+      <section className="login-intro" aria-labelledby="login-platform-title">
+        <div className="login-intro-content">
+          <span className="brand-mark" aria-hidden="true">T</span>
+          <h1 id="login-platform-title">测试开发平台</h1>
+          <p>让每一次质量验证，都更高效。</p>
+          <div className="login-value"><span aria-hidden="true" /><div><strong>统一管理测试资产</strong><small>用更清晰的方式推进质量协作</small></div></div>
+          <p className="login-workspace">TEST PLATFORM · QUALITY WORKSPACE</p>
+        </div>
+      </section>
+      <section className="login-panel" aria-labelledby="login-title">
+        <div className="login-panel-heading"><h1 id="login-title">欢迎回来</h1><p>登录后继续你的测试工作</p></div>
+        {children}
+        <p className="login-help">遇到问题？请联系平台管理员</p>
+      </section>
+    </main>
+    <footer className="login-footer">© {new Date().getFullYear()} Test Platform</footer>
+  </div>;
 }
 
 function SetupPage() {
@@ -240,38 +276,55 @@ function WorkspaceShell({ children }: PropsWithChildren) {
 }
 
 function HomePage() {
-  const [tools, setTools] = useState<Tool[]>([]);
-  const [healthStates, setHealthStates] = useState<Record<string, ToolHealthState>>({});
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const refreshStatuses = useCallback(async (currentTools: Tool[]) => {
-    setRefreshing(true);
-    setHealthStates(Object.fromEntries(currentTools.map((tool) => [tool.id, "checking"])));
-    const results = await Promise.all(currentTools.map(async (tool) => ({ id: tool.id, healthy: await fetchToolHealth(tool) })));
-    setHealthStates(Object.fromEntries(results.map((result) => [result.id, result.healthy ? "healthy" : "unhealthy"])));
-    setRefreshing(false);
-  }, []);
+  const { auth } = useAuth();
+  const environment = useEnvironment();
+  const { tools, groups, unknownTools, healthStates, loading, refreshing, error, refreshHealth, reloadCatalog } = useToolCatalog();
+  const [credentialIssueCount, setCredentialIssueCount] = useState<number | null>(null);
+  const aiCapabilities = groups["ai-testing"];
+  const professionalCapabilities = [
+    ...groups.automation,
+    ...groups["quality-analysis"],
+    ...groups["domain-evaluation"],
+  ];
+  const healthCounts = tools.reduce((counts, tool) => {
+    counts[healthStates[tool.id] ?? "checking"] += 1;
+    return counts;
+  }, { checking: 0, healthy: 0, unhealthy: 0 });
+
   useEffect(() => {
+    if (!auth?.platform_permissions.includes("platform.secret.manage")) {
+      setCredentialIssueCount(null);
+      return;
+    }
     let active = true;
-    void fetchTools().then(async (items) => {
-      if (!active) return;
-      setTools(items); setError(""); setLoading(false); await refreshStatuses(items);
-    }).catch((requestError) => {
-      if (!active) return;
-      setError(requestError instanceof Error ? requestError.message : "工具目录加载失败"); setLoading(false);
-    });
+    void apiJson<CredentialMetadata[]>(`/credentials?environment_id=${environment}`).then((items) => {
+      if (!active || !Array.isArray(items)) return;
+      const soon = Date.now() + 24 * 60 * 60 * 1000;
+      setCredentialIssueCount(items.filter((item) => item.status !== "active" || (item.expires_at && new Date(item.expires_at).getTime() <= soon)).length);
+    }).catch(() => { if (active) setCredentialIssueCount(null); });
     return () => { active = false; };
-  }, [refreshStatuses]);
-  return <WorkspaceShell><Hero toolCount={tools.length} /><section id="tools" className="tools-section" aria-labelledby="tools-title"><div className="section-heading"><div><p className="section-label">已授权工具</p><h2 id="tools-title">选择工具开始测试</h2></div><button className="refresh-button" type="button" disabled={refreshing || loading || tools.length === 0} onClick={() => void refreshStatuses(tools)}>{refreshing ? "检测中..." : "重新检测状态"}</button></div>{error && <InlineMessage kind="error">平台身份或数据服务暂时不可用，已停止工具导航：{error}</InlineMessage>}{loading ? <div className="panel-loading" role="status">正在读取权限与工具目录…</div> : !error && <ToolGrid tools={tools} healthStates={healthStates} />}</section><Roadmap /></WorkspaceShell>;
+  }, [auth, environment]);
+
+  return <WorkspaceShell><section className="workbench-home" aria-labelledby="workbench-title"><div className="workbench-intro"><div><p className="section-label">AI TESTING WORKSPACE</p><h1 id="workbench-title">AI 测试与质量工程工作台</h1><p>使用 AI 设计测试，通过自动化持续验证，并借助专业工具分析质量问题。</p></div><aside className="platform-status" aria-label="平台状态"><div className="status-panel-heading"><span>平台状态</span><button className="link-button" type="button" disabled={refreshing || loading || tools.length === 0} onClick={() => void refreshHealth()}>{refreshing ? "检测中…" : "重新检测"}</button></div><dl><div><dt>版本</dt><dd>{PLATFORM_VERSION}</dd></div><div><dt>环境</dt><dd>{environment.toUpperCase()}</dd></div><div><dt>已授权</dt><dd>{tools.length}</dd></div><div><dt>异常</dt><dd>{healthCounts.unhealthy}</dd></div></dl><p>{healthCounts.healthy} 项正常 · {healthCounts.checking} 项检测中</p>{credentialIssueCount !== null && <NavLink to="/settings/credentials">凭证异常或临期 {credentialIssueCount} 项</NavLink>}</aside></div>
+  {error && <div className="catalog-state catalog-state-error" role="alert"><div><strong>平台身份或数据服务暂时不可用</strong><p>已停止工具导航，不会恢复匿名入口。{error}</p></div><button className="secondary-button" type="button" onClick={() => void reloadCatalog()}>重新加载目录</button></div>}
+  {loading ? <div className="catalog-state" role="status"><span className="loading-indicator" />正在读取权限与能力目录…</div> : !error && <><section className="mission-section" aria-labelledby="mission-title"><div className="section-heading"><div><p className="section-label">我现在想做什么</p><h2 id="mission-title">从测试目标进入能力</h2></div></div>{aiCapabilities.length > 0 ? <div className="primary-capability-grid">{aiCapabilities.map((capability) => <CapabilityCard key={capability.toolId} capability={capability} />)}</div> : <EmptyState title="当前没有 AI 测试能力" copy="平台只展示服务端已授权的能力。" />}</section><section className="professional-section" aria-labelledby="professional-title"><div className="section-heading"><div><p className="section-label">持续验证与专业工具</p><h2 id="professional-title">让每项能力完成自己的使命</h2></div><span className="section-count">{professionalCapabilities.length} 项能力</span></div>{professionalCapabilities.length > 0 && <div className="professional-capability-grid">{professionalCapabilities.map((capability) => <CapabilityCard key={capability.toolId} capability={capability} compact />)}</div>}</section>{unknownTools.length > 0 && <section className="unknown-tools" aria-labelledby="unknown-tools-title"><h2 id="unknown-tools-title">其他已授权工具</h2><ToolGrid tools={unknownTools} healthStates={healthStates} /></section>}</>}</section></WorkspaceShell>;
 }
 
 function PageHeader({ eyebrow, title, copy, actions }: { eyebrow: string; title: string; copy: string; actions?: ReactNode }) {
   return <div className="workspace-heading"><div><p className="section-label">{eyebrow}</p><h1>{title}</h1><p>{copy}</p></div>{actions}</div>;
 }
 
-function SettingsNav() {
-  return <nav className="subnav" aria-label="配置管理"><NavLink to="/settings/config">普通配置</NavLink><NavLink to="/settings/secrets">Secret</NavLink><NavLink to="/settings/credentials">凭证状态</NavLink></nav>;
+function ManagementNav() {
+  const { auth } = useAuth();
+  const has = (permission: string) => Boolean(auth?.platform_permissions.includes(permission));
+  return <nav className="subnav" aria-label="平台管理">
+    {has("platform.user.manage") && <NavLink to="/admin/users">用户管理</NavLink>}
+    {has("platform.role.manage") && <NavLink to="/admin/roles">角色与权限</NavLink>}
+    {(has("platform.llm.manage") || has("platform.llm.secret.manage")) && <NavLink to="/settings/llm">LLM 配置</NavLink>}
+    {has("platform.config.manage") && <NavLink to="/settings/config">普通配置</NavLink>}
+    {has("platform.secret.manage") && <><NavLink to="/settings/secrets">Secret</NavLink><NavLink to="/settings/credentials">凭证状态</NavLink></>}
+    {has("platform.audit.view") && <NavLink to="/audit">审计日志</NavLink>}
+  </nav>;
 }
 
 function useEnvironment(): string {
@@ -282,6 +335,172 @@ function useEnvironment(): string {
     return () => window.removeEventListener("platform-environment-change", listener);
   }, []);
   return environment;
+}
+
+function LlmSettingsPage() {
+  const { auth } = useAuth();
+  const environment = useEnvironment();
+  const canManageProfiles = Boolean(auth?.platform_permissions.includes("platform.llm.manage"));
+  const canManageProfileSecrets = Boolean(auth?.platform_permissions.includes("platform.llm.secret.manage"));
+  const [profiles, setProfiles] = useState<LlmProfile[]>([]);
+  const [bindings, setBindings] = useState<LlmBinding[]>([]);
+  const [selection, setSelection] = useState<{ type: "llm_profile" | "llm_binding"; id: string } | null>(null);
+  const [definitions, setDefinitions] = useState<ConfigDefinition[]>([]);
+  const [releases, setReleases] = useState<ConfigRelease[]>([]);
+  const [draft, setDraft] = useState<ConfigRelease | null>(null);
+  const [values, setValues] = useState<Record<string, unknown>>({});
+  const [secretMetadata, setSecretMetadata] = useState<Record<string, SecretMetadata>>({});
+  const [secretDefinition, setSecretDefinition] = useState<ConfigDefinition | null>(null);
+  const [secretValue, setSecretValue] = useState("");
+  const [creatingProfile, setCreatingProfile] = useState(false);
+  const [profileForm, setProfileForm] = useState({ name: "", description: "" });
+  const [effective, setEffective] = useState<LlmEffectiveConfig | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  useModal(creatingProfile || Boolean(secretDefinition), () => {
+    setCreatingProfile(false); setSecretDefinition(null); setSecretValue("");
+  });
+
+  const loadCatalog = useCallback(async () => {
+    setError("");
+    const [profileRows, bindingRows] = await Promise.all([
+      canManageProfiles
+        ? apiJson<LlmProfile[]>(`/llm/profiles?environment_id=${environment}`)
+        : Promise.resolve([]),
+      apiJson<LlmBinding[]>(`/llm/bindings?environment_id=${environment}`),
+    ]);
+    setProfiles(profileRows); setBindings(bindingRows);
+    setSelection((current) => {
+      const stillVisible = current && (current.type === "llm_profile"
+        ? profileRows.some((item) => item.id === current.id)
+        : bindingRows.some((item) => item.id === current.id));
+      if (stillVisible) return current;
+      if (profileRows[0]) return { type: "llm_profile", id: profileRows[0].id };
+      if (bindingRows[0]) return { type: "llm_binding", id: bindingRows[0].id };
+      return null;
+    });
+  }, [canManageProfiles, environment]);
+
+  useEffect(() => { void loadCatalog().catch((requestError) => setError(requestError.message)); }, [loadCatalog]);
+  useEffect(() => {
+    if (!selection) { setDefinitions([]); setReleases([]); setDraft(null); return; }
+    let active = true;
+    setEffective(null);
+    void Promise.all([
+      apiJson<ConfigDefinition[]>(`/config/definitions?owner_type=${selection.type}&owner_id=${encodeURIComponent(selection.id)}`),
+      apiJson<ConfigRelease[]>(`/config/releases?environment_id=${environment}&owner_type=${selection.type}&owner_id=${encodeURIComponent(selection.id)}`),
+      apiJson<SecretMetadata[]>(`/secrets?environment_id=${environment}&owner_type=${selection.type}&owner_id=${encodeURIComponent(selection.id)}`).catch(() => []),
+      selection.type === "llm_binding"
+        ? apiJson<LlmEffectiveConfig>(`/llm/effective-config?environment_id=${environment}&binding_id=${encodeURIComponent(selection.id)}`).catch(() => null)
+        : Promise.resolve(null),
+    ]).then(([definitionRows, releaseRows, secrets, effectiveConfig]) => {
+      if (!active) return;
+      setDefinitions(definitionRows); setReleases(releaseRows);
+      const currentDraft = releaseRows.find((row) => row.status === "draft") ?? null;
+      setDraft(currentDraft);
+      setValues(currentDraft ? Object.fromEntries(currentDraft.items.map((item) => [item.definition_id, item.value])) : {});
+      setSecretMetadata(Object.fromEntries(secrets.map((item) => [item.definition_id, item])));
+      setEffective(effectiveConfig);
+    }).catch((requestError) => { if (active) setError(requestError.message); });
+    return () => { active = false; };
+  }, [selection, environment, message]);
+
+  const selectedBinding = selection?.type === "llm_binding" ? bindings.find((item) => item.id === selection.id) : null;
+  const selectedProfile = selection?.type === "llm_profile" ? profiles.find((item) => item.id === selection.id) : null;
+  const normalDefinitions = definitions.filter((item) => item.sensitivity === "normal");
+  const secretDefinitions = definitions.filter((item) => item.sensitivity === "secret");
+
+  function valueFor(definition: ConfigDefinition): string {
+    const value = values[definition.id] ?? definition.default_value ?? "";
+    return definition.value_type === "json" && typeof value !== "string" ? JSON.stringify(value) : String(value);
+  }
+  function updateValue(definition: ConfigDefinition, raw: string) {
+    let value: unknown = raw;
+    if (["int", "float"].includes(definition.value_type)) value = raw === "" ? null : Number(raw);
+    else if (definition.value_type === "bool") value = raw === "true";
+    else if (definition.value_type === "json") {
+      try { value = JSON.parse(raw); } catch { value = raw; }
+    }
+    setValues((current) => ({ ...current, [definition.id]: value }));
+  }
+  async function reloadSelection(success: string) {
+    setMessage(success);
+    await loadCatalog();
+  }
+  async function createProfile(event: FormEvent) {
+    event.preventDefault(); setBusy(true); setError("");
+    try {
+      const created = await apiJson<LlmProfile>("/llm/profiles", { method: "POST", body: JSON.stringify({ ...profileForm, environment_id: environment }) });
+      setCreatingProfile(false); setProfileForm({ name: "", description: "" });
+      setSelection({ type: "llm_profile", id: created.id });
+      await reloadSelection("公共 LLM Profile 已创建，请配置草稿和 API Key 后发布。");
+    } catch (requestError) { setError(requestError instanceof Error ? requestError.message : "创建失败"); }
+    finally { setBusy(false); }
+  }
+  async function createDraft() {
+    if (!selection) return; setBusy(true); setError("");
+    try {
+      await apiJson("/config/releases", { method: "POST", body: JSON.stringify({ environment_id: environment, owner_type: selection.type, owner_id: selection.id }) });
+      await reloadSelection("草稿已创建。");
+    } catch (requestError) { setError(requestError instanceof Error ? requestError.message : "创建草稿失败"); }
+    finally { setBusy(false); }
+  }
+  async function saveDraft() {
+    if (!draft) return; setBusy(true); setError("");
+    try {
+      const items = normalDefinitions.flatMap((definition) => {
+        const value = values[definition.id] ?? definition.default_value;
+        return value === "" || value === null || value === undefined ? [] : [{ definition_id: definition.id, value }];
+      });
+      await apiJson(`/config/releases/${draft.id}/items`, { method: "PUT", body: JSON.stringify({ revision: draft.revision, items }) });
+      await reloadSelection("草稿已保存。");
+    } catch (requestError) { setError(requestError instanceof Error ? requestError.message : "保存失败"); }
+    finally { setBusy(false); }
+  }
+  async function releaseAction(action: "validate" | "publish" | "rollback", release = draft) {
+    if (!release) return; setBusy(true); setError("");
+    if (environment === "prod" && action !== "validate" && !window.confirm("确认在 PROD 执行此高风险配置操作？")) { setBusy(false); return; }
+    try {
+      await apiJson(`/config/releases/${release.id}/${action}`, { method: "POST" });
+      await reloadSelection(action === "validate" ? "配置校验通过。" : action === "publish" ? "配置已发布，新任务将使用新快照。" : "已创建并激活新的回滚版本。");
+    } catch (requestError) { setError(requestError instanceof Error ? requestError.message : "操作失败"); }
+    finally { setBusy(false); }
+  }
+  async function saveSecret(event: FormEvent) {
+    event.preventDefault(); if (!selection || !secretDefinition) return; setBusy(true); setError("");
+    try {
+      const secretId = `sec_${environment}_${secretDefinition.id.replaceAll(".", "_")}`;
+      await apiJson(`/secrets/${encodeURIComponent(secretId)}`, { method: "PUT", body: JSON.stringify({
+        environment_id: environment, owner_type: selection.type, owner_id: selection.id,
+        definition_id: secretDefinition.id, value: secretValue,
+      }) });
+      setSecretValue(""); setSecretDefinition(null);
+      await reloadSelection("API Key 新版本已加密保存；发布 Release 后任务才会使用该固定版本。");
+    } catch (requestError) { setError(requestError instanceof Error ? requestError.message : "Secret 保存失败"); }
+    finally { setBusy(false); }
+  }
+  async function testConnection() {
+    if (!selectedBinding) return; setBusy(true); setError(""); setMessage("");
+    try {
+      const result = await apiJson<{ checked_at: string }>("/llm/test-connection", { method: "POST", body: JSON.stringify({ environment_id: environment, binding_id: selectedBinding.id }) });
+      setMessage(`连接验证成功 · ${new Date(result.checked_at).toLocaleString()}`);
+    } catch (requestError) { setError(requestError instanceof Error ? requestError.message : "连接验证失败"); }
+    finally { setBusy(false); }
+  }
+  async function toggleProfileArchive() {
+    if (!selectedProfile) return;
+    const action = selectedProfile.is_archived ? "restore" : "archive";
+    if (!selectedProfile.is_archived && !window.confirm("归档后不能用于新绑定；确认继续？")) return;
+    setBusy(true); setError("");
+    try {
+      await apiJson(`/llm/profiles/${selectedProfile.id}/${action}?environment_id=${environment}`, { method: "POST" });
+      await reloadSelection(selectedProfile.is_archived ? "Profile 已恢复。" : "Profile 已归档。");
+    } catch (requestError) { setError(requestError instanceof Error ? requestError.message : "操作失败"); }
+    finally { setBusy(false); }
+  }
+
+  return <WorkspaceShell><section className="workspace-page llm-settings"><PageHeader eyebrow={`${environment.toUpperCase()} / LLM CONTROL PLANE`} title="LLM 统一配置" copy="公共 Profile 保存连接与模型；工具绑定只覆盖真实需要不同的参数。每次任务固定使用已发布快照。" actions={canManageProfiles ? <button className="primary-button" onClick={() => setCreatingProfile(true)}>创建 Profile</button> : undefined} /><ManagementNav />{message && <InlineMessage kind="success">{message}</InlineMessage>}{error && <InlineMessage kind="error">{error}</InlineMessage>}<div className="llm-layout"><aside className="llm-sidebar" aria-label="LLM 配置范围">{canManageProfiles && <section><h2>公共配置</h2>{profiles.map((profile) => <button key={profile.id} className={selection?.id === profile.id ? "selected" : ""} onClick={() => setSelection({ type: "llm_profile", id: profile.id })}><strong>{profile.name}</strong><span>{profile.active_release_version ? `v${profile.active_release_version}` : "未发布"} · {profile.api_key_configured ? "Key 已配置" : "缺少 Key"}</span></button>)}</section>}<section><h2>工具绑定</h2>{bindings.map((binding) => <button key={binding.id} className={selection?.id === binding.id ? "selected" : ""} onClick={() => setSelection({ type: "llm_binding", id: binding.id })}><strong>{binding.display_name}</strong><span>{binding.tool_id} / {binding.capability_key}</span></button>)}</section></aside><div className="llm-editor">{!selection ? <EmptyState title="没有可见的 LLM 配置" copy="当前账号没有 Profile 管理或工具查看权限。" /> : <><div className="config-toolbar"><div><strong>{selection.type === "llm_profile" ? selectedProfile?.name : selectedBinding?.display_name}</strong><span>{draft ? `v${draft.version} 草稿 · revision ${draft.revision}` : "当前没有草稿"}</span></div><div className="dialog-actions">{selectedProfile && <button className="secondary-button" disabled={busy} onClick={() => void toggleProfileArchive()}>{selectedProfile.is_archived ? "恢复" : "归档"}</button>}{selectedBinding?.active_release_id && <button className="secondary-button" disabled={busy} onClick={() => void testConnection()}>测试连接</button>}{!draft ? <button className="primary-button" disabled={busy} onClick={() => void createDraft()}>创建草稿</button> : <><button className="secondary-button" disabled={busy} onClick={() => void saveDraft()}>保存</button><button className="secondary-button" disabled={busy} onClick={() => void releaseAction("validate")}>校验</button><button className="primary-button" disabled={busy} onClick={() => void releaseAction("publish")}>发布</button></>}</div></div>{effective && <dl className="llm-effective"><div><dt>当前模型</dt><dd>{effective.model}</dd></div><div><dt>公共配置</dt><dd>{effective.profile_name}</dd></div><div><dt>快照</dt><dd>{effective.snapshot_id.slice(0, 18)}…</dd></div><div><dt>Secret</dt><dd>{effective.api_key_configured ? "已配置" : "缺失"}</dd></div></dl>}<div className="config-grid">{normalDefinitions.map((definition) => <label className="config-field" key={definition.id}><span>{definition.display_name}<small>{definition.key} · {definition.required ? "必填" : "留空沿用 Provider 默认"}</small></span>{definition.key === "PROFILE_ID" && profiles.length > 0 ? <select disabled={!draft} value={valueFor(definition)} onChange={(event) => updateValue(definition, event.target.value)}>{profiles.filter((item) => !item.is_archived).map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select> : definition.value_type === "bool" ? <select disabled={!draft} value={valueFor(definition)} onChange={(event) => updateValue(definition, event.target.value)}><option value="true">启用</option><option value="false">停用</option></select> : <input disabled={!draft} type={["int", "float"].includes(definition.value_type) ? "number" : "text"} step={definition.value_type === "float" ? "any" : undefined} value={valueFor(definition)} onChange={(event) => updateValue(definition, event.target.value)} />}</label>)}</div>{secretDefinitions.length > 0 && <section className="llm-secret-panel" aria-labelledby="llm-secret-title"><div><h2 id="llm-secret-title">API Key</h2><p>Secret 保存后不回显；发布时固定当前版本。</p></div>{secretDefinitions.map((definition) => <div key={definition.id}><span>{definition.display_name}</span><StatusBadge value={secretMetadata[definition.id]?.configured ? `v${secretMetadata[definition.id].version}` : "missing"} /><button className="secondary-button" disabled={selection.type === "llm_profile" ? !canManageProfileSecrets : false} onClick={() => setSecretDefinition(definition)}>替换</button></div>)}</section>}<section className="release-history"><h2>版本历史</h2>{releases.length === 0 ? <EmptyState title="尚无版本" copy="创建草稿后在这里完成校验、发布和回滚。" /> : releases.map((release) => <div className="release-row" key={release.id}><div><strong>v{release.version}</strong><span>{new Date(release.created_at).toLocaleString()}</span></div><StatusBadge value={release.status} /><div className="row-actions">{["active", "superseded"].includes(release.status) && <button className="secondary-button" onClick={() => void releaseAction("rollback", release)}>回滚到此版本</button>}</div></div>)}</section></>}</div></div>{creatingProfile && <div className="modal-backdrop" role="presentation"><section className="dialog" role="dialog" aria-modal="true" aria-labelledby="profile-dialog-title"><p className="section-label">{environment.toUpperCase()} / PROFILE</p><h2 id="profile-dialog-title">创建公共 LLM Profile</h2><form className="auth-form" onSubmit={createProfile}><label>名称<input autoFocus value={profileForm.name} onChange={(event) => setProfileForm({ ...profileForm, name: event.target.value })} required /></label><label>说明<textarea value={profileForm.description} onChange={(event) => setProfileForm({ ...profileForm, description: event.target.value })} /></label><div className="dialog-actions"><button type="button" className="secondary-button" onClick={() => setCreatingProfile(false)}>取消</button><button className="primary-button" disabled={busy}>创建</button></div></form></section></div>}{secretDefinition && <div className="modal-backdrop" role="presentation"><section className="dialog" role="dialog" aria-modal="true" aria-labelledby="llm-secret-dialog-title"><p className="section-label">{environment.toUpperCase()} / SECRET</p><h2 id="llm-secret-dialog-title">替换 {secretDefinition.display_name}</h2><p>明文只停留在当前输入组件内存，保存后立即清空。</p><form className="auth-form" onSubmit={saveSecret}><label>API Key<input autoFocus type="password" autoComplete="off" value={secretValue} onChange={(event) => setSecretValue(event.target.value)} required /></label><div className="dialog-actions"><button type="button" className="secondary-button" onClick={() => { setSecretDefinition(null); setSecretValue(""); }}>取消</button><button className="primary-button" disabled={busy}>加密保存</button></div></form></section></div>}</section></WorkspaceShell>;
 }
 
 function ConfigPage() {
@@ -378,7 +597,7 @@ function ConfigPage() {
     } catch (requestError) { setError(requestError instanceof Error ? requestError.message : "提升失败"); }
   }
 
-  return <WorkspaceShell><section className="workspace-page"><PageHeader eyebrow={`${environment.toUpperCase()} / CONFIGURATION`} title="配置控制面" copy="只有已登记的键可以在 Web 修改；发布与回滚始终保留可追溯版本。" actions={<label className="compact-field">工具<select value={owner} onChange={(event) => { setOwner(event.target.value); setConfirmPublish(false); }}>{owners.map((item) => <option key={item}>{item}</option>)}</select></label>} /><SettingsNav />{message && <InlineMessage kind="success">{message}</InlineMessage>}{error && <InlineMessage kind="error">{error}</InlineMessage>}{ownerItems.length === 0 ? <EmptyState title="没有可管理的配置" copy="请检查当前角色的工具配置权限。" /> : <><div className="config-toolbar"><div><strong>{owner}</strong><span>{draft ? `v${draft.version} 草稿 · revision ${draft.revision}` : "当前没有草稿"}</span></div><div className="dialog-actions">{!draft ? <button className="primary-button" onClick={() => void createDraft()}>创建草稿</button> : <><button className="secondary-button" onClick={() => void saveDraft()}>保存草稿</button><button className="secondary-button" onClick={() => void releaseAction("validate")}>校验</button><button className="primary-button" onClick={() => void releaseAction("publish")}>{environment === "prod" && confirmPublish ? "确认发布 PROD" : "发布"}</button></>}</div></div><div className="config-grid">{ownerItems.map((item) => <label className="config-field" key={item.id}><span>{item.display_name}<small>{item.key} · {item.apply_mode}</small></span>{["bool", "boolean"].includes(item.value_type) ? <select disabled={!draft} value={String(values[item.id] ?? item.default_value ?? false)} onChange={(event) => updateValue(item, event.target.value)}><option value="true">true</option><option value="false">false</option></select> : <input disabled={!draft} type={["int", "integer", "float"].includes(item.value_type) ? "number" : "text"} step={item.value_type === "float" ? "any" : undefined} value={inputValue(item)} onChange={(event) => updateValue(item, event.target.value)} required={item.required} />}</label>)}</div><section className="release-history" aria-labelledby="release-history-title"><h2 id="release-history-title">版本历史</h2>{releases.length === 0 ? <EmptyState title="尚无版本" copy="创建首个草稿后，版本记录会显示在这里。" /> : releases.map((release) => <div className="release-row" key={release.id}><div><strong>v{release.version}</strong><span>revision {release.revision} · {new Date(release.created_at).toLocaleString()}</span></div><StatusBadge value={release.status} /><div className="row-actions">{release.status === "active" || release.status === "superseded" ? <button className="secondary-button" onClick={() => void rollback(release)}>回滚到此版本</button> : null}{environment === "dev" && release.status === "active" ? <button className="secondary-button" onClick={() => void promote(release)}>提升为 PROD 草稿</button> : null}</div></div>)}</section></>}</section></WorkspaceShell>;
+  return <WorkspaceShell><section className="workspace-page"><PageHeader eyebrow={`${environment.toUpperCase()} / CONFIGURATION`} title="配置控制面" copy="只有已登记的键可以在 Web 修改；发布与回滚始终保留可追溯版本。" actions={<label className="compact-field">工具<select value={owner} onChange={(event) => { setOwner(event.target.value); setConfirmPublish(false); }}>{owners.map((item) => <option key={item}>{item}</option>)}</select></label>} /><ManagementNav />{message && <InlineMessage kind="success">{message}</InlineMessage>}{error && <InlineMessage kind="error">{error}</InlineMessage>}{ownerItems.length === 0 ? <EmptyState title="没有可管理的配置" copy="请检查当前角色的工具配置权限。" /> : <><div className="config-toolbar"><div><strong>{owner}</strong><span>{draft ? `v${draft.version} 草稿 · revision ${draft.revision}` : "当前没有草稿"}</span></div><div className="dialog-actions">{!draft ? <button className="primary-button" onClick={() => void createDraft()}>创建草稿</button> : <><button className="secondary-button" onClick={() => void saveDraft()}>保存草稿</button><button className="secondary-button" onClick={() => void releaseAction("validate")}>校验</button><button className="primary-button" onClick={() => void releaseAction("publish")}>{environment === "prod" && confirmPublish ? "确认发布 PROD" : "发布"}</button></>}</div></div><div className="config-grid">{ownerItems.map((item) => <label className="config-field" key={item.id}><span>{item.display_name}<small>{item.key} · {item.apply_mode}</small></span>{["bool", "boolean"].includes(item.value_type) ? <select disabled={!draft} value={String(values[item.id] ?? item.default_value ?? false)} onChange={(event) => updateValue(item, event.target.value)}><option value="true">true</option><option value="false">false</option></select> : <input disabled={!draft} type={["int", "integer", "float"].includes(item.value_type) ? "number" : "text"} step={item.value_type === "float" ? "any" : undefined} value={inputValue(item)} onChange={(event) => updateValue(item, event.target.value)} required={item.required} />}</label>)}</div><section className="release-history" aria-labelledby="release-history-title"><h2 id="release-history-title">版本历史</h2>{releases.length === 0 ? <EmptyState title="尚无版本" copy="创建首个草稿后，版本记录会显示在这里。" /> : releases.map((release) => <div className="release-row" key={release.id}><div><strong>v{release.version}</strong><span>revision {release.revision} · {new Date(release.created_at).toLocaleString()}</span></div><StatusBadge value={release.status} /><div className="row-actions">{release.status === "active" || release.status === "superseded" ? <button className="secondary-button" onClick={() => void rollback(release)}>回滚到此版本</button> : null}{environment === "dev" && release.status === "active" ? <button className="secondary-button" onClick={() => void promote(release)}>提升为 PROD 草稿</button> : null}</div></div>)}</section></>}</section></WorkspaceShell>;
 }
 
 function SecretsPage() {
@@ -404,7 +623,7 @@ function SecretsPage() {
       setSecretValue(""); setSelected(null); setMessage("Secret 新版本已加密保存并激活。");
     } catch (e) { setError(e instanceof Error ? e.message : "保存失败"); }
   }
-  return <WorkspaceShell><section className="workspace-page"><PageHeader eyebrow={`${environment.toUpperCase()} / SECRETS`} title="Secret 管理" copy="明文只停留在当前输入组件内存；保存后平台不会再次回显。" /><SettingsNav />{message && <InlineMessage kind="success">{message}</InlineMessage>}{error && <InlineMessage kind="error">{error}</InlineMessage>}<div className="data-panel"><div className="table-header secret-columns"><span>Secret</span><span>工具</span><span>状态</span><span>操作</span></div>{definitions.map((item) => <div className="table-row secret-columns" key={item.id}><strong>{item.display_name}<small>{item.key}</small></strong><span>{item.owner_id}</span><StatusBadge value={metadata[item.id]?.configured ? `v${metadata[item.id].version}` : "missing"} /><button className="secondary-button" onClick={() => { setSelected(item); setSecretValue(""); setMessage(""); }}>替换</button></div>)}</div>{selected && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelected(null); }}><section className="dialog" role="dialog" aria-modal="true" aria-labelledby="secret-dialog-title"><p className="section-label">{environment.toUpperCase()} / {selected.owner_id}</p><h2 id="secret-dialog-title">替换 {selected.display_name}</h2><p>新版本保存成功后立即激活，旧版本只用于历史追溯。</p><form className="auth-form" onSubmit={save}><label>Secret 新值<textarea autoFocus value={secretValue} onChange={(event) => setSecretValue(event.target.value)} required /></label><div className="dialog-actions"><button type="button" className="secondary-button" onClick={() => setSelected(null)}>取消</button><button className="primary-button">加密保存</button></div></form></section></div>}</section></WorkspaceShell>;
+  return <WorkspaceShell><section className="workspace-page"><PageHeader eyebrow={`${environment.toUpperCase()} / SECRETS`} title="Secret 管理" copy="明文只停留在当前输入组件内存；保存后平台不会再次回显。" /><ManagementNav />{message && <InlineMessage kind="success">{message}</InlineMessage>}{error && <InlineMessage kind="error">{error}</InlineMessage>}<div className="data-panel"><div className="table-header secret-columns"><span>Secret</span><span>工具</span><span>状态</span><span>操作</span></div>{definitions.map((item) => <div className="table-row secret-columns" key={item.id}><strong>{item.display_name}<small>{item.key}</small></strong><span>{item.owner_id}</span><StatusBadge value={metadata[item.id]?.configured ? `v${metadata[item.id].version}` : "missing"} /><button className="secondary-button" onClick={() => { setSelected(item); setSecretValue(""); setMessage(""); }}>替换</button></div>)}</div>{selected && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelected(null); }}><section className="dialog" role="dialog" aria-modal="true" aria-labelledby="secret-dialog-title"><p className="section-label">{environment.toUpperCase()} / {selected.owner_id}</p><h2 id="secret-dialog-title">替换 {selected.display_name}</h2><p>新版本保存成功后立即激活，旧版本只用于历史追溯。</p><form className="auth-form" onSubmit={save}><label>Secret 新值<textarea autoFocus value={secretValue} onChange={(event) => setSecretValue(event.target.value)} required /></label><div className="dialog-actions"><button type="button" className="secondary-button" onClick={() => setSelected(null)}>取消</button><button className="primary-button">加密保存</button></div></form></section></div>}</section></WorkspaceShell>;
 }
 
 function CredentialsPage() {
@@ -422,10 +641,9 @@ function CredentialsPage() {
     try { await apiJson("/credentials", { method: "POST", body: JSON.stringify({ ...form, environment_id: environment }) }); setCreating(false); setMessage("Credential 已创建，Agent 将在下一轮执行首次验证。 "); await load(); }
     catch (requestError) { setError(requestError instanceof Error ? requestError.message : "创建失败"); }
   }
-  return <WorkspaceShell><section className="workspace-page"><PageHeader eyebrow={`${environment.toUpperCase()} / CREDENTIALS`} title="凭证健康" copy="平台只展示状态、版本和过期时间，不显示 Token 或密码。" actions={<button className="primary-button" onClick={() => setCreating(true)}>创建 Credential</button>} /><SettingsNav />{message && <InlineMessage kind="success">{message}</InlineMessage>}{error && <InlineMessage kind="error">{error}</InlineMessage>}<div className="data-panel">{items.length === 0 ? <EmptyState title="尚未创建 Credential" copy="完成 Secret 导入后创建 Credential，刷新 Agent 会负责登录和续期。" /> : items.map((item) => <div className="table-row" key={item.id}><strong>{item.tool_id}<small>{item.provider_type}</small></strong><span>{item.environment_id}</span><StatusBadge value={item.status} /><span>{item.expires_at ? new Date(item.expires_at).toLocaleString() : "无过期时间"}</span></div>)}</div>{creating && <div className="modal-backdrop" role="presentation"><section className="dialog" role="dialog" aria-modal="true" aria-labelledby="credential-dialog-title"><p className="section-label">{environment.toUpperCase()} / CREDENTIAL</p><h2 id="credential-dialog-title">创建自动维护凭证</h2><p>先在 Secret 页面导入该 Provider 需要的账号或 Token。创建后 Agent 才会尝试验证、登录和续期。</p><form className="auth-form" onSubmit={createCredential}><label>工具<select autoFocus value={form.tool_id} onChange={(event) => setForm({ ...form, tool_id: event.target.value })}><option value="truthy-search">truthy-search</option><option value="api-autotest">api-autotest</option></select></label><label>Provider<select value={form.provider_type} onChange={(event) => setForm({ ...form, provider_type: event.target.value })}><option value="gateway_session">Gateway Session</option><option value="admin_login">Admin Login</option></select></label><div className="dialog-actions"><button type="button" className="secondary-button" onClick={() => setCreating(false)}>取消</button><button className="primary-button">创建并等待验证</button></div></form></section></div>}</section></WorkspaceShell>;
+  return <WorkspaceShell><section className="workspace-page"><PageHeader eyebrow={`${environment.toUpperCase()} / CREDENTIALS`} title="凭证健康" copy="平台只展示状态、版本和过期时间，不显示 Token 或密码。" actions={<button className="primary-button" onClick={() => setCreating(true)}>创建 Credential</button>} /><ManagementNav />{message && <InlineMessage kind="success">{message}</InlineMessage>}{error && <InlineMessage kind="error">{error}</InlineMessage>}<div className="data-panel">{items.length === 0 ? <EmptyState title="尚未创建 Credential" copy="完成 Secret 导入后创建 Credential，刷新 Agent 会负责登录和续期。" /> : items.map((item) => <div className="table-row" key={item.id}><strong>{item.tool_id}<small>{item.provider_type}</small></strong><span>{item.environment_id}</span><StatusBadge value={item.status} /><span>{item.expires_at ? new Date(item.expires_at).toLocaleString() : "无过期时间"}</span></div>)}</div>{creating && <div className="modal-backdrop" role="presentation"><section className="dialog" role="dialog" aria-modal="true" aria-labelledby="credential-dialog-title"><p className="section-label">{environment.toUpperCase()} / CREDENTIAL</p><h2 id="credential-dialog-title">创建自动维护凭证</h2><p>先在 Secret 页面导入该 Provider 需要的账号或 Token。创建后 Agent 才会尝试验证、登录和续期。</p><form className="auth-form" onSubmit={createCredential}><label>工具<select autoFocus value={form.tool_id} onChange={(event) => setForm({ ...form, tool_id: event.target.value })}><option value="truthy-search">truthy-search</option><option value="api-autotest">api-autotest</option></select></label><label>Provider<select value={form.provider_type} onChange={(event) => setForm({ ...form, provider_type: event.target.value })}><option value="gateway_session">Gateway Session</option><option value="admin_login">Admin Login</option></select></label><div className="dialog-actions"><button type="button" className="secondary-button" onClick={() => setCreating(false)}>取消</button><button className="primary-button">创建并等待验证</button></div></form></section></div>}</section></WorkspaceShell>;
 }
 
-function AdminNav() { return <nav className="subnav" aria-label="身份与权限"><NavLink to="/admin/users">用户</NavLink><NavLink to="/admin/roles">角色与权限</NavLink></nav>; }
 
 function UsersPage() {
   const [items, setItems] = useState<AdminUser[]>([]);
@@ -465,7 +683,7 @@ function UsersPage() {
     try { await apiJson(`/admin/users/${user.id}/sessions`, { method: "DELETE" }); setMessage(`${user.display_name} 的会话已全部撤销。`); }
     catch (requestError) { setError(requestError instanceof Error ? requestError.message : "撤销失败"); }
   }
-  return <WorkspaceShell><section className="workspace-page"><PageHeader eyebrow="IDENTITY" title="用户管理" copy="本地账号的状态、角色和会话都由平台统一管理。" actions={<button className="primary-button" onClick={() => setCreating(true)}>创建用户</button>} /><AdminNav />{message && <InlineMessage kind="success">{message}</InlineMessage>}{error && <InlineMessage kind="error">{error}</InlineMessage>}<div className="data-panel user-table"><div className="table-header"><span>用户</span><span>角色</span><span>状态 / 最近登录</span><span>操作</span></div>{items.length === 0 ? <EmptyState title="尚无用户" copy="创建本地用户并分配最小必要角色。" /> : items.map((item) => <div className="table-row" key={item.id}><strong>{item.display_name}<small>{item.username}</small></strong><span>{item.role_ids.length ? item.role_ids.map((id) => roles.find((role) => role.id === id)?.name ?? id).join("、") : "未分配"}</span><span><StatusBadge value={item.status} /><small>{item.last_login_at ? new Date(item.last_login_at).toLocaleString() : "尚未登录"}</small></span><div className="row-actions"><button className="link-button" onClick={() => void updateUser(item, { status: item.status === "active" ? "disabled" : "active" }, item.status === "active" ? "用户已禁用并撤销会话。" : "用户已启用。")}>{item.status === "active" ? "禁用" : "启用"}</button><button className="link-button" onClick={() => setResetting(item)}>重置密码</button><button className="link-button" onClick={() => void revokeUserSessions(item)}>强制退出</button></div></div>)}</div>{creating && <div className="modal-backdrop" role="presentation"><section className="dialog" role="dialog" aria-modal="true" aria-labelledby="create-user-title"><p className="section-label">LOCAL IDENTITY</p><h2 id="create-user-title">创建用户</h2><form className="auth-form" onSubmit={createUser}><label>用户名<input autoFocus value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} minLength={3} required /></label><label>显示名<input value={form.display_name} onChange={(event) => setForm({ ...form, display_name: event.target.value })} required /></label><label>初始密码<input type="password" autoComplete="new-password" minLength={12} value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} required /></label><fieldset><legend>角色</legend>{roles.map((role) => <label className="checkbox-row" key={role.id}><input type="checkbox" checked={form.role_ids.includes(role.id)} onChange={() => toggleRole(role.id)} />{role.name}</label>)}</fieldset><div className="dialog-actions"><button type="button" className="secondary-button" onClick={() => setCreating(false)}>取消</button><button className="primary-button">创建用户</button></div></form></section></div>}{resetting && <div className="modal-backdrop" role="presentation"><section className="dialog" role="dialog" aria-modal="true" aria-labelledby="reset-password-title"><p className="section-label">HIGH-RISK ACTION</p><h2 id="reset-password-title">重置 {resetting.display_name} 的密码</h2><p>提交后该用户所有会话会立即失效。</p><form className="auth-form" onSubmit={submitReset}><label>新密码<input autoFocus type="password" autoComplete="new-password" minLength={12} value={resetPassword} onChange={(event) => setResetPassword(event.target.value)} required /></label><div className="dialog-actions"><button type="button" className="secondary-button" onClick={() => setResetting(null)}>取消</button><button className="primary-button">确认重置</button></div></form></section></div>}</section></WorkspaceShell>;
+  return <WorkspaceShell><section className="workspace-page"><PageHeader eyebrow="IDENTITY" title="用户管理" copy="本地账号的状态、角色和会话都由平台统一管理。" actions={<button className="primary-button" onClick={() => setCreating(true)}>创建用户</button>} /><ManagementNav />{message && <InlineMessage kind="success">{message}</InlineMessage>}{error && <InlineMessage kind="error">{error}</InlineMessage>}<div className="data-panel user-table"><div className="table-header"><span>用户</span><span>角色</span><span>状态 / 最近登录</span><span>操作</span></div>{items.length === 0 ? <EmptyState title="尚无用户" copy="创建本地用户并分配最小必要角色。" /> : items.map((item) => <div className="table-row" key={item.id}><strong>{item.display_name}<small>{item.username}</small></strong><span>{item.role_ids.length ? item.role_ids.map((id) => roles.find((role) => role.id === id)?.name ?? id).join("、") : "未分配"}</span><span><StatusBadge value={item.status} /><small>{item.last_login_at ? new Date(item.last_login_at).toLocaleString() : "尚未登录"}</small></span><div className="row-actions"><button className="link-button" onClick={() => void updateUser(item, { status: item.status === "active" ? "disabled" : "active" }, item.status === "active" ? "用户已禁用并撤销会话。" : "用户已启用。")}>{item.status === "active" ? "禁用" : "启用"}</button><button className="link-button" onClick={() => setResetting(item)}>重置密码</button><button className="link-button" onClick={() => void revokeUserSessions(item)}>强制退出</button></div></div>)}</div>{creating && <div className="modal-backdrop" role="presentation"><section className="dialog" role="dialog" aria-modal="true" aria-labelledby="create-user-title"><p className="section-label">LOCAL IDENTITY</p><h2 id="create-user-title">创建用户</h2><form className="auth-form" onSubmit={createUser}><label>用户名<input autoFocus value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} minLength={3} required /></label><label>显示名<input value={form.display_name} onChange={(event) => setForm({ ...form, display_name: event.target.value })} required /></label><label>初始密码<input type="password" autoComplete="new-password" minLength={12} value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} required /></label><fieldset><legend>角色</legend>{roles.map((role) => <label className="checkbox-row" key={role.id}><input type="checkbox" checked={form.role_ids.includes(role.id)} onChange={() => toggleRole(role.id)} />{role.name}</label>)}</fieldset><div className="dialog-actions"><button type="button" className="secondary-button" onClick={() => setCreating(false)}>取消</button><button className="primary-button">创建用户</button></div></form></section></div>}{resetting && <div className="modal-backdrop" role="presentation"><section className="dialog" role="dialog" aria-modal="true" aria-labelledby="reset-password-title"><p className="section-label">HIGH-RISK ACTION</p><h2 id="reset-password-title">重置 {resetting.display_name} 的密码</h2><p>提交后该用户所有会话会立即失效。</p><form className="auth-form" onSubmit={submitReset}><label>新密码<input autoFocus type="password" autoComplete="new-password" minLength={12} value={resetPassword} onChange={(event) => setResetPassword(event.target.value)} required /></label><div className="dialog-actions"><button type="button" className="secondary-button" onClick={() => setResetting(null)}>取消</button><button className="primary-button">确认重置</button></div></form></section></div>}</section></WorkspaceShell>;
 }
 
 function RolesPage() {
@@ -506,7 +724,7 @@ function RolesPage() {
     catch (requestError) { setError(requestError instanceof Error ? requestError.message : "删除失败"); }
   }
   const toolScopes = [{ id: "*", name: "全部工具" }, ...tools.map((tool) => ({ id: tool.id, name: tool.name }))];
-  return <WorkspaceShell><section className="workspace-page"><PageHeader eyebrow="RBAC" title="角色与工具权限" copy="用户多角色权限取并集；工具权限可授予单一工具或全部工具。" actions={<button className="primary-button" onClick={() => openRole()}>创建角色</button>} /><AdminNav />{message && <InlineMessage kind="success">{message}</InlineMessage>}{error && <InlineMessage kind="error">{error}</InlineMessage>}<div className="role-grid">{items.map((role) => <article className="role-card" key={role.id}><div><p className="section-label">{role.is_builtin ? "BUILT-IN" : "CUSTOM"}</p><h2>{role.name}</h2><p>{role.description}</p></div><ul>{role.grants.map((grant) => <li key={`${grant.permission_code}:${grant.resource_id}`}><code>{grant.permission_code}</code><span>{grant.resource_id}</span></li>)}</ul><div className="row-actions"><button className="link-button" onClick={() => openRole(role)}>编辑</button><button className="link-button" onClick={() => openRole(role, true)}>复制</button>{!role.is_builtin && <button className="link-button" onClick={() => void deleteRole(role)}>删除</button>}</div></article>)}</div>{editing !== undefined && <div className="modal-backdrop" role="presentation"><section className="dialog dialog-wide" role="dialog" aria-modal="true" aria-labelledby="role-dialog-title"><p className="section-label">PERMISSION MATRIX</p><h2 id="role-dialog-title">{editing ? `编辑 ${editing.name}` : "创建角色"}</h2><form className="auth-form" onSubmit={saveRole}><label>角色名称<input autoFocus disabled={Boolean(editing?.is_builtin)} value={roleForm.name} onChange={(event) => setRoleForm({ ...roleForm, name: event.target.value })} required /></label><label>说明<textarea value={roleForm.description} onChange={(event) => setRoleForm({ ...roleForm, description: event.target.value })} /></label><div className="permission-matrix">{permissions.map((permission) => <section key={permission.code}><div><strong>{permission.name}</strong><code>{permission.code}</code><small>{permission.description}</small></div><div>{permission.resource_type === "platform" ? <label className="checkbox-row"><input type="checkbox" checked={hasGrant(permission.code, "platform", "*")} onChange={() => toggleGrant(permission.code, "platform", "*")} />允许</label> : toolScopes.map((scope) => <label className="checkbox-row" key={scope.id}><input type="checkbox" checked={hasGrant(permission.code, "tool", scope.id)} onChange={() => toggleGrant(permission.code, "tool", scope.id)} />{scope.name}</label>)}</div></section>)}</div><div className="dialog-actions"><button type="button" className="secondary-button" onClick={() => setEditing(undefined)}>取消</button><button className="primary-button">保存角色</button></div></form></section></div>}</section></WorkspaceShell>;
+  return <WorkspaceShell><section className="workspace-page"><PageHeader eyebrow="RBAC" title="角色与工具权限" copy="用户多角色权限取并集；工具权限可授予单一工具或全部工具。" actions={<button className="primary-button" onClick={() => openRole()}>创建角色</button>} /><ManagementNav />{message && <InlineMessage kind="success">{message}</InlineMessage>}{error && <InlineMessage kind="error">{error}</InlineMessage>}<div className="role-grid">{items.map((role) => <article className="role-card" key={role.id}><div><p className="section-label">{role.is_builtin ? "BUILT-IN" : "CUSTOM"}</p><h2>{role.name}</h2><p>{role.description}</p></div><ul>{role.grants.map((grant) => <li key={`${grant.permission_code}:${grant.resource_id}`}><code>{grant.permission_code}</code><span>{grant.resource_id}</span></li>)}</ul><div className="row-actions"><button className="link-button" onClick={() => openRole(role)}>编辑</button><button className="link-button" onClick={() => openRole(role, true)}>复制</button>{!role.is_builtin && <button className="link-button" onClick={() => void deleteRole(role)}>删除</button>}</div></article>)}</div>{editing !== undefined && <div className="modal-backdrop" role="presentation"><section className="dialog dialog-wide" role="dialog" aria-modal="true" aria-labelledby="role-dialog-title"><p className="section-label">PERMISSION MATRIX</p><h2 id="role-dialog-title">{editing ? `编辑 ${editing.name}` : "创建角色"}</h2><form className="auth-form" onSubmit={saveRole}><label>角色名称<input autoFocus disabled={Boolean(editing?.is_builtin)} value={roleForm.name} onChange={(event) => setRoleForm({ ...roleForm, name: event.target.value })} required /></label><label>说明<textarea value={roleForm.description} onChange={(event) => setRoleForm({ ...roleForm, description: event.target.value })} /></label><div className="permission-matrix">{permissions.map((permission) => <section key={permission.code}><div><strong>{permission.name}</strong><code>{permission.code}</code><small>{permission.description}</small></div><div>{permission.resource_type === "platform" ? <label className="checkbox-row"><input type="checkbox" checked={hasGrant(permission.code, "platform", "*")} onChange={() => toggleGrant(permission.code, "platform", "*")} />允许</label> : toolScopes.map((scope) => <label className="checkbox-row" key={scope.id}><input type="checkbox" checked={hasGrant(permission.code, "tool", scope.id)} onChange={() => toggleGrant(permission.code, "tool", scope.id)} />{scope.name}</label>)}</div></section>)}</div><div className="dialog-actions"><button type="button" className="secondary-button" onClick={() => setEditing(undefined)}>取消</button><button className="primary-button">保存角色</button></div></form></section></div>}</section></WorkspaceShell>;
 }
 
 function AuditPage() {
@@ -526,7 +744,7 @@ function AuditPage() {
       const anchor = document.createElement("a"); anchor.href = url; anchor.download = `audit-${startDate}-${endDate}.csv`; anchor.click(); URL.revokeObjectURL(url);
     } catch (requestError) { setError(requestError instanceof Error ? requestError.message : "导出失败"); }
   }
-  return <WorkspaceShell><section className="workspace-page"><PageHeader eyebrow="AUDIT TRAIL" title="审计日志" copy="审计日志用于回答“谁在什么时间对哪个工具做了什么，结果如何”，便于安全追溯和故障复盘。" actions={<div className="audit-export"><label>开始日期<input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} /></label><label>结束日期<input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} /></label><button className="secondary-button" onClick={() => void exportAudit()}>导出 CSV</button></div>} />{error ? <InlineMessage kind="error">{error}</InlineMessage> : <div className="data-panel audit-table"><div className="table-header"><span>时间 / 操作人</span><span>动作</span><span>资源</span><span>结果</span></div>{items.length === 0 ? <EmptyState title="尚无审计事件" copy="登录、权限和配置变更后会显示在这里。" /> : items.map((item) => <div className="table-row" key={item.id}><strong>{new Date(item.occurred_at).toLocaleString()}<small>{String(item.actor_snapshot.username ?? item.actor_id ?? item.actor_type)}</small></strong><code>{item.action}</code><span>{item.tool_id ?? item.resource_type}{item.resource_id ? ` / ${item.resource_id}` : ""}</span><StatusBadge value={item.outcome} /></div>)}</div>}</section></WorkspaceShell>;
+  return <WorkspaceShell><section className="workspace-page"><PageHeader eyebrow="AUDIT TRAIL" title="审计日志" copy="审计日志用于回答“谁在什么时间对哪个工具做了什么，结果如何”，便于安全追溯和故障复盘。" actions={<div className="audit-export"><label>开始日期<input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} /></label><label>结束日期<input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} /></label><button className="secondary-button" onClick={() => void exportAudit()}>导出 CSV</button></div>} /><ManagementNav />{error ? <InlineMessage kind="error">{error}</InlineMessage> : <div className="data-panel audit-table"><div className="table-header"><span>时间 / 操作人</span><span>动作</span><span>资源</span><span>结果</span></div>{items.length === 0 ? <EmptyState title="尚无审计事件" copy="登录、权限和配置变更后会显示在这里。" /> : items.map((item) => <div className="table-row" key={item.id}><strong>{new Date(item.occurred_at).toLocaleString()}<small>{String(item.actor_snapshot.username ?? item.actor_id ?? item.actor_type)}</small></strong><code>{item.action}</code><span>{item.tool_id ?? item.resource_type}{item.resource_id ? ` / ${item.resource_id}` : ""}</span><StatusBadge value={item.outcome} /></div>)}</div>}</section></WorkspaceShell>;
 }
 
 function StatusBadge({ value }: { value: string }) {
@@ -537,14 +755,23 @@ function StatusBadge({ value }: { value: string }) {
 
 function EmptyState({ title, copy }: { title: string; copy: string }) { return <div className="empty-state"><strong>{title}</strong><p>{copy}</p></div>; }
 
-function ForbiddenPage() { return <WorkspaceShell><section className="not-found"><p className="section-label">403 / PERMISSION DENIED</p><h1>没有访问权限</h1><p>当前账号没有访问此平台功能或工具资源的权限。</p><NavLink className="tool-link" to="/">返回概览</NavLink></section></WorkspaceShell>; }
+function ForbiddenPage() { return <WorkspaceShell><section className="not-found"><p className="section-label">403 / PERMISSION DENIED</p><h1>没有访问权限</h1><p>当前账号没有访问此平台功能或工具资源的权限。</p><NavLink className="tool-link" to="/">返回工作台</NavLink></section></WorkspaceShell>; }
 function NotFoundPage() { return <WorkspaceShell><section className="not-found"><p className="section-label">404</p><h1>页面不存在</h1><NavLink className="tool-link" to="/">返回平台首页</NavLink></section></WorkspaceShell>; }
 
+function DomainRoute({ domainId }: { domainId: "ai-testing" | "automation" | "quality-analysis" | "domain-evaluation" }) {
+  return <WorkspaceShell><CapabilityDomainPage domainId={domainId} /></WorkspaceShell>;
+}
+
 function AppRoutes() {
-  return <Routes><Route path="/login" element={<LoginPage />} /><Route path="/setup" element={<SetupPage />} /><Route path="/account" element={<Protected><AccountPage /></Protected>} /><Route path="/account/password" element={<Protected><ChangePasswordPage /></Protected>} /><Route path="/" element={<Protected><HomePage /></Protected>} /><Route path="/settings/config" element={<Protected><ConfigPage /></Protected>} /><Route path="/settings/secrets" element={<Protected><SecretsPage /></Protected>} /><Route path="/settings/credentials" element={<Protected><CredentialsPage /></Protected>} /><Route path="/admin/users" element={<Protected permission="platform.user.manage"><UsersPage /></Protected>} /><Route path="/admin/roles" element={<Protected permission="platform.role.manage"><RolesPage /></Protected>} /><Route path="/audit" element={<Protected permission="platform.audit.view"><AuditPage /></Protected>} /><Route path="/403" element={<Protected><ForbiddenPage /></Protected>} /><Route path="*" element={<Protected><NotFoundPage /></Protected>} /></Routes>;
+  return <Routes><Route path="/login" element={<LoginPage />} /><Route path="/setup" element={<SetupPage />} /><Route path="/account" element={<Protected><AccountPage /></Protected>} /><Route path="/account/password" element={<Protected><ChangePasswordPage /></Protected>} /><Route path="/" element={<Protected><HomePage /></Protected>} /><Route path="/ai-testing" element={<Protected><DomainRoute domainId="ai-testing" /></Protected>} /><Route path="/automation" element={<Protected><DomainRoute domainId="automation" /></Protected>} /><Route path="/quality-analysis" element={<Protected><DomainRoute domainId="quality-analysis" /></Protected>} /><Route path="/domain-evaluation" element={<Protected><DomainRoute domainId="domain-evaluation" /></Protected>} /><Route path="/settings/llm" element={<Protected><LlmSettingsPage /></Protected>} /><Route path="/settings/config" element={<Protected><ConfigPage /></Protected>} /><Route path="/settings/secrets" element={<Protected><SecretsPage /></Protected>} /><Route path="/settings/credentials" element={<Protected><CredentialsPage /></Protected>} /><Route path="/admin/users" element={<Protected permission="platform.user.manage"><UsersPage /></Protected>} /><Route path="/admin/roles" element={<Protected permission="platform.role.manage"><RolesPage /></Protected>} /><Route path="/audit" element={<Protected permission="platform.audit.view"><AuditPage /></Protected>} /><Route path="/403" element={<Protected><ForbiddenPage /></Protected>} /><Route path="*" element={<Protected><NotFoundPage /></Protected>} /></Routes>;
+}
+
+function PlatformProviders() {
+  const { auth } = useAuth();
+  return <ToolCatalogProvider enabled={Boolean(auth)}><AppRoutes /></ToolCatalogProvider>;
 }
 
 /** 第二阶段平台入口：统一会话、权限路由和管理工作台。 */
 export function App() {
-  return <BrowserRouter><AuthProvider><AppRoutes /></AuthProvider></BrowserRouter>;
+  return <BrowserRouter><AuthProvider><PlatformProviders /></AuthProvider></BrowserRouter>;
 }

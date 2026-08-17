@@ -33,7 +33,7 @@ from people_search_rules import build_evidence_packet
 # 常量与默认值（设计 §12.2）
 # ---------------------------------------------------------------------------
 
-SKILL_VERSION = "2026-08-13"
+SKILL_VERSION = "2026-08-14"
 SKILL_PATH = (
     Path(__file__).with_name("skills")
     / "people-search-log-analyzer"
@@ -61,6 +61,12 @@ class AIConfig:
     api_key: Optional[str] = None
     timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS
     max_evidence_bytes: int = DEFAULT_MAX_EVIDENCE_BYTES
+    temperature: float = 0.1
+    max_tokens: int = 3400
+    snapshot_id: Optional[str] = None
+    profile_release_id: Optional[str] = None
+    binding_release_id: Optional[str] = None
+    config_error_code: Optional[str] = None
 
     @property
     def callable(self) -> bool:
@@ -72,9 +78,12 @@ class AIConfig:
         )
 
 
-def load_ai_config(environ=None, skill_path: Path = SKILL_PATH) -> AIConfig:
-    """从环境变量加载 AI 配置。密钥不内联，只读文件路径（§12.2）。"""
+def load_ai_config(environ=None, skill_path: Path = SKILL_PATH, _urlopen=None) -> AIConfig:
+    """按 env/platform 来源读取一次 AI 配置；平台模式绝不回退旧文件。"""
     env = environ if environ is not None else os.environ
+    source = env.get("LOG_FILTER_LLM_CONFIG_SOURCE", "env").strip().lower()
+    if source == "platform":
+        return _load_platform_ai_config(env, _urlopen=_urlopen)
     cfg = AIConfig(
         ai_enabled=env.get(
             "PEOPLE_SEARCH_ANALYZER_AI_ENABLED", "false"
@@ -97,6 +106,47 @@ def load_ai_config(environ=None, skill_path: Path = SKILL_PATH) -> AIConfig:
         except OSError:
             cfg.api_key = None
     return cfg
+
+
+def _load_platform_ai_config(env, _urlopen=None) -> AIConfig:
+    """使用工具 Client Token 获取 People Search 单请求不可变 LLM 快照。"""
+
+    enabled = env.get("PEOPLE_SEARCH_ANALYZER_AI_ENABLED", "false").lower() in ("1", "true", "yes", "on")
+    api_url = env.get("PLATFORM_API_URL", "").rstrip("/")
+    token_file = env.get("PLATFORM_CLIENT_TOKEN_FILE", "").strip()
+    environment = env.get("PLATFORM_RUNTIME_ENV", "dev").strip()
+    try:
+        token = Path(token_file).read_text(encoding="utf-8").strip()
+        if not api_url or len(token) < 32:
+            raise ValueError("platform identity missing")
+        request = urlrequest.Request(
+            f"{api_url}/internal/tools/log-filter/runtime-config?include_secrets=true&llm_capability=people-search-summary",
+            headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
+            method="GET",
+        )
+        opener = _urlopen or urlrequest.urlopen
+        with opener(request, timeout=5) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        if payload.get("tool_id") != "log-filter" or payload.get("environment") != environment:
+            raise ValueError("platform scope mismatch")
+        llm = payload.get("llm") or {}
+        if llm.get("status") != "ready" or not llm.get("base_url"):
+            raise ValueError("llm snapshot unavailable")
+        return AIConfig(
+            ai_enabled=enabled,
+            endpoint=str(llm["base_url"]).rstrip("/") + "/chat/completions",
+            model=str(llm.get("model") or "") or None,
+            api_key=str(llm.get("api_key") or "") or None,
+            timeout_seconds=int(llm.get("timeout_seconds") or 28),
+            max_evidence_bytes=int(env.get("PEOPLE_SEARCH_ANALYZER_MAX_EVIDENCE_BYTES", "") or DEFAULT_MAX_EVIDENCE_BYTES),
+            temperature=float(llm.get("temperature") if llm.get("temperature") is not None else 0.1),
+            max_tokens=int(llm.get("max_tokens") or 3400),
+            snapshot_id=llm.get("snapshot_id"),
+            profile_release_id=llm.get("profile_release_id"),
+            binding_release_id=llm.get("binding_release_id"),
+        )
+    except (OSError, ValueError, KeyError, TypeError, urlerror.URLError, json.JSONDecodeError):
+        return AIConfig(ai_enabled=enabled, config_error_code="LLM_CONFIG_UNAVAILABLE")
 
 
 # ---------------------------------------------------------------------------
@@ -237,8 +287,8 @@ def _serialize_user_message(evidence_packet: dict) -> str:
     return json.dumps(evidence_packet, ensure_ascii=False, separators=(",", ":"))
 
 
-def _extract_assistant_content(response_data: Any) -> str:
-    """从响应体中提取 assistant content，健壮兼容多种字段。"""
+def _extract_assistant_content(response_data: Any) -> tuple[str, Optional[str]]:
+    """从响应体中提取 assistant content 和 finish_reason。"""
     if not isinstance(response_data, dict):
         raise ValueError("response not a JSON object")
     choices = response_data.get("choices")
@@ -251,7 +301,7 @@ def _extract_assistant_content(response_data: Any) -> str:
     if isinstance(message, dict):
         content = message.get("content")
         if isinstance(content, str):
-            return content.strip()
+            return content.strip(), first.get("finish_reason")
     raise ValueError("response.choices[0].message.content missing")
 
 
@@ -268,6 +318,8 @@ def call_llm(
     - 失败：text=None；ai_status={status:"FAILED", error_code:..., error_message:...}
     - 未配置：text=None；ai_status={status:"DISABLED"}
     """
+    if cfg.config_error_code:
+        return None, {"status": "FAILED", "error_code": cfg.config_error_code, "error_message": "平台 LLM 配置暂时不可用"}
     if not cfg.callable:
         return None, {"status": "DISABLED"}
     if not skill_instruction:
@@ -280,8 +332,10 @@ def call_llm(
     urlopen = _urlopen or urlrequest.urlopen
     payload = json.dumps({
         "model": cfg.model,
-        "temperature": 0.1,
-        "max_tokens": 2000,
+        "temperature": cfg.temperature,
+        # 允许完整解释 Provider 子阶段、业务终态和成本矛盾；Evidence Packet
+        # 已限制体积，低 temperature 继续保证结论稳定。
+        "max_tokens": cfg.max_tokens,
         "messages": [
             {"role": "system", "content": skill_instruction},
             {"role": "user", "content": evidence_packet_json},
@@ -308,14 +362,10 @@ def call_llm(
             "error_message": f"LLM 调用超时（>={cfg.timeout_seconds}s）",
         }
     except urlerror.HTTPError as e:
-        try:
-            detail = e.read().decode("utf-8", errors="replace")[:300]
-        except Exception:
-            detail = ""
         return None, {
             "status": "FAILED",
             "error_code": "HTTP_ERROR",
-            "error_message": f"LLM 返回 HTTP {e.code}: {detail}",
+            "error_message": f"LLM 返回 HTTP {e.code}",
         }
     except urlerror.URLError as e:
         return None, {
@@ -340,7 +390,7 @@ def call_llm(
         }
 
     try:
-        content = _extract_assistant_content(response_data)
+        content, finish_reason = _extract_assistant_content(response_data)
     except ValueError as e:
         return None, {
             "status": "FAILED",
@@ -348,9 +398,19 @@ def call_llm(
             "error_message": str(e),
         }
 
+    if finish_reason == "length":
+        return None, {
+            "status": "FAILED",
+            "error_code": "OUTPUT_TRUNCATED",
+            "error_message": "LLM 输出达到长度上限，已回退确定性规则报告",
+        }
+
     return content, {
         "status": "SUCCESS",
         "model": cfg.model,
+        "snapshot_id": cfg.snapshot_id,
+        "profile_release_id": cfg.profile_release_id,
+        "binding_release_id": cfg.binding_release_id,
     }
 
 
@@ -371,6 +431,8 @@ def summarize_with_ai(
     - DISABLED / SKILL_MISSING：ai_text=None，evidence packet 为 None（未构造发送）。
     - 已发起调用（SUCCESS 或失败降级）：evidence packet 为实际发送（可能被截断）的数据。
     """
+    if cfg.config_error_code:
+        return None, {"status": "FAILED", "error_code": cfg.config_error_code}, None
     if not cfg.callable:
         return None, {"status": "DISABLED"}, None
 

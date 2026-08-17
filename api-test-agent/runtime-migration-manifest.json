@@ -1,0 +1,392 @@
+{
+  "agent": "api",
+  "conflict_count": 0,
+  "copied_count": 65,
+  "destination": "/Users/admin/Testproject/api-test-agent/runtime/dev/api",
+  "environment": "dev",
+  "file_count": 65,
+  "files": [
+    {
+      "relative_path": "corrupt/task_20260813_00000000000000000001-s2leftover-20260813T064751Z/runs/run_s2localhealth00001/executor-output.json",
+      "sha256": "b94feb6f6cff0475f4ac9351dcc85ff00bddf43a5455207ef450d1e3bc62f554",
+      "size": 927
+    },
+    {
+      "relative_path": "corrupt/task_20260813_00000000000000000001-s2leftover-20260813T064751Z/runs/run_s2localhealth00001/input.json",
+      "sha256": "de4989c83b2d953e8af65a7d98577b38b1055e722a1542db860627beb434fe77",
+      "size": 649
+    },
+    {
+      "relative_path": "corrupt/task_20260813_00000000000000000001-s2leftover-20260813T064751Z/runs/run_s2ssrfnegative0001/executor-output.json",
+      "sha256": "c66b8dff392f6d66f67d90265eb62065636263928142e84f1de4b498177ef30a",
+      "size": 739
+    },
+    {
+      "relative_path": "corrupt/task_20260813_00000000000000000001-s2leftover-20260813T064751Z/runs/run_s2ssrfnegative0001/input.json",
+      "sha256": "20476d6aa376179cfd75cade1036fd91e17ccf8dc4c18185ad473f75338db4f7",
+      "size": 325
+    },
+    {
+      "relative_path": "corrupt/task_20260813_00000000000000000002-s2leftover-20260813T064751Z/artifacts.json",
+      "sha256": "7313743aeb19fdd60ea499c97b84828ba378f58b5042476d508d19c03ef95ec4",
+      "size": 483
+    },
+    {
+      "relative_path": "corrupt/task_20260813_00000000000000000002-s2leftover-20260813T064751Z/published/versions/executable-cases/v1.json",
+      "sha256": "76d0547af7f70f38cca3b4c56182608acf27b94ac4d3fc11cf5324709139ed43",
+      "size": 1108
+    },
+    {
+      "relative_path": "corrupt/task_20260813_00000000000000000002-s2leftover-20260813T064751Z/runs/run_eef900badb81dfefff77/case-results.json",
+      "sha256": "7d21602ccb137fdf7ad01b60621dccb360f3654493a577690aba657b1ebec7f9",
+      "size": 1358
+    },
+    {
+      "relative_path": "corrupt/task_20260813_00000000000000000002-s2leftover-20260813T064751Z/runs/run_eef900badb81dfefff77/executor-output.json",
+      "sha256": "d398b54e6dbb64ed194f9b0f198ef4fedc8efbcf99c7482c17d7981ee794f594",
+      "size": 930
+    },
+    {
+      "relative_path": "corrupt/task_20260813_00000000000000000002-s2leftover-20260813T064751Z/runs/run_eef900badb81dfefff77/input.json",
+      "sha256": "e1630d29d89138c00b02b81e53ef3dccee9371bd4a29bf2669cd26e40cade7fe",
+      "size": 1109
+    },
+    {
+      "relative_path": "corrupt/task_20260813_00000000000000000002-s2leftover-20260813T064751Z/runs/run_eef900badb81dfefff77/report.json",
+      "sha256": "44f31499d061d11bde5657ca318f72cb97a8400956ca67bd98b063817ef0e861",
+      "size": 1656
+    },
+    {
+      "relative_path": "corrupt/task_20260813_00000000000000000002-s2leftover-20260813T064751Z/runs/run_eef900badb81dfefff77/run.json",
+      "sha256": "d8cbf1ab14bcd45ecde7645c0d59ffabd80a99282878ab6bedc19f4fc8854279",
+      "size": 748
+    },
+    {
+      "relative_path": "corrupt/task_20260813_00000000000000000002-s2leftover-20260813T064751Z/task.json",
+      "sha256": "4109c2945a4f88acf96031e3c4c71504350abc04313daea90c6910df21c8a129",
+      "size": 470
+    },
+    {
+      "relative_path": "corrupt/task_20260813_00000000000000000002-s2leftover-20260813T064751Z/versions/executable-cases/v1.json",
+      "sha256": "76d0547af7f70f38cca3b4c56182608acf27b94ac4d3fc11cf5324709139ed43",
+      "size": 1108
+    },
+    {
+      "relative_path": "tasks/task_20260812_1d1a8b5ca0c8ff220d10/console.log",
+      "sha256": "2103bca47a95fcb028d88dd3597117bc50166723b74ce4f4bff127e45f1ea04d",
+      "size": 8314,
+      "task_status": "failed"
+    },
+    {
+      "relative_path": "tasks/task_20260812_1d1a8b5ca0c8ff220d10/input/source.md",
+      "sha256": "ee8ac4214b66d9e78546590d8912b353af44647c63bc7b798c58111f4395a483",
+      "size": 1118,
+      "task_status": "failed"
+    },
+    {
+      "relative_path": "tasks/task_20260812_1d1a8b5ca0c8ff220d10/request.json",
+      "sha256": "d41c3f763a08a55ddf20ccdcc3f9494f6df908939f3f01a9fe591b162dd98046",
+      "size": 456,
+      "task_status": "failed"
+    },
+    {
+      "relative_path": "tasks/task_20260812_1d1a8b5ca0c8ff220d10/runner-result.json",
+      "sha256": "58146ee0568a1f5fae5ac3e9b946a7f63fa69f0fcda7e07681a2c3ae6e79d93d",
+      "size": 164,
+      "task_status": "failed"
+    },
+    {
+      "relative_path": "tasks/task_20260812_1d1a8b5ca0c8ff220d10/task.json",
+      "sha256": "f91fe721860d917b34c6372d30c1a346239f44ddcaef71183ff3baecb4773aaa",
+      "size": 1535,
+      "task_status": "failed"
+    },
+    {
+      "relative_path": "tasks/task_20260812_ac5485f682dbb85836d9/console.log",
+      "sha256": "c0359e640a98423d1c859f476d11c4cfd2bf6e6e63384b8c4868e671b18e43b0",
+      "size": 537,
+      "task_status": "failed"
+    },
+    {
+      "relative_path": "tasks/task_20260812_ac5485f682dbb85836d9/input/source.md",
+      "sha256": "ee8ac4214b66d9e78546590d8912b353af44647c63bc7b798c58111f4395a483",
+      "size": 1118,
+      "task_status": "failed"
+    },
+    {
+      "relative_path": "tasks/task_20260812_ac5485f682dbb85836d9/request.json",
+      "sha256": "d41c3f763a08a55ddf20ccdcc3f9494f6df908939f3f01a9fe591b162dd98046",
+      "size": 456,
+      "task_status": "failed"
+    },
+    {
+      "relative_path": "tasks/task_20260812_ac5485f682dbb85836d9/runner-result.json",
+      "sha256": "409dec3231649fbaea4cb7d0c6fb4ac21044ee44ce0cf1bd01e53ea4c18e87ee",
+      "size": 169,
+      "task_status": "failed"
+    },
+    {
+      "relative_path": "tasks/task_20260812_ac5485f682dbb85836d9/task.json",
+      "sha256": "0a944a36491847b4d395dc56e276c6c9dff6a0e7a29d90e6a51b1bb358aad201",
+      "size": 1535,
+      "task_status": "failed"
+    },
+    {
+      "relative_path": "tasks/task_20260813_2999cab9fb78ac318a7b/artifacts.json",
+      "sha256": "f6b0cda81a1dc0f4794bedf7b66167adeefef1cc686f82bf660e2ac20ec76b67",
+      "size": 7316,
+      "task_status": "succeeded"
+    },
+    {
+      "relative_path": "tasks/task_20260813_2999cab9fb78ac318a7b/attempts/attempt_24da79be02a7e5fc4cc6/attempt.json",
+      "sha256": "8c19a028060adf623a62792331e832fae7faa7a12ff01c865bf10e236f9a62d3",
+      "size": 313,
+      "task_status": "succeeded"
+    },
+    {
+      "relative_path": "tasks/task_20260813_2999cab9fb78ac318a7b/attempts/attempt_8bd562e7510c92025134/attempt.json",
+      "sha256": "62c569ceb621e84d6a0d80f300a07206eb30eb344d69857715b21e20d61d1884",
+      "size": 333,
+      "task_status": "succeeded"
+    },
+    {
+      "relative_path": "tasks/task_20260813_2999cab9fb78ac318a7b/attempts/attempt_c4836dadc708358c37b8/attempt.json",
+      "sha256": "d43b843f7926e7e84a8731989beef27bcda5468d6fb1a9dcc867b2bc8997b897",
+      "size": 359,
+      "task_status": "succeeded"
+    },
+    {
+      "relative_path": "tasks/task_20260813_2999cab9fb78ac318a7b/console.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size": 0,
+      "task_status": "succeeded"
+    },
+    {
+      "relative_path": "tasks/task_20260813_2999cab9fb78ac318a7b/execution.json",
+      "sha256": "e597e24596bb8c4e3c91db1fcecf3e9a7529f194bab5745786e0790dc1002944",
+      "size": 191,
+      "task_status": "succeeded"
+    },
+    {
+      "relative_path": "tasks/task_20260813_2999cab9fb78ac318a7b/input/source.md",
+      "sha256": "a44c0f511a229eefafb96694e1d6f587d74d93581975dfd7b218db35e03f2e33",
+      "size": 2223,
+      "task_status": "succeeded"
+    },
+    {
+      "relative_path": "tasks/task_20260813_2999cab9fb78ac318a7b/published/stages/document-profile.json",
+      "sha256": "8f240ff9e860837f01efd817671f033378479e0323d94b84adad2aa8c650b74c",
+      "size": 1060,
+      "task_status": "succeeded"
+    },
+    {
+      "relative_path": "tasks/task_20260813_2999cab9fb78ac318a7b/published/stages/document-sections.json",
+      "sha256": "ed69732feb215be756fbe0cd0500072d9a54376063221f45767fbdaf779b356b",
+      "size": 2433,
+      "task_status": "succeeded"
+    },
+    {
+      "relative_path": "tasks/task_20260813_2999cab9fb78ac318a7b/published/stages/static-validation.json",
+      "sha256": "d8e7a0a8246c79a55f47cb7696fcfe7ac9b4d0fbe0107de6d634ae6dca2c4424",
+      "size": 49,
+      "task_status": "succeeded"
+    },
+    {
+      "relative_path": "tasks/task_20260813_2999cab9fb78ac318a7b/published/versions/base-cases/v1.json",
+      "sha256": "d3a42c6fc927d937a53a004a30e8382d6c77e1704eb1c5dc56bcccdb0567ffab",
+      "size": 4010,
+      "task_status": "succeeded"
+    },
+    {
+      "relative_path": "tasks/task_20260813_2999cab9fb78ac318a7b/published/versions/base-cases/v2.json",
+      "sha256": "a4297ef81cf08411ee7279b5460f31abf63508cdccda78d55eebb6ea1a6a3857",
+      "size": 4509,
+      "task_status": "succeeded"
+    },
+    {
+      "relative_path": "tasks/task_20260813_2999cab9fb78ac318a7b/published/versions/base-cases/v3.json",
+      "sha256": "bb2cae1dbc1aec1ae80a8c25ab74acf97b57d154cd909f0fe2217d3ba32ff588",
+      "size": 4511,
+      "task_status": "succeeded"
+    },
+    {
+      "relative_path": "tasks/task_20260813_2999cab9fb78ac318a7b/published/versions/base-cases/v4.json",
+      "sha256": "db66ce4b460ee1da17a9bf7d724e0e80c8de947813df54846534dd8aff43c9df",
+      "size": 4501,
+      "task_status": "succeeded"
+    },
+    {
+      "relative_path": "tasks/task_20260813_2999cab9fb78ac318a7b/published/versions/base-cases/v5.json",
+      "sha256": "b913cccb584c9efced715e46f4914ddafbe2a60d3891cf830b0793b8b5793c04",
+      "size": 4491,
+      "task_status": "succeeded"
+    },
+    {
+      "relative_path": "tasks/task_20260813_2999cab9fb78ac318a7b/published/versions/base-cases/v6.json",
+      "sha256": "9629e443e13f6d9e2a6150cd21dddf57ac8824c4c63defec2bdc0c51086cbd40",
+      "size": 4481,
+      "task_status": "succeeded"
+    },
+    {
+      "relative_path": "tasks/task_20260813_2999cab9fb78ac318a7b/published/versions/base-cases/v7.json",
+      "sha256": "94eed5e1cb87e6df07b435b9b0d54ba181765a068c19fe8641ce4bc8449ee24b",
+      "size": 4471,
+      "task_status": "succeeded"
+    },
+    {
+      "relative_path": "tasks/task_20260813_2999cab9fb78ac318a7b/published/versions/base-cases/v8.json",
+      "sha256": "257713fd486b895291dcf9bedaf2888825342014d3b1c2abd0bb22e47fe16bf5",
+      "size": 4475,
+      "task_status": "succeeded"
+    },
+    {
+      "relative_path": "tasks/task_20260813_2999cab9fb78ac318a7b/published/versions/base-cases/v9.json",
+      "sha256": "64b2baf1002bbdeb4e57e22cbf6ccbdbc39efd4b2fb1b202f413b66a3d311788",
+      "size": 4465,
+      "task_status": "succeeded"
+    },
+    {
+      "relative_path": "tasks/task_20260813_2999cab9fb78ac318a7b/published/versions/contracts/v1.json",
+      "sha256": "dad6cce79e9200e61c82622d9275b8e92290a3ca56681498fb3466a350ed5413",
+      "size": 10509,
+      "task_status": "succeeded"
+    },
+    {
+      "relative_path": "tasks/task_20260813_2999cab9fb78ac318a7b/published/versions/contracts/v2.json",
+      "sha256": "7f22b725073b782c3a326cf9067f8fc23a48f260efd18552b004176053a4216b",
+      "size": 9575,
+      "task_status": "succeeded"
+    },
+    {
+      "relative_path": "tasks/task_20260813_2999cab9fb78ac318a7b/published/versions/contracts/v3.json",
+      "sha256": "b819ebd518c29accbdf22782700bbd880ae953cb3fa765a8ec66055b87f6ab5f",
+      "size": 9565,
+      "task_status": "succeeded"
+    },
+    {
+      "relative_path": "tasks/task_20260813_2999cab9fb78ac318a7b/published/versions/coverage/v1.json",
+      "sha256": "b9567d9f16a6c821a6f5251552c8ff33b89a80b5c90843056cd08de0f81097a8",
+      "size": 2329,
+      "task_status": "succeeded"
+    },
+    {
+      "relative_path": "tasks/task_20260813_2999cab9fb78ac318a7b/published/versions/executable-cases/v1.json",
+      "sha256": "4c3a7a9926550b162780841c6ce078375834aecbc94009e58a542c961aba2dea",
+      "size": 5437,
+      "task_status": "succeeded"
+    },
+    {
+      "relative_path": "tasks/task_20260813_2999cab9fb78ac318a7b/request.json",
+      "sha256": "ae19cda0c2d57dbf34b3d22040f5515f305ed66be64f82f539679f9567deaf4f",
+      "size": 642,
+      "task_status": "succeeded"
+    },
+    {
+      "relative_path": "tasks/task_20260813_2999cab9fb78ac318a7b/review-audit.json",
+      "sha256": "f7f241036a9b353279ed8f1e53511231e12fbe469587ec0e6cfc5dbcddd187c6",
+      "size": 3381,
+      "task_status": "succeeded"
+    },
+    {
+      "relative_path": "tasks/task_20260813_2999cab9fb78ac318a7b/runner-result.json",
+      "sha256": "597490b0aae2cb122ee10d3c78d2470e1c11d6cc736b67afb6daefe3c229a12a",
+      "size": 221,
+      "task_status": "succeeded"
+    },
+    {
+      "relative_path": "tasks/task_20260813_2999cab9fb78ac318a7b/task.json",
+      "sha256": "a9c530735aa4413f45e4619f79cde615b79a47cef14cd18f09fe62366845db12",
+      "size": 3027,
+      "task_status": "succeeded"
+    },
+    {
+      "relative_path": "tasks/task_20260813_2999cab9fb78ac318a7b/versions/base-cases/v1.json",
+      "sha256": "d3a42c6fc927d937a53a004a30e8382d6c77e1704eb1c5dc56bcccdb0567ffab",
+      "size": 4010,
+      "task_status": "succeeded"
+    },
+    {
+      "relative_path": "tasks/task_20260813_2999cab9fb78ac318a7b/versions/base-cases/v2.json",
+      "sha256": "a4297ef81cf08411ee7279b5460f31abf63508cdccda78d55eebb6ea1a6a3857",
+      "size": 4509,
+      "task_status": "succeeded"
+    },
+    {
+      "relative_path": "tasks/task_20260813_2999cab9fb78ac318a7b/versions/base-cases/v3.json",
+      "sha256": "bb2cae1dbc1aec1ae80a8c25ab74acf97b57d154cd909f0fe2217d3ba32ff588",
+      "size": 4511,
+      "task_status": "succeeded"
+    },
+    {
+      "relative_path": "tasks/task_20260813_2999cab9fb78ac318a7b/versions/base-cases/v4.json",
+      "sha256": "db66ce4b460ee1da17a9bf7d724e0e80c8de947813df54846534dd8aff43c9df",
+      "size": 4501,
+      "task_status": "succeeded"
+    },
+    {
+      "relative_path": "tasks/task_20260813_2999cab9fb78ac318a7b/versions/base-cases/v5.json",
+      "sha256": "b913cccb584c9efced715e46f4914ddafbe2a60d3891cf830b0793b8b5793c04",
+      "size": 4491,
+      "task_status": "succeeded"
+    },
+    {
+      "relative_path": "tasks/task_20260813_2999cab9fb78ac318a7b/versions/base-cases/v6.json",
+      "sha256": "9629e443e13f6d9e2a6150cd21dddf57ac8824c4c63defec2bdc0c51086cbd40",
+      "size": 4481,
+      "task_status": "succeeded"
+    },
+    {
+      "relative_path": "tasks/task_20260813_2999cab9fb78ac318a7b/versions/base-cases/v7.json",
+      "sha256": "94eed5e1cb87e6df07b435b9b0d54ba181765a068c19fe8641ce4bc8449ee24b",
+      "size": 4471,
+      "task_status": "succeeded"
+    },
+    {
+      "relative_path": "tasks/task_20260813_2999cab9fb78ac318a7b/versions/base-cases/v8.json",
+      "sha256": "257713fd486b895291dcf9bedaf2888825342014d3b1c2abd0bb22e47fe16bf5",
+      "size": 4475,
+      "task_status": "succeeded"
+    },
+    {
+      "relative_path": "tasks/task_20260813_2999cab9fb78ac318a7b/versions/base-cases/v9.json",
+      "sha256": "64b2baf1002bbdeb4e57e22cbf6ccbdbc39efd4b2fb1b202f413b66a3d311788",
+      "size": 4465,
+      "task_status": "succeeded"
+    },
+    {
+      "relative_path": "tasks/task_20260813_2999cab9fb78ac318a7b/versions/contracts/v1.json",
+      "sha256": "dad6cce79e9200e61c82622d9275b8e92290a3ca56681498fb3466a350ed5413",
+      "size": 10509,
+      "task_status": "succeeded"
+    },
+    {
+      "relative_path": "tasks/task_20260813_2999cab9fb78ac318a7b/versions/contracts/v2.json",
+      "sha256": "7f22b725073b782c3a326cf9067f8fc23a48f260efd18552b004176053a4216b",
+      "size": 9575,
+      "task_status": "succeeded"
+    },
+    {
+      "relative_path": "tasks/task_20260813_2999cab9fb78ac318a7b/versions/contracts/v3.json",
+      "sha256": "b819ebd518c29accbdf22782700bbd880ae953cb3fa765a8ec66055b87f6ab5f",
+      "size": 9565,
+      "task_status": "succeeded"
+    },
+    {
+      "relative_path": "tasks/task_20260813_2999cab9fb78ac318a7b/versions/coverage/v1.json",
+      "sha256": "b9567d9f16a6c821a6f5251552c8ff33b89a80b5c90843056cd08de0f81097a8",
+      "size": 2329,
+      "task_status": "succeeded"
+    },
+    {
+      "relative_path": "tasks/task_20260813_2999cab9fb78ac318a7b/versions/executable-cases/v1.json",
+      "sha256": "4c3a7a9926550b162780841c6ce078375834aecbc94009e58a542c961aba2dea",
+      "size": 5437,
+      "task_status": "succeeded"
+    }
+  ],
+  "missing_count": 0,
+  "mode": "copy",
+  "schema_version": 1,
+  "source": "/Users/admin/Testproject/AItestcase_Agents/runtime/dev/api",
+  "total_bytes": 203218
+}

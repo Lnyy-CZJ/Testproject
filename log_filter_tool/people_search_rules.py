@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import re
 import traceback
+from urllib.parse import urlsplit
 
 from people_search_analyzer import ANALYZER_VERSION, RULESET_VERSION
 
@@ -20,7 +21,7 @@ from people_search_analyzer import ANALYZER_VERSION, RULESET_VERSION
 # ---------------------------------------------------------------------------
 
 RULE_META = {
-    "STATE-001": ("state", "P0", "GetTask 终态与 diagnosis.final_status 一致"),
+    "STATE-001": ("state", "P0", "GetTask 与 diagnosis 终态一致且符合业务结果"),
     "STATE-002": ("state", "P0", "全部 Provider 技术失败不能归类为普通 NO_MATCH"),
     "ROUTE-001": ("routing", "P0", "Local 可用命中后跳过 LLM、Wiki、PDL"),
     "ROUTE-002": ("routing", "P0", "Public Figure 条件成立且主结果不足时 Wiki 在 PDL 前"),
@@ -41,9 +42,9 @@ RULE_META = {
     "CAND-002": ("candidate", "P0", "score/confidence/decision/selected 不矛盾"),
     "CAND-003": ("candidate", "P1", "matched_clue_types 在 Debug、List、Detail 中一致"),
     "CAND-004": ("candidate", "P1", "相同稳定标识的跨 Provider 候选不重复"),
-    "COST-001": ("cost", "P0", "分项成本与任务总成本一致"),
+    "COST-001": ("cost", "P0", "分项、阶段与任务总成本一致"),
     "COST-002": ("cost", "P0", "UNPRICED 不作为免费，缓存调用不重复计费"),
-    "STOP-001": ("stop", "P0", "result、diagnosis 和 Report 的 stop_reason 一致"),
+    "STOP-001": ("stop", "P0", "人物链路停止原因与业务结果语义一致"),
 }
 
 TERMINAL_STATUSES = ("SUCCEEDED", "PARTIAL_SUCCEEDED", "NO_RESULT", "FAILED")
@@ -179,6 +180,24 @@ def _extract_cost_total(cost):
     return None
 
 
+def _cost_totals_by_currency(cost):
+    """返回按币种分组的成本总额，避免跨币种直接相加。"""
+    totals = cost.get("totals")
+    if not isinstance(totals, list):
+        return []
+    result = []
+    for item in totals:
+        if not isinstance(item, dict):
+            continue
+        result.append({
+            "currency": item.get("currency") or "UNSPECIFIED",
+            "total_cost_microunit": item.get("total_cost_microunit", 0),
+            "cost_complete": item.get("cost_complete"),
+            "unpriced_call_count": item.get("unpriced_call_count", 0),
+        })
+    return result
+
+
 def _get_candidates(snapshot):
     return snapshot.get("candidates") or []
 
@@ -196,7 +215,80 @@ def _get_debug_candidates(snapshot):
 def _get_social_url_queue(snapshot):
     debug = _get_debug(snapshot)
     queue = debug.get("social_url_queue")
-    return queue if isinstance(queue, list) else []
+    if not isinstance(queue, list):
+        queue = _get_diagnosis(snapshot).get("social_profile_queue_decisions")
+    if not isinstance(queue, list):
+        return []
+    normalized = []
+    for item in queue:
+        if not isinstance(item, dict):
+            continue
+        entry = dict(item)
+        entry.setdefault("url", item.get("raw_url") or item.get("canonical_url"))
+        if not entry.get("origin") and item.get("discovered_by"):
+            entry["origin"] = "provider_discovery"
+        normalized.append(entry)
+    return normalized
+
+
+def _provider_is(call, provider_kind):
+    """兼容夹具旧名称和 QueryChainLogger 真实 Provider/operation 名称。"""
+    provider = str(call.get("provider") or "").lower()
+    operation = str(call.get("operation") or "").lower()
+    if provider_kind == "llm":
+        return provider.startswith("llm_search")
+    if provider_kind == "wiki":
+        return provider == "wiki_remote" or (
+            provider == "public_figure" and operation == "remote_lookup"
+        )
+    if provider_kind == "local":
+        return provider == "public_figure_local" or (
+            provider == "public_figure" and operation == "local_lookup"
+        )
+    if provider_kind == "pdl":
+        return provider == "people_data_labs"
+    if provider_kind == "social":
+        return "social" in provider
+    return False
+
+
+def _pdl_operation_kind(call):
+    """将 person_search_profile 等真实操作名归一为 identify/search。"""
+    operation = str(call.get("operation") or "").lower()
+    if operation.startswith("person_identify"):
+        return "identify"
+    if operation.startswith("person_search"):
+        return "search"
+    details = call.get("result_details") or {}
+    if details.get("pdl_identify_call_count", 0) > 0:
+        return "identify"
+    if details.get("pdl_person_search_call_count", 0) > 0:
+        return "search"
+    return None
+
+
+def _is_reverse_image_call(call):
+    """识别真实 Lens/Vision Provider 与旧夹具的统一图片反查调用。"""
+    provider = str(call.get("provider") or "").lower()
+    operation = str(call.get("operation") or "").lower()
+    return (
+        operation in {"reverse_image_search", "google_lens_search", "web_detection"}
+        or "google_lens" in provider
+        or provider in {"google_vision", "bing_visual_search", "tineye"}
+    )
+
+
+def _canonical_social_url(value):
+    """生成只用于队列比对的稳定社交 URL，不修改报告中的原始证据。"""
+    if not isinstance(value, str) or not value.strip():
+        return ""
+    text = value.strip()
+    if "://" not in text:
+        text = "https://" + text
+    parsed = urlsplit(text)
+    host = parsed.netloc.lower().removeprefix("www.")
+    path = parsed.path.rstrip("/").lower()
+    return f"{host}{path}"
 
 
 def _has_coverage(snapshot, *keys):
@@ -228,7 +320,7 @@ def _get_task_evidence(snapshot, json_path, value):
 
 
 def check_terminal_status(snapshot):
-    """STATE-001: GetTask 终态与 diagnosis.final_status 一致。"""
+    """STATE-001: 终态字段一致，且业务结果与终态语义一致。"""
     results = []
     if not _has_coverage(snapshot, "get_task", "debug"):
         return [_unknown("STATE-001", "缺少 GetTask 或 Debug 证据")]
@@ -236,8 +328,32 @@ def check_terminal_status(snapshot):
     diag_status = _get_diagnosis(snapshot).get("final_status")
     if get_task_status is None or diag_status is None:
         return [_unknown("STATE-001", f"GetTask status={get_task_status}, diagnosis final_status={diag_status}")]
+    get_task = _get_get_task_data(snapshot)
+    diagnosis = _get_diagnosis(snapshot)
+    candidate_count = get_task.get("candidate_count")
+    result_type = str(get_task.get("result_type") or "").lower()
+    no_result_reason = get_task.get("no_result_reason") or ""
+    stop_reason = diagnosis.get("stop_reason") or ""
+    exhausted_without_match = (
+        candidate_count == 0
+        and result_type in {"none", "no_result"}
+        and stop_reason in {"PROVIDERS_EXHAUSTED_NO_MATCH", "NO_MATCH"}
+    )
+    if get_task_status == diag_status and get_task_status == "SUCCEEDED" and exhausted_without_match:
+        return [_fail(
+            "STATE-001",
+            "0 个候选且所有 Provider 均无匹配，但 GetTask/diagnosis 仍为 SUCCEEDED，"
+            f"no_result_reason={no_result_reason!r}, status_consistent={diagnosis.get('status_consistent')}",
+            "业务终态应为 NO_RESULT，no_result_reason=NO_MATCH；Report Ready 不应改写检索结果终态",
+            [
+                _get_task_evidence(snapshot, "data.status", get_task_status),
+                _get_task_evidence(snapshot, "data.candidate_count", candidate_count),
+                _get_task_evidence(snapshot, "data.no_result_reason", no_result_reason),
+                _debug_evidence(snapshot, "debug.diagnosis.stop_reason", stop_reason),
+            ],
+        )]
     if get_task_status == diag_status:
-        return [_pass("STATE-001", f"GetTask status={get_task_status} = diagnosis final_status={diag_status}")]
+        return [_pass("STATE-001", f"GetTask status={get_task_status} = diagnosis final_status={diag_status}，业务结果未见冲突")]
     return [_fail(
         "STATE-001",
         f"GetTask status={get_task_status} ≠ diagnosis final_status={diag_status}",
@@ -255,7 +371,13 @@ def check_state_002(snapshot):
     timeline = _get_timeline(snapshot)
     if not timeline:
         return [_na("STATE-002", "无 agent_tool_calls")]
-    all_error = all(call.get("status") == "error" for call in timeline)
+    provider_calls = [
+        call for call in timeline
+        if any(_provider_is(call, kind) for kind in ("llm", "wiki", "local", "pdl", "social"))
+    ]
+    if not provider_calls:
+        return [_na("STATE-002", "无可识别 Provider 调用")]
+    all_error = all(call.get("status") == "error" for call in provider_calls)
     if not all_error:
         return [_pass("STATE-002", f"非全部失败（{sum(1 for c in timeline if c.get('status') == 'error')}/{len(timeline)} error）")]
     get_task = _get_get_task_data(snapshot)
@@ -282,17 +404,38 @@ def check_public_figure_route(snapshot):
         return results
     diag = _get_diagnosis(snapshot)
     timeline = _get_timeline(snapshot)
-    local_hit = diag.get("public_figure_local_hit", False)
+    local_value = diag.get("public_figure_local_hit")
+    if local_value is None:
+        local_value = diag.get("public_figure_local")
+    local_hit = local_value is True or str(local_value).lower() in {
+        "hit", "success", "usable", "selected"
+    }
+    negative_cache_hit = (
+        diag.get("local_negative_cache_hit") is True
+        or diag.get("public_figure_local_negative_cache_hit") is True
+        or str(local_value).lower() in {"negative_cache", "negative_cache_hit"}
+    )
+    policy_version = snapshot.get("policy_version") or _get_debug(snapshot).get("policy_version")
     usable_count = diag.get("public_figure_remote_usable_count", 0)
     ambiguous = diag.get("public_figure_remote_ambiguous", False)
     pdl_identify = diag.get("pdl_identify_call_count", 0)
     pdl_search = diag.get("pdl_person_search_call_count", 0)
-    pdl_called = pdl_identify > 0 or pdl_search > 0
-    llm_called = diag.get("llm_search_call_count", 0) > 0
-    wiki_calls = [c for c in timeline if c.get("provider") == "wiki_remote"]
+    pdl_timeline = [c for c in timeline if _provider_is(c, "pdl")]
+    pdl_called = pdl_identify > 0 or pdl_search > 0 or bool(pdl_timeline)
+    llm_called = diag.get("llm_search_call_count", 0) > 0 or any(
+        _provider_is(c, "llm") for c in timeline
+    )
+    wiki_calls = [c for c in timeline if _provider_is(c, "wiki")]
 
     # ROUTE-001: Local 可用命中后跳过 LLM、Wiki、PDL
-    if local_hit:
+    if negative_cache_hit and not policy_version:
+        # negative cache 的跳过策略可能随规则版本变化；版本未知时不能硬判对错。
+        results.append(_warn(
+            "ROUTE-001",
+            "命中 Local negative cache，但缺少 policy_version，跳过策略需要确认",
+            [_debug_evidence(snapshot, "debug.policy_version", policy_version)],
+        ))
+    elif local_hit:
         skipped = not llm_called and not wiki_calls and not pdl_called
         if skipped:
             results.append(_pass("ROUTE-001", "Local 命中后 LLM/Wiki/PDL 均未调用"))
@@ -313,13 +456,18 @@ def check_public_figure_route(snapshot):
     else:
         results.append(_na("ROUTE-001", "非 Local 命中场景"))
 
-    # ROUTE-002: Public Figure 条件成立且主结果不足时 Wiki 在 PDL 前
-    # 适用条件：非 local_hit，remote usable_count > 0 且非歧义。
+    # ROUTE-002: Public Figure 条件成立且主结果不足时 Wiki 在 PDL 前。
+    # 是否需要 fallback 由实际 Wiki/PDL 调用或 public_figure_eligible 证明，不能
+    # 用 Wiki 最终 usable_count>0 作为前置条件，否则 Wiki 无结果场景会被漏检。
     # timeline 已按解析后的 start_time 升序排序，直接用列表位置比较先后，
     # 避免原始时间戳缺失（None）或格式混杂导致比较异常（审查修复）。
-    if not local_hit and usable_count > 0 and not ambiguous:
-        wiki_positions = [i for i, c in enumerate(timeline) if c.get("provider") == "wiki_remote"]
-        pdl_positions = [i for i, c in enumerate(timeline) if c.get("provider") == "people_data_labs"]
+    wiki_positions = [i for i, c in enumerate(timeline) if _provider_is(c, "wiki")]
+    pdl_positions = [i for i, c in enumerate(timeline) if _provider_is(c, "pdl")]
+    public_figure_eligible = diag.get("public_figure_eligible") is True
+    route_applicable = not local_hit and (
+        public_figure_eligible or bool(wiki_positions)
+    )
+    if route_applicable and not ambiguous:
         if wiki_positions and pdl_positions:
             if min(wiki_positions) < min(pdl_positions):
                 results.append(_pass("ROUTE-002", "Wiki 在 PDL 之前调用"))
@@ -336,7 +484,7 @@ def check_public_figure_route(snapshot):
             results.append(_warn("ROUTE-002", "有 PDL 但无 Wiki 调用记录"))
         else:
             results.append(_na("ROUTE-002", "无 Wiki 和 PDL 调用"))
-    elif not local_hit and usable_count > 0 and ambiguous:
+    elif route_applicable and ambiguous:
         results.append(_na("ROUTE-002", "Wiki 歧义场景，由 ROUTE-004 覆盖"))
     else:
         results.append(_na("ROUTE-002", "非 Public Figure remote 场景"))
@@ -361,7 +509,7 @@ def check_public_figure_route(snapshot):
         debug = _get_debug(snapshot)
         wiki_calls_raw = [
             c for c in debug.get("agent_tool_calls", [])
-            if isinstance(c, dict) and c.get("provider") == "wiki_remote"
+            if isinstance(c, dict) and _provider_is(c, "wiki")
         ]
         has_ambiguity_info = any(
             c.get("ambiguous") or c.get("ambiguous_entities")
@@ -391,18 +539,43 @@ def check_llm_output(snapshot):
     if not _has_coverage(snapshot, "debug"):
         return [_unknown("LLM-001", "缺少 Debug 证据")]
     diag = _get_diagnosis(snapshot)
-    llm_call_count = diag.get("llm_search_call_count", 0)
-    llm_result_status = diag.get("llm_result_status", "not_called")
+    timeline = _get_timeline(snapshot)
+    llm_calls = [c for c in timeline if _provider_is(c, "llm")]
+    llm_call_count = diag.get("llm_search_call_count")
+    if llm_call_count is None:
+        llm_call_count = diag.get("llm_http_attempt_count")
+    if llm_call_count is None:
+        llm_call_count = len(llm_calls)
+    raw_status = diag.get("llm_result_status") or diag.get("llm_output_status") or "not_called"
+    status_aliases = {
+        "LLM_OUTPUT_COMPLETE": "complete",
+        "LLM_OUTPUT_TRUNCATED": "truncated",
+        "LLM_OUTPUT_NO_RESULT": "no_result",
+        "LLM_OUTPUT_ERROR": "error",
+    }
+    llm_result_status = status_aliases.get(raw_status, str(raw_status).lower())
+    if raw_status == "LLM_OUTPUT_COMPLETE" and llm_calls:
+        final_call_status = str(llm_calls[-1].get("status") or "").lower()
+        if final_call_status in {"no_result", "error"}:
+            llm_result_status = final_call_status
     if llm_call_count == 0:
         return [_na("LLM-001", "LLM 未调用")]
-    timeline = _get_timeline(snapshot)
-    llm_calls = [c for c in timeline if c.get("provider") == "llm_search"]
     if not llm_calls:
         return [_unknown("LLM-001", f"diagnosis 记录 llm_call_count={llm_call_count} 但 timeline 无 LLM 调用")]
     # 检查 result_class 与 diagnosis.llm_result_status 一致性。
     # timeline 已按 start_time 升序排序，用其顺序判断“最后一次调用”；
     # 原始 agent_tool_calls 数组顺序不可靠（真实日志常倒序返回）（审查修复）。
-    result_classes = [c.get("result_class") for c in llm_calls if c.get("result_class")]
+    result_classes = []
+    for call in llm_calls:
+        result_class = call.get("result_class")
+        if not result_class:
+            status = str(call.get("status") or "").lower()
+            if status in {"success", "complete"}:
+                result_class = "complete"
+            elif status in {"no_result", "error", "truncated"}:
+                result_class = status
+        if result_class:
+            result_classes.append(result_class)
     # diagnosis.llm_result_status 应反映最后一次 LLM 调用的状态
     last_class = result_classes[-1] if result_classes else None
     if last_class and last_class == llm_result_status:
@@ -466,11 +639,11 @@ def check_pdl_fallback(snapshot):
     if identify_count == 0 and search_count == 0:
         return [_na("PDL-001", "PDL 未调用")]
     timeline = _get_timeline(snapshot)
-    pdl_calls = [c for c in timeline if c.get("provider") == "people_data_labs"]
+    pdl_calls = [c for c in timeline if _provider_is(c, "pdl")]
     pdl_ops = set(c.get("operation") for c in pdl_calls if c.get("operation"))
     # 验证 diagnosis 计数与 timeline 调用一致
-    timeline_identify = sum(1 for c in pdl_calls if c.get("operation") == "person_identify")
-    timeline_search = sum(1 for c in pdl_calls if c.get("operation") == "person_search")
+    timeline_identify = sum(1 for c in pdl_calls if _pdl_operation_kind(c) == "identify")
+    timeline_search = sum(1 for c in pdl_calls if _pdl_operation_kind(c) == "search")
     if timeline_identify == identify_count and timeline_search == search_count:
         return [_pass("PDL-001", f"Identify={identify_count}, Search={search_count}，diagnosis 与 timeline 一致")]
     return [_warn(
@@ -544,7 +717,15 @@ def check_social_profile_queue(snapshot):
     else:
         issues = []
         for url in input_urls:
-            matched = [q for q in queue if isinstance(q, dict) and q.get("url") == url]
+            canonical_input = _canonical_social_url(url)
+            matched = [
+                q for q in queue
+                if isinstance(q, dict)
+                and canonical_input in {
+                    _canonical_social_url(q.get("url")),
+                    _canonical_social_url(q.get("canonical_url")),
+                }
+            ]
             if not matched:
                 issues.append(f"输入 URL {url} 不在队列中")
             else:
@@ -564,7 +745,10 @@ def check_social_profile_queue(snapshot):
             results.append(_pass("SOCIAL-001", f"{len(input_urls)} 个输入 Social Link 均有明确决策"))
 
     # SOCIAL-002: Provider 新发现受支持 URL 有调用或明确跳过原因
-    discovered = [q for q in queue if isinstance(q, dict) and q.get("origin") == "provider_discovery"]
+    discovered = [
+        q for q in queue
+        if isinstance(q, dict) and q.get("origin") == "provider_discovery"
+    ]
     if not discovered:
         results.append(_na("SOCIAL-002", "无 Provider 新发现 URL"))
     else:
@@ -599,7 +783,7 @@ def check_social_profile_queue(snapshot):
             [_debug_evidence(snapshot, "debug.social_url_queue", f"{len(queue)} entries")],
         ))
     else:
-        social_calls = [c for c in timeline if c.get("provider") and "social" in str(c.get("provider", ""))]
+        social_calls = [c for c in timeline if _provider_is(c, "social")]
         call_count_ok = len(social_calls) == sum(called_urls.values())
         if call_count_ok or not social_calls:
             results.append(_pass("SOCIAL-003", f"{len(called_urls)} 个 canonical URL 调用 {sum(called_urls.values())} 次，无重复"))
@@ -609,13 +793,17 @@ def check_social_profile_queue(snapshot):
     # SOCIAL-004: Social 成功结果与候选合并统计和最终来源一致
     social_success_count = sum(
         1 for c in timeline
-        if c.get("provider") and "social" in str(c.get("provider", "")) and c.get("status") == "success"
+        if _provider_is(c, "social") and c.get("status") == "success"
     )
     merged_count = diag.get("social_profile_merged_candidate_count", 0)
     if social_success_count == 0:
         results.append(_na("SOCIAL-004", "无 Social 成功调用"))
     elif merged_count > 0 and any(
-        isinstance(c, dict) and "social" in str(c.get("source_provider", ""))
+        isinstance(c, dict) and any(
+            marker in str(provider).lower()
+            for provider in ([c.get("source_provider")] + list(c.get("source_providers") or []))
+            for marker in ("social", "scrapecreators")
+        )
         for c in list_candidates
     ):
         results.append(_pass("SOCIAL-004", f"Social 成功 {social_success_count}，合并 {merged_count} 候选，候选列表含 social 来源"))
@@ -658,11 +846,15 @@ def check_reverse_image_route(snapshot):
     if not has_photo:
         results.append(_na("IMAGE-001", "无用户图片输入"))
     else:
-        reverse_calls = [c for c in timeline if c.get("operation") == "reverse_image_search"]
+        reverse_calls = [c for c in timeline if _is_reverse_image_call(c)]
         reverse_diag = diag.get("reverse_image")
         if reverse_calls:
             results.append(_pass("IMAGE-001", f"图片输入触发 {len(reverse_calls)} 次反查"))
-        elif isinstance(reverse_diag, dict) and reverse_diag.get("planned") is False:
+        elif (
+            isinstance(reverse_diag, dict)
+            and reverse_diag.get("planned") is False
+            and bool(reverse_diag.get("reason") or reverse_diag.get("skip_reason"))
+        ):
             results.append(_pass("IMAGE-001", "图片输入但反查未规划（有明确原因）"))
         else:
             results.append(_fail(
@@ -673,14 +865,22 @@ def check_reverse_image_route(snapshot):
             ))
 
     # IMAGE-002: Reverse Image 主工具和 fallback 顺序一致
-    reverse_calls = [c for c in timeline if c.get("operation") == "reverse_image_search"]
+    reverse_calls = [c for c in timeline if _is_reverse_image_call(c)]
     if len(reverse_calls) < 2:
         results.append(_na("IMAGE-002", f"仅 {len(reverse_calls)} 次反查调用，无 fallback"))
     else:
         reverse_diag = diag.get("reverse_image")
-        if isinstance(reverse_diag, dict):
-            primary = reverse_diag.get("primary_tool")
-            fallback = reverse_diag.get("fallback_tool")
+        primary = (
+            reverse_diag.get("primary_tool")
+            if isinstance(reverse_diag, dict)
+            else diag.get("reverse_image_primary_provider")
+        )
+        fallback = (
+            reverse_diag.get("fallback_tool")
+            if isinstance(reverse_diag, dict)
+            else diag.get("reverse_image_final_provider")
+        )
+        if primary or fallback or diag.get("reverse_image_fallback_used") is not None:
             timeline_providers = [c.get("provider") for c in reverse_calls]
             if primary and fallback and timeline_providers[0] == primary and timeline_providers[1] == fallback:
                 results.append(_pass("IMAGE-002", f"主工具 {primary} → fallback {fallback} 顺序一致"))
@@ -689,7 +889,9 @@ def check_reverse_image_route(snapshot):
                     "IMAGE-002",
                     f"timeline 顺序 {timeline_providers} vs diagnosis primary={primary} fallback={fallback}",
                     "主工具和 fallback 顺序一致",
-                    [_debug_evidence(snapshot, "debug.diagnosis.reverse_image", str(reverse_diag))],
+                    [_debug_evidence(snapshot, "debug.diagnosis.reverse_image", str(reverse_diag or {
+                        "primary": primary, "fallback": fallback,
+                    }))],
                 ))
         else:
             results.append(_warn("IMAGE-002", "有多次反查但 diagnosis 无 reverse_image 诊断"))
@@ -715,6 +917,13 @@ def check_face_comparison_semantics(snapshot):
         if isinstance(fc, dict):
             fc_status = fc.get("status", "")
             fc_reason = fc.get("reason", "")
+            if fc_status != "not_performed":
+                return [_fail(
+                    "FACE-001",
+                    f"diagnosis=not_performed 但候选详情 status={fc_status or '缺失'}",
+                    "未执行时所有候选详情均应为 not_performed",
+                    [_debug_evidence(snapshot, "debug.diagnosis.face_comparison_status", face_status)],
+                )]
             if fc_status == "not_performed":
                 if "not_connected" in fc_reason or "provider_not_connected" in fc_reason:
                     # 未接入期间展示为"已知能力缺失"，不计为任务异常
@@ -766,7 +975,9 @@ def check_candidate_consistency(snapshot):
             ))
 
     # CAND-002: score/confidence/decision/selected 不矛盾
-    if not debug_candidates and not list_candidates:
+    if list_candidates and not _has_coverage(snapshot, "candidate_detail"):
+        results.append(_unknown("CAND-002", "存在候选但缺少 GetTaskCandidateDetail，无法完成 decision/selected 全链路核对"))
+    elif not debug_candidates and not list_candidates:
         results.append(_na("CAND-002", "无候选数据"))
     else:
         issues = []
@@ -798,7 +1009,9 @@ def check_candidate_consistency(snapshot):
             results.append(_pass("CAND-002", "候选 score/confidence/decision/selected 无矛盾"))
 
     # CAND-003: matched_clue_types 在 Debug、List、Detail 中一致
-    if not debug_candidates or not list_candidates:
+    if list_candidates and not _has_coverage(snapshot, "candidate_detail"):
+        results.append(_unknown("CAND-003", "存在候选但缺少 GetTaskCandidateDetail，无法完成跨接口核对"))
+    elif not debug_candidates or not list_candidates:
         results.append(_na("CAND-003", "缺少 Debug 或 List 候选数据"))
     else:
         issues = []
@@ -876,15 +1089,29 @@ def check_cost_consistency(snapshot):
     cost = _get_cost(snapshot)
     timeline = _get_timeline(snapshot)
 
-    # COST-001: 分项成本与任务总成本一致
-    total = _extract_cost_total(cost)
-    items = cost.get("items") or cost.get("calls") or []
-    if total is None or not items:
-        results.append(_unknown("COST-001", f"total={total}, items={len(items)}"))
+    # COST-001: 分项成本与任务总成本一致。多币种不能直接相加或换算（PRD §6.9）。
+    totals = cost.get("totals")
+    currencies = {
+        str(item.get("currency"))
+        for item in totals or []
+        if isinstance(item, dict)
+        and int(item.get("total_cost_microunit", 0) or 0) > 0
+        and item.get("currency")
+    } if isinstance(totals, list) else set()
+    if len(currencies) > 1:
+        results.append(_unknown(
+            "COST-001",
+            f"存在多币种成本 {sorted(currencies)}，未做汇率换算",
+            [_debug_evidence(snapshot, "cost_summary.totals", sorted(currencies))],
+        ))
     else:
-        if isinstance(items, list):
+        total = _extract_cost_total(cost)
+        items = cost.get("items") or cost.get("calls") or []
+        if total is None or not items:
+            results.append(_unknown("COST-001", f"total={total}, items={len(items)}"))
+        elif isinstance(items, list):
             # 汇总分项成本：夹具用 items[].estimated_cost_microunit，
-            # 真实日志 calls 用 cost_breakdown_json[].estimated_cost_microunit
+            # 真实日志 calls 用 cost_breakdown_json[].estimated_cost_microunit。
             item_sum = 0
             for item in items:
                 if not isinstance(item, dict):
@@ -907,6 +1134,29 @@ def check_cost_consistency(snapshot):
                 ))
         else:
             results.append(_unknown("COST-001", "items 格式异常"))
+
+    # PDL 前阶段成本应等于 timeline 中首次 PDL 之前已产生的真实调用成本。
+    # 这能识别总成本正确、但 pre_pdl 诊断字段漏记 LLM 成本的情况。
+    diagnosis = _get_diagnosis(snapshot)
+    pre_pdl_actual = diagnosis.get("pre_pdl_estimated_cost_microunit")
+    pdl_positions = [index for index, call in enumerate(timeline) if _provider_is(call, "pdl")]
+    if pre_pdl_actual is not None and pdl_positions and results and results[0]["outcome"] == "PASS":
+        pre_pdl_expected = sum(
+            int(call.get("estimated_cost_microunit") or 0)
+            for call in timeline[:min(pdl_positions)]
+        )
+        if int(pre_pdl_actual or 0) != pre_pdl_expected:
+            results[0] = _fail(
+                "COST-001",
+                f"总成本一致，但 pre_pdl_estimated_cost_microunit={pre_pdl_actual}，"
+                f"PDL 前 timeline 成本={pre_pdl_expected}",
+                f"pre_pdl_estimated_cost_microunit 应为 {pre_pdl_expected}",
+                [_debug_evidence(
+                    snapshot,
+                    "debug.diagnosis.pre_pdl_estimated_cost_microunit",
+                    pre_pdl_actual,
+                )],
+            )
 
     # COST-002: UNPRICED 不作为免费，缓存调用不重复计费
     debug = _get_debug(snapshot)
@@ -931,7 +1181,9 @@ def check_cost_consistency(snapshot):
                     issues.append(f"UNPRICED 调用 {item.get('provider')} 有非零成本")
         # 缓存调用成本应为 0
         for item in cost_items:
-            if isinstance(item, dict) and item.get("cost_status") == "CACHE":
+            if isinstance(item, dict) and (
+                item.get("cost_status") == "CACHE" or bool(item.get("cache_hit"))
+            ):
                 if item.get("estimated_cost_microunit", 0) > 0:
                     issues.append(f"缓存调用 {item.get('provider')} 有非零成本")
         if issues:
@@ -941,6 +1193,12 @@ def check_cost_consistency(snapshot):
                 "UNPRICED 不作为免费，缓存调用不重复计费",
                 [_debug_evidence(snapshot, "cost_summary", str(cost))],
             ))
+        elif unpriced_calls:
+            results.append(_unknown(
+                "COST-002",
+                f"存在 {len(unpriced_calls)} 条 UNPRICED 调用，0 不代表免费，无法完成价格核对",
+                [_debug_evidence(snapshot, "debug.agent_tool_calls", "UNPRICED")],
+            ))
         else:
             results.append(_pass("COST-002", f"UNPRICED={len(unpriced_calls)}, CACHE={len(cache_calls)}，无计费异常"))
 
@@ -948,34 +1206,56 @@ def check_cost_consistency(snapshot):
 
 
 def check_stop_reason_consistency(snapshot):
-    """STOP-001: result、diagnosis 和 Report 的 stop_reason 一致。"""
+    """STOP-001: 核对人物链路停止原因，不混淆 Report 工作流完成状态。"""
     results = []
     if not _has_coverage(snapshot, "get_task", "debug"):
         return [_unknown("STOP-001", "缺少 GetTask 或 Debug 证据")]
     get_task = _get_get_task_data(snapshot)
-    gt_stop = get_task.get("stop_reason")
     diag = _get_diagnosis(snapshot)
     diag_stop = diag.get("stop_reason")
     debug = _get_debug(snapshot)
-    report = debug.get("report") if isinstance(debug, dict) else None
-    report_stop = report.get("stop_reason") if isinstance(report, dict) else None
+    agent_stops = [
+        (call.get("result_details") or {}).get("stop_reason")
+        for call in _get_timeline(snapshot)
+        if str(call.get("provider") or "").lower() == "agent_people"
+    ]
+    agent_stop = next((value for value in reversed(agent_stops) if value), None)
 
-    if gt_stop is None or diag_stop is None:
-        return [_unknown("STOP-001", f"GetTask stop_reason={gt_stop}, diagnosis stop_reason={diag_stop}")]
+    reports = debug.get("reports") if isinstance(debug, dict) else None
+    report_summary = reports[-1].get("subject_summary") if isinstance(reports, list) and reports else None
+    report_stop = report_summary.get("stop_reason") if isinstance(report_summary, dict) else None
 
-    stops = {"GetTask": gt_stop, "diagnosis": diag_stop}
-    if report_stop is not None:
-        stops["report"] = report_stop
+    if diag_stop is None:
+        return [_unknown("STOP-001", "diagnosis.stop_reason 缺失")]
+    if agent_stop and agent_stop != diag_stop:
+        return [_fail(
+            "STOP-001",
+            f"agent_people stop_reason={agent_stop} ≠ diagnosis stop_reason={diag_stop}",
+            "人物聚合调用与 diagnosis 的停止原因一致",
+            [_debug_evidence(snapshot, "debug.diagnosis.stop_reason", diag_stop)],
+        )]
+    if agent_stop == diag_stop:
+        report_note = f"；Report stop_reason={report_stop} 表示报告工作流完成" if report_stop else ""
+        return [_pass(
+            "STOP-001",
+            f"人物链路 stop_reason={diag_stop} 与 agent_people 一致{report_note}",
+        )]
 
-    unique_stops = set(stops.values())
-    if len(unique_stops) == 1:
-        return [_pass("STOP-001", f"GetTask/diagnosis/report stop_reason 均为 {gt_stop}")]
-    return [_fail(
+    # 兼容旧日志：若 GetTask 直接提供 stop_reason，仍按原字段核对。
+    gt_stop = get_task.get("stop_reason")
+    if gt_stop is not None:
+        if gt_stop == diag_stop:
+            return [_pass("STOP-001", f"GetTask/diagnosis stop_reason 均为 {gt_stop}")]
+        return [_fail(
+            "STOP-001",
+            f"GetTask stop_reason={gt_stop} ≠ diagnosis stop_reason={diag_stop}",
+            "GetTask 与 diagnosis 的人物链路停止原因一致",
+            [_get_task_evidence(snapshot, "data.stop_reason", gt_stop),
+             _debug_evidence(snapshot, "debug.diagnosis.stop_reason", diag_stop)],
+        )]
+    return [_unknown(
         "STOP-001",
-        f"stop_reason 不一致: {stops}",
-        "result、diagnosis 和 Report 的 stop_reason 一致",
-        [_get_task_evidence(snapshot, "data.stop_reason", gt_stop),
-         _debug_evidence(snapshot, "debug.report.stop_reason", report_stop)],
+        f"diagnosis stop_reason={diag_stop}，缺少 agent_people/GetTask 停止原因证据",
     )]
 
 
@@ -1033,6 +1313,8 @@ def _compute_verdict(checks, snapshot):
     has_unknown = any(c["outcome"] == "UNKNOWN" for c in checks)
     if has_fail:
         return "ISSUES_FOUND"
+    if (snapshot.get("coverage") or {}).get("source_truncated"):
+        return "INCOMPLETE_EVIDENCE"
     if has_warn:
         return "NEEDS_CONFIRMATION"
     if has_unknown:
@@ -1043,6 +1325,44 @@ def _compute_verdict(checks, snapshot):
 # ---------------------------------------------------------------------------
 # 确定性 Markdown 报告（§14.1）
 # ---------------------------------------------------------------------------
+
+
+def _markdown_cell(value):
+    """把结构化值压缩为安全、可扫描的 Markdown 表格文本。"""
+    if value is None or value == "":
+        return "—"
+    if isinstance(value, (dict, list)):
+        text = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    elif isinstance(value, bool):
+        text = "true" if value else "false"
+    else:
+        text = str(value)
+    return text.replace("|", "\\|").replace("\n", " ")
+
+
+def _call_business_result(call):
+    """生成人可读的 Provider 业务结果，不把 HTTP 200 当成业务成功。"""
+    parts = []
+    if call.get("no_result_reason"):
+        parts.append(f"reason={call['no_result_reason']}")
+    if call.get("decision_reason"):
+        parts.append(f"decision={call['decision_reason']}")
+    if call.get("found") is not None:
+        parts.append(f"found={str(bool(call['found'])).lower()}")
+    if call.get("candidate_count") is not None:
+        parts.append(f"candidates={call['candidate_count']}")
+    if call.get("evidence_count") is not None:
+        parts.append(f"evidence={call['evidence_count']}")
+    return "; ".join(parts) or "—"
+
+
+def _call_diagnostic_details(call):
+    """展示解析器允许对外输出的调用级关键诊断字段。"""
+    details = call.get("result_details") or {}
+    return "; ".join(
+        f"{key}={_markdown_cell(value)}"
+        for key, value in details.items()
+    ) or "—"
 
 
 def render_rule_report(analysis_result):
@@ -1089,6 +1409,24 @@ def render_rule_report(analysis_result):
         lines.append(f"- 任务: {task['full_name']}（task_id={task.get('task_id') or '未知'}）")
         lines.append("")
 
+    # 任务结果与停止原因：明确区分工作流完成和业务检索结果。
+    get_task = snapshot.get("get_task_data") or {}
+    lines.append("## 任务结果与停止原因")
+    lines.append(f"- GetTask: status={get_task.get('status')}, result_type={get_task.get('result_type')}, "
+                 f"candidate_count={get_task.get('candidate_count')}, "
+                 f"no_result_reason={get_task.get('no_result_reason')!r}")
+    lines.append(f"- Diagnosis: final_status={diagnosis.get('final_status')}, "
+                 f"stop_reason={diagnosis.get('stop_reason')}, "
+                 f"status_consistent={diagnosis.get('status_consistent')}")
+    progress = get_task.get("progress")
+    if isinstance(progress, dict):
+        lines.append(
+            f"- Progress: stage={progress.get('stage')}, "
+            f"display_message={progress.get('display_message')}, "
+            f"display_percent={progress.get('display_percent')}"
+        )
+    lines.append("")
+
     # 日志覆盖度
     lines.append("## 日志覆盖度")
     lines.append("| 接口 | 覆盖 |")
@@ -1111,24 +1449,77 @@ def render_rule_report(analysis_result):
     # 实际执行链路
     lines.append("## 实际执行链路")
     if timeline:
-        lines.append("| # | Provider | Operation | Status | Start | HTTP | Cache | Candidates |")
-        lines.append("| --- | --- | --- | --- | --- | --- | --- | --- |")
+        lines.append("| # | Provider / Operation | 技术/业务状态 | 业务结果 | 关键诊断 | 成本 | Start |")
+        lines.append("| --- | --- | --- | --- | --- | --- | --- |")
         for i, call in enumerate(timeline, 1):
+            cost_text = (
+                f"{call.get('estimated_cost_microunit')} microunit "
+                f"({call.get('billing_currency') or 'UNSPECIFIED'}, {call.get('cost_status') or 'UNKNOWN'})"
+                if call.get("estimated_cost_microunit") is not None
+                else (call.get("cost_status") or "—")
+            )
             lines.append(
-                f"| {i} | {call.get('provider', '')} | {call.get('operation', '')} | "
-                f"{call.get('status', '')} | {call.get('start_time', '')} | "
-                f"{call.get('http_status', '')} | {'是' if call.get('cache_hit') else '否'} | "
-                f"{call.get('candidate_count', '')} |"
+                f"| {i} | {_markdown_cell(call.get('provider'))} / {_markdown_cell(call.get('operation'))} | "
+                f"status={_markdown_cell(call.get('status'))}; HTTP={_markdown_cell(call.get('http_status'))}; "
+                f"cache={'是' if call.get('cache_hit') else '否'} | "
+                f"{_markdown_cell(_call_business_result(call))} | "
+                f"{_markdown_cell(_call_diagnostic_details(call))} | "
+                f"{_markdown_cell(cost_text)} | {_markdown_cell(call.get('start_time'))} |"
             )
     else:
         lines.append("无 agent_tool_calls 数据。")
     lines.append("")
 
+    # 关键诊断摘要：固定报告即使 AI 关闭也能解释每条工作线的结果。
+    lines.append("## 关键诊断摘要")
+    lines.append(
+        "- LLM: "
+        f"output_status={diagnosis.get('llm_output_status') or diagnosis.get('llm_result_status')}, "
+        f"reasoning_bytes={diagnosis.get('llm_reasoning_bytes')}, "
+        f"truncation_detected={diagnosis.get('llm_truncation_detected')}, "
+        f"repair_retry_used={diagnosis.get('llm_repair_retry_used')}"
+    )
+    lines.append(
+        "- PDL: "
+        f"identify={diagnosis.get('pdl_identify_call_count')}, "
+        f"search={diagnosis.get('pdl_person_search_call_count')}, "
+        f"external_requests={diagnosis.get('pdl_external_request_count')}, "
+        f"returned_profiles={diagnosis.get('pdl_person_search_returned_profile_count')}, "
+        f"usable_candidates={diagnosis.get('pdl_usable_candidate_count')}"
+    )
+    lines.append(
+        "- Reverse Image: "
+        f"status={diagnosis.get('reverse_image_status')}, "
+        f"stop_reason={diagnosis.get('reverse_image_stop_reason')}, "
+        f"primary={diagnosis.get('reverse_image_primary_provider')}, "
+        f"final={diagnosis.get('reverse_image_final_provider')}, "
+        f"fallback_used={diagnosis.get('reverse_image_fallback_used')}"
+    )
+    lines.append(
+        "- Social / Face: "
+        f"social_status={diagnosis.get('social_profile_status')}, "
+        f"social_planned={diagnosis.get('social_profile_planned_count')}, "
+        f"face_status={diagnosis.get('face_comparison_status')}"
+    )
+    lines.append("")
+
     # Provider与成本
     lines.append("## Provider与成本")
+    currency_totals = _cost_totals_by_currency(cost)
     total = _extract_cost_total(cost)
-    if total is not None:
+    if currency_totals:
+        lines.append("- 按币种总计:")
+        for item in currency_totals:
+            lines.append(
+                f"  - {item['currency']}: {item['total_cost_microunit']} microunit "
+                f"(complete={item['cost_complete']}, unpriced={item['unpriced_call_count']})"
+            )
+    elif total is not None:
         lines.append(f"- 任务总成本: {total} microunit")
+    if diagnosis.get("pre_pdl_estimated_cost_microunit") is not None:
+        lines.append(
+            f"- PDL 前阶段成本: {diagnosis.get('pre_pdl_estimated_cost_microunit')} microunit"
+        )
     by_provider = cost.get("by_provider")
     items = cost.get("items") or cost.get("calls") or []
     if isinstance(by_provider, list) and by_provider:
@@ -1442,6 +1833,27 @@ def _limit_timeline(raw_timeline, truncated_flag):
     return limited
 
 
+def _pick_report_subject_summary(subject):
+    """保留 Report 中可解释业务结果且不含原始媒体内容的摘要字段。"""
+    if not isinstance(subject, dict):
+        return {}
+    fields = (
+        "headline", "identity_found", "people_found", "photo_evidence_found",
+        "confidence_cap", "stop_reason", "submitted_photo_count",
+        "submitted_photo_error_count", "submitted_photo_match_count",
+        "submitted_photo_no_match_count", "reverse_image_status",
+        "reverse_image_stop_reason", "reverse_image_fallback_used",
+        "reverse_image_primary_provider", "reverse_image_final_provider",
+        "social_profile_status", "social_profile_planned_count",
+        "estimated_cost_microunit", "task_total_estimated_cost_microunit",
+    )
+    return {
+        field: subject.get(field)
+        for field in fields
+        if subject.get(field) is not None
+    }
+
+
 def build_evidence_packet(analysis_result):
     """构建 Evidence Packet（§9.2），用于发送给 AI。
 
@@ -1486,15 +1898,45 @@ def build_evidence_packet(analysis_result):
 
     # 诊断摘要
     diagnosis = snapshot.get("diagnosis") or {}
+    diagnosis_fields = (
+        "final_status", "final_reason", "stop_reason", "status_consistent",
+        "successful_call_count", "failed_call_count", "no_result_call_count",
+        "llm_result_status", "llm_output_status", "llm_http_attempt_count",
+        "llm_reasoning_bytes", "llm_truncation_detected", "llm_repair_retry_used",
+        "llm_recoverable_candidates", "llm_partial_result_usable",
+        "public_figure_local", "public_figure_local_hit", "public_figure_skip_reason",
+        "public_figure_remote_called", "public_figure_remote_total",
+        "public_figure_remote_usable_count", "public_figure_remote_ambiguous",
+        "pdl_identify_call_count", "pdl_person_search_call_count",
+        "pdl_external_request_count", "pdl_person_search_returned_profile_count",
+        "pdl_usable_candidate_count", "pdl_billing_unit_count", "pdl_pipeline_stages",
+        "social_profile_status", "social_profile_planned_count",
+        "social_profile_attempted_count", "social_profile_merged_candidate_count",
+        "reverse_image_status", "reverse_image_stop_reason",
+        "reverse_image_primary_provider", "reverse_image_final_provider",
+        "reverse_image_fallback_used", "reverse_image_fallback_reasons",
+        "reverse_image_provider_attempt_count", "submitted_photo_error_count",
+        "submitted_photo_no_match_count", "face_comparison_status",
+        "estimated_cost_microunit", "pre_pdl_estimated_cost_microunit",
+        "pdl_estimated_cost_microunit", "reverse_image_estimated_cost_microunit",
+        "task_total_estimated_cost_microunit",
+        "report_estimated_cost_microunit", "cost_consistent", "unpriced_call_count",
+    )
     diagnosis_summary = {
-        "final_status": diagnosis.get("final_status"),
-        "stop_reason": diagnosis.get("stop_reason"),
-        "llm_result_status": diagnosis.get("llm_result_status"),
-        "public_figure_local_hit": diagnosis.get("public_figure_local_hit"),
-        "public_figure_remote_usable_count": diagnosis.get("public_figure_remote_usable_count"),
-        "public_figure_remote_ambiguous": diagnosis.get("public_figure_remote_ambiguous"),
-        "social_profile_merged_candidate_count": diagnosis.get("social_profile_merged_candidate_count"),
-        "face_comparison_status": diagnosis.get("face_comparison_status"),
+        field: diagnosis.get(field)
+        for field in diagnosis_fields
+        if diagnosis.get(field) is not None
+    }
+
+    reports = (snapshot.get("debug") or {}).get("reports") or []
+    latest_report = reports[-1] if isinstance(reports, list) and reports else {}
+    report_subject = latest_report.get("subject_summary") if isinstance(latest_report, dict) else {}
+    report_summary = {
+        "status": latest_report.get("status") if isinstance(latest_report, dict) else None,
+        "confidence_level": latest_report.get("confidence_level") if isinstance(latest_report, dict) else None,
+        "subject_summary": _pick_report_subject_summary(report_subject),
+        "evidence": latest_report.get("evidence") if isinstance(latest_report, dict) else [],
+        "disclaimers": latest_report.get("disclaimers") if isinstance(latest_report, dict) else [],
     }
 
     # 成本摘要（调用最多 100 条）
@@ -1505,6 +1947,8 @@ def build_evidence_packet(analysis_result):
         cost_calls = cost_calls[:MAX_PACKET_COST_CALLS]
     cost_summary = {
         "total_estimated_cost_microunit": cost.get("total_estimated_cost_microunit"),
+        "totals_by_currency": _cost_totals_by_currency(cost),
+        "by_provider": cost.get("by_provider") or [],
         "call_count": len(cost_calls),
         "calls": cost_calls,
     }
@@ -1512,22 +1956,30 @@ def build_evidence_packet(analysis_result):
     packet = {
         "analyzer_version": ANALYZER_VERSION,
         "ruleset_version": RULESET_VERSION,
+        "policy_version": snapshot.get("policy_version"),
         "verdict": verdict,
         "task_summary": {
             "task_id": task.get("task_id"),
             "query_id": task.get("query_id"),
+            "client_request_id": task.get("client_request_id"),
             "full_name": task.get("full_name"),
             "clue_types": task.get("clue_types"),
             "clues": clue_values,
+            "social_links": task.get("social_links") or [],
+            "photo_count": task.get("photo_count", 0),
             "final_status": task.get("final_status"),
             "candidate_count": task.get("candidate_count"),
             "top_confidence_score": task.get("top_confidence_score"),
+            "result_type": task.get("result_type"),
+            "no_result_reason": task.get("no_result_reason"),
+            "progress": task.get("progress"),
         },
         "coverage": coverage,
         "timeline": timeline,
         "candidate_summary": candidate_summary,
         "social_url_decisions": social_url_decisions,
         "diagnosis_summary": diagnosis_summary,
+        "report_summary": report_summary,
         "cost_summary": cost_summary,
         "checks": checks,
         "parse_warnings": warnings,

@@ -37,7 +37,7 @@ class ReleaseCreateRequest(BaseModel):
     """创建指定工具和环境的配置草稿。"""
 
     environment_id: str = Field(pattern="^[a-z][a-z0-9-]{1,31}$")
-    owner_type: str = Field(pattern="^(platform|tool)$")
+    owner_type: str = Field(pattern="^(platform|tool|llm_profile|llm_binding)$")
     owner_id: str = Field(min_length=1, max_length=64)
 
 
@@ -69,7 +69,7 @@ class SecretReplaceRequest(BaseModel):
     """Secret 新版本输入；明文只允许出现在请求体。"""
 
     environment_id: str
-    owner_type: str = Field(pattern="^(platform|tool)$")
+    owner_type: str = Field(pattern="^(platform|tool|llm_profile|llm_binding)$")
     owner_id: str
     definition_id: str
     value: str = Field(min_length=1, max_length=65536)

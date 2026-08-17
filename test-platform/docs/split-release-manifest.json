@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "release": "0.1.0-local.20260817.f1a6260",
+  "created_at": "2026-08-17T11:05:00+08:00",
+  "source_baseline": {
+    "git_commit": "f1a6260d44a9",
+    "reserved_tag": "ai-agents-split-baseline-20260817",
+    "tag_created": false
+  },
+  "images": {
+    "functional-test-agent": "sha256:4f9c54f3fc4af7de4df7843e690988073e50c35fbae74ed7731da3d34e180882",
+    "api-test-agent": "sha256:3603971a10864d7aa958b26e297574b7d71ebfa77ed542d9af3f2f1aca7a971f",
+    "api-execution-controller": "sha256:f9de5b8c096637132f0773ec921325687c92350effa43f493e8ed5c085eb7c56",
+    "api-egress-proxy": "sha256:af2810794c7b3672f99723c2cff7e9fc62c1886fee247c1d294b2f0fa57061a8",
+    "api-test-executor": "sha256:95b7e061959783e86211e461cd6675f04015f730bd33fccc212ebdce44e5ba94"
+  },
+  "runtime_migration": {
+    "functional": {"file_count": 52, "total_bytes": 478025, "verified": true},
+    "api": {"file_count": 65, "total_bytes": 203218, "verified": true},
+    "source_deleted": false
+  },
+  "security_defaults": {
+    "API_EXECUTION_ENABLED": false,
+    "DATABASE_PERSIST_ENABLED": false,
+    "ALLOWED_TARGETS": [],
+    "API_EXECUTION_TARGETS": []
+  },
+  "archive_gate": {
+    "required_stable_releases": 2,
+    "completed_stable_releases": 1,
+    "legacy_repository_frozen": false,
+    "legacy_history_offline": false,
+    "earliest_history_retention_days": 180
+  }
+}

@@ -6,16 +6,22 @@
 - `log_filter_tool`：日志筛选、统计与导出；
 - `Truthy_Search`：检索执行、字段对比与评测报告；
 - `Truthy_ApiAutoTest2`：Gateway 接口自动化与 Allure 报告。
-- `AItestcase_Agents/functional-test-agent`：需求拆解、测试点 Review 和功能用例生成；
-- `AItestcase_Agents/api-test-agent`：API 文档解析和文件化用例生成，真实执行默认关闭。
+- `functional-test-agent`：独立的需求拆解、测试点 Review 和功能用例生成项目；
+- `api-test-agent`：独立的 API 文档解析、文件化用例生成和受控执行组件项目，真实执行默认关闭。
 
-第二阶段由平台统一负责登录会话、RBAC、网关强制鉴权、审计日志、普通配置、加密 Secret 和凭证续期。工具仍保留独立源码、容器和独立运行模式。平台或数据库异常时鉴权失败关闭，不提供匿名回退。
+第二阶段由平台统一负责登录会话、RBAC、网关强制鉴权、审计日志、普通配置、加密 Secret 和凭证续期。`1.01.000` 起，平台同时统一管理功能 Agent、API Agent 与日志分析的 LLM Profile、工具绑定和不可变运行快照。工具仍保留独立源码、容器和独立运行模式。平台或数据库异常时鉴权失败关闭，不提供匿名回退。
+
+## 平台版本
+
+根目录 `VERSION` 是平台版本的唯一真源，格式固定为 `主版本.两位平台版本.三位发布序号`。普通工具或小功能发布递增最后三位（如 `1.00.000 → 1.00.001`）；AI 测试工作台或平台级升级递增中间两位并将发布序号归零（如 `1.00.015 → 1.01.000`）；不兼容升级才递增主版本。发布前只修改该文件，重新构建网关和平台 API 后，首页“平台状态”与 `/api/v1/health/live`、`/api/v1/health/ready` 会显示同一版本。
 
 ## 目录与运行边界
 
 ```text
 Testproject/
 ├── test-platform/
+├── functional-test-agent/
+├── api-test-agent/
 ├── TrackEvents_tess/
 ├── log_filter_tool/
 ├── Truthy_Search/
@@ -30,7 +36,9 @@ Testproject/
 cd /Users/admin/Testproject/test-platform
 cp .env.example .env
 # 修改 .env 中的数据库密码和部署环境设置。
-docker compose up --build -d
+# 主 Compose 只消费版本化镜像；首次本机构建叠加 local-build 文件。
+docker compose -f docker-compose.yml -f docker-compose.local-build.yml build functional-test-agent api-test-agent
+docker compose up -d
 docker compose ps -a
 ```
 
@@ -84,6 +92,29 @@ Web 配置控制面只允许修改迁移中登记的白名单键：
 
 `dev/prod` 的 PostgreSQL 卷、任务目录、配置、Secret、Credential、Client Token 和 KEK 必须隔离。Compose 默认使用 `test-platform-<environment>-db-data`，普通配置可人工提升为 prod 草稿，Secret 不自动复制。
 
+### LLM 统一配置
+
+`/settings/llm` 将模型配置分为公共 Profile 和预登记工具绑定。首期只登记：
+
+- `functional-test-agent/default`；
+- `api-test-agent/default`；
+- `log-filter/people-search-summary`。
+
+Profile 保存 OpenAI-compatible Base URL、模型和加密 API Key；Binding 可覆盖模型、Temperature、Max Tokens、超时或独立 API Key。普通参数经 Release 发布，Secret 保存后不回显，任务/请求只读取一次已发布快照。TrackEvents、Truthy_Search 和 API AutoTest 没有直接 LLM 调用，因此不显示无效配置。
+
+旧配置导入先 dry-run，`apply` 只创建草稿和 Secret，不自动发布，也不会输出值、长度、前后缀或哈希：
+
+```bash
+cd /Users/admin/Testproject/test-platform/backend
+python3 -m app.migrate_llm_config --environment dev --dry-run
+python3 -m app.migrate_llm_config --environment dev --apply \
+  --log-base-url https://dashscope.aliyuncs.com/compatible-mode/v1 \
+  --log-model deepseek-v4-flash \
+  --log-key-file /只读临时挂载/log-analyzer-key
+```
+
+之后在 Web 依次发布 Profile、三个 Binding，并由管理员手动执行一次最小连接测试。平台模式不回退旧 LLM Secret；独立模式仍使用各工具原 `.env`/key file。
+
 ## 真实凭证迁移门禁
 
 用户曾在对话中暴露过 Truthy_Search Access/Refresh Token。迁移真实凭证前必须先在上游撤销或刷新这些 Token，并确认旧值失效；本实现不会把已暴露值写入数据库或代码。
@@ -117,13 +148,13 @@ curl -i http://127.0.0.1:8080/api/v1/health/ready
 两个服务使用独立任务根和按环境隔离的 Tool Client Token：
 
 ```text
-AItestcase_Agents/runtime/<environment>/functional
-AItestcase_Agents/runtime/<environment>/api
+functional-test-agent/runtime/<environment>/functional
+api-test-agent/runtime/<environment>/api
 test-platform/.runtime-secrets/<environment>/functional-test-agent-client-token
 test-platform/.runtime-secrets/<environment>/api-test-agent-client-token
 ```
 
-管理员需要分别为两个工具创建并发布配置 Release，分别写入各自的 `LLM_API_KEY`。API 工具初始值必须保持：
+两个 Agent 在平台模式优先读取 `/settings/llm` 发布的 `llm` 快照；迁移期若快照不存在，继续兼容旧工具 Release 中的 `LLM_*` 字段。API 工具初始值必须保持：
 
 ```text
 API_EXECUTION_ENABLED=false
@@ -168,6 +199,20 @@ CASE_REVIEW_MAX_CHARACTERS=1000000
 迁移 `20260814_0012` 下接 `20260813_0011`：配置定义默认关闭，dev Release 显式开启，prod 不自动开启。用例 AI 失败、取消、超时或服务重启后回到 `waiting_case_review`，不会修改草稿或删除已有产物。发布失败时任务保持可恢复 Review 状态，artifact registry 不登记半成品。
 
 用例 Review 回滚按三层执行：先关闭 `CASE_REVIEW_AI_ENABLED`，再关闭 `ONLINE_CASE_REVIEW_ENABLED`，必要时恢复上一版功能智能体镜像并保留任务卷。通常保留 0012；确需降级时先关闭开关，再执行 `alembic downgrade 20260813_0011`。不得删除 `case-review-draft.json`、`review-test-cases-vN.json`、`case-review-ai/` 或 `published/test-cases/vN/`。
+
+### 功能测试脑图工作台 V2
+
+迁移 `20260816_0014` 下接 `20260815_0013`，增加统一界面开关：
+
+```text
+FUNCTIONAL_WORKBENCH_V2_ENABLED=false
+```
+
+开关关闭时继续使用原在线 Review 页面；开启时，功能测试任务列表、新建弹窗、测试点 Review 和测试用例 Review 切换到桌面脑图工作台。脑图是唯一编辑入口，旁侧表格永久只读。平面 JSON、草稿 CAS、不可变确认版本、AI 建议、FIFO、权限和产物协议均保持不变，API 智能体页面不受影响。
+
+脑图组件 `mind-elixir@5.14.0` 已固定版本并自托管，不使用 CDN。许可证和文件校验信息位于 `functional-test-agent/services/common/static/vendor/mind-elixir/`，可在功能项目执行 `node --test tests/ui/*.test.mjs` 校验供应链文件及投影/命令内核。
+
+dev 发布时先完成自动化与浏览器验收，再新建 dev 配置 Release，把 `FUNCTIONAL_WORKBENCH_V2_ENABLED` 设为 `true` 并仅替换功能智能体。prod 首次发布保持 `false`。回滚优先发布新 Release 将开关设回 `false`；必要时恢复上一版功能智能体镜像，任务卷及 Review 文件全部保留。通常保留 0014；确需降级时先关闭开关，再执行 `alembic downgrade 20260815_0013`。
 
 部署或回滚时可单独启动、停止两个服务；常规回滚不得删除任务目录。只有在已备份平台数据库并确认接受删除新工具配置数据时，才执行 Alembic downgrade 到 `20260811_0008`。
 
