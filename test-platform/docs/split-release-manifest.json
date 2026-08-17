@@ -1,23 +1,23 @@
 {
   "schema_version": 1,
-  "release": "0.1.0-local.20260817.f1a6260",
-  "created_at": "2026-08-17T11:05:00+08:00",
+  "release": "0.1.1-local.20260817.c99fe11",
+  "created_at": "2026-08-17T18:40:07+08:00",
   "source_baseline": {
-    "git_commit": "f1a6260d44a9",
+    "git_commit": "c99fe112e04",
     "reserved_tag": "ai-agents-split-baseline-20260817",
-    "tag_created": false
+    "tag_created": true
   },
   "images": {
-    "functional-test-agent": "sha256:4f9c54f3fc4af7de4df7843e690988073e50c35fbae74ed7731da3d34e180882",
-    "api-test-agent": "sha256:3603971a10864d7aa958b26e297574b7d71ebfa77ed542d9af3f2f1aca7a971f",
-    "api-execution-controller": "sha256:f9de5b8c096637132f0773ec921325687c92350effa43f493e8ed5c085eb7c56",
-    "api-egress-proxy": "sha256:af2810794c7b3672f99723c2cff7e9fc62c1886fee247c1d294b2f0fa57061a8",
-    "api-test-executor": "sha256:95b7e061959783e86211e461cd6675f04015f730bd33fccc212ebdce44e5ba94"
+    "functional-test-agent": "sha256:9f4ab45d842929ca1c5f1e85026f230a9d05bc193c8f86358c724e07585e121e",
+    "api-test-agent": "sha256:67707f2fd40a96636f4b8eb7e33d079f436b72ba642714c14066c20f91c77c93",
+    "api-execution-controller": "sha256:e060e5737024d96f20475bf7859ed43f29090242ae79928dca8b0eb5dc39b089",
+    "api-egress-proxy": "sha256:3ba50002037978bd93f8ccffe7c92ddb72d987da383f9da1325deae69c357208",
+    "api-test-executor": "sha256:047f871f2da87f948a916697a9467fc32aaf7371e5c6056399a0130cf10da525"
   },
   "runtime_migration": {
     "functional": {"file_count": 52, "total_bytes": 478025, "verified": true},
     "api": {"file_count": 65, "total_bytes": 203218, "verified": true},
-    "source_deleted": false
+    "source_deleted": true
   },
   "security_defaults": {
     "API_EXECUTION_ENABLED": false,
@@ -27,9 +27,9 @@
   },
   "archive_gate": {
     "required_stable_releases": 2,
-    "completed_stable_releases": 1,
-    "legacy_repository_frozen": false,
-    "legacy_history_offline": false,
+    "completed_stable_releases": 2,
+    "legacy_repository_frozen": true,
+    "legacy_history_offline": true,
     "earliest_history_retention_days": 180
   }
 }

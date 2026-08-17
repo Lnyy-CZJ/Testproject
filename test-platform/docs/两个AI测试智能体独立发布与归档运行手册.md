@@ -2,7 +2,7 @@
 
 ## 1. 当前交付状态
 
-当前本机 Release 为 `0.1.0-local.20260817.f1a6260`。功能项目和 API 项目已分别使用新源码目录、新 runtime 和独立镜像运行；旧 `AItestcase_Agents`、旧 runtime 与历史 `output/` 仍保留，未删除、覆盖或改为只读。
+当前本机 Release 为 `0.1.1-local.20260817.c99fe11`，服务器 Release 为 `0.1.1-server.20260817.c99fe11`。功能项目和 API 项目分别使用独立源码目录、runtime 和镜像运行；旧单体目录已在完成独立升级、回滚验证后从本机和服务器项目目录移除，删除前基线由 Git tag `ai-agents-split-baseline-20260817` 保留。
 
 首次发布范围固定为可信生成和 Review：
 
@@ -36,26 +36,7 @@ docker compose ps functional-test-agent api-test-agent
 
 ## 3. runtime 迁移和校验
 
-功能和 API 必须分两次切换。每次先停止旧服务，再执行 dry-run、复制和 verify：
-
-```bash
-python3 /Users/admin/Testproject/functional-test-agent/scripts/migrate_legacy_runtime.py \
-  --source /Users/admin/Testproject/AItestcase_Agents/runtime/dev/functional \
-  --destination /Users/admin/Testproject/functional-test-agent/runtime/dev/functional \
-  --environment dev --dry-run --manifest /tmp/functional-runtime-dry-run.json
-
-python3 /Users/admin/Testproject/functional-test-agent/scripts/migrate_legacy_runtime.py \
-  --source /Users/admin/Testproject/AItestcase_Agents/runtime/dev/functional \
-  --destination /Users/admin/Testproject/functional-test-agent/runtime/dev/functional \
-  --environment dev --manifest /tmp/functional-runtime-migration.json
-
-python3 /Users/admin/Testproject/functional-test-agent/scripts/migrate_legacy_runtime.py \
-  --source /Users/admin/Testproject/AItestcase_Agents/runtime/dev/functional \
-  --destination /Users/admin/Testproject/functional-test-agent/runtime/dev/functional \
-  --environment dev --verify-only
-```
-
-API 使用相同参数结构，但脚本、源和目标目录改为 `api-test-agent` 与 `runtime/dev/api`。工具拒绝宽泛路径、符号链接、越界和同名异内容；复制过程不删除源数据。`running` 任务由新服务启动恢复为 `failed/WORKER_INTERRUPTED`，其他 Review 状态原样保留。
+功能和 API runtime 迁移已经完成，不得在日常发布中重复执行。当前服务分别只使用 `functional-test-agent/runtime/<environment>/functional` 和 `api-test-agent/runtime/<environment>/api`；历史迁移结果由两个项目根目录的 `runtime-migration-dry-run.json` 与 `runtime-migration-manifest.json` 留档。
 
 ## 4. 独立回滚
 
@@ -78,24 +59,19 @@ docker compose --profile s2-execution up -d --no-deps api-test-agent api-executi
 
 常规回滚不删除新旧 runtime，不合并 Review、Run 或报告字段。若旧代码不能读取新数据，旧服务只能只读访问旧 runtime。
 
-## 5. 旧仓冻结与归档门禁
+## 5. 旧仓归档与恢复
 
-本次只完成归档准备，不立即冻结。必须同时满足以下条件后才允许归档：
+删除前的 Git 跟踪源码保存在 tag `ai-agents-split-baseline-20260817`。未跟踪的旧 runtime、output 和环境文件不会进入 Git tag，删除前已分别保存为权限 `0600` 的本机与服务器备份；备份可能包含历史凭证，不得上传仓库或对外共享。
 
-1. 功能项目完成两个稳定 Release；
-2. API 项目完成两个稳定 Release；
-3. 两边分别完成生产式回滚演练；
-4. 旧历史入口已连续保留至少 180 天，且管理员再次批准下线；
-5. 已确认归档不包含 `.env`、Secret、runtime、缓存或临时凭据；
-6. 历史 `output/` 的文件数和总字节与基线一致。
+需要查看旧源码时，解压到项目目录之外：
 
-批准后目标目录固定为：
-
-```text
-/Users/admin/Testproject/archive/AItestcase_Agents/ai-agents-split-baseline-20260817/
+```bash
+mkdir -p /tmp/ai-agents-split-baseline
+git archive ai-agents-split-baseline-20260817 AItestcase_Agents \
+  | tar -x -C /tmp/ai-agents-split-baseline
 ```
 
-归档应复制而非移动，先生成 SHA 清单并验证，再把目录权限设为 `0555`、普通文件设为 `0444`。源目录和历史入口不得自动删除；删除必须作为新的管理员审批事项执行。
+不得重新把旧目录接回 Compose；线上回滚继续使用两个独立智能体的不可变镜像和独立 runtime。
 
 ## 6. 发布后检查
 
