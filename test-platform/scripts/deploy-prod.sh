@@ -8,6 +8,7 @@ base_env=/srv/test-platform/env/.env.prod
 image_env="$release_dir/.env.images"
 backup_root=/srv/test-platform/backups
 compose=(docker compose --env-file "$base_env" --env-file "$image_env" -p test-platform-prod -f "$release_dir/docker-compose.yml" -f "$release_dir/docker-compose.prod.yml")
+previous_release=$(readlink -f /srv/test-platform/current 2>/dev/null || true)
 
 test -f "$base_env"
 test -f "$image_env"
@@ -90,6 +91,34 @@ fi
 for path in / /api/v1/health/live /trackevents/health /log-filter/health /truthy-search/health /api-autotest/health /functional-test-agent/health /api-test-agent/health; do
   curl --fail --silent --show-error --retry 12 --retry-delay 5 "http://127.0.0.1:41873$path" >/dev/null
 done
+
+config_releases=$("${compose[@]}" exec -T platform-db sh -c \
+  'psql -At -F "|" -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "select owner_type, owner_id, active_release_id from config_activations where environment_id='"'"'prod'"'"' order by owner_type, owner_id;"')
+DEPLOYED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
+PREVIOUS_RELEASE="$previous_release" \
+CONFIG_RELEASES="$config_releases" \
+python3 - "$release_dir/release-manifest.json" "$release_dir/deployment-record.json" <<'PY'
+import json
+import os
+import sys
+from pathlib import Path
+
+manifest_path, record_path = map(Path, sys.argv[1:])
+record = json.loads(manifest_path.read_text())
+record.update({
+    "deployed_at": os.environ["DEPLOYED_AT"],
+    "previous_release": Path(os.environ["PREVIOUS_RELEASE"]).name if os.environ["PREVIOUS_RELEASE"] else None,
+    "config_releases": [
+        {"owner_type": owner_type, "owner_id": owner_id, "release_id": release_id}
+        for owner_type, owner_id, release_id in (
+            line.split("|", 2) for line in os.environ["CONFIG_RELEASES"].splitlines() if line
+        )
+    ],
+    "acceptance": {"result": "passed", "smoke_tests": 8},
+})
+record_path.write_text(json.dumps(record, indent=2) + "\n")
+PY
+chmod 600 "$release_dir/deployment-record.json"
 
 ln -sfn "$release_dir" /srv/test-platform/current
 echo "production release active: $(basename "$release_dir")"
