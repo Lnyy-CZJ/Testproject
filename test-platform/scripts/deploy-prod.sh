@@ -2,6 +2,8 @@
 set -euo pipefail
 
 release_dir=${1:?usage: deploy-prod.sh RELEASE_DIR}
+service=${2:-}
+image_override=${3:-}
 base_env=/srv/test-platform/env/.env.prod
 image_env="$release_dir/.env.images"
 backup_root=/srv/test-platform/backups
@@ -21,6 +23,39 @@ sudo chmod 600 \
   /srv/test-platform/secrets/prod/functional-test-agent-client-token \
   /srv/test-platform/secrets/prod/api-test-agent-client-token \
   /srv/test-platform/secrets/prod/api-execution-controller-token
+
+if [[ -n "$service" ]]; then
+  case "$service" in
+    functional-test-agent)
+      image_var=FUNCTIONAL_AGENT_IMAGE
+      image_prefix=ghcr.io/lnyy-czj/testproject-functional-test-agent
+      health_path=/functional-test-agent/health
+      ;;
+    api-test-agent)
+      image_var=API_AGENT_IMAGE
+      image_prefix=ghcr.io/lnyy-czj/testproject-api-test-agent
+      health_path=/api-test-agent/health
+      ;;
+    *)
+      echo "不支持独立部署服务: $service" >&2
+      exit 1
+      ;;
+  esac
+  if [[ -n "$image_override" ]]; then
+    digest=${image_override#"$image_prefix@"}
+    if [[ "$image_override" != "$image_prefix@$digest" || ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+      echo "独立部署必须使用 $image_prefix 的完整 digest" >&2
+      exit 1
+    fi
+    printf -v "$image_var" '%s' "$image_override"
+    export "$image_var"
+  fi
+  "${compose[@]}" pull "$service"
+  "${compose[@]}" up -d --no-deps "$service"
+  curl --fail --silent --show-error --retry 12 --retry-delay 5 "http://127.0.0.1:41873$health_path" >/dev/null
+  echo "$service active: $("${compose[@]}" images -q "$service")"
+  exit 0
+fi
 
 # 在替换应用前保留可恢复的数据库快照；首次切换由迁移流程单独恢复 dev 快照。
 if docker ps --format '{{.Names}}' | grep -qx 'test-platform-prod-platform-db-1'; then
