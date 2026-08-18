@@ -10,6 +10,11 @@ services:
   platform-migrate:
     build: !reset null
     image: "${PLATFORM_BACKEND_IMAGE:?PLATFORM_BACKEND_IMAGE is required}"
+    environment:
+      PLATFORM_RUNTIME_ENV: prod
+      SECRET_KEK_FILE: /run/secrets/platform-kek.json
+    volumes: !reset
+      - /srv/test-platform/secrets/prod-kek.json:/run/secrets/platform-kek.json:ro
 
   platform-bootstrap:
     build: !reset null

@@ -26,6 +26,19 @@ if "${compose[@]}" config | grep -qE '^[[:space:]]+build:'; then
 fi
 "${compose[@]}" pull
 "${compose[@]}" run --rm platform-migrate
+
+# 只在首次恢复出的空 prod 上复制 dev 当前激活配置；部分初始化必须人工处理。
+read -r prod_objects prod_activations < <("${compose[@]}" exec -T platform-db sh -c \
+  'psql -At -F " " -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "select (select count(*) from config_releases where environment_id='"'"'prod'"'"') + (select count(*) from secrets where environment_id='"'"'prod'"'"') + (select count(*) from credentials where environment_id='"'"'prod'"'"') + (select count(*) from tool_clients where environment_id='"'"'prod'"'"'), (select count(*) from config_activations where environment_id='"'"'prod'"'"');"')
+if [[ "$prod_objects" == "0" && "$prod_activations" == "0" ]]; then
+  promotion=(python -m app.promote_environment --source dev --target prod --require-empty-target --copy-secrets --seed-credentials)
+  "${compose[@]}" run --rm --no-deps platform-migrate "${promotion[@]}" --dry-run
+  "${compose[@]}" run --rm --no-deps platform-migrate "${promotion[@]}"
+elif [[ "$prod_activations" == "0" ]]; then
+  echo 'prod 已部分初始化但没有激活配置，拒绝继续部署' >&2
+  exit 1
+fi
+
 "${compose[@]}" up -d --remove-orphans
 "${compose[@]}" ps
 
