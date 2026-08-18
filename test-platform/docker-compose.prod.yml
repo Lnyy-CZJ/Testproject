@@ -13,19 +13,19 @@ services:
     environment:
       PLATFORM_RUNTIME_ENV: prod
       SECRET_KEK_FILE: /run/secrets/platform-kek.json
-    volumes: !reset
+    volumes: !override
       - /srv/test-platform/secrets/prod-kek.json:/run/secrets/platform-kek.json:ro
 
   platform-bootstrap:
     build: !reset null
     image: "${PLATFORM_BACKEND_IMAGE:?PLATFORM_BACKEND_IMAGE is required}"
-    volumes: !reset
+    volumes: !override
       - /srv/test-platform/secrets:/run/platform-clients:ro
 
   platform-api:
     build: !reset null
     image: "${PLATFORM_BACKEND_IMAGE:?PLATFORM_BACKEND_IMAGE is required}"
-    volumes: !reset
+    volumes: !override
       - ./VERSION:/run/platform-version:ro
       - /srv/test-platform/secrets/prod/bootstrap-token:/run/secrets/platform-bootstrap-token:ro
       - /srv/test-platform/secrets/prod-kek.json:/run/secrets/platform-kek.json:ro
@@ -33,13 +33,13 @@ services:
   platform-credential-agent:
     build: !reset null
     image: "${PLATFORM_BACKEND_IMAGE:?PLATFORM_BACKEND_IMAGE is required}"
-    volumes: !reset
+    volumes: !override
       - /srv/test-platform/secrets/prod-kek.json:/run/secrets/platform-kek.json:ro
 
   trackevents-web:
     build: !reset null
     image: "${TRACKEVENTS_IMAGE:?TRACKEVENTS_IMAGE is required}"
-    volumes: !reset
+    volumes: !override
       - /srv/test-platform/secrets/prod/trackevents-client-token:/run/secrets/platform-client-token:ro
 
   log-filter-tool:
@@ -47,7 +47,7 @@ services:
     image: "${LOG_FILTER_IMAGE:?LOG_FILTER_IMAGE is required}"
     environment:
       LOG_FILTER_LLM_CONFIG_SOURCE: platform
-    volumes: !reset
+    volumes: !override
       - /srv/test-platform/data/log-filter/exports:/exports
       - /srv/test-platform/secrets/prod/log-filter-client-token:/run/secrets/platform-client-token:ro
 
@@ -56,7 +56,7 @@ services:
     image: "${TRUTHY_SEARCH_IMAGE:?TRUTHY_SEARCH_IMAGE is required}"
     environment:
       SEARCH_CONFIG_SOURCE: platform
-    volumes: !reset
+    volumes: !override
       - /srv/test-platform/data/truthy-search/data:/app/data
       - /srv/test-platform/data/truthy-search/output:/app/output
       - /srv/test-platform/data/truthy-search/input:/app/input:ro
@@ -69,7 +69,7 @@ services:
     environment:
       API_AUTOTEST_CONFIG_SOURCE: platform
       API_AUTOTEST_SESSION_PROVIDER: platform
-    volumes: !reset
+    volumes: !override
       - /srv/test-platform/data/api-autotest/data:/app/data:ro
       - /srv/test-platform/data/api-autotest/logs:/app/logs
       - /srv/test-platform/data/api-autotest/reports:/app/reports
@@ -78,7 +78,7 @@ services:
 
   functional-test-agent:
     image: "${FUNCTIONAL_AGENT_IMAGE:?FUNCTIONAL_AGENT_IMAGE is required}"
-    volumes: !reset
+    volumes: !override
       - /srv/test-platform/data/functional-agent:/app/runtime/prod/functional
       - /srv/test-platform/secrets/prod/functional-test-agent-client-token:/run/secrets/platform-client-token:ro
 
@@ -86,7 +86,7 @@ services:
     image: "${API_AGENT_IMAGE:?API_AGENT_IMAGE is required}"
     environment:
       API_EXECUTION_ENABLED: "false"
-    volumes: !reset
+    volumes: !override
       - /srv/test-platform/data/api-agent:/app/runtime/prod/api
       - /srv/test-platform/secrets/prod/api-test-agent-client-token:/run/secrets/platform-client-token:ro
       - /srv/test-platform/secrets/prod/api-execution-controller-token:/run/secrets/controller-token:ro
@@ -96,7 +96,7 @@ services:
     environment:
       CONTROLLER_RUNS_ROOT: /srv/test-platform/data/api-agent/tasks
       EXECUTOR_IMAGE: "${API_EXECUTOR_IMAGE:?API_EXECUTOR_IMAGE is required}"
-    volumes: !reset
+    volumes: !override
       - /var/run/docker.sock:/var/run/docker.sock
       - /srv/test-platform/data/api-agent:/srv/test-platform/data/api-agent
       - /srv/test-platform/secrets/prod/api-execution-controller-token:/run/secrets/controller-token:ro

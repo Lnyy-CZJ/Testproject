@@ -36,6 +36,17 @@ jobs:
           npm ci
           npm test
           npm run build
+      - name: Validate production Compose
+        run: |
+          cd test-platform
+          docker compose --env-file .env.prod.example -f docker-compose.yml -f docker-compose.prod.yml config --quiet
+          ! docker compose --env-file .env.prod.example -f docker-compose.yml -f docker-compose.prod.yml config | grep -qE '^[[:space:]]+build:'
+          docker compose --env-file .env.prod.example -f docker-compose.yml -f docker-compose.prod.yml config --format json | jq -e '
+            . as $config
+            | ["platform-migrate", "platform-api", "platform-credential-agent", "trackevents-web", "log-filter-tool", "truthy-search", "api-autotest", "functional-test-agent", "api-test-agent"]
+            | all(. as $service | (($config.services[$service].volumes // []) | length > 0))
+            and (($config.services["platform-migrate"].volumes // []) | any(.target == "/run/secrets/platform-kek.json"))
+          '
 
   images:
     needs: verify
