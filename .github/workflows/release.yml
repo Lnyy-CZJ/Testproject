@@ -134,14 +134,18 @@ jobs:
           cp test-platform/docker-compose.yml test-platform/docker-compose.prod.yml test-platform/VERSION deploy-bundle/
           cp test-platform/scripts/deploy-prod.sh deploy-bundle/
           RELEASE_NAME='${{ github.ref_name }}' RELEASE_SHA='${{ github.sha }}' python - <<'PY'
-          import json, os
+          import json, os, re
           from pathlib import Path
           images = dict(line.split("=", 1) for line in Path("deploy-bundle/.env.images").read_text().splitlines())
           migrations = sorted(Path("test-platform/backend/alembic/versions").glob("*.py"))
+          revision_match = re.search(r'^revision(?:\s*:[^=]+)?\s*=\s*["\']([^"\']+)', migrations[-1].read_text(), re.MULTILINE)
+          if revision_match is None:
+              raise SystemExit(f"Unable to read Alembic revision from {migrations[-1]}")
           manifest = {
               "release": os.environ["RELEASE_NAME"],
               "commit": os.environ["RELEASE_SHA"],
-              "alembic_revision_file": migrations[-1].name,
+              "alembic_revision": revision_match.group(1),
+              "test_result": "passed",
               "images": images,
           }
           Path("deploy-bundle/release-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
