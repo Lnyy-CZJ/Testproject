@@ -53,6 +53,18 @@ class AgentSplitComposeTest(unittest.TestCase):
         self.assertIn("DATABASE_PERSIST_ENABLED: \"false\"", output)
         self.assertIn("ALLOWED_TARGETS: '[]'", output)
 
+    def test_first_prod_deploy_promotes_before_bootstrap_start(self) -> None:
+        """首次 prod 必须在启动 bootstrap 注册 Client 前复制空环境配置。"""
+
+        script = (ROOT / "scripts/deploy-prod.sh").read_text(encoding="utf-8")
+        migration = script.index('run --rm platform-migrate')
+        promotion = script.index('python -m app.promote_environment')
+        startup = script.index('up -d --remove-orphans')
+        self.assertLess(migration, promotion)
+        self.assertLess(promotion, startup)
+        override = (ROOT / "docker-compose.prod.yml").read_text(encoding="utf-8")
+        self.assertIn("/srv/test-platform/secrets/prod-kek.json:/run/secrets/platform-kek.json:ro", override)
+
 
 if __name__ == "__main__":
     unittest.main()
