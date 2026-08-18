@@ -1,9 +1,10 @@
 {% extends "base.html" %}
+{% block body_class %}{% if functional_workbench_v3 %}functional-workbench-v3-page{% endif %}{% endblock %}
 {% block styles %}{% if functional_workbench_v2 %}<link rel="stylesheet" href="{{ settings.base_path }}/static/functional-workbench-v2.css">{% endif %}{% endblock %}
 {% block content %}
 {% if functional_workbench_v2 %}
 <section class="functional-index-heading">
-  <div><h1>功能测试任务</h1><p>从需求文档生成测试点和测试用例，并在脑图中完成 Review。</p></div>
+  <div><h1>{{ '测试用例生成' if functional_workbench_v3 else '功能测试任务' }}</h1><p>{{ '创建一次生成任务，按阶段审核测试点和测试用例。' if functional_workbench_v3 else '从需求文档生成测试点和测试用例，并在脑图中完成 Review。' }}</p></div>
   <button class="primary-button" id="open-task-dialog" type="button">新建生成任务</button>
 </section>
 <section class="task-filter-panel" aria-label="任务筛选">
@@ -11,15 +12,15 @@
   <label><span>状态</span><select id="task-list-status"><option value="">全部状态</option><option value="pending">排队中</option><option value="running">生成中</option><option value="waiting_review">测试点 Review</option><option value="waiting_case_review">用例 Review</option><option value="succeeded">已完成</option><option value="failed">失败</option><option value="cancelled">已取消</option></select></label>
   <label><span>创建日期</span><input id="task-list-date" type="date"></label>
 </section>
-<section class="functional-task-list" data-functional-task-index aria-labelledby="task-list-title">
-  <div class="list-heading"><div><h2 id="task-list-title">生成任务</h2><p>共 {{ tasks|length }} 项，仅显示你有权限查看的任务。</p></div></div>
+<section class="functional-task-list" data-functional-task-index data-total="{{ task_total }}" aria-labelledby="task-list-title">
+  <div class="list-heading"><div><h2 id="task-list-title">生成任务</h2><p id="task-list-total">共 {{ task_total }} 项，仅显示你有权限查看的任务。</p></div></div>
   <div class="platform-task-table" role="table" aria-label="功能测试生成任务">
     <div class="platform-task-row platform-task-head" role="row"><span>任务</span><span>文档</span><span>状态</span><span>测试点</span><span>用例</span><span>模型</span><span>版本</span><span>创建时间</span><span>操作</span></div>
     {% for item in tasks %}
     <div class="platform-task-row" role="row" data-task-row data-search="{{ (item.title ~ ' ' ~ item.id ~ ' ' ~ item.project_name ~ ' ' ~ item.module_name)|lower }}" data-status="{{ item.status }}" data-date="{{ item.created_at[:10] }}">
       <div><a class="task-title-link" href="{{ settings.base_path }}/tasks/{{ item.id }}">{{ item.title }}</a><code>{{ item.id }}</code></div>
       <div><span>{{ item.project_name }}</span><small>{{ item.module_name }}</small></div>
-      <div><strong class="status-pill status-{{ item.status }}">{{ item.status }}</strong><small>{{ item.stage }}</small></div>
+      <div><strong class="status-pill status-{{ item.status }}">{{ item.status }}</strong><small class="task-stage" data-stage="{{ item.stage }}">{{ item.stage }}</small></div>
       <strong>{{ item.test_point_count }}</strong><strong>{{ item.test_case_count }}</strong>
       <span>{{ item.model_name or '等待执行' }}</span><span>v{{ item.test_case_review_version or item.test_point_review_version or 0 }}</span>
       <time>{{ item.created_at }}</time>
@@ -29,6 +30,7 @@
   </div>
   {% if not tasks %}<div class="empty-state"><h3>还没有生成任务</h3><p>创建任务并上传需求文档，生成进度和 Review 入口会显示在这里。</p></div>{% endif %}
   <div class="empty-state compact-empty" id="task-list-empty-filter" hidden><h3>没有匹配任务</h3><p>调整搜索词、状态或日期后重试。</p></div>
+  <div class="task-list-pagination" aria-label="任务分页"><button class="secondary-button" id="task-list-prev" type="button">上一页</button><span id="task-list-page-info">第 1 页</span><button class="secondary-button" id="task-list-next" type="button">下一页</button></div>
 </section>
 <dialog class="task-create-dialog" id="new-task-dialog">
   <form id="task-form" enctype="multipart/form-data">
@@ -36,7 +38,7 @@
     <label>任务标题<input name="title" maxlength="128" placeholder="例如：用户中心登录功能" required></label>
     <div class="form-grid two-columns"><label>项目名称<input name="project_name" maxlength="128" required></label><label>模块名称<input name="module_name" maxlength="128" required></label></div>
     <div class="form-grid two-columns"><label>操作类型<select name="operation" required><option value="full_pipeline">完整流程（含两次 Review）</option><option value="generate_test_points">仅生成测试点</option><option value="generate_test_cases">从测试点生成用例</option><option value="decompose_requirement">仅需求拆解</option></select></label><label>当前环境<input name="environment" value="{{ settings.runtime_environment }}" readonly></label></div>
-    <label class="file-drop">需求文档<input type="file" name="document_file" accept=".md,.txt"><strong>选择或拖放 Markdown / TXT 文件</strong><small>也可以在下方粘贴文本，二者只能选择一种。单文件最大 5 MiB。</small></label>
+    <label class="file-drop">需求文档<input type="file" name="document_file" accept=".md,.txt"><strong>点击选择或拖放 Markdown / TXT 文件</strong><small>也可以在下方粘贴文本，二者只能选择一种。单文件最大 5 MiB。</small></label>
     <label class="file-field">已评审测试点 JSON（仅直接生成用例）<input type="file" name="test_points_file" accept=".json"></label>
     <label>粘贴需求文档<textarea name="document_text" rows="5" maxlength="500000"></textarea></label>
     <label>补充说明<textarea name="additional_context" rows="3" maxlength="4000" placeholder="例如：重点覆盖权限、边界值和重复提交"></textarea></label>

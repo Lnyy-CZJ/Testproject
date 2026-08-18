@@ -1,0 +1,188 @@
+name: Production Release
+
+on:
+  push:
+    tags:
+      - "release-*"
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io/lnyy-czj
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Critical Python tests
+        run: |
+          python -m pip install -r test-platform/backend/requirements.txt
+          (cd test-platform/backend && python -m pytest)
+          python -m pip install -r functional-test-agent/requirements.lock -r api-test-agent/requirements-agent.lock
+          (cd functional-test-agent && python -m pytest && node --test tests/ui/*.test.mjs)
+          (cd api-test-agent && python -m pytest)
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Frontend test and build
+        run: |
+          cd test-platform/frontend
+          npm ci
+          npm test
+          npm run build
+
+  images:
+    needs: verify
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: testproject-platform-gateway
+            env_var: PLATFORM_GATEWAY_IMAGE
+            context: test-platform
+            dockerfile: test-platform/Dockerfile
+          - name: testproject-platform-backend
+            env_var: PLATFORM_BACKEND_IMAGE
+            context: test-platform/backend
+            dockerfile: test-platform/backend/Dockerfile
+          - name: testproject-trackevents-web
+            env_var: TRACKEVENTS_IMAGE
+            context: TrackEvents_tess
+            dockerfile: TrackEvents_tess/Dockerfile
+          - name: testproject-log-filter-tool
+            env_var: LOG_FILTER_IMAGE
+            context: log_filter_tool
+            dockerfile: log_filter_tool/Dockerfile
+          - name: testproject-truthy-search
+            env_var: TRUTHY_SEARCH_IMAGE
+            context: Truthy_Search
+            dockerfile: Truthy_Search/Dockerfile
+          - name: testproject-api-autotest
+            env_var: API_AUTOTEST_IMAGE
+            context: Truthy_ApiAutoTest2
+            dockerfile: Truthy_ApiAutoTest2/Dockerfile
+          - name: testproject-functional-test-agent
+            env_var: FUNCTIONAL_AGENT_IMAGE
+            context: functional-test-agent
+            dockerfile: functional-test-agent/Dockerfile
+          - name: testproject-api-test-agent
+            env_var: API_AGENT_IMAGE
+            context: api-test-agent
+            dockerfile: api-test-agent/Dockerfile.agent
+          - name: testproject-api-execution-controller
+            env_var: API_EXECUTION_CONTROLLER_IMAGE
+            context: api-test-agent
+            dockerfile: api-test-agent/Dockerfile.controller
+          - name: testproject-api-egress-proxy
+            env_var: API_EGRESS_PROXY_IMAGE
+            context: api-test-agent
+            dockerfile: api-test-agent/Dockerfile.egress
+          - name: testproject-api-test-executor
+            env_var: API_EXECUTOR_IMAGE
+            context: api-test-agent
+            dockerfile: api-test-agent/Dockerfile.executor
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          push: true
+          platforms: linux/amd64
+          tags: ${{ env.REGISTRY }}/${{ matrix.name }}:${{ github.ref_name }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ github.ref_name }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Record immutable image
+        run: printf '%s=%s/%s@%s\n' '${{ matrix.env_var }}' '${{ env.REGISTRY }}' '${{ matrix.name }}' '${{ steps.build.outputs.digest }}' > '${{ matrix.env_var }}.env'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: image-${{ matrix.env_var }}
+          path: ${{ matrix.env_var }}.env
+
+  bundle:
+    needs: images
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: image-*
+          path: image-digests
+          merge-multiple: true
+      - name: Create deployment manifest
+        run: |
+          mkdir deploy-bundle
+          cat image-digests/*.env | sort > deploy-bundle/.env.images
+          printf '%s\n' 'POSTGRES_IMAGE=postgres:17-alpine@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193' >> deploy-bundle/.env.images
+          cp test-platform/docker-compose.yml test-platform/docker-compose.prod.yml test-platform/VERSION deploy-bundle/
+          cp test-platform/scripts/deploy-prod.sh deploy-bundle/
+          RELEASE_NAME='${{ github.ref_name }}' RELEASE_SHA='${{ github.sha }}' python - <<'PY'
+          import json, os
+          from pathlib import Path
+          images = dict(line.split("=", 1) for line in Path("deploy-bundle/.env.images").read_text().splitlines())
+          migrations = sorted(Path("test-platform/backend/alembic/versions").glob("*.py"))
+          manifest = {
+              "release": os.environ["RELEASE_NAME"],
+              "commit": os.environ["RELEASE_SHA"],
+              "alembic_revision_file": migrations[-1].name,
+              "images": images,
+          }
+          Path("deploy-bundle/release-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: production-${{ github.ref_name }}
+          path: deploy-bundle
+          include-hidden-files: true
+
+  deploy:
+    needs: bundle
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: production-${{ github.ref_name }}
+          path: deploy-bundle
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.PROD_SSH_PRIVATE_KEY }}
+          SSH_HOST_KEY: ${{ secrets.PROD_HOST_KEY }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/prod_key
+          printf '%s\n' "$SSH_HOST_KEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/prod_key ~/.ssh/known_hosts
+      - name: Upload and deploy approved release
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_USER: ${{ secrets.PROD_USER }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_NAME: ${{ github.ref_name }}
+        run: |
+          remote="${PROD_USER}@${PROD_HOST}"
+          ssh -i ~/.ssh/prod_key "$remote" "mkdir -p /srv/test-platform/releases/${RELEASE_NAME}"
+          scp -i ~/.ssh/prod_key -r deploy-bundle/. "$remote:/srv/test-platform/releases/${RELEASE_NAME}/"
+          printf '%s' "$GHCR_TOKEN" | ssh -i ~/.ssh/prod_key "$remote" "docker login ghcr.io -u '${{ github.actor }}' --password-stdin"
+          trap 'ssh -i ~/.ssh/prod_key "$remote" docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
+          ssh -i ~/.ssh/prod_key "$remote" "bash /srv/test-platform/releases/${RELEASE_NAME}/deploy-prod.sh /srv/test-platform/releases/${RELEASE_NAME}"

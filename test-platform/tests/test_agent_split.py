@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import unittest
 from pathlib import Path
@@ -41,6 +42,12 @@ class AgentSplitComposeTest(unittest.TestCase):
             check=True,
             capture_output=True,
             text=True,
+            env={
+                **os.environ,
+                "API_EXECUTION_ENABLED": "false",
+                "DATABASE_PERSIST_ENABLED": "false",
+                "ALLOWED_TARGETS": "[]",
+            },
         ).stdout
         self.assertIn("API_EXECUTION_ENABLED: \"false\"", output)
         self.assertIn("DATABASE_PERSIST_ENABLED: \"false\"", output)

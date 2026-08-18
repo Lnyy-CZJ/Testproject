@@ -239,6 +239,7 @@ def create_agent_app(
                 "online_case_review_enabled": bool(normal.get("ONLINE_CASE_REVIEW_ENABLED", False)),
                 "case_review_ai_enabled": bool(normal.get("CASE_REVIEW_AI_ENABLED", False)),
                 "functional_workbench_v2_enabled": bool(normal.get("FUNCTIONAL_WORKBENCH_V2_ENABLED", False)),
+                "functional_workbench_v3_enabled": bool(normal.get("FUNCTIONAL_WORKBENCH_V3_ENABLED", False)),
             })
         except ServiceError:
             return jsonify({"status": "not_ready", "storage_writable": storage_writable, "configuration_available": False}), 503
@@ -249,15 +250,18 @@ def create_agent_app(
         require_permission(identity, "tool.view")
         _snapshot, normal = safe_limits()
         workbench_v2 = bool(normal.get("FUNCTIONAL_WORKBENCH_V2_ENABLED", False))
+        workbench_v3 = bool(normal.get("FUNCTIONAL_WORKBENCH_V3_ENABLED", False))
+        mindmap_workbench = workbench_v2 or workbench_v3
         source_records = [item for item in store.list() if item.get("created_by_user_id") == identity.user_id or "task.view.all" in identity.permissions]
         for item in source_records:
             item["workbench_v2_enabled"] = workbench_v2
+            item["workbench_v3_enabled"] = workbench_v3
         records = safe_public_tasks(source_records)
         return render_template(
             "index.html", title=title, description=description, settings=settings,
-            tasks=records[:500] if workbench_v2 else records[:20], agent_type=settings.agent_type,
+            tasks=records[:20], task_total=len(records), agent_type=settings.agent_type,
             csrf_token=request.cookies.get("tp_csrf", ""), platform_home_url=settings.platform_home_url,
-            functional_workbench_v2=workbench_v2,
+            functional_workbench_v2=mindmap_workbench, functional_workbench_v3=workbench_v3,
         )
 
     @app.get(f"{settings.base_path}/tasks/<task_id>")
@@ -267,7 +271,9 @@ def create_agent_app(
         online_review_enabled = bool(normal.get("ONLINE_REVIEW_ENABLED", False))
         online_case_review_enabled = bool(normal.get("ONLINE_CASE_REVIEW_ENABLED", False))
         workbench_v2 = bool(normal.get("FUNCTIONAL_WORKBENCH_V2_ENABLED", False))
+        workbench_v3 = bool(normal.get("FUNCTIONAL_WORKBENCH_V3_ENABLED", False))
         record["workbench_v2_enabled"] = workbench_v2
+        record["workbench_v3_enabled"] = workbench_v3
         return render_template(
             "task_detail.html", title=title, settings=settings, task=public_task(record),
             artifacts=load_registry(store, task_id), csrf_token=request.cookies.get("tp_csrf", ""),
@@ -277,7 +283,8 @@ def create_agent_app(
             can_edit_review="tool.execute" in identity.permissions,
             online_case_review_enabled=online_case_review_enabled,
             case_review_ai_enabled=online_case_review_enabled and bool(normal.get("CASE_REVIEW_AI_ENABLED", False)),
-            functional_workbench_v2=workbench_v2,
+            functional_workbench_v2=workbench_v2 or workbench_v3,
+            functional_workbench_v3=workbench_v3,
         )
 
     @app.post(f"{settings.base_path}/api/v1/tasks")
@@ -368,6 +375,7 @@ def create_agent_app(
             metadata={"operation": operation, "environment": settings.runtime_environment},
         )
         record["workbench_v2_enabled"] = bool(normal.get("FUNCTIONAL_WORKBENCH_V2_ENABLED", False))
+        record["workbench_v3_enabled"] = bool(normal.get("FUNCTIONAL_WORKBENCH_V3_ENABLED", False))
         return jsonify(public_task(record)), 202
 
     @app.get(f"{settings.base_path}/api/v1/tasks")
@@ -380,7 +388,7 @@ def create_agent_app(
         operation = request.args.get("operation")
         query = request.args.get("q", "").strip().casefold()[:128]
         created_date = request.args.get("date", "").strip()
-        allowed_statuses = {"pending", "running", "waiting_review", "waiting_case_review", "succeeded", "failed", "cancelled"}
+        allowed_statuses = {"pending", "running", "waiting_review", "waiting_case_review", "succeeded", "partial_success", "failed", "cancelled"}
         if status and status not in allowed_statuses:
             raise ServiceError(422, "INVALID_INPUT", "任务状态筛选值不受支持")
         if operation and operation not in operations:
@@ -401,8 +409,10 @@ def create_agent_app(
         visible.sort(key=lambda item: (str(item.get("created_at", "")), str(item.get("id", ""))), reverse=True)
         _snapshot, normal = safe_limits()
         workbench_v2 = bool(normal.get("FUNCTIONAL_WORKBENCH_V2_ENABLED", False))
+        workbench_v3 = bool(normal.get("FUNCTIONAL_WORKBENCH_V3_ENABLED", False))
         for item in visible:
             item["workbench_v2_enabled"] = workbench_v2
+            item["workbench_v3_enabled"] = workbench_v3
         start = (page - 1) * page_size
         return jsonify({"items": safe_public_tasks(visible[start:start + page_size]), "total": len(visible), "page": page, "page_size": page_size})
 
@@ -411,6 +421,7 @@ def create_agent_app(
         record, _identity = get_task(task_id)
         _snapshot, normal = safe_limits()
         record["workbench_v2_enabled"] = bool(normal.get("FUNCTIONAL_WORKBENCH_V2_ENABLED", False))
+        record["workbench_v3_enabled"] = bool(normal.get("FUNCTIONAL_WORKBENCH_V3_ENABLED", False))
         payload = public_task(record)
         payload["artifacts"] = load_registry(store, task_id)
         payload["can_cancel"] = record.get("status") not in {"succeeded", "failed", "cancelled"}

@@ -9,10 +9,34 @@
 </head>
 <body class="{% block body_class %}{% endblock %}" data-base-path="{{ settings.base_path }}" data-csrf="{{ csrf_token }}">
   <header class="topbar">
-    <a class="platform-link" href="{{ platform_home_url }}">‹ 返回测试开发平台</a>
-    <span class="environment-badge">AI 测试 · {{ settings.runtime_environment|upper }}</span>
+    <a class="platform-link" href="{{ platform_home_url }}">返回测试开发平台</a>
+    {% if functional_workbench_v3 %}<strong class="v3-product-name">功能测试智能体</strong>{% endif %}
+    <span class="environment-badge">{{ settings.runtime_environment|upper }} 环境</span>
   </header>
-  <main class="workspace">{% block content %}{% endblock %}</main>
+  {% if functional_workbench_v3 %}
+  <div class="functional-v3-shell">
+    <aside class="functional-v3-sidebar" aria-label="功能测试任务阶段">
+      <a class="v3-sidebar-brand" href="{{ settings.base_path }}/"><strong>功能测试</strong></a>
+      <nav>
+        <a class="{{ 'is-current' if task is not defined else 'is-complete' }}" href="{{ settings.base_path }}/">任务中心</a>
+        {% if task is defined %}
+          <span class="{{ 'is-current' if task.status in ['pending','running'] else ('is-complete' if task.status not in ['failed','cancelled'] else 'is-error') }}">智能生成</span>
+          {% if task.status == 'waiting_review' %}<a class="is-current" href="#review">测试点 Review</a>{% else %}<span class="{{ 'is-complete' if task.status in ['waiting_case_review','succeeded','partial_success'] else 'is-disabled' }}">测试点 Review</span>{% endif %}
+          {% if task.status == 'waiting_case_review' %}<a class="is-current" href="#case-review">用例 Review</a>{% else %}<span class="{{ 'is-complete' if task.status in ['succeeded','partial_success'] else 'is-disabled' }}">用例 Review</span>{% endif %}
+          <a class="{{ 'is-current' if task.status in ['succeeded','partial_success'] else 'is-disabled' }}" {% if task.status in ['succeeded','partial_success'] %}href="#artifact-list"{% endif %}>发布产物</a>
+        {% else %}
+          <span class="is-disabled">智能生成</span><span class="is-disabled">测试点 Review</span><span class="is-disabled">用例 Review</span><span class="is-disabled">发布产物</span>
+        {% endif %}
+      </nav>
+      <p>当前部署环境<br><strong>{{ settings.runtime_environment|upper }}</strong></p>
+    </aside>
+    <main class="workspace functional-v3-content">
+  {% else %}
+    <main class="workspace">
+  {% endif %}
+    {% block content %}{% endblock %}
+  </main>
+  {% if functional_workbench_v3 %}</div>{% endif %}
   <script src="{{ settings.base_path }}/static/agent-workbench.js" defer></script>
   {% block scripts %}{% endblock %}
 </body>

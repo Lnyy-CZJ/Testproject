@@ -1,43 +1,59 @@
 {% extends "base.html" %}
+{% set status_labels = {'pending':'排队中','running':'分析中','waiting_contract_review':'契约待确认','waiting_case_review':'用例待 Review','waiting_execution_confirmation':'待执行确认','succeeded':'已完成','partial_success':'部分成功','failed':'失败','cancelled':'已取消'} %}
+{% set stage_labels = {'contract_review':'契约确认','base_case_generation':'基础用例生成','case_review':'用例 Review','executable_generation':'执行定义生成','execution_ready':'执行准备','reporting':'报告生成'} %}
+{% block body_class %}api-v2-page api-task-detail-page{% endblock %}
 {% block styles %}<link rel="stylesheet" href="{{ settings.base_path }}/static/api-v2-workbench.css">{% endblock %}
-{% block content %}
-<section class="page-heading detail-heading" data-task-id="{{ task.id }}" data-api-v2-workbench>
-  <div><p class="eyebrow">API DELIVERY WORKBENCH</p><h1>{{ task.project_name }} · {{ task.module_name }}</h1><p><code>{{ task.id }}</code> · Schema V{{ task.schema_version }}</p></div>
-  <strong class="status-pill status-{{ task.status }}" id="task-status">{{ task.status }} · {{ task.stage }}</strong>
-</section>
-<nav class="stage-rail" aria-label="端到端阶段">
-  <a href="#contract-review">1 契约 Review</a><a href="#case-review">2 用例 Review</a><a href="#execution-preview">3 执行准备</a><a href="#artifacts">4 报告与草稿</a>
+{% block sidebar %}
+<nav class="side-navigation stage-navigation" aria-label="端到端阶段">
+  <a class="back-link" href="{{ settings.base_path }}/">返回任务中心</a>
+  <p class="side-label">当前任务</p>
+  <a href="#contract-review" data-stage-link="0"><strong>1</strong><span>确认分析范围<small>契约事实与 Evidence</small></span></a>
+  <a href="#case-review" data-stage-link="1"><strong>2</strong><span>覆盖与用例<small>矩阵及风险 Review</small></span></a>
+  <a href="#execution-preview" data-stage-link="2"><strong>3</strong><span>执行准备<small>目标与最终确认</small></span></a>
+  <a href="#run-report" data-stage-link="3"><strong>4</strong><span>报告与草稿<small>结果、产物与 Bug</small></span></a>
 </nav>
-{% if task.error_code %}<section class="error-panel" role="alert"><strong>{{ task.error_code }}</strong><p>{{ task.error_message }}</p></section>{% endif %}
-<section class="summary-grid" aria-label="任务摘要">{% for key,value in task.result_summary.items() %}<div><span>{{ key }}</span><strong>{{ value }}</strong></div>{% endfor %}</section>
+{% endblock %}
+{% block content %}
+<section class="page-heading detail-heading" data-task-id="{{ task.id }}" data-task-status="{{ task.status }}" data-task-stage="{{ task.stage }}" data-api-v2-workbench>
+  <div><p class="eyebrow">API DELIVERY WORKBENCH</p><h1>{{ task.project_name }} · {{ task.module_name }}</h1><p><code>{{ task.id }}</code> · Schema V{{ task.schema_version }} · {{ task.environment or settings.runtime_environment }}</p></div>
+  <strong class="status-pill status-{{ task.status }}" id="task-status" title="{{ task.status }} · {{ task.stage }}">{{ status_labels.get(task.status, task.status) }}</strong>
+</section>
+{% if task.error_code %}<section class="error-panel" role="alert"><strong>{{ task.error_code }}</strong><p>{{ task.error_message }}</p><button class="secondary-button" id="retry-stage" type="button">从失败阶段重试</button></section>{% endif %}
+<section class="summary-grid task-summary" aria-label="任务摘要"><div><span>当前状态</span><strong>{{ status_labels.get(task.status, task.status) }}</strong></div><div><span>当前阶段</span><strong>{{ stage_labels.get(task.stage, task.stage) }}</strong></div>{% for key,value in task.result_summary.items() %}<div><span>{{ key }}</span><strong>{{ value }}</strong></div>{% endfor %}</section>
 
-<section class="panel api-review-panel" id="contract-review" data-panel="contracts">
-  <div class="section-heading"><div><p class="eyebrow">CONTRACT REVIEW</p><h2>接口契约</h2><p class="muted">文档事实与 AI 建议分开展示；确认操作使用版本冲突保护。</p></div><div class="panel-actions"><span id="contract-version" class="version-chip">尚未生成</span><button class="primary-button" id="confirm-contracts" type="button">确认候选契约</button><button class="secondary-button" id="generate-cases" type="button">生成基础用例</button></div></div>
+<section class="panel api-review-panel stage-panel" id="contract-review" data-panel="contracts" data-stage-panel="0">
+  <div class="section-heading"><div><p class="eyebrow">STEP 1 · CONTRACT REVIEW</p><h2>确认分析范围</h2><p class="muted">确定性文档事实与 AI 建议分开展示；关键字段必须有 Evidence。</p></div><div class="panel-actions"><span id="contract-version" class="version-chip">尚未生成</span><button class="primary-button" id="confirm-contracts" type="button">确认候选契约</button><button class="secondary-button" id="generate-cases" type="button">生成基础用例</button></div></div>
+  <div id="contract-overview" class="review-overview"><span>正在统计接口状态…</span></div>
   <div id="contract-message" class="inline-message" aria-live="polite"></div>
-  <div class="review-layout">
+  <div class="review-layout review-layout-three">
     <div class="review-list" id="contract-list"><div class="skeleton-row">正在读取契约…</div></div>
-    <aside class="evidence-pane" id="contract-evidence"><h3>Evidence</h3><p class="muted">选择接口查看字段证据、编辑事实或退回候选。</p></aside>
+    <div class="contract-editor" id="contract-editor"><h3>契约字段</h3><p class="muted">选择接口查看并编辑文档事实。</p></div>
+    <aside class="evidence-pane" id="contract-evidence"><h3>Evidence 与质量门禁</h3><p class="muted">选择接口查看字段证据、冲突、歧义和未解决项。</p></aside>
   </div>
 </section>
 
-<section class="panel api-review-panel" id="case-review" data-panel="cases">
-  <div class="section-heading"><div><p class="eyebrow">COVERAGE & CASES</p><h2>覆盖矩阵与基础用例</h2><p class="muted">高风险用例不会默认进入执行，必须逐条确认。</p></div><div class="panel-actions"><span id="case-version" class="version-chip">尚未生成</span><button class="primary-button" id="confirm-cases" type="button">确认普通候选</button><button class="secondary-button" id="generate-executable" type="button">生成执行定义</button></div></div>
+<section class="panel api-review-panel stage-panel" id="case-review" data-panel="cases" data-stage-panel="1" hidden>
+  <div class="section-heading"><div><p class="eyebrow">STEP 2 · COVERAGE & CASES</p><h2>覆盖矩阵与基础用例 Review</h2><p class="muted">覆盖结论来自结构化规则；高风险用例必须逐条确认。</p></div><div class="panel-actions"><span id="case-version" class="version-chip">尚未生成</span><button class="primary-button" id="confirm-cases" type="button">确认普通候选</button><button class="secondary-button" id="generate-executable" type="button">生成执行定义</button></div></div>
   <div id="case-message" class="inline-message" aria-live="polite"></div>
+  <div id="coverage-matrix" class="coverage-matrix"><div class="skeleton-row">正在读取覆盖矩阵…</div></div>
   <div class="filter-row"><label>筛选<input id="case-search" type="search" placeholder="接口、维度或用例名称"></label><label>风险<select id="case-risk"><option value="">全部</option><option value="low">低</option><option value="medium">中</option><option value="high">高</option></select></label><button class="secondary-button" id="add-case" type="button">新增用例</button></div>
   <div class="data-table-wrap" tabindex="0"><table class="data-table"><thead><tr><th>用例</th><th>覆盖维度</th><th>来源</th><th>风险</th><th>状态</th><th>操作</th></tr></thead><tbody id="case-list"><tr><td colspan="6" class="muted">等待契约确认并生成用例。</td></tr></tbody></table></div>
   <dialog id="case-dialog"><form method="dialog"><h3>新增人工用例</h3><label>关联契约<select id="new-case-contract" required></select></label><label>用例名称<input id="new-case-name" maxlength="128" required></label><label>目标<input id="new-case-objective" maxlength="500" required></label><label>覆盖维度<input id="new-case-dimension" value="business_scenario" maxlength="80" required></label><label>风险<select id="new-case-risk"><option value="low">低</option><option value="medium">中</option><option value="high">高</option></select></label><div class="dialog-actions"><button value="cancel" class="secondary-button">取消</button><button value="confirm" class="primary-button">保存候选</button></div></form></dialog>
 </section>
 
-<section class="panel" id="execution-preview">
-  <div class="section-heading"><div><p class="eyebrow">EXECUTION READINESS</p><h2>执行预览</h2><p class="muted">本机非生产试点已批准；生产环境仍固定禁止。每次执行都必须重新确认摘要。</p></div><div class="panel-actions"><span class="boundary-badge">本机 S2 试点</span><button class="primary-button" id="confirm-execution" type="button" disabled>确认并执行</button></div></div>
+<section class="panel stage-panel" id="execution-preview" data-stage-panel="2" hidden>
+  <div class="section-heading"><div><p class="eyebrow">STEP 3 · EXECUTION READINESS</p><h2>执行准备</h2><p class="muted">核对真实目标、写操作与风险摘要后，管理员或测试人员进行最终确认。</p></div><div class="panel-actions"><span class="boundary-badge">本机 S2 试点</span><button class="primary-button" id="confirm-execution" type="button" disabled>最终确认执行</button></div></div>
   <div id="preview-cards" class="summary-grid"><div><span>准备状态</span><strong>读取中</strong></div></div>
   <div id="preview-blockers" class="notice"><strong>阻断原因</strong><p>正在读取执行准备状态…</p></div>
   <div id="execution-message" class="inline-message" aria-live="polite"></div>
+  <dialog id="execution-confirm-dialog" class="workflow-dialog"><form method="dialog"><div class="dialog-heading"><div><p class="eyebrow">FINAL CONFIRMATION</p><h3>确认受控执行</h3></div><button value="cancel" class="dialog-close" aria-label="关闭">关闭</button></div><div id="execution-confirm-summary" class="review-summary"></div><div class="warning-notice"><strong>这将向已登记的本机非生产目标发送真实请求</strong><p>写操作也会实际执行。请确认目标环境不含生产数据，并核对确认摘要。</p></div><label class="confirmation-check"><input id="execution-risk-confirm" type="checkbox">我已核对目标、写操作和高风险用例</label><div class="dialog-actions"><button value="cancel" class="secondary-button">取消</button><button value="confirm" class="primary-button" id="execution-dialog-submit" disabled>确认并执行</button></div></form></dialog>
 </section>
 
-<section class="panel" id="artifacts"><div class="section-heading"><div><p class="eyebrow">TRACEABLE OUTPUTS</p><h2>阶段产物</h2></div>{% if task.status in ['pending','running','waiting_contract_review','waiting_case_review'] %}<button class="danger-button" data-action="cancel">取消任务</button>{% endif %}</div><div id="artifact-list">{% if artifacts %}{% for item in artifacts %}<div class="artifact-row"><div><strong>{{ item.name }}</strong><small>{{ item.type }} · {{ item.stage }} · {{ item.size }} bytes</small></div><a href="{{ settings.base_path }}/api/v1/tasks/{{ task.id }}/artifacts/{{ item.id }}">下载</a></div>{% endfor %}{% else %}<p class="muted">阶段产物尚未生成。</p>{% endif %}</div></section>
-<section class="panel" id="defect-drafts"><div class="section-heading"><div><p class="eyebrow">LOCAL BUG DRAFTS</p><h2>本地 Bug 草稿</h2><p class="muted">只生成本地版本；下载后由测试人员手工提 Bug。</p></div></div><div class="form-grid defect-form"><label>Run ID<input id="draft-run-id" placeholder="run_..."></label><label>失败 Case ID<input id="draft-case-ids" placeholder="多个 ID 用逗号分隔"></label><label>人工原因（按需）<input id="draft-reason" placeholder="环境/数据/用例问题继续生成时必填"></label><div><button class="primary-button" id="create-draft" type="button">生成草稿</button></div></div><div id="draft-message" class="inline-message" aria-live="polite"></div><div id="draft-list"><p class="muted">正在读取本地草稿…</p></div><dialog id="draft-edit-dialog"><form method="dialog"><h3>编辑 Bug 草稿</h3><label>标题<input id="draft-edit-title" maxlength="200" required></label><div class="dialog-actions"><button value="cancel" class="secondary-button">取消</button><button value="confirm" class="primary-button">保存新版本</button></div></form></dialog></section>
-<section class="panel"><div class="section-heading"><div><p class="eyebrow">AUDIT LOG</p><h2>运行日志</h2></div><button class="secondary-button" id="refresh-log">刷新</button></div><pre id="task-log" aria-label="任务运行日志">正在读取日志…</pre></section>
-<section class="metadata"><h2>版本信息</h2><dl><div><dt>模型</dt><dd id="model-name">{{ task.model_name or '确定性阶段无需模型' }}</dd></div><div><dt>Prompt Bundle</dt><dd id="prompt-version">{{ task.prompt_bundle_sha256[:12] if task.prompt_bundle_sha256 else '未加载' }}</dd></div><div><dt>配置 Release</dt><dd id="release-version">{{ task.config_release_version or '未发布' }}</dd></div><div><dt>应用版本</dt><dd>{{ task.app_revision or 'unknown' }}</dd></div></dl></section>
+<section class="stage-panel results-workspace" id="run-report" data-stage-panel="3" hidden>
+  <section class="panel"><div class="section-heading"><div><p class="eyebrow">STEP 4 · RUN REPORT</p><h2>执行结果与异常归因</h2><p class="muted">每次重试生成独立 Run，原结果不会被覆盖。</p></div><span id="latest-run-status" class="version-chip">尚无 Run</span></div><div class="run-layout"><div id="run-list" class="run-list"><div class="skeleton-row">正在读取 Run…</div></div><div id="run-detail" class="run-detail"><div class="empty-state"><h3>选择一次执行</h3><p>查看结果、失败分类和性能判定依据。</p></div></div></div></section>
+  <section class="panel" id="defect-drafts"><div class="section-heading"><div><p class="eyebrow">LOCAL BUG DRAFTS</p><h2>本地 Bug 草稿</h2><p class="muted">从上方失败结果中选择用例；草稿只在本地版本化和下载。</p></div></div><div id="draft-selection" class="selection-summary">尚未选择失败用例。</div><div class="draft-action-row"><label>人工原因（环境、数据或用例问题继续生成时必填）<input id="draft-reason" placeholder="说明为什么仍需生成接口 Bug 草稿"></label><button class="primary-button" id="create-draft" type="button" disabled>根据所选结果生成草稿</button></div><div id="draft-message" class="inline-message" aria-live="polite"></div><div id="draft-list"><p class="muted">正在读取本地草稿…</p></div><dialog id="draft-edit-dialog"><form method="dialog"><h3>编辑 Bug 草稿</h3><label>标题<input id="draft-edit-title" maxlength="200" required></label><div class="dialog-actions"><button value="cancel" class="secondary-button">取消</button><button value="confirm" class="primary-button">保存新版本</button></div></form></dialog></section>
+  <section class="panel" id="artifacts"><div class="section-heading"><div><p class="eyebrow">TRACEABLE OUTPUTS</p><h2>阶段产物</h2></div>{% if task.status in ['pending','running','waiting_contract_review','waiting_case_review'] %}<button class="danger-button" data-action="cancel">取消任务</button>{% endif %}</div><div id="artifact-list">{% if artifacts %}{% for item in artifacts %}<div class="artifact-row"><div><strong>{{ item.name }}</strong><small>{{ item.type }} · {{ item.stage }} · {{ item.size }} bytes</small></div><a href="{{ settings.base_path }}/api/v1/tasks/{{ task.id }}/artifacts/{{ item.id }}">下载</a></div>{% endfor %}{% else %}<p class="muted">阶段产物尚未生成。</p>{% endif %}</div></section>
+  <details class="panel secondary-details"><summary>日志与版本信息</summary><div class="section-heading"><h2>运行日志</h2><button class="secondary-button" id="refresh-log">刷新</button></div><pre id="task-log" aria-label="任务运行日志">正在读取日志…</pre><section class="metadata"><h2>版本信息</h2><dl><div><dt>模型</dt><dd id="model-name">{{ task.model_name or '确定性阶段无需模型' }}</dd></div><div><dt>Prompt Bundle</dt><dd id="prompt-version">{{ task.prompt_bundle_sha256[:12] if task.prompt_bundle_sha256 else '未加载' }}</dd></div><div><dt>配置 Release</dt><dd id="release-version">{{ task.config_release_version or '未发布' }}</dd></div><div><dt>应用版本</dt><dd>{{ task.app_revision or 'unknown' }}</dd></div></dl></section></details>
+</section>
 {% endblock %}
 {% block scripts %}<script src="{{ settings.base_path }}/static/api-v2-workbench.js" defer></script>{% endblock %}

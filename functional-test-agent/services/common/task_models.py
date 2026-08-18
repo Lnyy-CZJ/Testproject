@@ -118,10 +118,13 @@ def public_task(record: dict[str, Any]) -> dict[str, Any]:
         "completed_items": completed_items,
         "total_items": None,
     }
+    workbench_v2 = bool(source.get("workbench_v2_enabled", False))
+    workbench_v3 = bool(source.get("workbench_v3_enabled", False))
     source["ui_capabilities"] = {
-        "workbench_v2": bool(source.get("workbench_v2_enabled", False)),
-        "mindmap_edit": bool(source.get("workbench_v2_enabled", False)),
-        "table_edit": bool(source.get("workbench_v2_enabled", False)),
+        "workbench_v2": workbench_v2,
+        "workbench_v3": workbench_v3,
+        "mindmap_edit": workbench_v2 or workbench_v3,
+        "table_edit": workbench_v2 or workbench_v3,
         "table_readonly": False,
     }
     payload = PublicTaskModel.model_validate(source).model_dump()

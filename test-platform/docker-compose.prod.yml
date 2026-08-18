@@ -1,0 +1,103 @@
+# Production 只拉取 CI 发布的不可变镜像；任何服务都不得在服务器现场构建。
+services:
+  platform-gateway:
+    build: !reset null
+    image: "${PLATFORM_GATEWAY_IMAGE:?PLATFORM_GATEWAY_IMAGE is required}"
+
+  platform-db:
+    image: "${POSTGRES_IMAGE:?POSTGRES_IMAGE is required}"
+
+  platform-migrate:
+    build: !reset null
+    image: "${PLATFORM_BACKEND_IMAGE:?PLATFORM_BACKEND_IMAGE is required}"
+
+  platform-bootstrap:
+    build: !reset null
+    image: "${PLATFORM_BACKEND_IMAGE:?PLATFORM_BACKEND_IMAGE is required}"
+    volumes: !reset
+      - /srv/test-platform/secrets:/run/platform-clients:ro
+
+  platform-api:
+    build: !reset null
+    image: "${PLATFORM_BACKEND_IMAGE:?PLATFORM_BACKEND_IMAGE is required}"
+    volumes: !reset
+      - ./VERSION:/run/platform-version:ro
+      - /srv/test-platform/secrets/prod/bootstrap-token:/run/secrets/platform-bootstrap-token:ro
+      - /srv/test-platform/secrets/prod-kek.json:/run/secrets/platform-kek.json:ro
+
+  platform-credential-agent:
+    build: !reset null
+    image: "${PLATFORM_BACKEND_IMAGE:?PLATFORM_BACKEND_IMAGE is required}"
+    volumes: !reset
+      - /srv/test-platform/secrets/prod-kek.json:/run/secrets/platform-kek.json:ro
+
+  trackevents-web:
+    build: !reset null
+    image: "${TRACKEVENTS_IMAGE:?TRACKEVENTS_IMAGE is required}"
+    volumes: !reset
+      - /srv/test-platform/secrets/prod/trackevents-client-token:/run/secrets/platform-client-token:ro
+
+  log-filter-tool:
+    build: !reset null
+    image: "${LOG_FILTER_IMAGE:?LOG_FILTER_IMAGE is required}"
+    environment:
+      LOG_FILTER_LLM_CONFIG_SOURCE: platform
+    volumes: !reset
+      - /srv/test-platform/data/log-filter/exports:/exports
+      - /srv/test-platform/secrets/prod/log-filter-client-token:/run/secrets/platform-client-token:ro
+
+  truthy-search:
+    build: !reset null
+    image: "${TRUTHY_SEARCH_IMAGE:?TRUTHY_SEARCH_IMAGE is required}"
+    environment:
+      SEARCH_CONFIG_SOURCE: platform
+    volumes: !reset
+      - /srv/test-platform/data/truthy-search/data:/app/data
+      - /srv/test-platform/data/truthy-search/output:/app/output
+      - /srv/test-platform/data/truthy-search/input:/app/input:ro
+      - /srv/test-platform/data/truthy-search/log:/app/log
+      - /srv/test-platform/secrets/prod/truthy-search-client-token:/run/secrets/platform-client-token:ro
+
+  api-autotest:
+    build: !reset null
+    image: "${API_AUTOTEST_IMAGE:?API_AUTOTEST_IMAGE is required}"
+    environment:
+      API_AUTOTEST_CONFIG_SOURCE: platform
+      API_AUTOTEST_SESSION_PROVIDER: platform
+    volumes: !reset
+      - /srv/test-platform/data/api-autotest/data:/app/data:ro
+      - /srv/test-platform/data/api-autotest/logs:/app/logs
+      - /srv/test-platform/data/api-autotest/reports:/app/reports
+      - /srv/test-platform/data/api-autotest/tasks:/app/tasks
+      - /srv/test-platform/secrets/prod/api-autotest-client-token:/run/secrets/platform-client-token:ro
+
+  functional-test-agent:
+    image: "${FUNCTIONAL_AGENT_IMAGE:?FUNCTIONAL_AGENT_IMAGE is required}"
+    volumes: !reset
+      - /srv/test-platform/data/functional-agent:/app/runtime/prod/functional
+      - /srv/test-platform/secrets/prod/functional-test-agent-client-token:/run/secrets/platform-client-token:ro
+
+  api-test-agent:
+    image: "${API_AGENT_IMAGE:?API_AGENT_IMAGE is required}"
+    environment:
+      API_EXECUTION_ENABLED: "false"
+    volumes: !reset
+      - /srv/test-platform/data/api-agent:/app/runtime/prod/api
+      - /srv/test-platform/secrets/prod/api-test-agent-client-token:/run/secrets/platform-client-token:ro
+      - /srv/test-platform/secrets/prod/api-execution-controller-token:/run/secrets/controller-token:ro
+
+  api-execution-controller:
+    image: "${API_EXECUTION_CONTROLLER_IMAGE:?API_EXECUTION_CONTROLLER_IMAGE is required}"
+    environment:
+      CONTROLLER_RUNS_ROOT: /srv/test-platform/data/api-agent/tasks
+      EXECUTOR_IMAGE: "${API_EXECUTOR_IMAGE:?API_EXECUTOR_IMAGE is required}"
+    volumes: !reset
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /srv/test-platform/data/api-agent:/srv/test-platform/data/api-agent
+      - /srv/test-platform/secrets/prod/api-execution-controller-token:/run/secrets/controller-token:ro
+
+  api-egress-proxy:
+    image: "${API_EGRESS_PROXY_IMAGE:?API_EGRESS_PROXY_IMAGE is required}"
+
+  api-test-executor-image:
+    image: "${API_EXECUTOR_IMAGE:?API_EXECUTOR_IMAGE is required}"

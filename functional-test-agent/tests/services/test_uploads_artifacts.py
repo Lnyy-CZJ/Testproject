@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from services.common.artifacts import publish_artifact, resolve_artifact, save_registry
+from services.common.artifacts import preview_artifact, publish_artifact, resolve_artifact, save_registry
 from services.common.errors import ServiceError
 from services.common.task_store import TaskStore, new_task_id
 from services.common.uploads import FUNCTIONAL_EXTENSIONS, read_validated_text, validate_review_json
@@ -44,3 +44,15 @@ def test_review_schema_and_artifact_containment(tmp_path: Path) -> None:
     assert loaded["sha256"] == item["sha256"]
     with pytest.raises(FileNotFoundError):
         resolve_artifact(store, task_id, "artifact_forged")
+
+
+def test_artifact_preview_redacts_internal_paths(tmp_path: Path) -> None:
+    """在线预览不得把容器或宿主机绝对路径暴露给普通用户。"""
+
+    artifact = tmp_path / "requirements.json"
+    artifact.write_text('{"source_path":"/app/runtime/dev/functional/tasks/task_123/input/source.md"}', encoding="utf-8")
+
+    content = preview_artifact(artifact)["content"]
+
+    assert "/app/runtime" not in content
+    assert "[INTERNAL_PATH]" in content

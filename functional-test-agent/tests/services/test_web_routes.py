@@ -20,7 +20,7 @@ class FakePlatformClient:
 
     snapshot = {
         "tool_id": "", "environment": "dev", "release_id": "rel_test", "release_version": 1,
-        "normal": {"QUEUE_MAX_WAITING": 5, "UPLOAD_MAX_BYTES": 5 * 1024 * 1024, "UPLOAD_MAX_CHARACTERS": 500_000, "ONLINE_REVIEW_ENABLED": True, "REVIEW_AI_ENABLED": True, "ONLINE_CASE_REVIEW_ENABLED": True, "CASE_REVIEW_AI_ENABLED": True, "FUNCTIONAL_WORKBENCH_V2_ENABLED": False},
+        "normal": {"QUEUE_MAX_WAITING": 5, "UPLOAD_MAX_BYTES": 5 * 1024 * 1024, "UPLOAD_MAX_CHARACTERS": 500_000, "ONLINE_REVIEW_ENABLED": True, "REVIEW_AI_ENABLED": True, "ONLINE_CASE_REVIEW_ENABLED": True, "CASE_REVIEW_AI_ENABLED": True, "FUNCTIONAL_WORKBENCH_V2_ENABLED": False, "FUNCTIONAL_WORKBENCH_V3_ENABLED": False},
         "secrets": {"LLM_API_KEY": "sentinel"}, "configured_secret_keys": ["LLM_API_KEY"],
     }
 
@@ -183,7 +183,7 @@ def test_functional_workbench_v2_title_filters_and_capabilities(tmp_path: Path) 
     task = created.get_json()
     assert task["title"] == "登录回归"
     assert task["progress"] == {"stage": "queued", "completed_items": 0, "total_items": None}
-    assert task["ui_capabilities"] == {"workbench_v2": True, "mindmap_edit": True, "table_edit": True, "table_readonly": False}
+    assert task["ui_capabilities"] == {"workbench_v2": True, "workbench_v3": False, "mindmap_edit": True, "table_edit": True, "table_readonly": False}
     record = app.extensions["task_store"].load(task["id"])
     record["token_usage"] = {"stages": {"test_points_generation": {"input_tokens": 12, "output_tokens": 8, "total_tokens": 20, "calls": 1, "reported_calls": 1}}}
     app.extensions["task_store"].save(record)
@@ -202,6 +202,43 @@ def test_functional_workbench_v2_title_filters_and_capabilities(tmp_path: Path) 
     assert client.get("/functional-test-agent/api/v1/tasks?operation=unknown", headers=headers()).status_code == 422
     readiness = client.get("/functional-test-agent/api/v1/readiness", headers=headers(permissions="tool.view"))
     assert readiness.get_json()["functional_workbench_v2_enabled"] is True
+
+
+def test_functional_workbench_v3_takes_priority_and_implies_mindmap(tmp_path: Path) -> None:
+    """V3 独立开启时选择新壳，并继续提供现有脑图编辑能力。"""
+
+    client, app = make_client(tmp_path, "functional")
+    normal = app.extensions["platform_client"].snapshot["normal"]
+    normal["FUNCTIONAL_WORKBENCH_V2_ENABLED"] = False
+    normal["FUNCTIONAL_WORKBENCH_V3_ENABLED"] = True
+    created = client.post(
+        "/functional-test-agent/api/v1/tasks", headers=headers(),
+        data={
+            "title": "V3 回归", "operation": "generate_test_points", "project_name": "项目 V3",
+            "module_name": "任务中心", "environment": "dev",
+            "document_file": (io.BytesIO(b"# v3"), "v3.md"),
+        }, content_type="multipart/form-data",
+    )
+    assert created.status_code == 202
+    assert created.get_json()["ui_capabilities"] == {
+        "workbench_v2": False, "workbench_v3": True, "mindmap_edit": True,
+        "table_edit": True, "table_readonly": False,
+    }
+    home = client.get("/functional-test-agent/", headers=headers()).get_data(as_text=True)
+    assert "functional-workbench-v3-page" in home
+    assert "functional-workbench-v2.mjs" in home
+    assert "功能测试任务阶段" in home and "任务中心" in home
+    assert "task-list-prev" in home and "task-list-next" in home
+    detail_html = client.get(
+        f"/functional-test-agent/tasks/{created.get_json()['id']}", headers=headers()
+    ).get_data(as_text=True)
+    assert "v3-generation-state" in detail_html
+    assert "functional-stage-rail" not in detail_html
+    assert "task-support-grid" in detail_html
+    readiness = client.get(
+        "/functional-test-agent/api/v1/readiness", headers=headers(permissions="tool.view")
+    ).get_json()
+    assert readiness["functional_workbench_v3_enabled"] is True
 
 
 @pytest.mark.skip(reason="API 智能体测试由独立 api-test-agent 仓库负责")
@@ -348,6 +385,7 @@ def test_online_review_cas_confirm_and_ai_queue(tmp_path: Path) -> None:
     assert b"review-workbench.js" in page.data
     assert "下载本地副本" in page.get_data(as_text=True)
     assert "查看内容" in page.get_data(as_text=True)
+    assert '<details class="panel artifacts-panel" open>' in page.get_data(as_text=True)
     preview = client.get(f"{base}/api/v1/tasks/{task_id}/artifacts/artifact_points/preview", headers=headers())
     assert preview.status_code == 200
     assert preview.get_json()["format"] == "json"

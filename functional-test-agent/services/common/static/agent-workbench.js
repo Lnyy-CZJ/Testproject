@@ -96,6 +96,7 @@ if (taskForm) {
 const heading = document.querySelector("[data-task-id]");
 if (heading) {
   const id = heading.dataset.taskId;
+  const initialStatus = document.querySelector("#task-status")?.dataset.status;
   let cursor = 0;
 
   async function refreshTask() {
@@ -112,6 +113,11 @@ if (heading) {
       document.querySelector("#prompt-version").textContent = task.prompt_bundle_sha256?.slice(0, 12) || "等待任务启动";
       document.querySelector("#release-version").textContent = task.config_release_version || "未发布";
       renderTokenUsage(task.token_usage || {});
+      const pageStates = ["waiting_review", "waiting_case_review", "succeeded", "partial_success", "failed", "cancelled"];
+      if (body.classList.contains("functional-workbench-v3-page") && task.status !== initialStatus && pageStates.includes(task.status)) {
+        location.reload();
+        return;
+      }
       if (!["succeeded", "failed", "cancelled", "partial_success", "waiting_review", "waiting_contract_review", "waiting_case_review", "waiting_execution_confirmation"].includes(task.status) && !document.hidden) {
         setTimeout(refreshTask, 5000);
       }

@@ -208,15 +208,52 @@ CASE_REVIEW_MAX_CHARACTERS=1000000
 FUNCTIONAL_WORKBENCH_V2_ENABLED=false
 ```
 
-开关关闭时继续使用原在线 Review 页面；开启时，功能测试任务列表、新建弹窗、测试点 Review 和测试用例 Review 切换到桌面脑图工作台。脑图是唯一编辑入口，旁侧表格永久只读。平面 JSON、草稿 CAS、不可变确认版本、AI 建议、FIFO、权限和产物协议均保持不变，API 智能体页面不受影响。
+开关关闭时继续使用原在线 Review 页面；开启时，功能测试任务列表、新建弹窗、测试点 Review 和测试用例 Review 切换到桌面脑图工作台。脑图、表格和详情面板共用同一份浏览器数据及撤销历史，修改仍需显式保存。平面 JSON、草稿 CAS、不可变确认版本、AI 建议、FIFO、权限和产物协议均保持不变，API 智能体页面不受影响。
 
 脑图组件 `mind-elixir@5.14.0` 已固定版本并自托管，不使用 CDN。许可证和文件校验信息位于 `functional-test-agent/services/common/static/vendor/mind-elixir/`，可在功能项目执行 `node --test tests/ui/*.test.mjs` 校验供应链文件及投影/命令内核。
 
 dev 发布时先完成自动化与浏览器验收，再新建 dev 配置 Release，把 `FUNCTIONAL_WORKBENCH_V2_ENABLED` 设为 `true` 并仅替换功能智能体。prod 首次发布保持 `false`。回滚优先发布新 Release 将开关设回 `false`；必要时恢复上一版功能智能体镜像，任务卷及 Review 文件全部保留。通常保留 0014；确需降级时先关闭开关，再执行 `alembic downgrade 20260815_0013`。
 
+### 功能测试 Figma 工作台 V3
+
+迁移 `20260818_0016` 下接 `20260817_0015`，增加独立界面开关：
+
+```text
+FUNCTIONAL_WORKBENCH_V3_ENABLED=false
+```
+
+V3 开启时使用固定阶段侧栏、紧凑任务中心和聚焦式 Review 工作区，并直接复用 V2 的脑图、表格、详情、AI 建议、CAS 与产物能力。选择优先级为 V3、V2、旧页面，因此 V3 不要求同时开启 V2。prod 首次发布保持关闭；dev 验收后通过配置 Release 显式开启。
+
+回滚时优先发布新 dev Release 将 V3 设为 `false`，页面会立即恢复 V2 或旧页面。通常保留 0016；确需降级时先关闭 V3，再执行 `alembic downgrade 20260817_0015`。降级只删除 V3 配置定义和 Release 引用，不删除任务、草稿、建议、确认版本或产物。
+
 部署或回滚时可单独启动、停止两个服务；常规回滚不得删除任务目录。只有在已备份平台数据库并确认接受删除新工具配置数据时，才执行 Alembic downgrade 到 `20260811_0008`。
 
 数据库备份、SQLite 一致性备份和工具产物备份放在 Git 忽略的 `backups/`。不要只复制正在运行的 SQLite 主文件，应使用 SQLite Backup API。
+
+## dev → main → prod 发布
+
+本机只在 `dev` 开发并使用 `docker-compose.yml` 原生构建。生产版本只从 `main` 创建 `release-YYYY.MM.DD.N` 标签，由 GitHub Actions 构建 `linux/amd64` 镜像并在 `production` Environment 审批后部署。服务器只执行镜像拉取，不执行 `git pull` 或 `docker compose build`。
+
+生产基础变量参照 `.env.prod.example` 保存到 `/srv/test-platform/env/.env.prod`，真实密码和 Token 不进入 Git。Release 产物中的 `.env.images` 保存所有服务的完整 GHCR digest；部署时两个 env 文件共同传给 Compose，避免任何镜像回退到默认旧版本。
+
+首次复制空 prod 配置中心时先执行 dry-run：
+
+```bash
+python -m app.promote_environment \
+  --source dev --target prod --require-empty-target \
+  --copy-secrets --seed-credentials --dry-run
+```
+
+确认数量后去掉 `--dry-run`。命令会重新加密 Secret、创建独立 prod Release，并只建立待验证 Credential；Client Token 由 `app.bootstrap_clients` 使用 `/srv/test-platform/secrets/prod/` 下的新 Token 注册。目标已有 Release、Secret、Credential 或 Client 时命令会拒绝执行。
+
+常规生产部署入口为：
+
+```bash
+bash /srv/test-platform/releases/<release>/deploy-prod.sh \
+  /srv/test-platform/releases/<release>
+```
+
+部署前自动备份已有 prod 数据库，随后依次校验无 `build`、拉取 digest、升级数据库、启动服务并检查平台与六个工具入口。应用回滚使用上一 Release 的 `.env.images`；数据库默认不降级。
 
 ## 测试
 

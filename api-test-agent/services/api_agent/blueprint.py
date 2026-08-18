@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import json
 
 from flask import Blueprint, current_app, jsonify, request, send_file
 
@@ -184,12 +185,43 @@ def create_api_v2_blueprint(base_path: str) -> Blueprint:
             raise ServiceError(404, "RUN_NOT_FOUND", "Run 不存在")
         path = store.task_dir(task_id) / "runs" / run_id / "run.json"
         try:
-            import json
             run_payload = json.loads(path.read_text(encoding="utf-8"))
             report = json.loads((path.parent / "report.json").read_text(encoding="utf-8")) if (path.parent / "report.json").is_file() else None
         except (OSError, ValueError):
             raise ServiceError(404, "RUN_NOT_FOUND", "Run 不存在") from None
         return jsonify({"run": run_payload, "report": report})
+
+    @blueprint.get(f"{api_prefix}/tasks/<task_id>/runs")
+    def list_runs(task_id: str):
+        """返回当前任务的 Run 安全摘要，供工作台在刷新后恢复执行上下文。
+
+        返回值不包含请求、响应、日志或凭证；损坏的 Run 文件会被忽略，
+        不影响其他已完成 Run 的可见性。
+        """
+
+        store, _record, _identity = context(task_id, "tool.result.view")
+        runs_dir = store.task_dir(task_id) / "runs"
+        items = []
+        for path in runs_dir.glob("run_*/run.json") if runs_dir.is_dir() else []:
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+                run_id = str(payload.get("run_id", ""))
+                if path.parent.name != run_id or not run_id.startswith("run_"):
+                    continue
+                summary = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
+                items.append({
+                    "run_id": run_id,
+                    "status": str(payload.get("status", "failed")),
+                    "created_at": str(payload.get("created_at", "")),
+                    "finished_at": payload.get("finished_at"),
+                    "total_cases": int(summary.get("total", 0)),
+                    "passed_cases": int(summary.get("passed", 0)),
+                    "failed_cases": int(summary.get("failed", 0)),
+                })
+            except (OSError, TypeError, ValueError, json.JSONDecodeError):
+                continue
+        items.sort(key=lambda item: (item["created_at"], item["run_id"]), reverse=True)
+        return jsonify({"items": items, "latest_run_id": items[0]["run_id"] if items else None})
 
     @blueprint.post(f"{api_prefix}/tasks/<task_id>/runs/<run_id>/cancel")
     def cancel_run(task_id: str, run_id: str):

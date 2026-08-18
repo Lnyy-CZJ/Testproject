@@ -84,7 +84,7 @@ def test_empty_database_upgrade_is_repeatable_and_downgrade_is_scoped(
     ).fetchall()] == ["dev", "prod"]
     assert connection.execute("SELECT COUNT(*) FROM permissions").fetchone()[0] == 19
     assert connection.execute("SELECT COUNT(*) FROM roles WHERE is_builtin = 1").fetchone()[0] == 5
-    assert connection.execute("SELECT COUNT(*) FROM config_definitions").fetchone()[0] == 130
+    assert connection.execute("SELECT COUNT(*) FROM config_definitions").fetchone()[0] == 131
     assert connection.execute("SELECT COUNT(*) FROM llm_profiles").fetchone()[0] == 1
     assert connection.execute("SELECT COUNT(*) FROM tool_llm_bindings").fetchone()[0] == 3
     assert [row[0] for row in connection.execute(
@@ -134,6 +134,30 @@ def test_empty_database_upgrade_is_repeatable_and_downgrade_is_scoped(
     assert workbench is not None
     assert json.loads(workbench[0]) is False
     assert (workbench[1], workbench[2]) == ("normal", "next_task")
+
+    workbench_v3 = connection.execute(
+        "SELECT default_value, sensitivity, apply_mode FROM config_definitions "
+        "WHERE id='functional-test-agent.FUNCTIONAL_WORKBENCH_V3_ENABLED'"
+    ).fetchone()
+    assert workbench_v3 is not None
+    assert json.loads(workbench_v3[0]) is False
+    assert (workbench_v3[1], workbench_v3[2]) == ("normal", "next_task")
+
+    # 0016 只登记 V3 开关，降级到 0015 后保留配置中心和 V2 定义。
+    connection.close()
+    run_alembic(database_url, "downgrade", "20260817_0015")
+    connection = sqlite3.connect(database_path)
+    assert connection.execute("SELECT COUNT(*) FROM config_definitions").fetchone()[0] == 130
+    assert connection.execute(
+        "SELECT COUNT(*) FROM config_definitions WHERE key='FUNCTIONAL_WORKBENCH_V3_ENABLED'"
+    ).fetchone()[0] == 0
+    assert connection.execute(
+        "SELECT COUNT(*) FROM config_definitions WHERE key='FUNCTIONAL_WORKBENCH_V2_ENABLED'"
+    ).fetchone()[0] == 1
+    connection.close()
+    run_alembic(database_url, "upgrade", "head")
+    connection = sqlite3.connect(database_path)
+    connection.row_factory = sqlite3.Row
 
     # 0014 只登记工作台开关，精确降级后必须保留 0013 的两个定义。
     connection.close()

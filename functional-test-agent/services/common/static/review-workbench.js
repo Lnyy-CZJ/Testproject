@@ -3,7 +3,7 @@
   const root = document.querySelector("[data-review-workbench]");
   if (!root) return;
   const taskId = root.dataset.taskId;
-  const state = { points: [], original: [], revision: 0, sha256: "", validation: { errors: [], warnings: [] }, diff: {}, selected: new Set(), collapsedModules: new Set(), page: 1, pageSize: 100, search: "", risk: "", onlyErrors: false, dirty: false, saving: false, editable: root.dataset.editable === "true", aiEnabled: root.dataset.aiEnabled === "true", ai: null, lastDeleted: null };
+  const state = { points: [], original: [], revision: 0, sha256: "", baselineBody: "[]", validation: { errors: [], warnings: [] }, diff: {}, selected: new Set(), collapsedModules: new Set(), page: 1, pageSize: 100, search: "", risk: "", onlyErrors: false, dirty: false, saving: false, editable: root.dataset.editable === "true", aiEnabled: root.dataset.aiEnabled === "true", ai: null, lastDeleted: null };
   const fields = ["id", "module", "feature", "scenario", "test_point", "risk_level"];
   const labels = { total: "总数", added: "新增", modified: "修改", deleted: "删除", errors: "错误", warnings: "警告", revision: "Revision", selected: "已选" };
   const bodyEl = document.querySelector("#review-table-body");
@@ -13,7 +13,14 @@
   function withKeys(points) { return points.map((point) => ({ ...point, _rowKey: rowKey() })); }
   function cleanPoints() { return state.points.map(({ _rowKey, ...point }) => point); }
   function setStatus(text, error = false) { saveState.textContent = text; saveState.style.color = error ? "var(--red)" : ""; }
-  function markDirty() { state.dirty = true; setStatus("有未保存修改"); }
+  function canonical(value) { return JSON.stringify(value, (_key, item) => item && typeof item === "object" && !Array.isArray(item) ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b))) : item); }
+  function markDirty() {
+    /** dirty 由草稿正文决定，撤销回服务端基线时必须自动恢复干净状态。 */
+    state.dirty = canonical(cleanPoints()) !== state.baselineBody;
+    document.querySelector("#review-download-local").classList.toggle("is-hidden", !state.dirty);
+    setStatus(state.dirty ? "有未保存修改" : `已保存 revision ${state.revision}`);
+    updateControls();
+  }
   function issueRows() { return new Set([...(state.validation.errors || []), ...(state.validation.warnings || [])].map((item) => item.row_index).filter((value) => Number.isInteger(value))); }
 
   function filteredRows() {
@@ -122,7 +129,7 @@
     catch (error) { if (error.code === "REVIEW_REVISION_CONFLICT") document.querySelector("#review-download-local").classList.remove("is-hidden"); setStatus(error.message, true); return false; }
     finally { state.saving = false; updateControls(); }
   }
-  function applyServerReview(result) { state.points = withKeys(result.points); state.original = result.original_points || state.original; state.revision = result.revision; state.sha256 = result.sha256; state.validation = result.validation; state.diff = result.diff_summary; state.versions = result.versions || state.versions || []; }
+  function applyServerReview(result) { state.points = withKeys(result.points); state.baselineBody = canonical(result.points || []); state.original = result.original_points || state.original; state.revision = result.revision; state.sha256 = result.sha256; state.validation = result.validation; state.diff = result.diff_summary; state.versions = result.versions || state.versions || []; }
   function downloadLocalDraft() { const payload = JSON.stringify(cleanPoints(), null, 2); const url = URL.createObjectURL(new Blob([payload], { type: "application/json;charset=utf-8" })); const link = document.createElement("a"); link.href = url; link.download = `review-local-${taskId}.json`; link.click(); URL.revokeObjectURL(url); }
 
   function confirmDialog(title, message, withInput = false) { const dialog = document.querySelector("#review-dialog"); document.querySelector("#review-dialog-title").textContent = title; document.querySelector("#review-dialog-message").textContent = message; const input = document.querySelector("#review-dialog-input"); input.classList.toggle("is-hidden", !withInput); input.value = ""; dialog.showModal(); return new Promise((resolve) => dialog.addEventListener("close", () => resolve(dialog.returnValue === "confirm" ? (withInput ? input.value : true) : false), { once: true })); }

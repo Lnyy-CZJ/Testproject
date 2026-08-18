@@ -12,6 +12,7 @@ from typing import Iterable
 
 from services.common.task_models import ArtifactModel, utc_now
 from services.common.task_store import TaskStore
+from services.common.redaction import redact_text
 
 
 def _contained_file(task_dir: Path, relative_path: str) -> Path:
@@ -132,7 +133,7 @@ def preview_artifact(path: Path, *, max_bytes: int = 512 * 1024) -> dict:
         try:
             sheet = workbook[workbook.sheetnames[0]]
             lines = ["\t".join("" if value is None else str(value) for value in row) for row in sheet.iter_rows(min_row=1, max_row=100, max_col=30, values_only=True)]
-            return {"content": "\n".join(lines), "format": "xlsx", "truncated": sheet.max_row > 100 or sheet.max_column > 30}
+            return {"content": redact_text("\n".join(lines)), "format": "xlsx", "truncated": sheet.max_row > 100 or sheet.max_column > 30}
         finally:
             workbook.close()
     if suffix not in {".json", ".md", ".txt", ".yaml", ".yml", ".csv", ".log"}:
@@ -145,4 +146,4 @@ def preview_artifact(path: Path, *, max_bytes: int = 512 * 1024) -> dict:
             content = json.dumps(json.loads(content), ensure_ascii=False, indent=2)
         except json.JSONDecodeError:
             pass
-    return {"content": content, "format": suffix.lstrip("."), "truncated": truncated}
+    return {"content": redact_text(content), "format": suffix.lstrip("."), "truncated": truncated}
