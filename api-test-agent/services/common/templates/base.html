@@ -9,10 +9,17 @@
 </head>
 <body class="{% block body_class %}{% endblock %}" data-base-path="{{ settings.base_path }}" data-csrf="{{ csrf_token }}">
   <header class="topbar">
-    <a class="platform-link" href="{{ platform_home_url }}">‹ 返回测试开发平台</a>
+    <div class="platform-brand">
+      <a class="platform-link" href="{{ platform_home_url }}">测试开发平台</a>
+      <span aria-hidden="true">/</span>
+      <a class="agent-link" href="{{ settings.base_path }}/">API 测试智能体</a>
+    </div>
     <span class="environment-badge">AI 测试 · {{ settings.runtime_environment|upper }}</span>
   </header>
-  <main class="workspace">{% block content %}{% endblock %}</main>
+  <div class="app-shell">
+    <aside class="workspace-sidebar" aria-label="API 测试智能体导航">{% block sidebar %}{% endblock %}</aside>
+    <main class="workspace">{% block content %}{% endblock %}</main>
+  </div>
   <script src="{{ settings.base_path }}/static/agent-workbench.js" defer></script>
   {% block scripts %}{% endblock %}
 </body>

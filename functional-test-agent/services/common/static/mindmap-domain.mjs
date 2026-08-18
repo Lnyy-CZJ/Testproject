@@ -75,7 +75,7 @@ export function projectTestPoints(rows, rootTopic = "测试点") {
       nodeId("point", [row.__uiKey]),
       text(row.test_point, "未命名测试点"),
       "point",
-      { uiKey: row.__uiKey, pointId: row.id },
+      { uiKey: row.__uiKey, pointId: row.id, module: moduleName, feature: featureName, scenario: scenarioName },
     ));
   }
   return { nodeData: root };
@@ -103,7 +103,7 @@ export function projectTestCases(rows, testPoints = [], rootTopic = "测试用�
         nodeId("case", [row.__uiKey]),
         text(row.case_name, "未命名用例"),
         "case",
-        { uiKey: row.__uiKey, caseId: row.case_id, pointId },
+        { uiKey: row.__uiKey, caseId: row.case_id, pointId, module: moduleName, feature: featureName },
       ));
     }
   }
@@ -133,6 +133,94 @@ export function filterRows(rows, { query = "", level = "", issueIndexes = new Se
   });
 }
 
+export function newRowContext(kind, meta = {}, current = null, testPoints = []) {
+  /**
+   * 根据当前选中的叶子或分组节点生成新记录上下文。
+   * 只返回父级引用字段，调用方负责补齐 ID、标题和默认步骤。
+   */
+  if (kind === "points") {
+    if (current) return { module: current.module, feature: current.feature, scenario: current.scenario };
+    if (meta.kind === "module") return { module: meta.value };
+    if (meta.kind === "feature") return { module: meta.module, feature: meta.value };
+    if (meta.kind === "scenario") return { module: meta.module, feature: meta.feature, scenario: meta.value };
+    return {};
+  }
+  if (current) return {
+    test_point_id: current.test_point_id, module: current.module, feature: current.feature, scenario: current.scenario,
+  };
+  let point = null;
+  if (!point && meta.kind === "test_point") point = testPoints.find((item) => String(item.id) === String(meta.pointId));
+  if (!point && meta.kind === "feature") point = testPoints.find((item) => item.module === meta.module && item.feature === meta.value);
+  if (!point && meta.kind === "module") point = testPoints.find((item) => item.module === meta.value);
+  point ||= testPoints[0];
+  return point ? {
+    test_point_id: point.id, module: point.module, feature: point.feature, scenario: point.scenario,
+  } : {};
+}
+
+export function buildMoveCommand(kind, source, target, testPoints = [], placement = "inside") {
+  /**
+   * 把脑图库的拖动手势转换为平面 JSON 的原子命令。
+   * 只接受不会破坏固定层级和确认测试点引用的语义移动。
+   */
+  const sources = Array.isArray(source) ? source : [source];
+  const primary = sources[0];
+  if (!primary || !target) return null;
+  if (["before", "after"].includes(placement) && primary.kind === target.kind) {
+    if (primary.uiKey && target.uiKey) return {
+      type: "reorder", uiKeys: sources.map((item) => item.uiKey).filter(Boolean),
+      targetKey: target.uiKey, placement, label: "同级排序",
+    };
+    if (["module", "feature", "scenario", "test_point"].includes(primary.kind)) return {
+      type: "reorder_group", sourceMatch: groupMatch(primary), targetMatch: groupMatch(target), placement, label: "分组排序",
+    };
+  }
+  if (kind === "points") {
+    if (sources.length > 1 && sources.every((item) => item.uiKey) && target.kind === "scenario") return {
+      type: "bulk_move", uiKeys: sources.map((item) => item.uiKey),
+      updates: { module: target.module, feature: target.feature, scenario: target.value }, label: "批量移动测试点",
+    };
+    if (primary.uiKey && target.kind === "scenario") return {
+      type: "move", uiKey: primary.uiKey,
+      updates: { module: target.module, feature: target.feature, scenario: target.value }, label: "移动测试点",
+    };
+    if (primary.kind === "feature" && target.kind === "module") return {
+      type: "bulk_update", match: { module: primary.module, feature: primary.value },
+      updates: { module: target.value }, label: "移动功能分组",
+    };
+    if (primary.kind === "scenario" && target.kind === "feature") return {
+      type: "bulk_update", match: { module: primary.module, feature: primary.feature, scenario: primary.value },
+      updates: { module: target.module, feature: target.value }, label: "移动场景分组",
+    };
+    return null;
+  }
+  if (sources.length > 1 && sources.every((item) => item.uiKey) && target.kind === "test_point") {
+    const point = testPoints.find((item) => String(item.id) === String(target.pointId));
+    if (!point) return null;
+    return { type: "bulk_move", uiKeys: sources.map((item) => item.uiKey), updates: pointUpdates(point), label: "批量移动用例" };
+  }
+  if ((primary.uiKey || primary.kind === "test_point") && target.kind === "test_point") {
+    const point = testPoints.find((item) => String(item.id) === String(target.pointId));
+    if (!point || String(primary.pointId || "") === String(point.id)) return null;
+    const updates = pointUpdates(point);
+    return primary.uiKey
+      ? { type: "move", uiKey: primary.uiKey, updates, label: "移动用例" }
+      : { type: "bulk_update", match: { test_point_id: primary.pointId }, updates, label: "移动用例分组" };
+  }
+  return null;
+}
+
+function pointUpdates(point) {
+  return { test_point_id: point.id, module: point.module, feature: point.feature, scenario: point.scenario };
+}
+
+function groupMatch(meta) {
+  if (meta.kind === "module") return { module: meta.value };
+  if (meta.kind === "feature") return { module: meta.module, feature: meta.value };
+  if (meta.kind === "scenario") return { module: meta.module, feature: meta.feature, scenario: meta.value };
+  return { test_point_id: meta.pointId };
+}
+
 function locate(rows, uiKey) {
   const index = rows.findIndex((row) => row.__uiKey === uiKey);
   if (index < 0) throw new Error("目标节点不存在或已被删除");
@@ -156,6 +244,24 @@ export function executeCommand(currentRows, command) {
     rows.splice(index, 0, row);
     return { rows, patch: makePatch([{ kind: "insert", index, after: row }], command.label || "新增") };
   }
+  if (type === "insert_many") {
+    const changes = [];
+    (command.rows || []).forEach((source) => {
+      const row = { ...clone(source), __uiKey: source?.__uiKey || nextUiKey("insert") };
+      const index = rows.length;
+      rows.push(row);
+      changes.push({ kind: "insert", index, after: row });
+    });
+    if (!changes.length) throw new Error("没有可粘贴的节点");
+    return { rows, patch: makePatch(changes, command.label || "批量新增") };
+  }
+  if (type === "insert_relative") {
+    const targetIndex = locate(rows, command.targetKey);
+    const index = command.placement === "before" ? targetIndex : targetIndex + 1;
+    const row = { ...clone(command.row), __uiKey: command.row?.__uiKey || nextUiKey("insert") };
+    rows.splice(index, 0, row);
+    return { rows, patch: makePatch([{ kind: "insert", index, after: row }], command.label || "新增同级节点") };
+  }
   if (type === "delete") {
     const keys = new Set(command.uiKeys || []);
     const indexes = rows.map((row, index) => keys.has(row.__uiKey) ? index : -1).filter((index) => index >= 0);
@@ -171,6 +277,38 @@ export function executeCommand(currentRows, command) {
     if ("actual_result" in updates && updates.actual_result !== before.actual_result) throw new Error("实际结果为只读字段");
     rows[index] = { ...rows[index], ...updates, __uiKey: before.__uiKey };
     return { rows, patch: makePatch([{ kind: "update", index, before, after: clone(rows[index]) }], command.label || "修改") };
+  }
+  if (type === "bulk_move") {
+    const keys = new Set(command.uiKeys || []);
+    if (!keys.size) throw new Error("请选择要移动的节点");
+    const changes = [];
+    rows.forEach((row, index) => {
+      if (!keys.has(row.__uiKey)) return;
+      const before = clone(row);
+      rows[index] = { ...row, ...clone(command.updates || {}), __uiKey: before.__uiKey };
+      changes.push({ kind: "update", index, before, after: clone(rows[index]) });
+    });
+    if (changes.length !== keys.size) throw new Error("部分节点已变化，请刷新后重试");
+    return { rows, patch: makePatch(changes, command.label || "批量移动") };
+  }
+  if (type === "reorder" || type === "reorder_group") {
+    let keys = new Set(command.uiKeys || []);
+    if (type === "reorder_group") {
+      keys = new Set(rows.filter((row) => Object.entries(command.sourceMatch || {}).every(([key, value]) => row[key] === value)).map((row) => row.__uiKey));
+    }
+    const targetKeys = type === "reorder_group"
+      ? rows.filter((row) => Object.entries(command.targetMatch || {}).every(([key, value]) => row[key] === value)).map((row) => row.__uiKey)
+      : [command.targetKey];
+    if (!keys.size || !targetKeys.length) throw new Error("排序节点已变化，请刷新后重试");
+    if (targetKeys.some((key) => keys.has(key))) throw new Error("排序目标不能包含在来源节点中");
+    const before = clone(rows);
+    const moving = rows.filter((row) => keys.has(row.__uiKey));
+    const remaining = rows.filter((row) => !keys.has(row.__uiKey));
+    const anchor = command.placement === "before" ? targetKeys[0] : targetKeys[targetKeys.length - 1];
+    const targetIndex = remaining.findIndex((row) => row.__uiKey === anchor);
+    if (targetIndex < 0) throw new Error("排序目标已变化，请刷新后重试");
+    remaining.splice(targetIndex + (command.placement === "after" ? 1 : 0), 0, ...moving);
+    return { rows: remaining, patch: makePatch([{ kind: "replace_all", before, after: clone(remaining) }], command.label || "排序") };
   }
   if (type === "rename_group") {
     if (!["module", "feature", "scenario"].includes(command.field)) throw new Error("不支持的分组字段");
@@ -209,6 +347,7 @@ export function applyPatch(currentRows, patch, reverse = false) {
   const rows = clone(currentRows);
   const changes = reverse ? [...patch.changes].reverse() : patch.changes;
   for (const change of changes) {
+    if (change.kind === "replace_all") return clone(reverse ? change.before : change.after);
     if (change.kind === "insert") reverse ? rows.splice(change.index, 1) : rows.splice(change.index, 0, clone(change.after));
     if (change.kind === "delete") reverse ? rows.splice(change.index, 0, clone(change.before)) : rows.splice(change.index, 1);
     if (change.kind === "update") rows[change.index] = clone(reverse ? change.before : change.after);

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import json
 from pathlib import Path
 
 from services.api_agent.app import create_app
@@ -174,3 +175,73 @@ def test_health_readiness_and_api_workbench(tmp_path: Path) -> None:
     html = page.get_data(as_text=True)
     assert page.status_code == 200
     assert "API 测试智能体" in html and "api-v2-workbench.css" in html
+    assert "创建 API 测试任务" in html
+    assert "task-create-dialog" in html
+
+
+def test_task_page_exposes_stage_workspace(tmp_path: Path) -> None:
+    """详情页按阶段展示工作区，并提供受控执行确认弹窗。"""
+
+    client, _app = make_client(tmp_path)
+    created = client.post(
+        "/api-test-agent/api/v1/tasks",
+        headers=headers(),
+        data={
+            "operation": "generate_api_cases",
+            "project_name": "项目 A",
+            "module_name": "登录",
+            "environment": "dev",
+            "document_text": "GET /api/v1/me",
+        },
+        content_type="multipart/form-data",
+    ).get_json()
+    page = client.get(f"/api-test-agent/tasks/{created['id']}", headers=headers())
+    html = page.get_data(as_text=True)
+    assert page.status_code == 200
+    assert "确认分析范围" in html
+    assert "coverage-matrix" in html
+    assert "execution-confirm-dialog" in html
+    assert "run-report" in html
+
+
+def test_list_runs_returns_only_safe_task_summary(tmp_path: Path) -> None:
+    """Run 列表只返回当前任务的脱敏摘要，不暴露报告正文。"""
+
+    client, app = make_client(tmp_path)
+    created = client.post(
+        "/api-test-agent/api/v1/tasks",
+        headers=headers(),
+        data={
+            "operation": "generate_api_cases",
+            "project_name": "项目 A",
+            "module_name": "登录",
+            "environment": "dev",
+            "document_text": "GET /api/v1/me",
+        },
+        content_type="multipart/form-data",
+    ).get_json()
+    runs_dir = app.extensions["task_store"].task_dir(created["id"]) / "runs"
+    first = runs_dir / "run_first"
+    second = runs_dir / "run_second"
+    first.mkdir(parents=True)
+    second.mkdir(parents=True)
+    (first / "run.json").write_text(json.dumps({
+        "run_id": "run_first", "status": "failed", "created_at": "2026-08-18T09:00:00+08:00",
+        "finished_at": "2026-08-18T09:01:00+08:00", "summary": {"total": 2, "passed": 1, "failed": 1},
+        "request_summary": {"authorization": "secret"},
+    }), encoding="utf-8")
+    (second / "run.json").write_text(json.dumps({
+        "run_id": "run_second", "status": "succeeded", "created_at": "2026-08-18T10:00:00+08:00",
+        "finished_at": "2026-08-18T10:01:00+08:00", "summary": {"total": 3, "passed": 3, "failed": 0},
+    }), encoding="utf-8")
+
+    response = client.get(
+        f"/api-test-agent/api/v1/tasks/{created['id']}/runs",
+        headers=headers(permissions="tool.result.view"),
+    )
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["latest_run_id"] == "run_second"
+    assert [item["run_id"] for item in payload["items"]] == ["run_second", "run_first"]
+    assert payload["items"][1]["total_cases"] == 2
+    assert "secret" not in response.get_data(as_text=True)

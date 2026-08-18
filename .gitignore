@@ -19,6 +19,8 @@ build/
 .eggs/
 *.egg
 .env
+.env.prod
+.env.images
 venv/
 .venv/
 

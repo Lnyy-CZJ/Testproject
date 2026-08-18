@@ -1,9 +1,11 @@
 import {
+  buildMoveCommand,
   CommandHistory,
   cleanRows,
   executeCommand,
   filterRows,
   flattenTree,
+  newRowContext,
   projectTestCases,
   projectTestPoints,
   wrapRows,
@@ -14,6 +16,16 @@ const base = document.body.dataset.basePath;
 const STATUS_LABELS = {
   pending: "排队中", running: "生成中", waiting_review: "测试点待评审", waiting_case_review: "用例待评审",
   succeeded: "已完成", partial_success: "部分完成", failed: "失败", cancelled: "已取消",
+};
+const STAGE_LABELS = {
+  queued: "等待执行", waiting_for_review: "等待测试点评审",
+  review_ai_queued: "测试点 AI 排队", review_ai_ready: "测试点 AI 建议就绪",
+  review_ai_cancelled: "测试点 AI 已取消", case_review_editing: "测试用例评审",
+  case_review_ai_queued: "用例 AI 排队", case_review_ai_running: "用例 AI 生成中",
+  case_review_ai_ready: "用例 AI 建议就绪", case_review_ai_cancelled: "用例 AI 已取消",
+  case_review_published: "产物已发布", completed: "生成完成", workflow: "智能生成",
+  configuration: "配置检查", execution_confirmation: "等待确认", worker: "执行中",
+  timeout: "执行超时", interrupted: "执行中断", cancelled: "已取消",
 };
 
 function element(tag, className, text) {
@@ -39,29 +51,70 @@ function setupTaskIndex() {
   const search = document.querySelector("#task-list-search");
   const status = document.querySelector("#task-list-status");
   const date = document.querySelector("#task-list-date");
-  const rows = [...root.querySelectorAll("[data-task-row]")];
-  rows.forEach((row) => {
-    const pill = row.querySelector(".status-pill");
-    if (pill) pill.textContent = STATUS_LABELS[row.dataset.status] || row.dataset.status;
-  });
-  root.querySelectorAll("time").forEach((time) => {
-    time.title = time.textContent.trim();
-    time.textContent = formatTime(time.textContent.trim());
-  });
-  const apply = () => {
-    const query = search.value.trim().toLocaleLowerCase();
-    let visible = 0;
-    rows.forEach((row) => {
-      const matched = (!query || row.dataset.search.includes(query))
-        && (!status.value || row.dataset.status === status.value)
-        && (!date.value || row.dataset.date === date.value);
-      row.hidden = !matched;
-      if (matched) visible += 1;
-    });
-    document.querySelector("#task-list-empty-filter").hidden = visible > 0;
-  };
-  [search, status, date].forEach((control) => control?.addEventListener("input", apply));
-  root.querySelectorAll("[data-copy-task]").forEach((button) => button.addEventListener("click", () => {
+  const table = root.querySelector(".platform-task-table");
+  const empty = document.querySelector("#task-list-empty-filter");
+  const totalLabel = document.querySelector("#task-list-total");
+  const pageInfo = document.querySelector("#task-list-page-info");
+  const previous = document.querySelector("#task-list-prev");
+  const next = document.querySelector("#task-list-next");
+  let page = 1;
+  let total = Number(root.dataset.total || totalLabel?.textContent.match(/\d+/)?.[0] || 0);
+
+  function taskRow(item) {
+    const row = element("div", "platform-task-row"); row.dataset.taskRow = ""; row.setAttribute("role", "row");
+    const task = element("div"); const link = element("a", "task-title-link", item.title); link.href = `${base}/tasks/${item.id}`;
+    task.append(link, element("code", "", item.id));
+    const documentCell = element("div"); documentCell.append(element("span", "", item.project_name), element("small", "", item.module_name));
+    const state = element("div"); state.append(element("strong", `status-pill status-${item.status}`, STATUS_LABELS[item.status] || item.status), element("small", "task-stage", STAGE_LABELS[item.stage] || item.stage));
+    const time = element("time", "", formatTime(item.created_at)); time.title = item.created_at || "";
+    const actions = element("div", "task-row-actions"); const view = element("a", "", "查看"); view.href = `${base}/tasks/${item.id}`;
+    const copy = element("button", "", "复制重跑"); copy.type = "button"; copy.dataset.copyTask = "";
+    Object.assign(copy.dataset, { title: item.title, project: item.project_name, module: item.module_name, operation: item.operation });
+    actions.append(view, copy);
+    row.append(task, documentCell, state, element("strong", "", String(item.test_point_count || 0)), element("strong", "", String(item.test_case_count || 0)), element("span", "", item.model_name || "等待执行"), element("span", "", `v${item.test_case_review_version || item.test_point_review_version || 0}`), time, actions);
+    return row;
+  }
+
+  function updatePagination() {
+    const pages = Math.max(1, Math.ceil(total / 20));
+    pageInfo.textContent = `第 ${page} / ${pages} 页`;
+    previous.disabled = page <= 1;
+    next.disabled = page >= pages;
+    totalLabel.textContent = `共 ${total} 项，仅显示你有权限查看的任务。`;
+  }
+
+  async function loadTasks() {
+    root.setAttribute("aria-busy", "true");
+    const params = new URLSearchParams({ page: String(page), page_size: "20" });
+    if (search.value.trim()) params.set("q", search.value.trim());
+    if (status.value) params.set("status", status.value);
+    if (date.value) params.set("date", date.value);
+    try {
+      const result = await globalThis.agentFetch(`/api/v1/tasks?${params}`);
+      total = result.total; page = result.page;
+      table.querySelectorAll("[data-task-row]").forEach((row) => row.remove());
+      result.items.forEach((item) => table.append(taskRow(item)));
+      empty.hidden = result.items.length > 0;
+      empty.querySelector("h3").textContent = "没有匹配任务";
+      empty.querySelector("p").textContent = "调整搜索词、状态或日期后重试。";
+      updatePagination();
+    } catch (error) {
+      empty.hidden = false;
+      empty.querySelector("h3").textContent = "任务加载失败";
+      empty.querySelector("p").textContent = error.message;
+    } finally {
+      root.removeAttribute("aria-busy");
+    }
+  }
+
+  let debounce;
+  search.addEventListener("input", () => { clearTimeout(debounce); debounce = setTimeout(() => { page = 1; loadTasks(); }, 250); });
+  [status, date].forEach((control) => control.addEventListener("change", () => { page = 1; loadTasks(); }));
+  previous.addEventListener("click", () => { if (page > 1) { page -= 1; loadTasks(); } });
+  next.addEventListener("click", () => { if (page * 20 < total) { page += 1; loadTasks(); } });
+  root.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-copy-task]");
+    if (!button) return;
     const form = document.querySelector("#task-form");
     form.elements.title.value = `${button.dataset.title} 副本`;
     form.elements.project_name.value = button.dataset.project;
@@ -69,7 +122,15 @@ function setupTaskIndex() {
     form.elements.operation.value = button.dataset.operation;
     dialog.showModal();
     form.elements.title.focus();
-  }));
+  });
+  root.querySelectorAll(".status-pill").forEach((pill) => { const value = pill.closest("[data-task-row]")?.dataset.status; if (value) pill.textContent = STATUS_LABELS[value] || value; });
+  root.querySelectorAll(".task-stage[data-stage]").forEach((stage) => { stage.textContent = STAGE_LABELS[stage.dataset.stage] || stage.dataset.stage; });
+  root.querySelectorAll("time").forEach((time) => { time.title = time.textContent.trim(); time.textContent = formatTime(time.textContent.trim()); });
+  updatePagination();
+
+  const fileDrop = document.querySelector(".file-drop");
+  ["dragenter", "dragover"].forEach((name) => fileDrop?.addEventListener(name, () => fileDrop.classList.add("is-dragging")));
+  ["dragleave", "drop"].forEach((name) => fileDrop?.addEventListener(name, () => fileDrop.classList.remove("is-dragging")));
 }
 
 class ReviewMindmapController {
@@ -84,6 +145,8 @@ class ReviewMindmapController {
     this.coverage = {};
     this.selectedKey = null;
     this.selectedMeta = null;
+    this.selectedKeys = new Set();
+    this.clipboard = [];
     this.history = new CommandHistory();
     this.query = "";
     this.level = "";
@@ -119,15 +182,21 @@ class ReviewMindmapController {
     ["", "P0", "P1", "P2", "P3"].forEach((value) => { const option = element("option", "", value || "全部"); option.value = value; this.levelSelect.append(option); });
     levelLabel.append(this.levelSelect);
     toolbar.append(searchLabel, levelLabel);
-    [["add", this.kind === "points" ? "新增测试点" : "新增用例"], ["duplicate", "复制"], ["delete", "删除"], ["undo", "撤销"], ["redo", "重做"], ["fit", "适应画布"]].forEach(([action, label]) => {
+    [["search-prev", "上一结果"], ["search-next", "下一结果"], ["add-child", "新增子节点"], ["add-sibling", "新增同级"], ["duplicate", "复制"], ["delete", "删除"], ["undo", "撤销"], ["redo", "重做"], ["expand-all", "全部展开"], ["collapse-all", "全部收起"], ["center", "回到中心"], ["focus", "聚焦分支"], ["fullscreen", "全屏"], ["zoom-out", "缩小"], ["zoom-in", "放大"], ["fit", "适应画布"]].forEach(([action, label]) => {
       const button = element("button", "secondary-button compact-button", label); button.type = "button"; button.dataset.mindmapAction = action; toolbar.append(button);
+      if (action === "zoom-out") {
+        this.zoomValue = element("output", "mindmap-zoom-value", "100%");
+        this.zoomValue.setAttribute("aria-live", "polite");
+        toolbar.append(this.zoomValue);
+      }
     });
     this.notice = element("div", "mindmap-notice"); this.notice.setAttribute("role", "status");
 
     const layout = element("div", "mindmap-layout");
     this.canvasPane = element("section", "mindmap-canvas-pane");
+    this.breadcrumb = element("nav", "mindmap-breadcrumb", "未选择节点"); this.breadcrumb.setAttribute("aria-label", "当前节点层级");
     this.canvas = element("div", "mindmap-canvas"); this.canvas.setAttribute("role", "tree"); this.canvas.setAttribute("aria-label", this.kind === "points" ? "测试点脑图" : "测试用例脑图");
-    this.canvasPane.append(this.canvas);
+    this.canvasPane.append(this.breadcrumb, this.canvas);
     this.detail = element("aside", "mindmap-detail"); this.detail.setAttribute("aria-label", "当前节点详情");
     layout.append(this.canvasPane, this.detail);
 
@@ -138,9 +207,14 @@ class ReviewMindmapController {
     this.toolbar = toolbar;
     this.view = new MindmapView(this.canvas, {
       maxVisible: 500,
-      onSelect: (meta) => this.select(meta),
+      onSelect: (meta, options) => this.select(meta, options),
       onMove: (operation) => this.move(operation),
+      onCanMove: ({ sources, target, placement }) => Boolean(buildMoveCommand(this.kind, sources, target, this.testPoints, placement)),
       onRename: (meta, value) => this.renameNode(meta, value),
+      onAdd: (meta, relation) => this.addRow(relation, meta),
+      onBoxSelect: (metas) => this.selectMany(metas),
+      onContext: (meta, point) => this.showContextMenu(meta, point),
+      onScale: (scale) => { if (this.zoomValue) this.zoomValue.textContent = `${Math.round(scale * 100)}%`; },
       onError: (message) => this.setNotice(message, true),
     });
   }
@@ -150,13 +224,15 @@ class ReviewMindmapController {
     const requestEvent = this.kind === "points" ? "review-v2-request-state" : "case-review-v2-request-state";
     this.legacyRoot.addEventListener(stateEvent, (event) => this.acceptState(event.detail));
     this.legacyRoot.dispatchEvent(new CustomEvent(requestEvent));
-    this.search.addEventListener("input", () => { this.query = this.search.value; this.page = 1; this.render(); });
+    this.search.addEventListener("input", () => { this.query = this.search.value; this.searchOffset = 0; this.page = 1; this.render(); });
     this.levelSelect.addEventListener("change", () => { this.level = this.levelSelect.value; this.page = 1; this.render(); });
     this.host.querySelectorAll("[data-tab]").forEach((button) => button.addEventListener("click", () => this.switchTab(button.dataset.tab)));
     this.toolbar.addEventListener("click", (event) => {
       const action = event.target.closest("[data-mindmap-action]")?.dataset.mindmapAction;
       if (action) this.handleAction(action);
     });
+    this.canvas.addEventListener("keydown", (event) => this.handleShortcut(event));
+    document.addEventListener("click", () => this.contextMenu?.remove());
   }
 
   acceptState(detail) {
@@ -186,6 +262,21 @@ class ReviewMindmapController {
     const data = this.kind === "points"
       ? projectTestPoints(rows, this.host.dataset.title || "测试点")
       : projectTestCases(rows, this.testPoints, this.host.dataset.title || "测试用例");
+    const issues = new Map();
+    [...(this.validation.errors || []), ...(this.validation.warnings || [])].forEach((issue) => {
+      const row = this.rows[issue.row_index]; if (row) issues.set(this.identity(row), issue.level === "error" ? "错误" : "警告");
+    });
+    const rowByKey = new Map(this.rows.map((row) => [row.__uiKey, row]));
+    const uncovered = new Set(this.coverage.uncovered_test_point_ids || []);
+    flattenTree(data.nodeData).forEach((node) => {
+      if (node.meta.uiKey) {
+        const row = rowByKey.get(node.meta.uiKey);
+        if (row) node.meta.statusLabel = [row.risk_level || row.priority, issues.get(this.identity(row))].filter(Boolean).join(" · ");
+      }
+      if (this.kind === "cases" && node.meta.kind === "test_point") {
+        node.meta.statusLabel = uncovered.has(node.meta.pointId) ? "未覆盖" : "已覆盖";
+      }
+    });
     this.nodeIdByUiKey = new Map(flattenTree(data.nodeData).filter((node) => node.meta.uiKey).map((node) => [node.meta.uiKey, node.id]));
     const projected = flattenTree(data.nodeData).length;
     if (projected > 500) {
@@ -209,7 +300,10 @@ class ReviewMindmapController {
       button.classList.toggle("is-active", active);
       button.setAttribute("aria-selected", String(active));
     });
-    if (this.activeTab === "mindmap") this.view.render(this.treeData());
+    if (this.activeTab === "mindmap") {
+      this.view.render(this.treeData());
+      setTimeout(() => { this.view.markSelected(this.selectedKeys); if (this.query) this.view.find(this.query, this.searchOffset || 0); }, 0);
+    }
     if (this.activeTab === "table") this.renderTable();
     if (this.activeTab === "versions") this.renderVersions();
     this.renderDetail();
@@ -225,11 +319,35 @@ class ReviewMindmapController {
     this.render();
   }
 
-  select(meta) {
+  select(meta, options = {}) {
     this.selectedMeta = meta || null;
     this.selectedKey = meta?.uiKey || null;
+    if (!options.toggle) this.selectedKeys.clear();
+    if (meta?.uiKey) {
+      if (options.toggle && this.selectedKeys.has(meta.uiKey)) this.selectedKeys.delete(meta.uiKey);
+      else this.selectedKeys.add(meta.uiKey);
+    }
+    this.renderBreadcrumb();
     this.renderDetail();
     this.syncSelection();
+    this.view.markSelected(this.selectedKeys);
+  }
+
+  selectMany(metas) {
+    const compatible = metas.filter((meta) => meta?.uiKey);
+    this.selectedKeys = new Set(compatible.map((meta) => meta.uiKey));
+    const last = compatible.at(-1); this.selectedMeta = last || null; this.selectedKey = last?.uiKey || null;
+    this.renderBreadcrumb(); this.renderDetail(); this.syncSelection();
+    this.setNotice(this.selectedKeys.size ? `已选择 ${this.selectedKeys.size} 个节点` : "未选择节点", false);
+  }
+
+  renderBreadcrumb() {
+    const meta = this.selectedMeta;
+    if (!meta) { this.breadcrumb.textContent = "未选择节点"; return; }
+    const parts = this.kind === "points"
+      ? [meta.module, meta.feature, meta.scenario, meta.value || this.current()?.test_point]
+      : [meta.module, meta.feature, meta.pointId, meta.value || this.current()?.case_name];
+    this.breadcrumb.textContent = parts.filter(Boolean).join(" / ") || "任务根节点";
   }
 
   current() {
@@ -348,25 +466,20 @@ class ReviewMindmapController {
 
   handleAction(action) {
     if (action === "fit") { this.view.fit(); return; }
+    if (["search-prev", "search-next"].includes(action)) {
+      this.searchOffset = (this.searchOffset || 0) + (action === "search-next" ? 1 : -1);
+      const meta = this.view.find(this.query, this.searchOffset); if (meta) this.select(meta); return;
+    }
+    if (action === "zoom-out") { this.view.zoomBy(-0.05); return; }
+    if (action === "zoom-in") { this.view.zoomBy(0.05); return; }
+    if (action === "center") { this.view.center(); return; }
+    if (action === "expand-all") { this.view.expandAll(true); return; }
+    if (action === "collapse-all") { this.view.expandAll(false); return; }
+    if (action === "fullscreen") { this.view.fullscreen(); return; }
+    if (action === "focus") { this.view.focusBranch(this.nodeIdForSelection()); return; }
     if (action === "undo") { this.rows = this.history.undo(this.rows); this.emitReplace(); this.render(); return; }
     if (action === "redo") { this.rows = this.history.redo(this.rows); this.emitReplace(); this.render(); return; }
-    if (action === "add") {
-      const current = this.current() || {};
-      const ids = this.rows.map((row) => Number(/\d+/.exec(this.identity(row))?.[0] || 0));
-      const next = Math.max(0, ...ids) + 1;
-      const row = this.kind === "points" ? {
-        id: `TP${String(next).padStart(3, "0")}`, module: current.module || "新模块", feature: current.feature || "新功能",
-        scenario: current.scenario || "新场景", test_point: "新测试点", risk_level: "P2",
-      } : {
-        case_id: `TC${String(next).padStart(3, "0")}`, test_point_id: current.test_point_id || this.testPoints[0]?.id || "",
-        module: current.module || this.testPoints[0]?.module || "", feature: current.feature || this.testPoints[0]?.feature || "",
-        scenario: current.scenario || this.testPoints[0]?.scenario || "", case_name: "新测试用例", priority: "P2",
-        preconditions: [], test_steps: ["执行测试操作"], test_data: {}, expected_result: "符合预期", actual_result: "",
-      };
-      this.execute({ type: "insert", row, label: "新增" });
-      this.selectedKey = this.rows[this.rows.length - 1]?.__uiKey;
-      return;
-    }
+    if (["add-child", "add-sibling"].includes(action)) { this.addRow(action === "add-child" ? "child" : "sibling"); return; }
     if (!this.current()) {
       if (action === "delete" && this.kind === "points" && this.selectedMeta && ["module", "feature", "scenario"].includes(this.selectedMeta.kind)) {
         const keys = this.groupKeys(this.selectedMeta);
@@ -380,27 +493,127 @@ class ReviewMindmapController {
       return;
     }
     if (action === "duplicate") {
-      const copy = cleanRows([this.current()])[0];
-      const ids = this.rows.map((row) => Number(/\d+/.exec(this.identity(row))?.[0] || 0));
-      const next = Math.max(0, ...ids) + 1;
-      copy[this.kind === "points" ? "id" : "case_id"] = `${this.kind === "points" ? "TP" : "TC"}${String(next).padStart(3, "0")}`;
-      this.execute({ type: "insert", row: copy, label: "复制" });
+      this.copySelection(); this.pasteSelection();
     }
     if (action === "delete") {
-      if (confirm(`确定删除 ${this.identity(this.current())} 吗？`)) this.execute({ type: "delete", uiKeys: [this.selectedKey], label: "删除" });
+      const keys = this.selectedKeys.size ? [...this.selectedKeys] : [this.selectedKey];
+      if (confirm(`确定删除选中的 ${keys.length} 个节点吗？`)) { this.execute({ type: "delete", uiKeys: keys, label: "删除" }); this.selectedKeys.clear(); }
     }
   }
 
-  move({ sources, target }) {
-    const source = sources.find((item) => item.uiKey);
-    if (!source) return;
-    if (this.kind === "points" && target.kind === "scenario") {
-      this.execute({ type: "move", uiKey: source.uiKey, updates: { module: target.module, feature: target.feature, scenario: target.value }, label: "移动测试点" });
-    } else if (this.kind === "cases" && target.kind === "test_point") {
-      const point = this.testPoints.find((item) => String(item.id) === String(target.pointId));
-      if (point) this.execute({ type: "move", uiKey: source.uiKey, updates: { test_point_id: point.id, module: point.module, feature: point.feature, scenario: point.scenario }, label: "移动用例" });
-    } else {
-      this.setNotice("只能把测试点移动到场景，或把用例移动到已确认测试点", true);
+  move({ sources, target, placement }) {
+    const selected = sources.length === 1 && sources[0]?.uiKey && this.selectedKeys.size > 1
+      ? this.rows.filter((row) => this.selectedKeys.has(row.__uiKey)).map((row) => ({ uiKey: row.__uiKey, kind: this.kind === "points" ? "point" : "case", pointId: row.test_point_id }))
+      : sources;
+    const command = buildMoveCommand(this.kind, selected, target, this.testPoints, placement || "inside");
+    if (command) this.execute(command);
+    else this.setNotice(this.kind === "points"
+      ? "可将功能拖到模块、场景拖到功能、测试点拖到场景；模块根层级保持固定"
+      : "可将用例或整个测试点用例分组拖到另一个已确认测试点", true);
+  }
+
+  nodeIdForSelection() {
+    if (this.selectedKey) return this.nodeIdByUiKey?.get(this.selectedKey);
+    const entry = [...(this.view.metaById || [])].find(([, meta]) => meta === this.selectedMeta);
+    return entry?.[0]?.replace(/^me/, "");
+  }
+
+  addRow(relation = "child", meta = this.selectedMeta || {}) {
+    if (!this.editable || this.viewMode !== "draft") return;
+    const context = newRowContext(this.kind, meta, this.current(), this.testPoints);
+    if (this.kind === "cases" && !context.test_point_id) { this.setNotice("当前范围没有已确认测试点，无法新增用例", true); return; }
+    const ids = this.rows.map((row) => Number(/\d+/.exec(this.identity(row))?.[0] || 0));
+    const next = Math.max(0, ...ids) + 1;
+    const row = this.kind === "points" ? {
+      id: `TP${String(next).padStart(3, "0")}`, module: context.module || "新模块", feature: context.feature || "新功能",
+      scenario: context.scenario || "新场景", test_point: "新测试点", risk_level: "P2",
+    } : {
+      case_id: `TC${String(next).padStart(3, "0")}`, test_point_id: context.test_point_id,
+      module: context.module || "", feature: context.feature || "", scenario: context.scenario || "", case_name: "新测试用例", priority: "P2",
+      preconditions: [], test_steps: ["执行测试操作"], test_data: {}, expected_result: "符合预期", actual_result: "",
+    };
+    const targetKey = relation === "sibling" ? this.selectedKey : null;
+    this.execute(targetKey ? { type: "insert_relative", targetKey, placement: "after", row, label: "新增同级节点" } : { type: "insert", row, label: "新增子节点" });
+    const inserted = this.rows.find((item) => this.identity(item) === this.identity(row));
+    this.selectedKey = inserted?.__uiKey || null; this.selectedKeys = new Set(this.selectedKey ? [this.selectedKey] : []);
+    setTimeout(() => { const nodeId = this.nodeIdByUiKey?.get(this.selectedKey); this.view.focus(nodeId); this.view.edit(nodeId); }, 0);
+  }
+
+  copySelection() {
+    const fallback = this.selectedKey ? [this.selectedKey] : this.groupKeys(this.selectedMeta || {});
+    const keys = this.selectedKeys.size ? this.selectedKeys : new Set(fallback);
+    this.clipboard = cleanRows(this.rows.filter((row) => keys.has(row.__uiKey)));
+    if (this.clipboard.length) this.setNotice(`已复制 ${this.clipboard.length} 个节点`, false);
+  }
+
+  pasteSelection() {
+    if (!this.clipboard.length) { this.setNotice("剪贴板中没有可粘贴节点", true); return; }
+    let next = Math.max(0, ...this.rows.map((row) => Number(/\d+/.exec(this.identity(row))?.[0] || 0)));
+    const copies = this.clipboard.map((source) => {
+      const copy = structuredClone(source); next += 1;
+      copy[this.kind === "points" ? "id" : "case_id"] = `${this.kind === "points" ? "TP" : "TC"}${String(next).padStart(3, "0")}`;
+      Object.assign(copy, newRowContext(this.kind, this.selectedMeta || {}, this.current(), this.testPoints));
+      return copy;
+    });
+    this.execute({ type: "insert_many", rows: copies, label: "批量粘贴" });
+  }
+
+  showContextMenu(meta, point) {
+    this.select(meta); this.contextMenu?.remove();
+    const menu = element("div", "mindmap-context-menu"); menu.setAttribute("role", "menu");
+    [["edit", "编辑"], ["add-child", "新增子节点"], ["add-sibling", "新增同级"], ["duplicate", "复制"], ["toggle", "展开/收起"], ["move-parent", "移动到指定父级"], ["focus", "聚焦分支"], ["delete", "删除"]].forEach(([action, label]) => {
+      const button = element("button", "", label); button.type = "button"; button.setAttribute("role", "menuitem");
+      button.addEventListener("click", () => {
+        menu.remove();
+        if (action === "edit") this.view.edit(this.nodeIdForSelection());
+        else if (action === "toggle") this.view.toggle(this.nodeIdForSelection());
+        else if (action === "move-parent") this.moveToParent();
+        else this.handleAction(action);
+      }); menu.append(button);
+    });
+    Object.assign(menu.style, { left: `${point.x}px`, top: `${point.y}px` }); document.body.append(menu); this.contextMenu = menu;
+  }
+
+  moveToParent() {
+    /** 只列出当前节点类型允许的父级，提交后仍由统一领域命令执行原子校验。 */
+    const source = this.selectedMeta;
+    if (!source || source.kind === "root") { this.setNotice("当前节点不能移动", true); return; }
+    const seen = new Set();
+    const candidates = [...this.view.metaById.values()].filter((meta) => {
+      const key = JSON.stringify([meta?.kind, meta?.module, meta?.feature, meta?.scenario, meta?.pointId]);
+      if (!meta || seen.has(key)) return false;
+      seen.add(key);
+      if (this.kind === "cases") return meta.kind === "test_point" && meta.pointId !== source.pointId;
+      if (source.kind === "point") return meta.kind === "scenario";
+      if (source.kind === "scenario") return meta.kind === "feature";
+      if (source.kind === "feature") return meta.kind === "module";
+      return false;
+    });
+    if (!candidates.length) { this.setNotice("没有可用的目标父级", true); return; }
+    const labels = candidates.map((meta, index) => `${index + 1}. ${[meta.module, meta.feature, meta.scenario, meta.label].filter(Boolean).join(" / ")}`);
+    const choice = Number(prompt(`请输入目标序号：\n${labels.join("\n")}`, "1"));
+    if (!Number.isInteger(choice) || choice < 1 || choice > candidates.length) return;
+    const sources = source.uiKey && this.selectedKeys.size > 1
+      ? this.rows.filter((row) => this.selectedKeys.has(row.__uiKey)).map((row) => ({ uiKey: row.__uiKey, kind: this.kind === "points" ? "point" : "case", pointId: row.test_point_id }))
+      : [source];
+    this.move({ sources, target: candidates[choice - 1], placement: "inside" });
+  }
+
+  handleShortcut(event) {
+    if (event.target.matches("input,textarea,select,[contenteditable]")) return;
+    const mod = event.metaKey || event.ctrlKey;
+    const action = mod && event.key.toLowerCase() === "z" ? (event.shiftKey ? "redo" : "undo")
+      : mod && event.key.toLowerCase() === "c" ? "copy" : mod && event.key.toLowerCase() === "v" ? "paste"
+        : event.key === "Tab" ? "add-child" : event.key === "Enter" ? "add-sibling" : event.key === "F2" ? "edit"
+          : ["Delete", "Backspace"].includes(event.key) ? "delete" : event.key === "0" ? "fit" : event.key === "1" ? "center" : null;
+    if (action) {
+      event.preventDefault();
+      if (action === "copy") this.copySelection(); else if (action === "paste") this.pasteSelection();
+      else if (action === "edit") this.view.edit(this.nodeIdForSelection()); else this.handleAction(action);
+      return;
+    }
+    if (["ArrowUp", "ArrowLeft", "ArrowDown", "ArrowRight"].includes(event.key)) {
+      event.preventDefault(); const meta = this.view.navigate(this.nodeIdForSelection(), ["ArrowUp", "ArrowLeft"].includes(event.key) ? -1 : 1); if (meta) this.select(meta);
     }
   }
 
@@ -411,8 +624,8 @@ class ReviewMindmapController {
 
   syncSelection() {
     const eventName = this.kind === "points" ? "review-v2-selection" : "case-review-v2-selection";
-    const row = this.current();
-    this.legacyRoot.dispatchEvent(new CustomEvent(eventName, { detail: { ids: row ? [this.identity(row)] : [] } }));
+    const ids = this.rows.filter((row) => this.selectedKeys.has(row.__uiKey)).map((row) => this.identity(row));
+    this.legacyRoot.dispatchEvent(new CustomEvent(eventName, { detail: { ids } }));
   }
 
   renderTable() {
@@ -510,9 +723,10 @@ class ReviewMindmapController {
   updateButtons() {
     this.host.querySelectorAll("[data-mindmap-action]").forEach((button) => {
       const action = button.dataset.mindmapAction;
+      if (["fit", "zoom-in", "zoom-out", "expand-all", "collapse-all", "center", "focus", "fullscreen", "search-prev", "search-next"].includes(action)) button.hidden = this.activeTab !== "mindmap";
       if (action === "undo") button.disabled = !this.history.undoStack.length;
       else if (action === "redo") button.disabled = !this.history.redoStack.length;
-      else if (action !== "fit") button.disabled = !this.editable || this.viewMode !== "draft";
+      else if (!["fit", "zoom-in", "zoom-out", "expand-all", "collapse-all", "center", "focus", "fullscreen", "search-prev", "search-next"].includes(action)) button.disabled = !this.editable || this.viewMode !== "draft";
     });
   }
 
