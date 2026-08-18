@@ -12,6 +12,16 @@ test -f "$image_env"
 test -f "$release_dir/VERSION"
 mkdir -p "$backup_root"
 
+# 两个智能体以固定非 root UID 运行；令牌保持 600，并仅授权给对应容器用户。
+sudo chown 10001:10001 /srv/test-platform/secrets/prod/functional-test-agent-client-token
+sudo chown 10002:10002 \
+  /srv/test-platform/secrets/prod/api-test-agent-client-token \
+  /srv/test-platform/secrets/prod/api-execution-controller-token
+sudo chmod 600 \
+  /srv/test-platform/secrets/prod/functional-test-agent-client-token \
+  /srv/test-platform/secrets/prod/api-test-agent-client-token \
+  /srv/test-platform/secrets/prod/api-execution-controller-token
+
 # 在替换应用前保留可恢复的数据库快照；首次切换由迁移流程单独恢复 dev 快照。
 if docker ps --format '{{.Names}}' | grep -qx 'test-platform-prod-platform-db-1'; then
   backup="$backup_root/platform-$(date -u +%Y%m%dT%H%M%SZ).dump"
