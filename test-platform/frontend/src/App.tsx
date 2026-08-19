@@ -1,5 +1,6 @@
 import {
   createContext,
+  Fragment,
   type FormEvent,
   type PropsWithChildren,
   type ReactNode,
@@ -19,7 +20,7 @@ import {
 } from "react-router-dom";
 
 import { ApiError, apiJson, fetchTools, request } from "./api/client";
-import platformVersionSource from "../../VERSION?raw";
+import versionsManifest from "../../versions.json";
 import { AppShell } from "./components/AppShell";
 import { CapabilityCard } from "./components/CapabilityCard";
 import { CapabilityDomainPage } from "./components/CapabilityDomainPage";
@@ -43,7 +44,44 @@ import type {
 } from "./types/platform";
 import type { Tool } from "./types/tool";
 
-const PLATFORM_VERSION = platformVersionSource.trim();
+const PLATFORM_VERSION = versionsManifest.product.version;
+
+interface RuntimeIdentity {
+  version: string;
+  component_version: string;
+  revision: string;
+  dirty: boolean;
+  runtime_environment: string;
+}
+
+interface ComponentIdentity {
+  version: string;
+  revision: string;
+  dirty: boolean | null;
+  runtime_environment: string;
+  health: string;
+  digest?: string | null;
+}
+
+interface VersionMatrixRow {
+  component_id: string;
+  manifest_version: string;
+  dev: ComponentIdentity | null;
+  prod: ComponentIdentity | null;
+  prod_expected: ComponentIdentity | null;
+  issues: string[];
+  primary_status: string;
+}
+
+interface VersionMatrix {
+  checked_at: string;
+  product_version: string;
+  runtime_environment: string;
+  prod_error?: string | null;
+  dev?: { release?: string | null; database: { alembic_revision?: string | null }; config_releases: Record<string, string> } | null;
+  prod?: { release?: string | null; database: { alembic_revision?: string | null }; config_releases: Record<string, string> } | null;
+  rows: VersionMatrixRow[];
+}
 
 interface AuthContextValue {
   auth: AuthState | null;
@@ -280,6 +318,7 @@ function HomePage() {
   const environment = useEnvironment();
   const { tools, groups, unknownTools, healthStates, loading, refreshing, error, refreshHealth, reloadCatalog } = useToolCatalog();
   const [credentialIssueCount, setCredentialIssueCount] = useState<number | null>(null);
+  const [runtimeEnvironment, setRuntimeEnvironment] = useState("…");
   const aiCapabilities = groups["ai-testing"];
   const professionalCapabilities = [
     ...groups.automation,
@@ -305,7 +344,21 @@ function HomePage() {
     return () => { active = false; };
   }, [auth, environment]);
 
-  return <WorkspaceShell><section className="workbench-home" aria-labelledby="workbench-title"><div className="workbench-intro"><div><p className="section-label">AI TESTING WORKSPACE</p><h1 id="workbench-title">AI 测试与质量工程工作台</h1><p>使用 AI 设计测试，通过自动化持续验证，并借助专业工具分析质量问题。</p></div><aside className="platform-status" aria-label="平台状态"><div className="status-panel-heading"><span>平台状态</span><button className="link-button" type="button" disabled={refreshing || loading || tools.length === 0} onClick={() => void refreshHealth()}>{refreshing ? "检测中…" : "重新检测"}</button></div><dl><div><dt>版本</dt><dd>{PLATFORM_VERSION}</dd></div><div><dt>环境</dt><dd>{environment.toUpperCase()}</dd></div><div><dt>已授权</dt><dd>{tools.length}</dd></div><div><dt>异常</dt><dd>{healthCounts.unhealthy}</dd></div></dl><p>{healthCounts.healthy} 项正常 · {healthCounts.checking} 项检测中</p>{credentialIssueCount !== null && <NavLink to="/settings/credentials">凭证异常或临期 {credentialIssueCount} 项</NavLink>}</aside></div>
+  const refreshStatus = useCallback(async () => {
+    const [, identity] = await Promise.all([
+      refreshHealth(),
+      apiJson<RuntimeIdentity>("/health/live"),
+    ]);
+    setRuntimeEnvironment(identity.runtime_environment.toUpperCase());
+  }, [refreshHealth]);
+
+  useEffect(() => {
+    void apiJson<RuntimeIdentity>("/health/live")
+      .then((identity) => setRuntimeEnvironment(identity.runtime_environment.toUpperCase()))
+      .catch(() => setRuntimeEnvironment("未知"));
+  }, []);
+
+  return <WorkspaceShell><section className="workbench-home" aria-labelledby="workbench-title"><div className="workbench-intro"><div><p className="section-label">AI TESTING WORKSPACE</p><h1 id="workbench-title">AI 测试与质量工程工作台</h1><p>使用 AI 设计测试，通过自动化持续验证，并借助专业工具分析质量问题。</p></div><aside className="platform-status" aria-label="平台状态"><div className="status-panel-heading"><span>平台状态</span><button className="link-button" type="button" disabled={refreshing || loading} onClick={() => void refreshStatus()}>{refreshing ? "刷新中…" : "刷新状态"}</button></div><dl><div><dt>版本</dt><dd>{PLATFORM_VERSION}</dd></div><div><dt>运行环境</dt><dd>{runtimeEnvironment}</dd></div><div><dt>已授权</dt><dd>{tools.length}</dd></div><div><dt>异常</dt><dd>{healthCounts.unhealthy}</dd></div></dl><p>{healthCounts.healthy} 项正常 · {healthCounts.checking} 项检测中</p>{auth?.platform_permissions.includes("platform.audit.view") && <NavLink to="/system/versions">查看版本详情</NavLink>}{credentialIssueCount !== null && <NavLink to="/settings/credentials">凭证异常或临期 {credentialIssueCount} 项</NavLink>}</aside></div>
   {error && <div className="catalog-state catalog-state-error" role="alert"><div><strong>平台身份或数据服务暂时不可用</strong><p>已停止工具导航，不会恢复匿名入口。{error}</p></div><button className="secondary-button" type="button" onClick={() => void reloadCatalog()}>重新加载目录</button></div>}
   {loading ? <div className="catalog-state" role="status"><span className="loading-indicator" />正在读取权限与能力目录…</div> : !error && <><section className="mission-section" aria-labelledby="mission-title"><div className="section-heading"><div><p className="section-label">我现在想做什么</p><h2 id="mission-title">从测试目标进入能力</h2></div></div>{aiCapabilities.length > 0 ? <div className="primary-capability-grid">{aiCapabilities.map((capability) => <CapabilityCard key={capability.toolId} capability={capability} />)}</div> : <EmptyState title="当前没有 AI 测试能力" copy="平台只展示服务端已授权的能力。" />}</section><section className="professional-section" aria-labelledby="professional-title"><div className="section-heading"><div><p className="section-label">持续验证与专业工具</p><h2 id="professional-title">让每项能力完成自己的使命</h2></div><span className="section-count">{professionalCapabilities.length} 项能力</span></div>{professionalCapabilities.length > 0 && <div className="professional-capability-grid">{professionalCapabilities.map((capability) => <CapabilityCard key={capability.toolId} capability={capability} compact />)}</div>}</section>{unknownTools.length > 0 && <section className="unknown-tools" aria-labelledby="unknown-tools-title"><h2 id="unknown-tools-title">其他已授权工具</h2><ToolGrid tools={unknownTools} healthStates={healthStates} /></section>}</>}</section></WorkspaceShell>;
 }
@@ -324,6 +377,7 @@ function ManagementNav() {
     {has("platform.config.manage") && <NavLink to="/settings/config">普通配置</NavLink>}
     {has("platform.secret.manage") && <><NavLink to="/settings/secrets">Secret</NavLink><NavLink to="/settings/credentials">凭证状态</NavLink></>}
     {has("platform.audit.view") && <NavLink to="/audit">审计日志</NavLink>}
+    {has("platform.audit.view") && <NavLink to="/system/versions">版本状态</NavLink>}
   </nav>;
 }
 
@@ -747,9 +801,45 @@ function AuditPage() {
   return <WorkspaceShell><section className="workspace-page"><PageHeader eyebrow="AUDIT TRAIL" title="审计日志" copy="审计日志用于回答“谁在什么时间对哪个工具做了什么，结果如何”，便于安全追溯和故障复盘。" actions={<div className="audit-export"><label>开始日期<input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} /></label><label>结束日期<input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} /></label><button className="secondary-button" onClick={() => void exportAudit()}>导出 CSV</button></div>} /><ManagementNav />{error ? <InlineMessage kind="error">{error}</InlineMessage> : <div className="data-panel audit-table"><div className="table-header"><span>时间 / 操作人</span><span>动作</span><span>资源</span><span>结果</span></div>{items.length === 0 ? <EmptyState title="尚无审计事件" copy="登录、权限和配置变更后会显示在这里。" /> : items.map((item) => <div className="table-row" key={item.id}><strong>{new Date(item.occurred_at).toLocaleString()}<small>{String(item.actor_snapshot.username ?? item.actor_id ?? item.actor_type)}</small></strong><code>{item.action}</code><span>{item.tool_id ?? item.resource_type}{item.resource_id ? ` / ${item.resource_id}` : ""}</span><StatusBadge value={item.outcome} /></div>)}</div>}</section></WorkspaceShell>;
 }
 
+function identityLabel(identity: ComponentIdentity | null): string {
+  if (!identity) return "—";
+  const suffix = identity.dirty ? " · dirty" : "";
+  return `${identity.version || "未知"}${suffix}`;
+}
+
+function VersionDetailsPage() {
+  const [matrix, setMatrix] = useState<VersionMatrix | null>(null);
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try { setMatrix(await apiJson<VersionMatrix>("/system/version-matrix")); }
+    catch (requestError) { setError(requestError instanceof Error ? requestError.message : "版本状态加载失败"); }
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { void load(); }, [load]);
+
+  return <WorkspaceShell><section className="workspace-page version-page"><PageHeader eyebrow="RELEASE IDENTITY" title="版本状态" copy="比较 Dev 实际运行、Prod 实际运行和当前生产期望状态；镜像 digest 是审计与回滚的精确依据。" actions={<button className="secondary-button" disabled={loading} onClick={() => void load()}>{loading ? "刷新中…" : "刷新状态"}</button>} /><ManagementNav />
+    {error && <InlineMessage kind="error">{error}</InlineMessage>}
+    {matrix?.prod_error && <InlineMessage>{matrix.prod_error}，Dev 状态仍可正常查看。</InlineMessage>}
+    {loading && !matrix ? <LoadingPage label="正在核对组件版本…" /> : matrix && <>
+      <div className="version-summary"><span>产品 <strong>{matrix.product_version}</strong></span><span>运行环境 <strong>{matrix.runtime_environment.toUpperCase()}</strong></span><span>检查时间 <strong>{new Date(matrix.checked_at).toLocaleString()}</strong></span></div>
+      <div className="version-table-wrap"><table className="version-table"><thead><tr><th scope="col">组件</th><th scope="col">Dev 实际</th><th scope="col">Prod 实际</th><th scope="col">Prod 期望</th><th scope="col">健康</th><th scope="col">状态</th><th scope="col"><span className="visually-hidden">详情</span></th></tr></thead><tbody>{matrix.rows.map((row) => <Fragment key={row.component_id}>
+        <tr><th scope="row"><code>{row.component_id}</code></th><td>{identityLabel(row.dev)}</td><td>{identityLabel(row.prod)}</td><td>{row.prod_expected?.version ?? "旧发布记录 / 版本未知"}</td><td>{row.prod?.health ?? row.dev?.health ?? "未知"}</td><td><StatusBadge value={row.primary_status} /></td><td><button className="link-button" type="button" aria-expanded={expanded === row.component_id} aria-controls={`version-${row.component_id}`} onClick={() => setExpanded(expanded === row.component_id ? null : row.component_id)}>{expanded === row.component_id ? "收起" : "详情"}</button></td></tr>
+        {expanded === row.component_id && <tr id={`version-${row.component_id}`} className="version-detail-row"><td colSpan={7}><dl><div><dt>Dev SHA</dt><dd>{row.dev?.revision ?? "—"}</dd></div><div><dt>Prod SHA</dt><dd>{row.prod?.revision ?? "—"}</dd></div><div><dt>Dev digest</dt><dd>{row.dev?.digest ?? "—"}</dd></div><div><dt>Prod digest</dt><dd>{row.prod?.digest ?? "—"}</dd></div><div><dt>问题</dt><dd>{row.issues.join("、")}</dd></div></dl></td></tr>}
+      </Fragment>)}</tbody></table></div>
+      <div className="version-footnotes"><p>Dev Schema：{matrix.dev?.database.alembic_revision ?? "—"}</p><p>Prod Schema：{matrix.prod?.database.alembic_revision ?? "—"}</p><p>Dev Config Releases：{Object.keys(matrix.dev?.config_releases ?? {}).length}</p><p>Prod Config Releases：{Object.keys(matrix.prod?.config_releases ?? {}).length}</p></div>
+    </>}
+  </section></WorkspaceShell>;
+}
+
 function StatusBadge({ value }: { value: string }) {
   const normalized = value.toLowerCase();
-  const tone = ["healthy", "active", "success", "ok"].includes(normalized) || normalized.startsWith("v") ? "success" : ["missing", "failed", "disabled", "unhealthy"].includes(normalized) ? "danger" : "neutral";
+  const tone = ["healthy", "active", "success", "ok", "一致"].includes(normalized) || normalized.startsWith("v") ? "success" : ["missing", "failed", "disabled", "unhealthy", "不可用", "不兼容", "环境漂移"].includes(normalized) ? "danger" : "neutral";
   return <span className={`status-badge status-badge-${tone}`}>{value}</span>;
 }
 
@@ -763,7 +853,7 @@ function DomainRoute({ domainId }: { domainId: "ai-testing" | "automation" | "qu
 }
 
 function AppRoutes() {
-  return <Routes><Route path="/login" element={<LoginPage />} /><Route path="/setup" element={<SetupPage />} /><Route path="/account" element={<Protected><AccountPage /></Protected>} /><Route path="/account/password" element={<Protected><ChangePasswordPage /></Protected>} /><Route path="/" element={<Protected><HomePage /></Protected>} /><Route path="/ai-testing" element={<Protected><DomainRoute domainId="ai-testing" /></Protected>} /><Route path="/automation" element={<Protected><DomainRoute domainId="automation" /></Protected>} /><Route path="/quality-analysis" element={<Protected><DomainRoute domainId="quality-analysis" /></Protected>} /><Route path="/domain-evaluation" element={<Protected><DomainRoute domainId="domain-evaluation" /></Protected>} /><Route path="/settings/llm" element={<Protected><LlmSettingsPage /></Protected>} /><Route path="/settings/config" element={<Protected><ConfigPage /></Protected>} /><Route path="/settings/secrets" element={<Protected><SecretsPage /></Protected>} /><Route path="/settings/credentials" element={<Protected><CredentialsPage /></Protected>} /><Route path="/admin/users" element={<Protected permission="platform.user.manage"><UsersPage /></Protected>} /><Route path="/admin/roles" element={<Protected permission="platform.role.manage"><RolesPage /></Protected>} /><Route path="/audit" element={<Protected permission="platform.audit.view"><AuditPage /></Protected>} /><Route path="/403" element={<Protected><ForbiddenPage /></Protected>} /><Route path="*" element={<Protected><NotFoundPage /></Protected>} /></Routes>;
+  return <Routes><Route path="/login" element={<LoginPage />} /><Route path="/setup" element={<SetupPage />} /><Route path="/account" element={<Protected><AccountPage /></Protected>} /><Route path="/account/password" element={<Protected><ChangePasswordPage /></Protected>} /><Route path="/" element={<Protected><HomePage /></Protected>} /><Route path="/ai-testing" element={<Protected><DomainRoute domainId="ai-testing" /></Protected>} /><Route path="/automation" element={<Protected><DomainRoute domainId="automation" /></Protected>} /><Route path="/quality-analysis" element={<Protected><DomainRoute domainId="quality-analysis" /></Protected>} /><Route path="/domain-evaluation" element={<Protected><DomainRoute domainId="domain-evaluation" /></Protected>} /><Route path="/settings/llm" element={<Protected><LlmSettingsPage /></Protected>} /><Route path="/settings/config" element={<Protected><ConfigPage /></Protected>} /><Route path="/settings/secrets" element={<Protected><SecretsPage /></Protected>} /><Route path="/settings/credentials" element={<Protected><CredentialsPage /></Protected>} /><Route path="/admin/users" element={<Protected permission="platform.user.manage"><UsersPage /></Protected>} /><Route path="/admin/roles" element={<Protected permission="platform.role.manage"><RolesPage /></Protected>} /><Route path="/audit" element={<Protected permission="platform.audit.view"><AuditPage /></Protected>} /><Route path="/system/versions" element={<Protected permission="platform.audit.view"><VersionDetailsPage /></Protected>} /><Route path="/403" element={<Protected><ForbiddenPage /></Protected>} /><Route path="*" element={<Protected><NotFoundPage /></Protected>} /></Routes>;
 }
 
 function PlatformProviders() {

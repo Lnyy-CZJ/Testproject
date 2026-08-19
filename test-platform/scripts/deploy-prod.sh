@@ -1,21 +1,26 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-release_dir=${1:?usage: deploy-prod.sh RELEASE_DIR}
-service=${2:-}
-image_override=${3:-}
+release_dir=${1:?usage: deploy-prod.sh RELEASE_DIR [COMPONENT] [IMAGE_OR_ENV_FILE]}
+component=${2:-}
+override=${3:-}
 base_env=/srv/test-platform/env/.env.prod
-image_env="$release_dir/.env.images"
+release_images="$release_dir/.env.images"
+current_images=/srv/test-platform/env/.env.images.current
+state_dir=/srv/test-platform/state
+deployments_dir="$state_dir/deployments"
 backup_root=/srv/test-platform/backups
-compose=(docker compose --env-file "$base_env" --env-file "$image_env" -p test-platform-prod -f "$release_dir/docker-compose.yml" -f "$release_dir/docker-compose.prod.yml")
 previous_release=$(readlink -f /srv/test-platform/current 2>/dev/null || true)
+deployment_id="$(date -u +%Y%m%dT%H%M%SZ)-${component:-full}"
 
 test -f "$base_env"
-test -f "$image_env"
-test -f "$release_dir/VERSION"
-mkdir -p "$backup_root"
+test -f "$release_images"
+test -f "$release_dir/versions.json"
+test -f "$release_dir/release-manifest.json"
+mkdir -p "$backup_root" "$deployments_dir"
+[[ -f "$state_dir/current.json" ]] || printf '{}\n' > "$state_dir/current.json"
 
-# 两个智能体以固定非 root UID 运行；令牌保持 600，并仅授权给对应容器用户。
+# 两个智能体以固定非 root UID 运行；环境互查 Token 只允许平台读取。
 sudo chown 10001:10001 /srv/test-platform/secrets/prod/functional-test-agent-client-token
 sudo chown 10002:10002 \
   /srv/test-platform/secrets/prod/api-test-agent-client-token \
@@ -23,42 +28,203 @@ sudo chown 10002:10002 \
 sudo chmod 600 \
   /srv/test-platform/secrets/prod/functional-test-agent-client-token \
   /srv/test-platform/secrets/prod/api-test-agent-client-token \
-  /srv/test-platform/secrets/prod/api-execution-controller-token
+  /srv/test-platform/secrets/prod/api-execution-controller-token \
+  /srv/test-platform/secrets/prod/version-peer-token
 
-if [[ -n "$service" ]]; then
-  case "$service" in
+candidate_images=$(mktemp)
+previous_images=$(mktemp)
+trap 'rm -f "$candidate_images" "$previous_images"' EXIT
+if [[ -f "$current_images" ]]; then cp "$current_images" "$previous_images"; else cp "$release_images" "$previous_images"; fi
+
+merge_images() {
+  python3 - "$1" "$2" "$3" <<'PY'
+import sys
+from pathlib import Path
+
+base, changes, output = map(Path, sys.argv[1:])
+values = {}
+for path in (base, changes):
+    for line in path.read_text().splitlines():
+        if line and not line.startswith("#"):
+            key, value = line.split("=", 1)
+            values[key] = value
+output.write_text("".join(f"{key}={values[key]}\n" for key in sorted(values)))
+PY
+}
+
+verify_component_images() {
+  local env_file=$1 target=$2
+  python3 - "$env_file" "$target" <<'PY'
+import re, sys
+from pathlib import Path
+
+values = dict(line.split("=", 1) for line in Path(sys.argv[1]).read_text().splitlines() if line)
+expected = {
+    "functional-test-agent": {
+        "FUNCTIONAL_AGENT_IMAGE": "ghcr.io/lnyy-czj/testproject-functional-test-agent",
+    },
+    "api-test-agent": {
+        "API_AGENT_IMAGE": "ghcr.io/lnyy-czj/testproject-api-test-agent",
+        "API_EXECUTION_CONTROLLER_IMAGE": "ghcr.io/lnyy-czj/testproject-api-execution-controller",
+        "API_EGRESS_PROXY_IMAGE": "ghcr.io/lnyy-czj/testproject-api-egress-proxy",
+        "API_EXECUTOR_IMAGE": "ghcr.io/lnyy-czj/testproject-api-test-executor",
+    },
+}[sys.argv[2]]
+for key, prefix in expected.items():
+    value = values.get(key, "")
+    if not re.fullmatch(re.escape(prefix) + r"@sha256:[0-9a-f]{64}", value):
+        raise SystemExit(f"{key} must use the expected immutable digest")
+PY
+}
+
+verify_runtime() {
+  local target=${1:-} expected_version=${2:-} expected_revision=${3:-} snapshot
+  snapshot=$(mktemp)
+  if ! curl --fail --silent --show-error --retry 12 --retry-delay 5 --retry-all-errors \
+    -H "Authorization: Bearer $(</srv/test-platform/secrets/prod/version-peer-token)" \
+    "http://127.0.0.1:41873/api/v1/internal/version-snapshot" > "$snapshot"; then
+    rm -f "$snapshot"
+    return 1
+  fi
+  python3 - "$snapshot" "$target" "$expected_version" "$expected_revision" "$release_dir/release-manifest.json" <<'PY'
+import json, sys
+from pathlib import Path
+
+snapshot = json.loads(Path(sys.argv[1]).read_text())
+target = sys.argv[2]
+expected_version, expected_revision = sys.argv[3:5]
+manifest = json.loads(Path(sys.argv[5]).read_text())
+components = snapshot.get("components", {})
+selected = {target: components.get(target)} if target else components
+if not selected:
+    raise SystemExit("runtime version verification returned no components")
+for component_id, item in selected.items():
+    version = expected_version or manifest.get("components", {}).get(component_id, {}).get("version")
+    revision = expected_revision or manifest.get("commit")
+    if not item or item.get("health") != "healthy" or item.get("version") != version or item.get("revision") != revision or item.get("dirty"):
+        raise SystemExit(f"{component_id} runtime identity does not match release metadata")
+print(f"verified {len(selected)} production component identities")
+PY
+  local result=$?
+  rm -f "$snapshot"
+  return "$result"
+}
+
+write_record() {
+  local operation=$1 target=${2:-} image_env=$3 config_releases=${4:-}
+  DEPLOYED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
+  OPERATION="$operation" TARGET_COMPONENT="$target" CONFIG_RELEASES="$config_releases" \
+  TARGET_VERSION="${expected_version:-}" TARGET_REVISION="${expected_revision:-}" \
+  PREVIOUS_RELEASE="$previous_release" \
+  python3 - "$release_dir/release-manifest.json" "$state_dir/current.json" "$image_env" "$release_dir/versions.json" "$deployments_dir/$deployment_id.json" "$deployments_dir/$deployment_id.md" <<'PY'
+import json, os, sys
+from pathlib import Path
+
+manifest_path, current_path, images_path, versions_path, json_path, markdown_path = map(Path, sys.argv[1:])
+manifest = json.loads(manifest_path.read_text())
+current = json.loads(current_path.read_text()) if current_path.stat().st_size else {}
+versions = json.loads(versions_path.read_text())
+images = dict(line.split("=", 1) for line in images_path.read_text().splitlines() if line)
+target = os.environ["TARGET_COMPONENT"]
+if os.environ["OPERATION"] == "full" or not current.get("components"):
+    record = manifest
+else:
+    record = current
+    source = manifest["components"][target]
+    record["components"][target] = {
+        "version": os.environ["TARGET_VERSION"] or versions["components"][target]["version"],
+        "revision": os.environ["TARGET_REVISION"] or manifest.get("commit"),
+        "images": {key: images[key] for key in source["images"]},
+    }
+record["images"] = images
+record.update({
+    "deployment_id": json_path.stem,
+    "operation": os.environ["OPERATION"],
+    "target_component": target or None,
+    "deployed_at": os.environ["DEPLOYED_AT"],
+    "previous_release": Path(os.environ["PREVIOUS_RELEASE"]).name if os.environ["PREVIOUS_RELEASE"] else None,
+    "config_releases": [
+        {"owner_type": a, "owner_id": b, "release_id": c}
+        for a, b, c in (line.split("|", 2) for line in os.environ["CONFIG_RELEASES"].splitlines() if line)
+    ],
+    "acceptance": {"result": "passed", "smoke_tests": 8 if os.environ["OPERATION"] == "full" else 1},
+})
+temp = current_path.with_suffix(".tmp")
+temp.write_text(json.dumps(record, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
+temp.replace(current_path)
+json_path.write_text(json.dumps(record, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
+rows = [
+    "# Production Deployment Record",
+    "",
+    f"- Deployment: `{record['deployment_id']}`",
+    f"- Release: `{record.get('release', 'unknown')}`",
+    f"- Commit: `{record.get('commit', 'unknown')}`",
+    f"- Operation: `{record['operation']}`",
+    f"- Deployed at: `{record['deployed_at']}`",
+    "",
+    "| Component | Version | Images |",
+    "| --- | --- | --- |",
+]
+for component_id, component in sorted(record.get("components", {}).items()):
+    image_list = "<br>".join(f"`{key}={value}`" for key, value in component.get("images", {}).items())
+    rows.append(f"| {component_id} | `{component.get('version', 'unknown')}` | {image_list} |")
+markdown_path.write_text("\n".join(rows) + "\n")
+PY
+  chmod 600 "$state_dir/current.json" "$deployments_dir/$deployment_id.json" "$deployments_dir/$deployment_id.md"
+}
+
+if [[ -n "$component" ]]; then
+  changes=$(mktemp)
+  trap 'rm -f "$candidate_images" "$previous_images" "$changes"' EXIT
+  case "$component" in
     functional-test-agent)
-      image_var=FUNCTIONAL_AGENT_IMAGE
-      image_prefix=ghcr.io/lnyy-czj/testproject-functional-test-agent
-      health_path=/functional-test-agent/health
+      if [[ -n "$override" ]]; then printf 'FUNCTIONAL_AGENT_IMAGE=%s\n' "$override" > "$changes"; else grep '^FUNCTIONAL_AGENT_IMAGE=' "$release_images" > "$changes"; fi
+      services=(functional-test-agent)
       ;;
     api-test-agent)
-      image_var=API_AGENT_IMAGE
-      image_prefix=ghcr.io/lnyy-czj/testproject-api-test-agent
-      health_path=/api-test-agent/health
+      if [[ -n "$override" ]]; then
+        test -f "$override"
+        grep -E '^(API_AGENT_IMAGE|API_EXECUTION_CONTROLLER_IMAGE|API_EGRESS_PROXY_IMAGE|API_EXECUTOR_IMAGE)=' "$override" > "$changes"
+      else
+        grep -E '^(API_AGENT_IMAGE|API_EXECUTION_CONTROLLER_IMAGE|API_EGRESS_PROXY_IMAGE|API_EXECUTOR_IMAGE)=' "$release_images" > "$changes"
+      fi
+      [[ $(wc -l < "$changes" | tr -d ' ') == 4 ]]
+      services=(api-test-agent api-execution-controller api-egress-proxy api-test-executor-image)
       ;;
-    *)
-      echo "不支持独立部署服务: $service" >&2
-      exit 1
-      ;;
+    *) echo "不支持独立部署组件: $component" >&2; exit 1 ;;
   esac
-  if [[ -n "$image_override" ]]; then
-    digest=${image_override#"$image_prefix@"}
-    if [[ "$image_override" != "$image_prefix@$digest" || ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
-      echo "独立部署必须使用 $image_prefix 的完整 digest" >&2
-      exit 1
-    fi
-    printf -v "$image_var" '%s' "$image_override"
-    export "$image_var"
+  merge_images "$previous_images" "$changes" "$candidate_images"
+  verify_component_images "$candidate_images" "$component"
+  compose=(docker compose --env-file "$base_env" --env-file "$candidate_images" -p test-platform-prod -f "$release_dir/docker-compose.yml" -f "$release_dir/docker-compose.prod.yml")
+  if ! "${compose[@]}" pull "${services[@]}"; then
+    exit 1
   fi
-  "${compose[@]}" pull "$service"
-  "${compose[@]}" up -d --no-deps "$service"
-  curl --fail --silent --show-error --retry 12 --retry-delay 5 "http://127.0.0.1:41873$health_path" >/dev/null
-  echo "$service active: $("${compose[@]}" images -q "$service")"
+  primary_key=FUNCTIONAL_AGENT_IMAGE
+  [[ "$component" == "api-test-agent" ]] && primary_key=API_AGENT_IMAGE
+  primary_image=$(grep "^${primary_key}=" "$candidate_images" | cut -d= -f2-)
+  expected_version=$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' "$primary_image")
+  expected_revision=$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$primary_image")
+  if [[ "$component" == "api-test-agent" ]]; then
+    for key in API_EXECUTION_CONTROLLER_IMAGE API_EGRESS_PROXY_IMAGE API_EXECUTOR_IMAGE; do
+      image=$(grep "^${key}=" "$candidate_images" | cut -d= -f2-)
+      [[ $(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' "$image") == "$expected_version" ]]
+      [[ $(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$image") == "$expected_revision" ]]
+    done
+  fi
+  if ! "${compose[@]}" up -d --no-deps "${services[0]}" || ! verify_runtime "$component" "$expected_version" "$expected_revision"; then
+    rollback=(docker compose --env-file "$base_env" --env-file "$previous_images" -p test-platform-prod -f "$release_dir/docker-compose.yml" -f "$release_dir/docker-compose.prod.yml")
+    "${rollback[@]}" up -d --no-deps "${services[0]}"
+    echo "$component 部署失败，已恢复前一镜像组合" >&2
+    exit 1
+  fi
+  install -m 600 "$candidate_images" "$current_images.tmp"
+  mv "$current_images.tmp" "$current_images"
+  write_record "component-update" "$component" "$current_images"
+  echo "$component active; deployment record: $deployment_id"
   exit 0
 fi
 
-# 在替换应用前保留可恢复的数据库快照；首次切换由迁移流程单独恢复 dev 快照。
+compose=(docker compose --env-file "$base_env" --env-file "$release_images" -p test-platform-prod -f "$release_dir/docker-compose.yml" -f "$release_dir/docker-compose.prod.yml")
 if docker ps --format '{{.Names}}' | grep -qx 'test-platform-prod-platform-db-1'; then
   backup="$backup_root/platform-$(date -u +%Y%m%dT%H%M%SZ).dump"
   "${compose[@]}" exec -T platform-db sh -c 'pg_dump -Fc -U "$POSTGRES_USER" "$POSTGRES_DB"' >"$backup"
@@ -73,7 +239,6 @@ fi
 "${compose[@]}" pull
 "${compose[@]}" run --rm platform-migrate
 
-# 只在首次恢复出的空 prod 上复制 dev 当前激活配置；部分初始化必须人工处理。
 read -r prod_objects prod_activations < <("${compose[@]}" exec -T platform-db sh -c \
   'psql -At -F " " -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "select (select count(*) from config_releases where environment_id='"'"'prod'"'"') + (select count(*) from secrets where environment_id='"'"'prod'"'"') + (select count(*) from credentials where environment_id='"'"'prod'"'"') + (select count(*) from tool_clients where environment_id='"'"'prod'"'"'), (select count(*) from config_activations where environment_id='"'"'prod'"'"');"')
 if [[ "$prod_objects" == "0" && "$prod_activations" == "0" ]]; then
@@ -86,39 +251,14 @@ elif [[ "$prod_activations" == "0" ]]; then
 fi
 
 "${compose[@]}" up -d --remove-orphans
-"${compose[@]}" ps
-
-for path in / /api/v1/health/live /trackevents/health /log-filter/health /truthy-search/health /api-autotest/health /functional-test-agent/health /api-test-agent/health; do
-  curl --fail --silent --show-error --retry 12 --retry-delay 5 "http://127.0.0.1:41873$path" >/dev/null
+for path in / /api/v1/health/live; do
+  curl --fail --silent --show-error --retry 12 --retry-delay 5 --retry-all-errors "http://127.0.0.1:41873$path" >/dev/null
 done
-
+verify_runtime
 config_releases=$("${compose[@]}" exec -T platform-db sh -c \
   'psql -At -F "|" -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "select owner_type, owner_id, active_release_id from config_activations where environment_id='"'"'prod'"'"' order by owner_type, owner_id;"')
-DEPLOYED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
-PREVIOUS_RELEASE="$previous_release" \
-CONFIG_RELEASES="$config_releases" \
-python3 - "$release_dir/release-manifest.json" "$release_dir/deployment-record.json" <<'PY'
-import json
-import os
-import sys
-from pathlib import Path
-
-manifest_path, record_path = map(Path, sys.argv[1:])
-record = json.loads(manifest_path.read_text())
-record.update({
-    "deployed_at": os.environ["DEPLOYED_AT"],
-    "previous_release": Path(os.environ["PREVIOUS_RELEASE"]).name if os.environ["PREVIOUS_RELEASE"] else None,
-    "config_releases": [
-        {"owner_type": owner_type, "owner_id": owner_id, "release_id": release_id}
-        for owner_type, owner_id, release_id in (
-            line.split("|", 2) for line in os.environ["CONFIG_RELEASES"].splitlines() if line
-        )
-    ],
-    "acceptance": {"result": "passed", "smoke_tests": 8},
-})
-record_path.write_text(json.dumps(record, indent=2) + "\n")
-PY
-chmod 600 "$release_dir/deployment-record.json"
-
+install -m 600 "$release_images" "$current_images.tmp"
+mv "$current_images.tmp" "$current_images"
+write_record "full" "" "$current_images" "$config_releases"
 ln -sfn "$release_dir" /srv/test-platform/current
-echo "production release active: $(basename "$release_dir")"
+echo "production release active: $(basename "$release_dir"); deployment record: $deployment_id"

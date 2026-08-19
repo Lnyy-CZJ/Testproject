@@ -21,15 +21,21 @@ from services.common.task_store import TaskStore
 
 COLUMNS = (
     "case_id", "test_point_id", "module", "feature", "scenario", "case_name", "priority",
-    "preconditions", "test_steps", "test_data", "expected_result", "actual_result",
+    "preconditions", "test_steps", "test_data", "expected_result", "actual_result", "其他字段",
 )
 
 
 def _safe_cell(value: Any) -> str:
     """把嵌套值稳定转换为文本并防止表格公式注入。"""
 
-    if isinstance(value, (dict, list)):
-        text = json.dumps(value, ensure_ascii=False, sort_keys=True) if isinstance(value, dict) else "\n".join(str(item) for item in value)
+    if isinstance(value, dict):
+        text = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    elif isinstance(value, list):
+        text = "\n".join(
+            json.dumps(item, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+            if isinstance(item, (dict, list)) else str(item)
+            for item in value
+        )
     elif value is None:
         text = ""
     else:
@@ -39,8 +45,8 @@ def _safe_cell(value: Any) -> str:
     return text
 
 
-def _xlsx(path: Path, cases: list[dict[str, Any]]) -> None:
-    """以固定列顺序写入 XLSX；步骤在展示层重新编号。"""
+def _xlsx(path: Path, cases: list[Any]) -> None:
+    """以固定列顺序写入 XLSX；异常业务字段也稳定转换为可查看文本。"""
 
     workbook = Workbook()
     sheet = workbook.active
@@ -50,13 +56,17 @@ def _xlsx(path: Path, cases: list[dict[str, Any]]) -> None:
         cell.font = Font(bold=True, color="FFFFFF")
         cell.fill = PatternFill("solid", fgColor="1D1D1F")
     for item in cases:
+        if not isinstance(item, dict):
+            raise ValueError("测试用例数组的每个元素必须是对象")
+        source = item
+        extras = {key: value for key, value in source.items() if key not in COLUMNS}
         row: list[str] = []
         for field in COLUMNS:
-            value = item.get(field, "")
+            value = extras if field == "其他字段" else source.get(field, "")
             if field == "test_steps" and isinstance(value, list):
                 value = "\n".join(f"{index}. {step}" for index, step in enumerate(value, 1))
             elif field == "preconditions" and isinstance(value, list):
-                value = "\n".join(value)
+                value = "\n".join(str(entry) for entry in value)
             row.append(_safe_cell(value))
         sheet.append(row)
     sheet.freeze_panes = "A2"

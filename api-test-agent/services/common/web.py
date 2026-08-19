@@ -186,7 +186,12 @@ def create_agent_app(
     @app.get("/health")
     @app.get(f"{settings.base_path}/health")
     def health():
-        return jsonify({"status": "ok", "service": settings.tool_id})
+        return jsonify({
+            "status": "ok", "service": settings.tool_id,
+            "version": settings.app_version, "revision": settings.app_revision,
+            "dirty": settings.app_build_dirty,
+            "runtime_environment": settings.runtime_environment,
+        })
 
     @app.get(f"{settings.base_path}/api/v1/readiness")
     def readiness():

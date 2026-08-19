@@ -2,11 +2,20 @@
 # 仅包含 Python 运行时与框架 + Web 依赖；不含 Node/npm/Allure CLI。
 FROM python:3.12-slim
 
+ARG APP_VERSION=unknown
+ARG APP_REVISION=unknown
+ARG APP_BUILD_DIRTY=true
+LABEL org.opencontainers.image.version=$APP_VERSION \
+      org.opencontainers.image.revision=$APP_REVISION
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     # 容器内必须监听全部网卡，否则端口映射/Nginx 反代不可达；
     # 本地非容器运行不受影响（该默认值只存在于镜像内）。
-    API_AUTOTEST_HOST=0.0.0.0
+    API_AUTOTEST_HOST=0.0.0.0 \
+    APP_VERSION=${APP_VERSION} \
+    APP_REVISION=${APP_REVISION} \
+    APP_BUILD_DIRTY=${APP_BUILD_DIRTY}
 
 WORKDIR /app
 

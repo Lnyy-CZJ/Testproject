@@ -2,6 +2,11 @@ services:
   platform-gateway:
     build:
       context: .
+      args:
+        APP_VERSION: "${PLATFORM_GATEWAY_VERSION:-unknown}"
+        APP_REVISION: "${APP_REVISION:-unknown}"
+        APP_BUILD_DIRTY: "${PLATFORM_GATEWAY_DIRTY:-true}"
+        APP_RUNTIME_ENV: "${PLATFORM_RUNTIME_ENV:-dev}"
     ports:
       - "${PLATFORM_PORT:-8080}:80"
     depends_on:
@@ -46,6 +51,10 @@ services:
   platform-migrate:
     build:
       context: ./backend
+      args:
+        APP_VERSION: "${PLATFORM_BACKEND_VERSION:-unknown}"
+        APP_REVISION: "${APP_REVISION:-unknown}"
+        APP_BUILD_DIRTY: "${PLATFORM_BACKEND_DIRTY:-true}"
     command: ["alembic", "upgrade", "head"]
     environment:
       DATABASE_URL: "postgresql+psycopg://${POSTGRES_USER:-platform}:${POSTGRES_PASSWORD:-platform_dev_password}@platform-db:5432/${POSTGRES_DB:-test_platform}"
@@ -60,6 +69,10 @@ services:
   platform-bootstrap:
     build:
       context: ./backend
+      args:
+        APP_VERSION: "${PLATFORM_BACKEND_VERSION:-unknown}"
+        APP_REVISION: "${APP_REVISION:-unknown}"
+        APP_BUILD_DIRTY: "${PLATFORM_BACKEND_DIRTY:-true}"
     command: ["python", "-m", "app.bootstrap_clients"]
     environment:
       DATABASE_URL: "postgresql+psycopg://${POSTGRES_USER:-platform}:${POSTGRES_PASSWORD:-platform_dev_password}@platform-db:5432/${POSTGRES_DB:-test_platform}"
@@ -75,6 +88,10 @@ services:
   platform-api:
     build:
       context: ./backend
+      args:
+        APP_VERSION: "${PLATFORM_BACKEND_VERSION:-unknown}"
+        APP_REVISION: "${APP_REVISION:-unknown}"
+        APP_BUILD_DIRTY: "${PLATFORM_BACKEND_DIRTY:-true}"
     environment:
       DATABASE_URL: "postgresql+psycopg://${POSTGRES_USER:-platform}:${POSTGRES_PASSWORD:-platform_dev_password}@platform-db:5432/${POSTGRES_DB:-test_platform}"
       APP_ENV: "${APP_ENV:-development}"
@@ -89,11 +106,16 @@ services:
       SESSION_ABSOLUTE_HOURS: "${SESSION_ABSOLUTE_HOURS:-24}"
       LOGIN_FAILURE_LIMIT: "${LOGIN_FAILURE_LIMIT:-5}"
       LOGIN_LOCK_MINUTES: "${LOGIN_LOCK_MINUTES:-15}"
-      PLATFORM_VERSION_FILE: /run/platform-version
+      VERSIONS_MANIFEST_FILE: /run/versions.json
+      VERSION_PEER_TOKEN_FILE: /run/secrets/version-peer-token
+      PROD_VERSION_SNAPSHOT_URL: "${PROD_VERSION_SNAPSHOT_URL:-}"
+      PROD_RELEASE_BOM_FILE: "${PROD_RELEASE_BOM_FILE:-/run/deployment/current.json}"
     volumes:
-      - ./VERSION:/run/platform-version:ro
+      - ./versions.json:/run/versions.json:ro
       - ./.runtime-secrets/${PLATFORM_RUNTIME_ENV:-dev}/bootstrap-token:/run/secrets/platform-bootstrap-token:ro
       - ./.runtime-secrets/${PLATFORM_RUNTIME_ENV:-dev}-kek.json:/run/secrets/platform-kek.json:ro
+      - ./.runtime-secrets/${PLATFORM_RUNTIME_ENV:-dev}/version-peer-token:/run/secrets/version-peer-token:ro
+      - ./.runtime/${PLATFORM_RUNTIME_ENV:-dev}:/run/deployment:ro
     expose:
       - "8000"
     depends_on:
@@ -116,6 +138,10 @@ services:
   platform-credential-agent:
     build:
       context: ./backend
+      args:
+        APP_VERSION: "${PLATFORM_BACKEND_VERSION:-unknown}"
+        APP_REVISION: "${APP_REVISION:-unknown}"
+        APP_BUILD_DIRTY: "${PLATFORM_BACKEND_DIRTY:-true}"
     command: ["python", "-m", "app.jobs.credential_agent"]
     environment:
       DATABASE_URL: "postgresql+psycopg://${POSTGRES_USER:-platform}:${POSTGRES_PASSWORD:-platform_dev_password}@platform-db:5432/${POSTGRES_DB:-test_platform}"
@@ -135,6 +161,10 @@ services:
   trackevents-web:
     build:
       context: ../TrackEvents_tess
+      args:
+        APP_VERSION: "${TRACKEVENTS_VERSION:-unknown}"
+        APP_REVISION: "${APP_REVISION:-unknown}"
+        APP_BUILD_DIRTY: "${TRACKEVENTS_DIRTY:-true}"
     environment:
       TRACKEVENTS_HOST: 0.0.0.0
       TRACKEVENTS_PORT: 8000
@@ -158,6 +188,10 @@ services:
   log-filter-tool:
     build:
       context: ../log_filter_tool
+      args:
+        APP_VERSION: "${LOG_FILTER_VERSION:-unknown}"
+        APP_REVISION: "${APP_REVISION:-unknown}"
+        APP_BUILD_DIRTY: "${LOG_FILTER_DIRTY:-true}"
     environment:
       LOG_FILTER_BASE_PATH: /log-filter
       # 将导出文件保存到宿主机固定目录，避免容器重建后临时文件丢失。
@@ -194,6 +228,10 @@ services:
   truthy-search:
     build:
       context: ../Truthy_Search
+      args:
+        APP_VERSION: "${TRUTHY_SEARCH_VERSION:-unknown}"
+        APP_REVISION: "${APP_REVISION:-unknown}"
+        APP_BUILD_DIRTY: "${TRUTHY_SEARCH_DIRTY:-true}"
     environment:
       SEARCH_WEB_BASE_PATH: /truthy-search
       PLATFORM_HOME_URL: /
@@ -235,6 +273,10 @@ services:
   api-autotest:
     build:
       context: ../Truthy_ApiAutoTest2
+      args:
+        APP_VERSION: "${API_AUTOTEST_VERSION:-unknown}"
+        APP_REVISION: "${APP_REVISION:-unknown}"
+        APP_BUILD_DIRTY: "${API_AUTOTEST_DIRTY:-true}"
     environment:
       API_AUTOTEST_HOST: 0.0.0.0
       API_AUTOTEST_PORT: "5003"
@@ -276,7 +318,6 @@ services:
       PLATFORM_API_URL: http://platform-api:8000/api/v1
       PLATFORM_CLIENT_TOKEN_FILE: /run/secrets/platform-client-token
       PLATFORM_RUNTIME_ENV: "${PLATFORM_RUNTIME_ENV:-dev}"
-      APP_REVISION: "${FUNCTIONAL_AGENT_REVISION:-f1a6260}"
     volumes:
       - ../functional-test-agent/runtime/${PLATFORM_RUNTIME_ENV:-dev}/functional:/app/runtime/${PLATFORM_RUNTIME_ENV:-dev}/functional
       - ./.runtime-secrets/${PLATFORM_RUNTIME_ENV:-dev}/functional-test-agent-client-token:/run/secrets/platform-client-token:ro
@@ -314,7 +355,6 @@ services:
       PLATFORM_API_URL: http://platform-api:8000/api/v1
       PLATFORM_CLIENT_TOKEN_FILE: /run/secrets/platform-client-token
       PLATFORM_RUNTIME_ENV: "${PLATFORM_RUNTIME_ENV:-dev}"
-      APP_REVISION: "${API_AGENT_REVISION:-f1a6260}"
       # 默认关闭；仅本机无生产数据试点可通过显式环境变量开启。
       API_EXECUTION_ENABLED: "${API_EXECUTION_ENABLED:-false}"
       API_EXECUTION_CONTROLLER_URL: http://api-execution-controller:5010
@@ -353,6 +393,7 @@ services:
     profiles: ["s2-execution"]
     image: "${AGENT_IMAGE_REGISTRY:-}${API_EXECUTION_CONTROLLER_IMAGE:-api-execution-controller:0.1.0-local.20260817.f1a6260}"
     environment:
+      PLATFORM_RUNTIME_ENV: "${PLATFORM_RUNTIME_ENV:-dev}"
       CONTROLLER_TOKEN_FILE: /run/secrets/controller-token
       CONTROLLER_RUNS_ROOT: "${API_AGENT_RUNTIME_HOST_ROOT:-/Users/admin/Testproject/api-test-agent/runtime/dev/api}/tasks"
       EXECUTOR_IMAGE: "${AGENT_IMAGE_REGISTRY:-}${API_EXECUTOR_IMAGE:-api-test-executor:0.1.0-local.20260817.f1a6260}"

@@ -11,6 +11,20 @@ from app.schemas.health import ServiceHealthResponse
 router = APIRouter(prefix="/health", tags=["health"])
 
 
+def _health_response(status: str) -> ServiceHealthResponse:
+    """构造兼容旧 product version 字段的后端运行身份。"""
+
+    settings = get_settings()
+    return ServiceHealthResponse(
+        status=status,
+        version=settings.read_platform_version(),
+        component_version=settings.app_version,
+        revision=settings.app_revision,
+        dirty=settings.app_build_dirty,
+        runtime_environment=settings.platform_runtime_env,
+    )
+
+
 @router.get("/live", response_model=ServiceHealthResponse)
 def live() -> ServiceHealthResponse:
     """
@@ -20,7 +34,7 @@ def live() -> ServiceHealthResponse:
         ServiceHealthResponse: 固定的进程存活响应，不访问数据库。
     """
 
-    return ServiceHealthResponse(status="ok", version=get_settings().read_platform_version())
+    return _health_response("ok")
 
 
 @router.get("/ready", response_model=ServiceHealthResponse)
@@ -40,4 +54,4 @@ def ready(database: Session = Depends(get_db)) -> ServiceHealthResponse:
         database.execute(text("SELECT 1"))
     except SQLAlchemyError as exc:
         raise HTTPException(status_code=503, detail="平台数据库暂时不可用") from exc
-    return ServiceHealthResponse(status="ready", version=get_settings().read_platform_version())
+    return _health_response("ready")

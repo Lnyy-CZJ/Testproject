@@ -34,6 +34,7 @@
 .functional-stage-rail .is-current{color:#0057a6;background:#f0f7ff}
 .functional-stage-rail .is-complete{color:var(--green)}
 .mindmap-v2-host{margin:14px -24px 8px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);background:#fff}
+.mindmap-v2-host [hidden]{display:none!important}
 .mindmap-v2-header{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);padding:0 18px}
 .mindmap-tabs{display:flex;align-items:center;gap:4px}
 .mindmap-tab{position:relative;border:0;background:transparent;padding:14px 16px;color:var(--secondary);font:inherit;font-weight:700;cursor:pointer}
@@ -81,10 +82,15 @@ me-tpc:hover>.mindmap-node-add,me-tpc:focus>.mindmap-node-add,.mindmap-node-add:
 .mindmap-field textarea{min-height:72px}
 .mindmap-table-pane,.mindmap-version-pane{padding:18px}
 .readonly-table-wrap{max-height:620px;overflow:auto;border:1px solid var(--line);border-radius:10px}
-.editable-review-table{border-collapse:collapse;width:100%;min-width:1280px;font-size:13px}
+.editable-review-table{border-collapse:collapse;width:max-content;min-width:100%;font-size:13px}
 .editable-review-table th{position:sticky;top:0;z-index:1;background:#f5f5f7;color:var(--secondary);text-align:left;padding:10px;border-bottom:1px solid var(--line)}
 .editable-review-table td{padding:6px;border-bottom:1px solid var(--line);vertical-align:top;min-width:130px}
 .editable-review-table td:nth-last-child(1){min-width:96px}
+.editable-review-table [data-field="preconditions"]{min-width:280px}
+.editable-review-table [data-field="test_steps"]{min-width:360px}
+.editable-review-table [data-field="test_data"]{min-width:260px}
+.editable-review-table [data-field="expected_result"]{min-width:320px}
+.editable-review-table [data-field="test_point"],.editable-review-table [data-field="case_name"]{min-width:240px}
 .editable-review-table input,.editable-review-table select,.editable-review-table textarea{width:100%;min-width:120px;padding:8px;border-radius:7px;font-size:12px;font-weight:400}
 .editable-review-table textarea{min-height:58px;resize:vertical}
 .editable-review-table input:disabled,.editable-review-table textarea:disabled{border-color:transparent;background:transparent;color:var(--text);opacity:1}
@@ -216,7 +222,7 @@ me-tpc:hover>.mindmap-node-add,me-tpc:focus>.mindmap-node-add,.mindmap-node-add:
 .functional-workbench-v3-page .review-action-bar,.functional-workbench-v3-page .case-review-action-bar{position:sticky;bottom:0;z-index:35;margin:0!important;padding:12px 18px!important;border-top:1px solid var(--line);background:rgba(255,255,255,.96);backdrop-filter:blur(12px)}
 .functional-workbench-v3-page .advanced-review{margin:0;padding:12px 18px;background:#fff}
 .functional-workbench-v3-page .suggestion-panel{position:fixed;top:56px;right:0;bottom:0;z-index:90;width:min(440px,36vw);overflow:auto;margin:0;border-left:1px solid var(--line);border-radius:0;background:#fff;box-shadow:-18px 0 50px rgba(28,52,84,.16)}
-.functional-workbench-v3-page .task-support-grid{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(360px,.75fr);gap:18px;align-items:start}
+.functional-workbench-v3-page .task-support-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:18px;align-items:start}
 .functional-workbench-v3-page .task-support-grid>.panel{margin:0}
 .functional-workbench-v3-page .logs-panel{grid-column:1/-1;padding:0!important;overflow:hidden}
 .functional-workbench-v3-page .logs-panel>summary{display:flex;align-items:center;justify-content:space-between;padding:16px 18px;cursor:pointer}

@@ -1,4 +1,4 @@
-import { flattenTree } from "./mindmap-domain.mjs";
+import { flattenTree } from "./mindmap-domain.mjs?v=20260819-free-review-4";
 
 /**
  * Mind Elixir 的受控适配层。
@@ -26,6 +26,7 @@ export class MindmapView {
     this.panState = null;
     this.boxState = null;
     this.nodeDrag = null;
+    this.detailRevealTimer = null;
     this.handleClick = (event) => {
       if (event.target.closest?.("me-epd")) {
         const expander = event.target.closest("me-epd");
@@ -46,12 +47,11 @@ export class MindmapView {
       const topic = event.target.closest?.("[data-nodeid]");
       const meta = this.resolveTopicMeta(topic);
       if (meta) {
-        const now = Date.now(); const nodeId = topic.dataset.nodeid;
-        if (this.lastClick?.nodeId === nodeId && now - this.lastClick.at < 350) {
-          this.lastClick = null; event.preventDefault(); event.stopPropagation(); this.startInlineEdit(topic, meta); return;
-        }
-        this.lastClick = { nodeId, at: now };
         this.onSelect(meta, { toggle: event.metaKey || event.ctrlKey });
+        // 鼠标能点击到的节点已经可见，此处只更新选择与详情。主动居中会在
+        // 双击的两次 click 之间移动目标，导致原位编辑无法稳定触发。
+        clearTimeout(this.detailRevealTimer);
+        this.detailRevealTimer = setTimeout(() => this.onSelect(meta, { revealDetails: true }), 600);
       }
     };
     this.handleKeydown = (event) => {
@@ -64,12 +64,14 @@ export class MindmapView {
       }
     };
     this.handleDoubleClick = (event) => {
-      /** Mind Elixir 的手势编辑在受控刷新模式下不稳定，因此使用同位置原生输入框提交领域命令。 */
       const topic = event.target.closest?.("[data-nodeid]");
       const meta = this.resolveTopicMeta(topic);
-      if (!topic || !meta) return;
+      if (!meta) return;
       event.preventDefault(); event.stopPropagation();
-      this.startInlineEdit(topic, meta);
+      clearTimeout(this.detailRevealTimer); this.detailRevealTimer = null;
+      this.nodeDrag = null;
+      this.onSelect(meta, { editing: true });
+      this.edit(topic?.dataset?.nodeid?.replace(/^me/, ""));
     };
     this.handlePointerDown = (event) => this.pointerDown(event);
     this.handlePointerMove = (event) => this.pointerMove(event);
@@ -268,7 +270,6 @@ export class MindmapView {
       const meta = this.resolveTopicMeta(topic);
       if (meta?.kind !== "root") {
         this.nodeDrag = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, topic, meta, dragging: false, target: null, placement: "inside" };
-        this.container.setPointerCapture?.(event.pointerId);
       }
       return;
     }
@@ -289,6 +290,8 @@ export class MindmapView {
       const distance = Math.hypot(event.clientX - this.nodeDrag.startX, event.clientY - this.nodeDrag.startY);
       if (!this.nodeDrag.dragging && distance > 5) {
         this.nodeDrag.dragging = true; this.nodeDrag.topic.classList.add("is-domain-dragging");
+        // 仅在确认进入拖动后捕获指针；按下即捕获会把 click/dblclick 重定向到画布，令选择和原生编辑失效。
+        this.container.setPointerCapture?.(event.pointerId);
         const ghost = document.createElement("div"); ghost.className = "mindmap-domain-ghost"; ghost.textContent = this.nodeDrag.topic.querySelector(".text")?.textContent || "移动节点"; this.container.append(ghost); this.nodeDrag.ghost = ghost;
       }
       if (!this.nodeDrag.dragging) return;
@@ -331,7 +334,7 @@ export class MindmapView {
         if (targetMeta && drag.valid) this.onMove({ sources: [drag.meta], target: targetMeta, placement: drag.placement });
         else this.onError(targetMeta ? "该节点层级不允许放置，数据未发生变化" : "未找到可放置的目标节点，数据未发生变化");
       }
-      this.container.releasePointerCapture?.(event.pointerId);
+      if (event.currentTarget.hasPointerCapture?.(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
       if (drag.dragging) return;
     }
     if (this.panState?.pointerId === event.pointerId) {
@@ -345,34 +348,7 @@ export class MindmapView {
       }).map((topic) => this.resolveTopicMeta(topic)).filter((meta) => meta?.kind !== "root");
       this.boxState.rect.remove(); this.boxState = null; this.onBoxSelect(metas);
     }
-    event.currentTarget.releasePointerCapture?.(event.pointerId);
-  }
-
-  startInlineEdit(topic, meta) {
-    /** 在节点原位置编辑纯文本，确认后仍由上层回写平面 JSON。 */
-    this.container.querySelector(".mindmap-inline-editor")?.remove();
-    const bounds = topic.getBoundingClientRect();
-    const host = this.container.getBoundingClientRect();
-    const input = document.createElement("input");
-    input.className = "mindmap-inline-editor";
-    input.value = topic.querySelector(".text")?.textContent?.trim() || topic.textContent?.trim() || "";
-    input.style.left = `${bounds.left - host.left}px`;
-    input.style.top = `${bounds.top - host.top}px`;
-    input.style.width = `${Math.max(160, bounds.width)}px`;
-    let finished = false;
-    const finish = (commit) => {
-      if (finished || !input.isConnected) return;
-      finished = true;
-      const value = input.value.trim(); input.remove();
-      if (commit && value) this.onRename(meta, value);
-    };
-    input.addEventListener("keydown", (keyEvent) => {
-      keyEvent.stopPropagation();
-      if (keyEvent.key === "Enter") { keyEvent.preventDefault(); finish(true); }
-      if (keyEvent.key === "Escape") { keyEvent.preventDefault(); finish(false); }
-    });
-    input.addEventListener("blur", () => finish(true), { once: true });
-    this.container.append(input); input.focus(); input.select();
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
   }
 
   focus(nodeId) {
@@ -380,6 +356,19 @@ export class MindmapView {
     if (!target) return;
     this.instance.selectNode(target);
     this.instance.scrollIntoView(target, true);
+  }
+
+  ensureVisible(topic) {
+    /** 仅在节点超出安全可视区时居中，避免普通选择造成画布反复跳动。 */
+    if (!topic) return;
+    const host = this.container.getBoundingClientRect();
+    const bounds = topic.getBoundingClientRect();
+    const marginX = Math.min(120, host.width * 0.15);
+    const marginY = Math.min(90, host.height * 0.15);
+    if (bounds.left < host.left + marginX || bounds.right > host.right - marginX
+      || bounds.top < host.top + marginY || bounds.bottom > host.bottom - marginY) {
+      this.instance?.scrollIntoView?.(topic, true);
+    }
   }
 
   markSelected(keys = new Set()) {
@@ -402,8 +391,44 @@ export class MindmapView {
 
   edit(nodeId) {
     const target = this.reveal(nodeId);
+    if (!target) return;
     const meta = this.resolveTopicMeta(target);
-    if (target && meta) this.startInlineEdit(target, meta);
+    if (!meta) return;
+    // 优先使用脑图库编辑器；5.14.0 对部分折叠后恢复的子节点不会创建输入框，
+    // 下一事件循环检测失败后启用同一领域提交入口的轻量兜底编辑器。
+    this.instance?.beginEdit?.(target);
+    setTimeout(() => {
+      if (typeof Element !== "undefined" && target instanceof Element
+        && !this.container.querySelector("#input-box,me-textarea,.mindmap-inline-editor")) this.openFallbackEditor(target, meta);
+    }, 0);
+  }
+
+  openFallbackEditor(target, meta) {
+    this.container.querySelector(".mindmap-inline-editor")?.remove();
+    const host = this.container.getBoundingClientRect();
+    const bounds = target.getBoundingClientRect();
+    const editor = document.createElement("textarea");
+    editor.className = "mindmap-inline-editor";
+    editor.value = String(meta.label ?? "");
+    editor.setAttribute("aria-label", "编辑脑图节点");
+    Object.assign(editor.style, {
+      position: "absolute", zIndex: "20", left: `${bounds.left - host.left}px`, top: `${bounds.top - host.top}px`,
+      width: `${Math.max(180, Math.min(520, bounds.width + 80))}px`, minHeight: `${Math.max(38, bounds.height)}px`,
+    });
+    let finished = false;
+    const finish = (save) => {
+      if (finished) return;
+      finished = true;
+      const value = editor.value.trim(); editor.remove();
+      if (save && value && value !== String(meta.label ?? "")) this.onRename(meta, value, String(meta.label ?? ""));
+    };
+    editor.addEventListener("keydown", (event) => {
+      event.stopPropagation();
+      if (event.key === "Escape") { event.preventDefault(); finish(false); }
+      else if (event.key === "Enter" && (!meta.detailField || event.ctrlKey || event.metaKey)) { event.preventDefault(); finish(true); }
+    });
+    editor.addEventListener("blur", () => finish(true));
+    this.container.append(editor); editor.focus(); editor.select();
   }
 
   reveal(nodeId) {
@@ -461,6 +486,20 @@ export class MindmapView {
     this.captureExpandedState();
   }
 
+  expand(nodeId, expandChildren = false) {
+    /** 选中用例时展开详情分支；其他节点仍只展开自身，避免一次渲染过多内容。 */
+    const target = this.reveal(nodeId);
+    if (target?.nodeObj?.expanded === false) {
+      this.instance?.expandNode?.(target, true);
+    }
+    if (expandChildren) (target?.nodeObj?.children || []).forEach((child) => {
+      const childTopic = this.reveal(child.id);
+      // Mind Elixir 对未显式设置 expanded 的新详情分组按收起处理，因此仅 true 才视为已展开。
+      if (childTopic?.nodeObj?.expanded !== true) this.instance?.expandNode?.(childTopic, true);
+    });
+    this.captureExpandedState(); this.decorateTopics(); this.drawMinimap();
+  }
+
   async fullscreen() {
     if (document.fullscreenElement === this.container) await document.exitFullscreen();
     else await this.container.requestFullscreen?.();
@@ -514,6 +553,7 @@ export class MindmapView {
   }
 
   destroy() {
+    clearTimeout(this.detailRevealTimer);
     this.instance?.destroy?.();
     this.instance = null;
     this.container.removeEventListener("click", this.handleClick);

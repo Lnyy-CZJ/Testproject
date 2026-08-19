@@ -550,7 +550,13 @@ def _register_routes(blueprint: Blueprint) -> None:
     @blueprint.get("/health")
     def health():
         """健康检查：不触发执行、不读凭证、不依赖外部 Gateway。"""
-        return jsonify({"status": "ok", "service": "api-autotest"})
+        return jsonify({
+            "status": "ok", "service": "api-autotest",
+            "version": os.getenv("APP_VERSION", "unknown"),
+            "revision": os.getenv("APP_REVISION", "unknown"),
+            "dirty": os.getenv("APP_BUILD_DIRTY", "true").lower() == "true",
+            "runtime_environment": os.getenv("PLATFORM_RUNTIME_ENV", "unknown"),
+        })
 
 
 def main() -> None:

@@ -66,6 +66,7 @@ def client(database_factory: sessionmaker[Session]) -> Generator[TestClient, Non
                 database.add(user)
                 database.add_all([
                     Permission(code="tool.view", name="查看工具", resource_type="tool"),
+                    Permission(code="platform.audit.view", name="查看审计", resource_type="platform"),
                     Role(id="test-role", name="测试角色"),
                 ])
                 database.flush()
@@ -74,6 +75,10 @@ def client(database_factory: sessionmaker[Session]) -> Generator[TestClient, Non
                     RoleGrant(
                         role_id="test-role", permission_code="tool.view",
                         resource_type="tool", resource_id="*",
+                    ),
+                    RoleGrant(
+                        role_id="test-role", permission_code="platform.audit.view",
+                        resource_type="platform", resource_id="*",
                     ),
                 ])
                 database.commit()

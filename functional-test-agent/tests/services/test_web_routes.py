@@ -385,7 +385,8 @@ def test_online_review_cas_confirm_and_ai_queue(tmp_path: Path) -> None:
     assert b"review-workbench.js" in page.data
     assert "下载本地副本" in page.get_data(as_text=True)
     assert "查看内容" in page.get_data(as_text=True)
-    assert '<details class="panel artifacts-panel" open>' in page.get_data(as_text=True)
+    assert '<details class="panel artifacts-panel">' in page.get_data(as_text=True)
+    assert '<details class="panel artifacts-panel" open>' not in page.get_data(as_text=True)
     preview = client.get(f"{base}/api/v1/tasks/{task_id}/artifacts/artifact_points/preview", headers=headers())
     assert preview.status_code == 200
     assert preview.get_json()["format"] == "json"
@@ -475,6 +476,9 @@ def test_online_case_review_ai_and_confirm_publish(tmp_path: Path) -> None:
     assert page.status_code == 200
     assert b"data-case-review-workbench" in page.data
     assert b"case-review-workbench.js" in page.data
+    html = page.get_data(as_text=True)
+    assert html.index("生成信息") < html.index("生成产物") < html.index("运行日志")
+    assert '<details class="panel artifacts-panel" open>' not in html
     loaded = client.get(f"{base}/api/v1/tasks/{task_id}/case-review", headers=headers()).get_json()
     generated_view = client.get(f"{base}/api/v1/tasks/{task_id}/case-review?kind=generated", headers=headers())
     assert generated_view.status_code == 200 and generated_view.get_json()["editable"] is False
@@ -508,6 +512,28 @@ def test_online_case_review_ai_and_confirm_publish(tmp_path: Path) -> None:
     assert retried.get_json()["case_review"]["version"] == confirmed.get_json()["case_review"]["version"]
     confirmed_view = client.get(f"{base}/api/v1/tasks/{task_id}/case-review?kind=confirmed&version=1", headers=headers())
     assert confirmed_view.status_code == 200 and confirmed_view.get_json()["editable"] is False
+
+    # 已发布任务仍可编辑；质量错误不阻止再次发布，旧确认版本继续可下载。
+    completed_page = client.get(f"{base}/tasks/{task_id}", headers=headers())
+    assert completed_page.status_code == 200 and b"data-case-review-workbench" in completed_page.data
+    completed_draft = client.get(f"{base}/api/v1/tasks/{task_id}/case-review", headers=headers()).get_json()
+    assert completed_draft["editable"] is True
+    risky_cases = [{**cases[0], "test_point_id": "UNKNOWN", "case_name": "", "priority": "PX", "test_steps": [], "expected_result": ""}]
+    saved_v2 = client.put(
+        f"{base}/api/v1/tasks/{task_id}/case-review-draft", headers={**headers(), "Content-Type": "application/json"},
+        json={"revision": completed_draft["revision"], "sha256": completed_draft["sha256"], "cases": risky_cases},
+    )
+    assert saved_v2.status_code == 200
+    assert saved_v2.get_json()["validation"]["errors"]
+    published_v2 = client.post(
+        f"{base}/api/v1/tasks/{task_id}/case-review/confirm",
+        headers={**headers(), "Content-Type": "application/json", "Idempotency-Key": "case-confirm-0002"},
+        json={"revision": saved_v2.get_json()["revision"], "sha256": saved_v2.get_json()["sha256"], "accept_warnings": True},
+    )
+    assert published_v2.status_code == 200
+    assert published_v2.get_json()["case_review"]["version"] == 2
+    assert client.get(f"{base}/api/v1/tasks/{task_id}/case-review/download?kind=confirmed&version=1", headers=headers()).status_code == 200
+    assert client.get(f"{base}/api/v1/tasks/{task_id}/case-review/download?kind=confirmed&version=2", headers=headers()).status_code == 200
 
 
 def test_admin_task_list_survives_schema_incompatible_records(tmp_path: Path) -> None:

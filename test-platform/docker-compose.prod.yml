@@ -26,9 +26,11 @@ services:
     build: !reset null
     image: "${PLATFORM_BACKEND_IMAGE:?PLATFORM_BACKEND_IMAGE is required}"
     volumes: !override
-      - ./VERSION:/run/platform-version:ro
+      - ./versions.json:/run/versions.json:ro
       - /srv/test-platform/secrets/prod/bootstrap-token:/run/secrets/platform-bootstrap-token:ro
       - /srv/test-platform/secrets/prod-kek.json:/run/secrets/platform-kek.json:ro
+      - /srv/test-platform/secrets/prod/version-peer-token:/run/secrets/version-peer-token:ro
+      - /srv/test-platform/state:/run/deployment:ro
 
   platform-credential-agent:
     build: !reset null

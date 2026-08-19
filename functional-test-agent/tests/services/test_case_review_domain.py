@@ -64,4 +64,48 @@ def test_case_draft_cas_and_confirmation(tmp_path: Path) -> None:
     confirmed = service.confirm(task_id, revision=1, sha256=saved["sha256"], accept_warnings=True)
     assert confirmed["version"] == 1
     assert service.confirm(task_id, revision=1, sha256=saved["sha256"], accept_warnings=True)["version"] == 1
-    assert case_content_sha256(service.read_confirmed(task_id, confirmed)) == saved["sha256"]
+    assert case_content_sha256(service.read_confirmed(task_id, confirmed)) == confirmed["rows_sha256"]
+
+
+def test_case_confirmation_allows_quality_errors_but_keeps_safety_limits(tmp_path: Path) -> None:
+    """业务格式、覆盖和告警只提示；数量等技术边界仍必须拒绝发布。"""
+
+    _store, task_id, service = prepare(tmp_path)
+    loaded = service.load(task_id)
+    risky = [case(case_name="", point_id="UNKNOWN", priority="PX", test_steps=[], expected_result="")]
+    saved = service.save_draft(
+        task_id, risky, revision=0, sha256=loaded["sha256"], user_id="u1", username="tester",
+    )
+    assert saved["validation"]["errors"]
+    confirmed = service.confirm(task_id, revision=1, sha256=saved["sha256"], accept_warnings=False)
+    assert confirmed["version"] == 1
+    assert confirmed["quality_summary"]["errors"] > 0
+    assert confirmed["quality_summary"]["uncovered"] == 2
+
+    loaded_again = service.load(task_id)
+    oversized = [case("TC001"), case("TC002", "TP002")]
+    saved_again = service.save_draft(
+        task_id, oversized, revision=loaded_again["revision"], sha256=loaded_again["sha256"],
+        user_id="u1", username="tester", max_cases=1,
+    )
+    with pytest.raises(ServiceError) as blocked:
+        service.confirm(
+            task_id, revision=saved_again["revision"], sha256=saved_again["sha256"],
+            accept_warnings=True, max_cases=1,
+        )
+    assert blocked.value.code == "CASE_REVIEW_SAFETY_LIMIT_FAILED"
+
+
+def test_case_confirmation_rejects_non_object_array_items(tmp_path: Path) -> None:
+    """用例发布的唯一业务结构硬条件是顶层对象数组。"""
+
+    _store, task_id, service = prepare(tmp_path)
+    loaded = service.load(task_id)
+    saved = service.save_draft(
+        task_id, ["not-an-object"], revision=0, sha256=loaded["sha256"],
+        user_id="u1", username="tester",
+    )
+    with pytest.raises(ServiceError) as blocked:
+        service.confirm(task_id, revision=1, sha256=saved["sha256"], accept_warnings=True)
+    assert blocked.value.code == "CASE_REVIEW_SAFETY_LIMIT_FAILED"
+    assert any(issue["code"] == "CASE_ITEM_NOT_OBJECT" for issue in saved["validation"]["errors"])

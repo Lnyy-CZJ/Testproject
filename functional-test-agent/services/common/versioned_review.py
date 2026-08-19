@@ -24,6 +24,7 @@ class ReviewResourceSpec:
     envelope_key: str
     draft_filename: str
     confirmed_pattern: str
+    mindmap_pattern: str
 
 
 TEST_POINT_SPEC = ReviewResourceSpec(
@@ -32,6 +33,7 @@ TEST_POINT_SPEC = ReviewResourceSpec(
     envelope_key="test_points",
     draft_filename="review-draft.json",
     confirmed_pattern="review-test-points-v{version}.json",
+    mindmap_pattern="review-test-points-mindmap-v{version}.json",
 )
 TEST_CASE_SPEC = ReviewResourceSpec(
     resource_type="test_cases",
@@ -39,6 +41,7 @@ TEST_CASE_SPEC = ReviewResourceSpec(
     envelope_key="test_cases",
     draft_filename="case-review-draft.json",
     confirmed_pattern="review-test-cases-v{version}.json",
+    mindmap_pattern="review-test-cases-mindmap-v{version}.json",
 )
 
 
@@ -133,3 +136,37 @@ class VersionedReviewStore:
         path = self.store.task_dir(task_id) / "input" / self.spec.confirmed_pattern.format(version=version)
         self.atomic_create(path, json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8"))
         return path
+
+    def mindmap_path(self, task_id: str, version: int) -> Path:
+        """返回指定确认版本的固定结构快照路径。"""
+
+        return self.store.task_dir(task_id) / "input" / self.spec.mindmap_pattern.format(version=version)
+
+    def read_confirmed_mindmap(self, task_id: str, version: int) -> Any | None:
+        """读取结构快照；旧确认版本不存在快照时返回 None。"""
+
+        path = self.mindmap_path(task_id, version)
+        if not path.exists():
+            return None
+        if not path.is_file() or path.is_symlink():
+            raise ServiceError(500, "STORAGE_WRITE_FAILED", "Review 结构快照不合法")
+        return self.read_json(path)
+
+    def create_confirmed_with_mindmap(
+        self, task_id: str, version: int, payload: Any, mindmap: dict[str, Any],
+    ) -> tuple[Path, Path]:
+        """先发布不可变结构快照，再以标准 JSON 作为版本提交标记。
+
+        异常策略：若结构快照已成功但标准 JSON 失败，快照保留为
+        未提交恢复素材；既有确认版本永不被覆盖。
+        """
+
+        snapshot = self.mindmap_path(task_id, version)
+        marker = self.store.task_dir(task_id) / "input" / self.spec.confirmed_pattern.format(version=version)
+        self.atomic_create(snapshot, json.dumps(mindmap, ensure_ascii=False, indent=2).encode("utf-8"))
+        try:
+            self.atomic_create(marker, json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8"))
+        except Exception:
+            # 快照不是已提交版本，不删除它可避免二次事故导致诊断信息丢失。
+            raise
+        return marker, snapshot

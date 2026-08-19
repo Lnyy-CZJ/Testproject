@@ -658,7 +658,13 @@ def create_app(base_path=None):
     @tool.route("/health", methods=["GET"])
     def health():
         """返回不依赖日志文件和分析逻辑的轻量服务状态。"""
-        response = jsonify({"service": "log-filter", "status": "ok"})
+        response = jsonify({
+            "service": "log-filter", "status": "ok",
+            "version": os.getenv("APP_VERSION", "unknown"),
+            "revision": os.getenv("APP_REVISION", "unknown"),
+            "dirty": os.getenv("APP_BUILD_DIRTY", "true").lower() == "true",
+            "runtime_environment": os.getenv("PLATFORM_RUNTIME_ENV", "unknown"),
+        })
         response.headers["Cache-Control"] = "no-store"
         return response
 

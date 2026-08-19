@@ -11,6 +11,11 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from services.common.errors import ServiceError
+from services.common.mindmap_review import (
+    compile_case_mindmap,
+    draft_content_sha256,
+    project_case_mindmap,
+)
 from services.common.review import ValidationIssue, normalize_compare_text
 from services.common.task_models import utc_now
 from services.common.task_store import TaskStore
@@ -26,6 +31,11 @@ TEXT_LIMITS = {
     "scenario": 500, "case_name": 500, "expected_result": 4000, "actual_result": 4000,
 }
 PRIORITIES = frozenset({"P0", "P1", "P2", "P3"})
+# 业务质量问题允许带风险发布；资源消耗和危险字段仍是不可绕过的技术边界。
+PUBLISH_BLOCKING_CODES = frozenset({
+    "CASES_LIMIT_EXCEEDED", "CASE_REVIEW_SIZE_EXCEEDED", "CASE_DATA_TOO_COMPLEX",
+    "TEXT_CONTAINS_NUL", "CLIENT_PRIVATE_FIELD", "CASE_ITEM_NOT_OBJECT",
+})
 
 
 class CoverageSummary(BaseModel):
@@ -147,7 +157,7 @@ def validate_cases(
     cases: list[Any], *, confirmed_point_ids: set[str], original: list[Any] | None = None,
     max_cases: int = 2000, max_bytes: int = 10 * 1024 * 1024, max_characters: int = 1_000_000,
 ) -> CaseReviewValidation:
-    """执行确定性用例校验；业务错误允许保存但阻止最终确认。"""
+    """执行确定性用例校验；结果用于质量提示，并标识必须保留的技术安全边界。"""
 
     errors: list[ValidationIssue] = []
     warnings: list[ValidationIssue] = []
@@ -169,7 +179,7 @@ def validate_cases(
     covered: set[str] = set()
     for index, item in enumerate(normalized):
         if not isinstance(item, dict):
-            errors.append(ValidationIssue(level="error", code="CASE_NOT_OBJECT", message="测试用例必须是对象", row_index=index))
+            errors.append(ValidationIssue(level="error", code="CASE_ITEM_NOT_OBJECT", message="测试用例数组的每个元素必须是对象", row_index=index))
             continue
         case_id = item.get("case_id") if isinstance(item.get("case_id"), str) else None
         point_id = item.get("test_point_id") if isinstance(item.get("test_point_id"), str) else None
@@ -279,22 +289,40 @@ class CaseReviewService:
         if path.exists():
             envelope = self.files.read_json(path)
             cases = normalize_cases(parse_cases(envelope.get("test_cases", [])))
+            mindmap = envelope.get("mindmap")
+            schema_version = int(envelope.get("schema_version", 1))
+            if schema_version >= 2 and isinstance(mindmap, dict):
+                if envelope.get("mindmap_authoritative", True):
+                    cases, structure_issues = compile_case_mindmap(mindmap, cases)
+                    cases = normalize_cases(cases)
+                else:
+                    structure_issues = []
+                actual_digest = draft_content_sha256(cases, mindmap)
+            else:
+                mindmap = project_case_mindmap(cases)
+                structure_issues = []
+                actual_digest = case_content_sha256(cases)
             revision = int(envelope.get("revision", 0))
-            digest = str(envelope.get("content_sha256") or case_content_sha256(cases))
-            if digest != case_content_sha256(cases):
+            digest = str(envelope.get("content_sha256") or actual_digest)
+            if digest != actual_digest:
                 raise ServiceError(500, "STORAGE_WRITE_FAILED", "测试用例草稿完整性校验失败")
             saved_at, saved_by = envelope.get("saved_at"), envelope.get("saved_by_username")
         else:
             cases, revision, saved_at, saved_by = original, 0, None, None
             digest = case_content_sha256(cases)
+            mindmap = project_case_mindmap(cases)
+            structure_issues = []
         point_ids = self.confirmed_point_ids(task_id)
         if not point_ids:
             point_ids = {item.get("test_point_id") for item in cases if isinstance(item, dict) and item.get("test_point_id")}
         validation = validate_cases(cases, confirmed_point_ids=point_ids, original=original, **limits)
+        validation_payload = validation.model_dump()
+        validation_payload["warnings"].extend(structure_issues)
         return {
-            "cases": cases, "original_cases": original, "revision": revision, "sha256": digest,
+            "schema_version": 2, "cases": cases, "rows": cases, "mindmap": mindmap,
+            "original_cases": original, "revision": revision, "sha256": digest,
             "source_artifact_id": artifact["id"], "saved_at": saved_at, "saved_by_username": saved_by,
-            "validation": validation.model_dump(), "coverage": validation.coverage.model_dump(),
+            "validation": validation_payload, "coverage": validation.coverage.model_dump(),
             "diff_summary": diff_cases(original, cases), "confirmed_test_point_ids": sorted(point_ids),
         }
 
@@ -306,8 +334,10 @@ class CaseReviewService:
             return {**current, "kind": "draft", "versions": self.files.confirmed_versions(task_id)}
         if kind == "generated":
             cases = current["original_cases"]
+            mindmap = project_case_mindmap(cases)
         elif kind == "confirmed" and version is not None:
             cases = normalize_cases(parse_cases(self.files.read_confirmed_version(task_id, version)))
+            mindmap = self.files.read_confirmed_mindmap(task_id, version) or project_case_mindmap(cases)
         else:
             raise ServiceError(422, "INVALID_INPUT", "用例 Review 版本类型不受支持")
         validation = validate_cases(
@@ -315,14 +345,18 @@ class CaseReviewService:
             original=current["original_cases"], **limits,
         )
         return {
-            **current, "cases": cases, "revision": 0, "sha256": case_content_sha256(cases),
+            **current, "cases": cases, "rows": cases, "mindmap": mindmap,
+            "revision": 0, "sha256": draft_content_sha256(cases, mindmap),
             "validation": validation.model_dump(), "coverage": validation.coverage.model_dump(),
             "diff_summary": diff_cases(current["original_cases"], cases), "kind": kind,
             "version": version if kind == "confirmed" else None,
             "versions": self.files.confirmed_versions(task_id),
         }
 
-    def save_draft(self, task_id: str, cases: list[Any], *, revision: int, sha256: str, user_id: str, username: str, **limits: int) -> dict[str, Any]:
+    def save_draft(
+        self, task_id: str, cases: list[Any], *, revision: int, sha256: str,
+        user_id: str, username: str, mindmap: dict[str, Any] | None = None, **limits: int,
+    ) -> dict[str, Any]:
         """使用 revision/SHA CAS 原子保存用例草稿；冲突时绝不覆盖。"""
 
         with self.store.locked():
@@ -330,29 +364,41 @@ class CaseReviewService:
             if revision != current["revision"] or sha256 != current["sha256"]:
                 raise ServiceError(409, "CASE_REVIEW_REVISION_CONFLICT", "用例草稿已被其他页面更新", {"current_revision": current["revision"], "current_sha256": current["sha256"], "saved_at": current.get("saved_at"), "saved_by": current.get("saved_by_username")})
             normalized = normalize_cases(cases)
-            digest = case_content_sha256(normalized)
+            if isinstance(mindmap, dict):
+                active_mindmap = mindmap
+                normalized, structure_issues = compile_case_mindmap(active_mindmap, normalized)
+                normalized = normalize_cases(normalized)
+            else:
+                # 旧 JSON/表格客户端仅提交 cases，必须保留非对象元素供发布安全校验拒绝。
+                active_mindmap = project_case_mindmap(normalized)
+                structure_issues = []
+            digest = draft_content_sha256(normalized, active_mindmap)
             if digest == current["sha256"] and current["revision"] > 0:
                 return current
             validation = validate_cases(normalized, confirmed_point_ids=set(current["confirmed_test_point_ids"]), original=current["original_cases"], **limits)
+            validation_payload = validation.model_dump()
+            validation_payload["warnings"].extend(structure_issues)
             envelope = {
-                "schema_version": 1, "revision": revision + 1, "content_sha256": digest,
+                "schema_version": 2, "revision": revision + 1, "content_sha256": digest,
                 "base_generated_sha256": case_content_sha256(current["original_cases"]),
                 "saved_by_user_id": user_id, "saved_by_username": username, "saved_at": utc_now(),
-                "test_cases": normalized,
+                "rows": normalized, "test_cases": normalized, "mindmap": active_mindmap,
+                "mindmap_authoritative": isinstance(mindmap, dict),
             }
             TaskStore.atomic_write_json(self.files.draft_path(task_id), envelope)
             record = self.store.load(task_id) or {}
             record["case_review_draft"] = {key: envelope[key] for key in ("revision", "content_sha256", "saved_by_user_id", "saved_by_username", "saved_at")}
             self.store.save(record)
             return {
-                **current, "cases": normalized, "revision": revision + 1, "sha256": digest,
+                **current, "schema_version": 2, "cases": normalized, "rows": normalized,
+                "mindmap": active_mindmap, "revision": revision + 1, "sha256": digest,
                 "saved_at": envelope["saved_at"], "saved_by_username": username,
-                "validation": validation.model_dump(), "coverage": validation.coverage.model_dump(),
+                "validation": validation_payload, "coverage": validation.coverage.model_dump(),
                 "diff_summary": diff_cases(current["original_cases"], normalized),
             }
 
     def confirm(self, task_id: str, *, revision: int, sha256: str, accept_warnings: bool, **limits: int) -> dict[str, Any]:
-        """校验草稿并创建或复用不可变用例确认版本。"""
+        """创建或复用不可变确认版本；质量问题仅提示，技术安全限制仍阻止发布。"""
 
         with self.store.locked():
             current = self.load(task_id, **limits)
@@ -361,10 +407,9 @@ class CaseReviewService:
             if revision != current["revision"] or sha256 != current["sha256"]:
                 raise ServiceError(409, "CASE_REVIEW_REVISION_CONFLICT", "用例草稿已被其他页面更新", {"current_revision": current["revision"], "current_sha256": current["sha256"]})
             validation = CaseReviewValidation.model_validate(current["validation"])
-            if validation.errors:
-                raise ServiceError(422, "CASE_REVIEW_VALIDATION_FAILED", "用例草稿仍有阻塞错误", {"validation": validation.model_dump()})
-            if validation.warnings and not accept_warnings:
-                raise ServiceError(409, "CASE_REVIEW_WARNING_CONFIRMATION_REQUIRED", "用例草稿包含警告，请确认后发布", {"validation": validation.model_dump()})
+            blocking = [issue for issue in validation.errors if issue.code in PUBLISH_BLOCKING_CODES]
+            if blocking:
+                raise ServiceError(422, "CASE_REVIEW_SAFETY_LIMIT_FAILED", "用例草稿超出发布技术安全限制", {"validation": validation.model_dump()})
             record = self.store.load(task_id) or {}
             existing = record.get("case_review", {})
             if existing.get("sha256") == sha256 and existing.get("relative_path"):
@@ -374,11 +419,24 @@ class CaseReviewService:
                     confirmed = normalize_cases(parse_cases(self.files.read_json(path)))
                 except ServiceError:
                     continue
-                if case_content_sha256(confirmed) == sha256:
-                    return {"version": version, "relative_path": path.relative_to(self.store.task_dir(task_id)).as_posix(), "sha256": sha256, "confirmed_at": utc_now(), "test_case_count": len(confirmed)}
+                snapshot = self.files.read_confirmed_mindmap(task_id, version) or project_case_mindmap(confirmed)
+                if draft_content_sha256(confirmed, snapshot) == sha256:
+                    return {
+                        "version": version, "relative_path": path.relative_to(self.store.task_dir(task_id)).as_posix(),
+                        "sha256": sha256, "rows_sha256": case_content_sha256(confirmed),
+                        "confirmed_at": utc_now(), "test_case_count": len(confirmed),
+                    }
             version = max((item[0] for item in self.files.confirmed_files(task_id)), default=0) + 1
-            path = self.files.create_confirmed(task_id, version, current["cases"])
-            return {"version": version, "relative_path": path.relative_to(self.store.task_dir(task_id)).as_posix(), "sha256": sha256, "confirmed_at": utc_now(), "test_case_count": len(current["cases"])}
+            path, snapshot_path = self.files.create_confirmed_with_mindmap(
+                task_id, version, current["cases"], current["mindmap"],
+            )
+            return {
+                "version": version, "relative_path": path.relative_to(self.store.task_dir(task_id)).as_posix(),
+                "mindmap_relative_path": snapshot_path.relative_to(self.store.task_dir(task_id)).as_posix(),
+                "sha256": sha256, "rows_sha256": case_content_sha256(current["cases"]),
+                "confirmed_at": utc_now(), "test_case_count": len(current["cases"]),
+                "quality_summary": {"errors": len(validation.errors), "warnings": len(validation.warnings), "uncovered": validation.coverage.uncovered_test_points},
+            }
 
     def read_confirmed(self, task_id: str, metadata: dict[str, Any]) -> list[Any]:
         """按已登记相对路径读取确认版本并验证内容 SHA。"""
@@ -388,6 +446,7 @@ class CaseReviewService:
         if task_dir not in path.parents or not path.is_file() or path.is_symlink():
             raise ServiceError(404, "ARTIFACT_NOT_READY", "确认用例版本不存在")
         cases = normalize_cases(parse_cases(self.files.read_json(path)))
-        if case_content_sha256(cases) != metadata.get("sha256"):
+        expected = metadata.get("rows_sha256") or metadata.get("sha256")
+        if case_content_sha256(cases) != expected:
             raise ServiceError(500, "STORAGE_WRITE_FAILED", "确认用例版本完整性校验失败")
         return cases

@@ -52,7 +52,14 @@ def create_app(runtime=None) -> Flask:
 
     @app.get("/health")
     def health():
-        return jsonify({"status": "ok", "image_id": getattr(active_runtime, "image_id", "fake")})
+        return jsonify({
+            "status": "ok", "service": "api-execution-controller",
+            "image_id": getattr(active_runtime, "image_id", "fake"),
+            "version": os.getenv("APP_VERSION", "unknown"),
+            "revision": os.getenv("APP_REVISION", "unknown"),
+            "dirty": os.getenv("APP_BUILD_DIRTY", "true").lower() == "true",
+            "runtime_environment": os.getenv("PLATFORM_RUNTIME_ENV", "unknown"),
+        })
 
     @app.post("/internal/v1/runs")
     def create_run():

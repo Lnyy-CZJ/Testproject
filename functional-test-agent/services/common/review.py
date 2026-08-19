@@ -14,6 +14,11 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from services.common.errors import ServiceError
+from services.common.mindmap_review import (
+    compile_point_mindmap,
+    draft_content_sha256,
+    project_point_mindmap,
+)
 from services.common.task_models import utc_now
 from services.common.task_store import TaskStore
 from services.common.versioned_review import TEST_POINT_SPEC, VersionedReviewStore
@@ -103,6 +108,13 @@ def review_content_sha256(points: list[Any]) -> str:
     """计算规范化测试点列表 SHA-256。"""
 
     return hashlib.sha256(canonical_review_bytes(points)).hexdigest()
+
+
+def validation_sha256(validation: dict[str, Any]) -> str:
+    """为风险确认生成稳定指纹，防止草稿变更后复用旧确认。"""
+
+    payload = json.dumps(validation, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
 
 
 def diff_points(original: list[Any], current: list[Any]) -> dict[str, int]:
@@ -242,8 +254,20 @@ class ReviewService:
         if path.exists():
             envelope = self._read_json(path)
             points = parse_points(envelope.get("test_points", []))
+            mindmap = envelope.get("mindmap")
+            schema_version = int(envelope.get("schema_version", 1))
+            if schema_version >= 2 and isinstance(mindmap, dict):
+                if envelope.get("mindmap_authoritative", True):
+                    points, structure_issues = compile_point_mindmap(mindmap, points)
+                    points = normalize_for_storage(points)
+                else:
+                    structure_issues = []
+                actual_digest = draft_content_sha256(points, mindmap)
+            else:
+                mindmap = project_point_mindmap(points)
+                structure_issues = []
+                actual_digest = review_content_sha256(points)
             revision = int(envelope.get("revision", 0))
-            actual_digest = review_content_sha256(points)
             digest = str(envelope.get("content_sha256") or actual_digest)
             if digest != actual_digest:
                 raise ServiceError(500, "STORAGE_WRITE_FAILED", "Review 草稿完整性校验失败")
@@ -251,8 +275,19 @@ class ReviewService:
         else:
             points, revision, saved_at, saved_by = original, 0, None, None
             digest = review_content_sha256(points)
+            mindmap = project_point_mindmap(points)
+            structure_issues = []
         validation = validate_points(points, original=original)
-        return {"points": points, "original_points": original, "revision": revision, "sha256": digest, "source_artifact_id": artifact["id"], "saved_at": saved_at, "saved_by_username": saved_by, "validation": validation.model_dump(), "diff_summary": diff_points(original, points)}
+        validation_payload = validation.model_dump()
+        validation_payload["warnings"].extend(structure_issues)
+        return {
+            "schema_version": 2, "points": points, "rows": points, "mindmap": mindmap,
+            "original_points": original, "revision": revision, "sha256": digest,
+            "source_artifact_id": artifact["id"], "saved_at": saved_at,
+            "saved_by_username": saved_by, "validation": validation_payload,
+            "validation_sha256": validation_sha256(validation_payload),
+            "diff_summary": diff_points(original, points),
+        }
 
     def load_version(self, task_id: str, *, kind: str, version: int | None = None) -> dict[str, Any]:
         """读取原稿、当前草稿或指定确认版本，并返回统一只读元数据。"""
@@ -262,23 +297,33 @@ class ReviewService:
             return {**current, "kind": "draft", "versions": self.files.confirmed_versions(task_id)}
         if kind == "generated":
             points = current["original_points"]
+            mindmap = project_point_mindmap(points)
+            validation_payload = validate_points(points, original=points).model_dump()
             return {
-                **current, "points": points, "revision": 0, "sha256": review_content_sha256(points),
-                "validation": validate_points(points, original=points).model_dump(),
+                **current, "points": points, "rows": points, "mindmap": mindmap,
+                "revision": 0, "sha256": review_content_sha256(points),
+                "validation": validation_payload, "validation_sha256": validation_sha256(validation_payload),
                 "diff_summary": diff_points(points, points), "kind": "generated",
                 "versions": self.files.confirmed_versions(task_id),
             }
         if kind == "confirmed" and version is not None:
             points = normalize_for_storage(parse_points(self.files.read_confirmed_version(task_id, version)))
+            mindmap = self.files.read_confirmed_mindmap(task_id, version) or project_point_mindmap(points)
+            validation_payload = validate_points(points, original=current["original_points"]).model_dump()
             return {
-                **current, "points": points, "revision": 0, "sha256": review_content_sha256(points),
-                "validation": validate_points(points, original=current["original_points"]).model_dump(),
+                **current, "points": points, "rows": points, "mindmap": mindmap,
+                "revision": 0, "sha256": draft_content_sha256(points, mindmap),
+                "validation": validation_payload, "validation_sha256": validation_sha256(validation_payload),
                 "diff_summary": diff_points(current["original_points"], points), "kind": "confirmed",
                 "version": version, "versions": self.files.confirmed_versions(task_id),
             }
         raise ServiceError(422, "INVALID_INPUT", "Review 版本类型不受支持")
 
-    def save_draft(self, task_id: str, points: list[Any], *, revision: int, sha256: str, user_id: str, username: str, max_bytes: int, max_characters: int) -> dict[str, Any]:
+    def save_draft(
+        self, task_id: str, points: list[Any], *, revision: int, sha256: str,
+        user_id: str, username: str, max_bytes: int, max_characters: int,
+        mindmap: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """使用 revision/SHA 乐观锁原子保存草稿；冲突时绝不覆盖。"""
 
         with self.store.locked():
@@ -286,19 +331,45 @@ class ReviewService:
             if revision != current["revision"] or sha256 != current["sha256"]:
                 raise ServiceError(409, "REVIEW_REVISION_CONFLICT", "草稿已被其他页面更新", {"current_revision": current["revision"], "current_sha256": current["sha256"], "saved_at": current.get("saved_at"), "saved_by": current.get("saved_by_username")})
             normalized = normalize_for_storage(points)
+            if isinstance(mindmap, dict):
+                active_mindmap = mindmap
+                normalized, structure_issues = compile_point_mindmap(active_mindmap, normalized)
+                normalized = normalize_for_storage(normalized)
+            else:
+                # 旧 JSON/表格客户端没有树结构，以 rows 为准投影，不丢弃非对象校验样本。
+                active_mindmap = project_point_mindmap(normalized)
+                structure_issues = []
             validation = validate_points(normalized, original=current["original_points"], max_bytes=max_bytes, max_characters=max_characters)
-            digest = review_content_sha256(normalized)
+            validation_payload = validation.model_dump()
+            validation_payload["warnings"].extend(structure_issues)
+            digest = draft_content_sha256(normalized, active_mindmap)
             if digest == current["sha256"] and current["revision"] > 0:
                 return current
-            envelope = {"schema_version": 1, "revision": revision + 1, "content_sha256": digest, "base_generated_sha256": review_content_sha256(current["original_points"]), "saved_by_user_id": user_id, "saved_by_username": username, "saved_at": utc_now(), "test_points": normalized}
+            envelope = {
+                "schema_version": 2, "revision": revision + 1, "content_sha256": digest,
+                "base_generated_sha256": review_content_sha256(current["original_points"]),
+                "saved_by_user_id": user_id, "saved_by_username": username, "saved_at": utc_now(),
+                "rows": normalized, "test_points": normalized, "mindmap": active_mindmap,
+                "mindmap_authoritative": isinstance(mindmap, dict),
+            }
             TaskStore.atomic_write_json(self._draft_path(task_id), envelope)
             record = self.store.load(task_id) or {}
             record["review_draft"] = {key: envelope[key] for key in ("revision", "content_sha256", "saved_by_user_id", "saved_by_username", "saved_at")}
             self.store.save(record)
-            return {"points": normalized, "original_points": current["original_points"], "revision": revision + 1, "sha256": digest, "saved_at": envelope["saved_at"], "saved_by_username": username, "validation": validation.model_dump(), "diff_summary": diff_points(current["original_points"], normalized), "source_artifact_id": current["source_artifact_id"]}
+            return {
+                "schema_version": 2, "points": normalized, "rows": normalized, "mindmap": active_mindmap,
+                "original_points": current["original_points"], "revision": revision + 1, "sha256": digest,
+                "saved_at": envelope["saved_at"], "saved_by_username": username,
+                "validation": validation_payload, "validation_sha256": validation_sha256(validation_payload),
+                "diff_summary": diff_points(current["original_points"], normalized),
+                "source_artifact_id": current["source_artifact_id"],
+            }
 
-    def confirm(self, task_id: str, *, revision: int, sha256: str, accept_warnings: bool) -> dict[str, Any]:
-        """校验草稿并创建或复用不可变确认 JSON。"""
+    def confirm(
+        self, task_id: str, *, revision: int, sha256: str, accept_warnings: bool = False,
+        acknowledge_quality_risks: bool = False, expected_validation_sha256: str = "",
+    ) -> dict[str, Any]:
+        """校验草稿并创建确认 JSON/结构快照；业务问题经明确确认可继续。"""
 
         with self.store.locked():
             current = self.load(task_id)
@@ -307,10 +378,17 @@ class ReviewService:
             if revision != current["revision"] or sha256 != current["sha256"]:
                 raise ServiceError(409, "REVIEW_REVISION_CONFLICT", "草稿已被其他页面更新", {"current_revision": current["revision"], "current_sha256": current["sha256"]})
             validation = ReviewValidation.model_validate(current["validation"])
-            if validation.errors:
-                raise ServiceError(422, "REVIEW_VALIDATION_FAILED", "草稿仍有阻塞错误", {"validation": validation.model_dump()})
-            if validation.warnings and not accept_warnings:
-                raise ServiceError(409, "REVIEW_WARNING_CONFIRMATION_REQUIRED", "草稿包含警告，请确认后继续", {"validation": validation.model_dump()})
+            has_quality_risks = bool(validation.errors or validation.warnings)
+            accepted = accept_warnings or acknowledge_quality_risks
+            if has_quality_risks and not accepted:
+                raise ServiceError(409, "POINT_REVIEW_RISK_CONFIRMATION_REQUIRED", "草稿包含质量问题，请确认风险后继续", {
+                    "validation": current["validation"], "validation_sha256": current["validation_sha256"],
+                })
+            if expected_validation_sha256 and expected_validation_sha256 != current["validation_sha256"]:
+                raise ServiceError(409, "REVIEW_REVISION_CONFLICT", "草稿校验结果已变化", {
+                    "current_revision": current["revision"], "current_sha256": current["sha256"],
+                    "validation_sha256": current["validation_sha256"],
+                })
             task_dir = self.store.task_dir(task_id)
             record = self.store.load(task_id) or {}
             existing = record.get("review", {})
@@ -323,18 +401,27 @@ class ReviewService:
                     confirmed_points = parse_points(self._read_json(confirmed_path))
                 except ServiceError:
                     continue
-                if review_content_sha256(confirmed_points) == sha256:
+                snapshot = self.files.read_confirmed_mindmap(task_id, version) or project_point_mindmap(confirmed_points)
+                if draft_content_sha256(confirmed_points, snapshot) == sha256:
                     return {
                         "version": version,
                         "relative_path": confirmed_path.relative_to(task_dir).as_posix(),
                         "sha256": sha256,
                         "confirmed_at": utc_now(),
+                        "rows_sha256": review_content_sha256(confirmed_points),
                         "test_point_count": len(confirmed_points),
                     }
             versions = [version for version, _path in versioned_paths]
             version = max(versions, default=0) + 1
-            path = self.files.create_confirmed(task_id, version, current["points"])
-            return {"version": version, "relative_path": path.relative_to(task_dir).as_posix(), "sha256": sha256, "confirmed_at": utc_now(), "test_point_count": len(current["points"])}
+            path, snapshot_path = self.files.create_confirmed_with_mindmap(
+                task_id, version, current["points"], current["mindmap"],
+            )
+            return {
+                "version": version, "relative_path": path.relative_to(task_dir).as_posix(),
+                "mindmap_relative_path": snapshot_path.relative_to(task_dir).as_posix(),
+                "sha256": sha256, "rows_sha256": review_content_sha256(current["points"]),
+                "confirmed_at": utc_now(), "test_point_count": len(current["points"]),
+            }
 
     @staticmethod
     def _atomic_create(path: Path, payload: bytes) -> None:

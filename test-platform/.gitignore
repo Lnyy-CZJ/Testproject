@@ -9,4 +9,5 @@ backend/.pytest_cache/
 frontend/node_modules/
 frontend/dist/
 .runtime-secrets/
+.runtime/
 backups/

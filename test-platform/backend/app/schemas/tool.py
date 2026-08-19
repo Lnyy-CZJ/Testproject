@@ -32,3 +32,7 @@ class ToolHealthResponse(BaseModel):
     tool_id: str
     status: Literal["healthy", "unhealthy"]
     checked_at: datetime
+    version: str | None = None
+    revision: str | None = None
+    dirty: bool | None = None
+    runtime_environment: str | None = None

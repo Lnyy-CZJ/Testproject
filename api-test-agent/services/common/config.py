@@ -22,6 +22,8 @@ class ServiceSettings:
     runtime_environment: str
     platform_home_url: str
     app_revision: str
+    app_version: str = "unknown"
+    app_build_dirty: bool = True
 
 
 def load_service_settings(tool_id: str, agent_type: str, default_path: str, default_port: int) -> ServiceSettings:
@@ -51,6 +53,7 @@ def load_service_settings(tool_id: str, agent_type: str, default_path: str, defa
         platform_client_token_file=Path(os.getenv("PLATFORM_CLIENT_TOKEN_FILE", "/run/secrets/platform-client-token")),
         runtime_environment=environment,
         platform_home_url=os.getenv("PLATFORM_HOME_URL", "/"),
+        app_version=os.getenv("APP_VERSION", "unknown"),
         app_revision=os.getenv("APP_REVISION", "unknown"),
+        app_build_dirty=os.getenv("APP_BUILD_DIRTY", "true").lower() == "true",
     )
-
