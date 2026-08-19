@@ -101,7 +101,11 @@ for component in "${selected[@]}"; do
   esac
 done
 
-compose=(docker compose --env-file "$runtime_dir/build.env" -f "$platform_dir/docker-compose.yml")
+compose=(docker compose)
+if [[ -f "$platform_dir/.env" ]]; then
+  compose+=(--env-file "$platform_dir/.env")
+fi
+compose+=(--env-file "$runtime_dir/build.env" -f "$platform_dir/docker-compose.yml")
 buildable=()
 for service in "${compose_services[@]}"; do
   case "$service" in

@@ -130,6 +130,7 @@ def test_version_matrix_requires_audit_permission_and_degrades_prod(
     assert response.status_code == 200
     assert response.json()["prod_error"] == "Prod 无法获取"
     assert response.json()["runtime_environment"] == "dev"
+    assert all(row["primary_status"] == "不可用" for row in response.json()["rows"])
 
 
 def test_peer_snapshot_token_missing_wrong_and_correct(client: TestClient, monkeypatch) -> None:

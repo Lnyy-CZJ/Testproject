@@ -369,13 +369,17 @@ def build_matrix(
     rows = []
     for component_id, component in manifest["components"].items():
         expected = expected_components.get(component_id)
-        rows.append(compare_component(
+        row = compare_component(
             component_id, component,
             (dev or {}).get("components", {}).get(component_id),
             (actual_prod or {}).get("components", {}).get(component_id),
             expected,
             product_major,
-        ))
+        )
+        if dev is not None and actual_prod is None:
+            row["issues"] = list(dict.fromkeys(["不可用", *row["issues"]]))
+            row["primary_status"] = "不可用"
+        rows.append(row)
     dev_database = (dev or {}).get("database", {})
     prod_database = (actual_prod or {}).get("database", {})
     database_issues: list[str] = []
