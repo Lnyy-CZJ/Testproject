@@ -21,6 +21,7 @@ def _health_response(status: str) -> ServiceHealthResponse:
         component_version=settings.app_version,
         revision=settings.app_revision,
         dirty=settings.app_build_dirty,
+        content_sha256=settings.app_content_sha256,
         runtime_environment=settings.platform_runtime_env,
     )
 

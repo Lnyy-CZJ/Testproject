@@ -3,8 +3,10 @@ FROM python:3.12-slim
 ARG APP_VERSION=unknown
 ARG APP_REVISION=unknown
 ARG APP_BUILD_DIRTY=true
+ARG APP_CONTENT_SHA256=unknown
 LABEL org.opencontainers.image.version=$APP_VERSION \
-      org.opencontainers.image.revision=$APP_REVISION
+      org.opencontainers.image.revision=$APP_REVISION \
+      io.testplatform.source-content-sha256=$APP_CONTENT_SHA256
 
 WORKDIR /app
 
@@ -15,7 +17,8 @@ ENV TRACKEVENTS_HOST=0.0.0.0 \
     TRACKEVENTS_PORT=8000 \
     APP_VERSION=${APP_VERSION} \
     APP_REVISION=${APP_REVISION} \
-    APP_BUILD_DIRTY=${APP_BUILD_DIRTY}
+    APP_BUILD_DIRTY=${APP_BUILD_DIRTY} \
+    APP_CONTENT_SHA256=${APP_CONTENT_SHA256}
 
 EXPOSE 8000
 

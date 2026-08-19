@@ -169,6 +169,7 @@ def test_health_readiness_and_api_workbench(tmp_path: Path) -> None:
     assert client.get("/health").get_json() == {
         "service": "api-test-agent", "status": "ok", "version": "unknown",
         "revision": "api-test-revision", "dirty": True, "runtime_environment": "dev",
+        "content_sha256": "unknown",
     }
     assert client.get("/api-test-agent/").status_code == 401
     readiness = client.get("/api-test-agent/api/v1/readiness", headers=headers(permissions="tool.view"))

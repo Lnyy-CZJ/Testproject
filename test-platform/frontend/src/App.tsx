@@ -51,6 +51,7 @@ interface RuntimeIdentity {
   component_version: string;
   revision: string;
   dirty: boolean;
+  content_sha256: string;
   runtime_environment: string;
 }
 
@@ -61,6 +62,19 @@ interface ComponentIdentity {
   runtime_environment: string;
   health: string;
   digest?: string | null;
+  content_sha256?: string | null;
+  config_sha256?: string | null;
+  config_scopes?: string[];
+}
+
+interface DatabaseIdentity {
+  alembic_revision?: string | null;
+  schema_sha256?: string | null;
+  tables?: number;
+  columns?: number;
+  constraints?: number;
+  indexes?: number;
+  data_compared?: false;
 }
 
 interface VersionMatrixRow {
@@ -78,9 +92,10 @@ interface VersionMatrix {
   product_version: string;
   runtime_environment: string;
   prod_error?: string | null;
-  dev?: { release?: string | null; database: { alembic_revision?: string | null }; config_releases: Record<string, string> } | null;
-  prod?: { release?: string | null; database: { alembic_revision?: string | null }; config_releases: Record<string, string> } | null;
+  dev?: { release?: string | null; database: DatabaseIdentity; config_releases: Record<string, string> } | null;
+  prod?: { release?: string | null; database: DatabaseIdentity; config_releases: Record<string, string> } | null;
   rows: VersionMatrixRow[];
+  database_comparison: { dev: DatabaseIdentity; prod: DatabaseIdentity; issues: string[]; primary_status: string; data_compared: false };
 }
 
 interface AuthContextValue {
@@ -830,23 +845,23 @@ function VersionDetailsPage() {
 
   useEffect(() => { void load(); }, [load]);
 
-  return <WorkspaceShell><section className="workspace-page version-page"><PageHeader eyebrow="RELEASE IDENTITY" title="版本状态" copy="比较 Dev 实际运行、Prod 实际运行和当前生产期望状态；镜像 digest 是审计与回滚的精确依据。" actions={<button className="secondary-button" disabled={loading} onClick={() => void load()}>{loading ? "刷新中…" : "刷新状态"}</button>} /><ManagementNav />
+  return <WorkspaceShell><section className="workspace-page version-page"><PageHeader eyebrow="RELEASE IDENTITY" title="版本状态" copy="比较代码内容、有效配置与数据库结构；组件版本便于阅读，内容哈希和镜像 digest 提供可验证证据。" actions={<button className="secondary-button" disabled={loading} onClick={() => void load()}>{loading ? "刷新中…" : "刷新状态"}</button>} /><ManagementNav />
     {error && <InlineMessage kind="error">{error}</InlineMessage>}
     {matrix?.prod_error && <InlineMessage>{matrix.prod_error}，Dev 状态仍可正常查看。</InlineMessage>}
     {loading && !matrix ? <LoadingPage label="正在核对组件版本…" /> : matrix && <>
       <div className="version-summary"><span>产品 <strong>{matrix.product_version}</strong></span><span>运行环境 <strong>{matrix.runtime_environment.toUpperCase()}</strong></span><span>检查时间 <strong>{new Date(matrix.checked_at).toLocaleString()}</strong></span></div>
       <div className="version-table-wrap"><table className="version-table"><thead><tr><th scope="col">组件</th><th scope="col">Dev 实际</th><th scope="col">Prod 实际</th><th scope="col">Prod 期望</th><th scope="col">健康</th><th scope="col">状态</th><th scope="col"><span className="visually-hidden">详情</span></th></tr></thead><tbody>{matrix.rows.map((row) => <Fragment key={row.component_id}>
         <tr><th scope="row"><code>{row.component_id}</code></th><td>{identityLabel(row.dev)}</td><td>{identityLabel(row.prod)}</td><td>{row.prod_expected?.version ?? "旧发布记录 / 版本未知"}</td><td>{row.prod?.health ?? row.dev?.health ?? "未知"}</td><td><StatusBadge value={row.primary_status} /></td><td><button className="link-button" type="button" aria-expanded={expanded === row.component_id} aria-controls={`version-${row.component_id}`} onClick={() => setExpanded(expanded === row.component_id ? null : row.component_id)}>{expanded === row.component_id ? "收起" : "详情"}</button></td></tr>
-        {expanded === row.component_id && <tr id={`version-${row.component_id}`} className="version-detail-row"><td colSpan={7}><dl><div><dt>Dev SHA</dt><dd>{row.dev?.revision ?? "—"}</dd></div><div><dt>Prod SHA</dt><dd>{row.prod?.revision ?? "—"}</dd></div><div><dt>Dev digest</dt><dd>{row.dev?.digest ?? "—"}</dd></div><div><dt>Prod digest</dt><dd>{row.prod?.digest ?? "—"}</dd></div><div><dt>问题</dt><dd>{row.issues.join("、")}</dd></div></dl></td></tr>}
+        {expanded === row.component_id && <tr id={`version-${row.component_id}`} className="version-detail-row"><td colSpan={7}><dl><div><dt>Dev SHA</dt><dd>{row.dev?.revision ?? "—"}</dd></div><div><dt>Prod SHA</dt><dd>{row.prod?.revision ?? "—"}</dd></div><div><dt>Dev 内容哈希</dt><dd>{row.dev?.content_sha256 ?? "未验证"}</dd></div><div><dt>Prod 内容哈希</dt><dd>{row.prod?.content_sha256 ?? "未验证"}</dd></div><div><dt>Dev 配置哈希</dt><dd>{row.dev?.config_sha256 ?? "不适用 / 未验证"}</dd></div><div><dt>Prod 配置哈希</dt><dd>{row.prod?.config_sha256 ?? "不适用 / 未验证"}</dd></div><div><dt>Dev digest</dt><dd>{row.dev?.digest ?? "—"}</dd></div><div><dt>Prod digest</dt><dd>{row.prod?.digest ?? "—"}</dd></div><div><dt>问题</dt><dd>{row.issues.join("、")}</dd></div></dl></td></tr>}
       </Fragment>)}</tbody></table></div>
-      <div className="version-footnotes"><p>Dev Schema：{matrix.dev?.database.alembic_revision ?? "—"}</p><p>Prod Schema：{matrix.prod?.database.alembic_revision ?? "—"}</p><p>Dev Config Releases：{Object.keys(matrix.dev?.config_releases ?? {}).length}</p><p>Prod Config Releases：{Object.keys(matrix.prod?.config_releases ?? {}).length}</p></div>
+      <div className="version-footnotes"><p>数据库结构 <StatusBadge value={matrix.database_comparison.primary_status} /></p><p>Dev migration：{matrix.dev?.database.alembic_revision ?? "—"}</p><p>Prod migration：{matrix.prod?.database.alembic_revision ?? "—"}</p><p>Dev schema hash：{matrix.dev?.database.schema_sha256 ?? "—"}</p><p>Prod schema hash：{matrix.prod?.database.schema_sha256 ?? "—"}</p><p>Dev Config Releases：{Object.keys(matrix.dev?.config_releases ?? {}).length}</p><p>Prod Config Releases：{Object.keys(matrix.prod?.config_releases ?? {}).length}</p><p>业务数据归各环境所有，不参与一致性比较。</p></div>
     </>}
   </section></WorkspaceShell>;
 }
 
 function StatusBadge({ value }: { value: string }) {
   const normalized = value.toLowerCase();
-  const tone = ["healthy", "active", "success", "ok", "一致"].includes(normalized) || normalized.startsWith("v") ? "success" : ["missing", "failed", "disabled", "unhealthy", "不可用", "不兼容", "环境漂移"].includes(normalized) ? "danger" : "neutral";
+  const tone = ["healthy", "active", "success", "ok", "一致"].includes(normalized) || normalized.startsWith("v") ? "success" : ["missing", "failed", "disabled", "unhealthy", "不可用", "不兼容", "环境漂移", "配置不一致", "内容不一致", "结构不一致", "迁移不一致"].includes(normalized) ? "danger" : "neutral";
   return <span className={`status-badge status-badge-${tone}`}>{value}</span>;
 }
 

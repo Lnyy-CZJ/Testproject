@@ -57,6 +57,7 @@ def test_live_and_ready(client: TestClient) -> None:
         "component_version": "unknown",
         "revision": "unknown",
         "dirty": True,
+        "content_sha256": "unknown",
         "runtime_environment": "dev",
     }
     ready_response = client.get("/api/v1/health/ready")
@@ -68,6 +69,7 @@ def test_live_and_ready(client: TestClient) -> None:
         "component_version": "unknown",
         "revision": "unknown",
         "dirty": True,
+        "content_sha256": "unknown",
         "runtime_environment": "dev",
     }
 

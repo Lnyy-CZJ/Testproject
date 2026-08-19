@@ -25,6 +25,7 @@ def probe_tool_health(health_url: str, timeout_seconds: float) -> dict:
             "version": str(payload.get("version", "unknown")),
             "revision": str(payload.get("revision", "unknown")),
             "dirty": bool(payload.get("dirty", True)),
+            "content_sha256": str(payload.get("content_sha256", "unknown")),
             "runtime_environment": str(payload.get("runtime_environment", "unknown")),
         }
     except (httpx.HTTPError, ValueError):

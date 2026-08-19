@@ -41,6 +41,7 @@ for component_id, component in metadata["components"].items():
     lines.extend([
         f"{prefix}_VERSION={component['version']}",
         f"{prefix}_DIRTY={str(component['dirty']).lower()}",
+        f"{prefix}_CONTENT_SHA256={component['content_sha256']}",
     ])
     for image_env in component["image_envs"]:
         image_name = image_env.removesuffix("_IMAGE").lower().replace("_", "-")
@@ -51,13 +52,14 @@ for component_id, component in metadata["components"].items():
         "version": component["version"],
         "revision": metadata["revision"],
         "dirty": component["dirty"],
+        "content_sha256": component["content_sha256"],
         "images": {key: images[key] for key in component["image_envs"]},
     }
 Path(sys.argv[2]).write_text("\n".join(lines) + "\n", encoding="utf-8")
 current_path = Path(sys.argv[3])
 current = json.loads(current_path.read_text()) if current_path.exists() else {}
 current.update({
-    "schema_version": 2,
+    "schema_version": 3,
     "release": f"dev-{short_sha}",
     "commit": metadata["revision"],
 })
@@ -85,14 +87,14 @@ for component in "${selected[@]}"; do
     platform-backend) compose_services+=(platform-migrate platform-bootstrap platform-api platform-credential-agent) ;;
     trackevents-web|log-filter-tool|truthy-search|api-autotest) compose_services+=("$component") ;;
     functional-test-agent)
-      docker build --build-arg APP_VERSION="$FUNCTIONAL_AGENT_VERSION" --build-arg APP_REVISION="$APP_REVISION" --build-arg APP_BUILD_DIRTY="$FUNCTIONAL_AGENT_DIRTY" -t "$FUNCTIONAL_AGENT_IMAGE" "$repo_dir/functional-test-agent"
+      docker build --build-arg APP_VERSION="$FUNCTIONAL_AGENT_VERSION" --build-arg APP_REVISION="$APP_REVISION" --build-arg APP_BUILD_DIRTY="$FUNCTIONAL_AGENT_DIRTY" --build-arg APP_CONTENT_SHA256="$FUNCTIONAL_AGENT_CONTENT_SHA256" -t "$FUNCTIONAL_AGENT_IMAGE" "$repo_dir/functional-test-agent"
       compose_services+=(functional-test-agent)
       ;;
     api-test-agent)
-      docker build -f "$repo_dir/api-test-agent/Dockerfile.agent" --build-arg APP_VERSION="$API_AGENT_VERSION" --build-arg APP_REVISION="$APP_REVISION" --build-arg APP_BUILD_DIRTY="$API_AGENT_DIRTY" -t "$API_AGENT_IMAGE" "$repo_dir/api-test-agent"
-      docker build -f "$repo_dir/api-test-agent/Dockerfile.controller" --build-arg APP_VERSION="$API_AGENT_VERSION" --build-arg APP_REVISION="$APP_REVISION" --build-arg APP_BUILD_DIRTY="$API_AGENT_DIRTY" -t "$API_EXECUTION_CONTROLLER_IMAGE" "$repo_dir/api-test-agent"
-      docker build -f "$repo_dir/api-test-agent/Dockerfile.egress" --build-arg APP_VERSION="$API_AGENT_VERSION" --build-arg APP_REVISION="$APP_REVISION" --build-arg APP_BUILD_DIRTY="$API_AGENT_DIRTY" -t "$API_EGRESS_PROXY_IMAGE" "$repo_dir/api-test-agent"
-      docker build -f "$repo_dir/api-test-agent/Dockerfile.executor" --build-arg APP_VERSION="$API_AGENT_VERSION" --build-arg APP_REVISION="$APP_REVISION" --build-arg APP_BUILD_DIRTY="$API_AGENT_DIRTY" -t "$API_EXECUTOR_IMAGE" "$repo_dir/api-test-agent"
+      docker build -f "$repo_dir/api-test-agent/Dockerfile.agent" --build-arg APP_VERSION="$API_AGENT_VERSION" --build-arg APP_REVISION="$APP_REVISION" --build-arg APP_BUILD_DIRTY="$API_AGENT_DIRTY" --build-arg APP_CONTENT_SHA256="$API_AGENT_CONTENT_SHA256" -t "$API_AGENT_IMAGE" "$repo_dir/api-test-agent"
+      docker build -f "$repo_dir/api-test-agent/Dockerfile.controller" --build-arg APP_VERSION="$API_AGENT_VERSION" --build-arg APP_REVISION="$APP_REVISION" --build-arg APP_BUILD_DIRTY="$API_AGENT_DIRTY" --build-arg APP_CONTENT_SHA256="$API_AGENT_CONTENT_SHA256" -t "$API_EXECUTION_CONTROLLER_IMAGE" "$repo_dir/api-test-agent"
+      docker build -f "$repo_dir/api-test-agent/Dockerfile.egress" --build-arg APP_VERSION="$API_AGENT_VERSION" --build-arg APP_REVISION="$APP_REVISION" --build-arg APP_BUILD_DIRTY="$API_AGENT_DIRTY" --build-arg APP_CONTENT_SHA256="$API_AGENT_CONTENT_SHA256" -t "$API_EGRESS_PROXY_IMAGE" "$repo_dir/api-test-agent"
+      docker build -f "$repo_dir/api-test-agent/Dockerfile.executor" --build-arg APP_VERSION="$API_AGENT_VERSION" --build-arg APP_REVISION="$APP_REVISION" --build-arg APP_BUILD_DIRTY="$API_AGENT_DIRTY" --build-arg APP_CONTENT_SHA256="$API_AGENT_CONTENT_SHA256" -t "$API_EXECUTOR_IMAGE" "$repo_dir/api-test-agent"
       compose_services+=(api-test-agent)
       ;;
     *) echo "unknown component: $component" >&2; exit 2 ;;
@@ -110,7 +112,20 @@ done
 if [[ ${#buildable[@]} -gt 0 ]]; then
   "${compose[@]}" build "${buildable[@]}"
 fi
-"${compose[@]}" up -d "${compose_services[@]}"
+backend_services=()
+independent_services=()
+for service in "${compose_services[@]}"; do
+  case "$service" in
+    platform-migrate|platform-bootstrap|platform-api|platform-credential-agent) backend_services+=("$service") ;;
+    *) independent_services+=("$service") ;;
+  esac
+done
+if [[ ${#backend_services[@]} -gt 0 ]]; then
+  "${compose[@]}" up -d "${backend_services[@]}"
+fi
+if [[ ${#independent_services[@]} -gt 0 ]]; then
+  "${compose[@]}" up -d --no-deps "${independent_services[@]}"
+fi
 
 snapshot_file="$runtime_dir/snapshot.json"
 peer_token=$(<"$secret_dir/version-peer-token")
@@ -136,20 +151,25 @@ PY
   [[ "$attempt" == 12 ]] && { echo "Dev components did not become version-ready" >&2; exit 1; }
   sleep 3
 done
-python3 - "$metadata_file" "$snapshot_file" <<'PY'
+python3 - "$metadata_file" "$snapshot_file" "${selected[@]}" <<'PY'
 import json, sys
 from pathlib import Path
 
 expected = json.loads(Path(sys.argv[1]).read_text())["components"]
 actual = json.loads(Path(sys.argv[2]).read_text())["components"]
+selected = set(sys.argv[3:])
 failures = []
 for component_id, component in expected.items():
+    if component_id not in selected:
+        continue
     identity = actual.get(component_id, {})
     if identity.get("version") != component["version"]:
         failures.append(f"{component_id}: expected {component['version']}, got {identity.get('version', 'missing')}")
+    if identity.get("content_sha256") != component["content_sha256"]:
+        failures.append(f"{component_id}: source content hash does not match the Dev build")
 if failures:
     raise SystemExit("Dev version verification failed:\n" + "\n".join(failures))
-print(f"verified {len(expected)} component versions")
+print(f"verified {len(selected)} component versions and source content hashes")
 PY
 python3 "$platform_dir/scripts/version_tool.py" report --dev "$snapshot_file" --output "$runtime_dir/dev-version-report.md"
 

@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     app_version: str = "unknown"
     app_revision: str = "unknown"
     app_build_dirty: bool = True
+    app_content_sha256: str = "unknown"
     version_peer_token: str = ""
     version_peer_token_file: str = ""
     prod_version_snapshot_url: str = ""
