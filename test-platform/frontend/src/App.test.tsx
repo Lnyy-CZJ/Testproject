@@ -133,7 +133,7 @@ describe("第三阶段 AI 测试工作台", () => {
   it("配置环境切换不改变状态卡的真实运行环境", async () => {
     mockAuthenticatedCatalog([]);
     render(<App />);
-    expect(await screen.findByRole("complementary", { name: "平台状态" })).toHaveTextContent("运行环境DEV");
+    await waitFor(() => expect(screen.getByRole("complementary", { name: "平台状态" })).toHaveTextContent("运行环境DEV"));
     fireEvent.change(screen.getByLabelText("当前配置环境"), { target: { value: "prod" } });
     expect(screen.getByRole("complementary", { name: "平台状态" })).toHaveTextContent("运行环境DEV");
   });
