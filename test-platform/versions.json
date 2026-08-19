@@ -5,7 +5,7 @@
   },
   "components": {
     "platform-gateway": {
-      "version": "1.1.0",
+      "version": "1.1.1",
       "compatible_product_major": 1,
       "source_paths": ["test-platform/frontend", "test-platform/web", "test-platform/nginx", "test-platform/Dockerfile"],
       "image_envs": ["PLATFORM_GATEWAY_IMAGE"]

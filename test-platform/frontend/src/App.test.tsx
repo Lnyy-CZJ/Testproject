@@ -53,9 +53,12 @@ function mockAuthenticatedCatalog(items = allTools, currentAuth = auth) {
 
 describe("第三阶段 AI 测试工作台", () => {
   it("未登录时强制进入登录页，不显示匿名工具入口", async () => {
-    vi.spyOn(globalThis, "fetch").mockImplementation(() => jsonResponse({ code: "AUTH_REQUIRED", message: "请先登录" }, 401));
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => String(input).endsWith("/version.json")
+      ? jsonResponse({ runtime_environment: "prod" })
+      : jsonResponse({ code: "AUTH_REQUIRED", message: "请先登录" }, 401));
     render(<App />);
     expect(await screen.findByRole("heading", { name: "欢迎回来" })).toBeInTheDocument();
+    expect(await screen.findByText("PROD")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "测试开发平台" })).toBeInTheDocument();
     expect(screen.getByPlaceholderText("请输入用户名")).toHaveFocus();
     expect(screen.getByText("统一管理测试资产")).toBeInTheDocument();
