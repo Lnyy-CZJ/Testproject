@@ -132,7 +132,10 @@ class WebAppTests(unittest.TestCase):
 
         self.assertEqual(200, home_response.status_code)
         self.assertEqual(
-            {"service": "truthy-search", "status": "ok"},
+            {
+                "service": "truthy-search", "status": "ok", "version": "unknown",
+                "revision": "unknown", "dirty": True, "runtime_environment": "unknown",
+            },
             health_response.get_json(),
         )
         self.assertEqual("", self.app.config["SEARCH_WEB_BASE_PATH"])

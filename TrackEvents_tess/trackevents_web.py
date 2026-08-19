@@ -1223,7 +1223,13 @@ class TrackEventsHandler(BaseHTTPRequestHandler):
             self._send_text(FAVICON_PATH.read_text("utf-8"), "image/svg+xml")
             return
         if path == route_path("/health", base_path):
-            self._send_json({"service": "trackevents", "status": "ok"})
+            self._send_json({
+                "service": "trackevents", "status": "ok",
+                "version": os.getenv("APP_VERSION", "unknown"),
+                "revision": os.getenv("APP_REVISION", "unknown"),
+                "dirty": os.getenv("APP_BUILD_DIRTY", "true").lower() == "true",
+                "runtime_environment": os.getenv("PLATFORM_RUNTIME_ENV", "unknown"),
+            })
             return
         self.send_error(404)
 

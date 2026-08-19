@@ -1,16 +1,22 @@
 import {
   buildMoveCommand,
+  applyPatch,
+  compileMindmapRows,
   CommandHistory,
   cleanRows,
   executeCommand,
   filterRows,
   flattenTree,
   newRowContext,
+  executeMindmapCommand,
+  mindmapTree,
+  projectMindmap,
   projectTestCases,
   projectTestPoints,
+  syncMindmapRows,
   wrapRows,
-} from "./mindmap-domain.mjs";
-import { MindmapView } from "./mindmap-view.mjs";
+} from "./mindmap-domain.mjs?v=20260819-free-review-4";
+import { MindmapView } from "./mindmap-view.mjs?v=20260819-free-review-4";
 
 const base = document.body.dataset.basePath;
 const STATUS_LABELS = {
@@ -139,6 +145,7 @@ class ReviewMindmapController {
     this.kind = host.dataset.mindmapKind;
     this.legacyRoot = document.querySelector(this.kind === "points" ? "[data-review-workbench]" : "[data-case-review-workbench]");
     this.rows = [];
+    this.mindmap = null;
     this.testPoints = [];
     this.validation = { errors: [], warnings: [] };
     this.diff = {};
@@ -182,7 +189,7 @@ class ReviewMindmapController {
     ["", "P0", "P1", "P2", "P3"].forEach((value) => { const option = element("option", "", value || "全部"); option.value = value; this.levelSelect.append(option); });
     levelLabel.append(this.levelSelect);
     toolbar.append(searchLabel, levelLabel);
-    [["search-prev", "上一结果"], ["search-next", "下一结果"], ["add-child", "新增子节点"], ["add-sibling", "新增同级"], ["duplicate", "复制"], ["delete", "删除"], ["undo", "撤销"], ["redo", "重做"], ["expand-all", "全部展开"], ["collapse-all", "全部收起"], ["center", "回到中心"], ["focus", "聚焦分支"], ["fullscreen", "全屏"], ["zoom-out", "缩小"], ["zoom-in", "放大"], ["fit", "适应画布"]].forEach(([action, label]) => {
+    [["duplicate", "复制"], ["delete", "删除"], ["undo", "撤销"], ["expand-all", "全部展开"], ["collapse-all", "全部收起"], ["zoom-out", "缩小"], ["zoom-in", "放大"], ["fit", "适应画布"]].forEach(([action, label]) => {
       const button = element("button", "secondary-button compact-button", label); button.type = "button"; button.dataset.mindmapAction = action; toolbar.append(button);
       if (action === "zoom-out") {
         this.zoomValue = element("output", "mindmap-zoom-value", "100%");
@@ -209,7 +216,7 @@ class ReviewMindmapController {
       maxVisible: 500,
       onSelect: (meta, options) => this.select(meta, options),
       onMove: (operation) => this.move(operation),
-      onCanMove: ({ sources, target, placement }) => Boolean(buildMoveCommand(this.kind, sources, target, this.testPoints, placement)),
+      onCanMove: ({ sources, target }) => Boolean(target?.nodeId && sources?.every((item) => item?.nodeId && item.kind !== "root")),
       onRename: (meta, value) => this.renameNode(meta, value),
       onAdd: (meta, relation) => this.addRow(relation, meta),
       onBoxSelect: (metas) => this.selectMany(metas),
@@ -224,7 +231,14 @@ class ReviewMindmapController {
     const requestEvent = this.kind === "points" ? "review-v2-request-state" : "case-review-v2-request-state";
     this.legacyRoot.addEventListener(stateEvent, (event) => this.acceptState(event.detail));
     this.legacyRoot.dispatchEvent(new CustomEvent(requestEvent));
-    this.search.addEventListener("input", () => { this.query = this.search.value; this.searchOffset = 0; this.page = 1; this.render(); });
+    this.search.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault(); this.query = this.search.value.trim(); this.searchOffset = 0; this.page = 1; this.render();
+        if (this.query && !this.filtered().length) this.setNotice("未找到匹配节点", true);
+      } else if (event.key === "Escape") {
+        this.search.value = ""; this.query = ""; this.searchOffset = 0; this.page = 1; this.render();
+      }
+    });
     this.levelSelect.addEventListener("change", () => { this.level = this.levelSelect.value; this.page = 1; this.render(); });
     this.host.querySelectorAll("[data-tab]").forEach((button) => button.addEventListener("click", () => this.switchTab(button.dataset.tab)));
     this.toolbar.addEventListener("click", (event) => {
@@ -239,13 +253,16 @@ class ReviewMindmapController {
     if (this.viewMode !== "draft") return;
     const values = this.kind === "points" ? detail.points : detail.cases;
     const previous = new Map(this.rows.map((row) => [this.identity(row), row.__uiKey]));
-    this.rows = wrapRows(values, this.kind).map((row) => ({ ...row, __uiKey: previous.get(this.identity(row)) || row.__uiKey }));
+    this.rows = wrapRows(values, this.kind).map((row) => ({ ...row, __uiKey: previous.get(this.identity(row)) || this.identity(row) || row.__uiKey }));
     this.testPoints = detail.testPoints || this.testPoints;
     this.validation = detail.validation || { errors: [], warnings: [] };
     this.diff = detail.diff || {};
     this.coverage = detail.coverage || {};
     this.versions = detail.versions || this.versions || [];
     this.editable = Boolean(detail.editable);
+    this.mindmap = detail.mindmap
+      ? syncMindmapRows(this.kind, detail.mindmap, this.rows, this.testPoints)
+      : projectMindmap(this.kind, this.rows, this.testPoints, this.host.dataset.title);
     this.render();
   }
 
@@ -259,9 +276,22 @@ class ReviewMindmapController {
 
   treeData() {
     const rows = this.filtered();
-    const data = this.kind === "points"
-      ? projectTestPoints(rows, this.host.dataset.title || "测试点")
-      : projectTestCases(rows, this.testPoints, this.host.dataset.title || "测试用例");
+    const filteredIds = new Set(rows.map((row) => this.identity(row)));
+    const projectedMindmap = structuredClone(this.mindmap || projectMindmap(this.kind, this.rows, this.testPoints, this.host.dataset.title));
+    if (this.query || this.level) {
+      const leafType = this.kind === "points" ? "test_point" : "case";
+      const matched = projectedMindmap.nodes.filter((node) => node.node_type === leafType && filteredIds.has(String(node.binding_id || "")));
+      const keep = new Set(matched.map((node) => node.node_id));
+      for (const leaf of matched) projectedMindmap.nodes.filter((node) => node.parent_id === leaf.node_id).forEach((node) => keep.add(node.node_id));
+      const byId = new Map(projectedMindmap.nodes.map((node) => [node.node_id, node]));
+      let changed = true;
+      while (changed) {
+        changed = false;
+        for (const nodeId of [...keep]) { const parentId = byId.get(nodeId)?.parent_id; if (parentId && parentId !== projectedMindmap.root.node_id && !keep.has(parentId)) { keep.add(parentId); changed = true; } }
+      }
+      projectedMindmap.nodes = projectedMindmap.nodes.filter((node) => keep.has(node.node_id));
+    }
+    const data = mindmapTree(projectedMindmap);
     const issues = new Map();
     [...(this.validation.errors || []), ...(this.validation.warnings || [])].forEach((issue) => {
       const row = this.rows[issue.row_index]; if (row) issues.set(this.identity(row), issue.level === "error" ? "错误" : "警告");
@@ -269,7 +299,7 @@ class ReviewMindmapController {
     const rowByKey = new Map(this.rows.map((row) => [row.__uiKey, row]));
     const uncovered = new Set(this.coverage.uncovered_test_point_ids || []);
     flattenTree(data.nodeData).forEach((node) => {
-      if (node.meta.uiKey) {
+      if (node.meta.uiKey && ["point", "test_point", "case"].includes(node.meta.kind)) {
         const row = rowByKey.get(node.meta.uiKey);
         if (row) node.meta.statusLabel = [row.risk_level || row.priority, issues.get(this.identity(row))].filter(Boolean).join(" · ");
       }
@@ -277,7 +307,9 @@ class ReviewMindmapController {
         node.meta.statusLabel = uncovered.has(node.meta.pointId) ? "未覆盖" : "已覆盖";
       }
     });
-    this.nodeIdByUiKey = new Map(flattenTree(data.nodeData).filter((node) => node.meta.uiKey).map((node) => [node.meta.uiKey, node.id]));
+    this.nodeIdByUiKey = new Map(flattenTree(data.nodeData)
+      .filter((node) => node.meta.uiKey && ["point", "test_point", "case"].includes(node.meta.kind))
+      .map((node) => [node.meta.uiKey, node.id]));
     const projected = flattenTree(data.nodeData).length;
     if (projected > 500) {
       data.nodeData.children.forEach((node) => { node.expanded = false; });
@@ -313,7 +345,7 @@ class ReviewMindmapController {
   switchTab(tab) {
     this.activeTab = tab;
     this.layout.hidden = tab !== "mindmap";
-    this.toolbar.hidden = tab === "versions";
+    this.toolbar.hidden = tab !== "mindmap";
     this.tablePane.hidden = tab !== "table";
     this.versionPane.hidden = tab !== "versions";
     this.render();
@@ -331,6 +363,7 @@ class ReviewMindmapController {
     this.renderDetail();
     this.syncSelection();
     this.view.markSelected(this.selectedKeys);
+    if (meta?.kind === "case" && options.revealDetails) this.view.expand(this.nodeIdByUiKey?.get(meta.uiKey), true);
   }
 
   selectMany(metas) {
@@ -408,7 +441,7 @@ class ReviewMindmapController {
       if (["preconditions", "test_steps"].includes(field)) value = value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
       if (field === "test_data") {
         try { value = JSON.parse(value || "{}"); }
-        catch (_error) { this.setNotice("测试数据必须是合法 JSON", true); return; }
+        catch (_error) { value = control.value; this.setNotice("测试数据不是 JSON，将按普通文本保存并在发布前提示", false); }
       }
       updates[field] = value;
     }
@@ -441,14 +474,10 @@ class ReviewMindmapController {
   }
 
   renameNode(meta, value) {
-    /** 脑图双击编辑与详情面板共用领域命令和撤销栈。根节点仅是任务容器，不属于测试资产。 */
+    /** 所有可见节点统一按稳定 node_id 原位改名，再由自由树编译标准 rows。 */
     if (!this.editable || this.viewMode !== "draft") { this.render(); return; }
-    if (meta?.uiKey) {
-      this.execute({ type: "update", uiKey: meta.uiKey, updates: { [this.kind === "points" ? "test_point" : "case_name"]: value }, label: "脑图内修改节点" });
-      return;
-    }
-    if (["module", "feature", "scenario", "test_point"].includes(meta?.kind)) this.renameGroup(meta, value);
-    else { this.setNotice("根节点是任务标题，请在任务信息中维护", true); this.render(); }
+    if (!meta?.nodeId) { this.setNotice("节点定位信息已失效，请重新选择", true); return; }
+    this.executeMindmap({ type: "rename_node", nodeId: meta.nodeId, text: value, label: "脑图内修改节点" });
   }
 
   execute(command) {
@@ -456,7 +485,11 @@ class ReviewMindmapController {
     try {
       const result = executeCommand(this.rows, command);
       this.rows = result.rows;
-      this.history.push(result.patch);
+      const nextMindmap = syncMindmapRows(this.kind, this.mindmap, this.rows, this.testPoints);
+      const patch = { label: result.patch.label, changes: [{ kind: "replace_state", before: { rows: applyPatch(this.rows, result.patch, true), mindmap: this.mindmap }, after: { rows: this.rows, mindmap: nextMindmap } }] };
+      patch.bytes = JSON.stringify(patch.changes).length;
+      this.mindmap = nextMindmap;
+      this.history.push(patch);
       this.emitReplace();
       this.render();
     } catch (error) {
@@ -464,12 +497,21 @@ class ReviewMindmapController {
     }
   }
 
+  executeMindmap(command) {
+    if (!this.editable || this.viewMode !== "draft") return;
+    try {
+      const result = executeMindmapCommand({ rows: this.rows, mindmap: this.mindmap, kind: this.kind, testPoints: this.testPoints }, command);
+      this.rows = result.rows.map((row) => ({ ...row, __uiKey: this.identity(row) || row.__uiKey }));
+      this.mindmap = result.mindmap;
+      this.history.push(result.patch);
+      this.emitReplace();
+      this.render();
+      if (result.issues?.length) this.setNotice(`已保存自由结构，发现 ${result.issues.length} 个待校验问题`, false);
+    } catch (error) { this.setNotice(error.message, true); }
+  }
+
   handleAction(action) {
     if (action === "fit") { this.view.fit(); return; }
-    if (["search-prev", "search-next"].includes(action)) {
-      this.searchOffset = (this.searchOffset || 0) + (action === "search-next" ? 1 : -1);
-      const meta = this.view.find(this.query, this.searchOffset); if (meta) this.select(meta); return;
-    }
     if (action === "zoom-out") { this.view.zoomBy(-0.05); return; }
     if (action === "zoom-in") { this.view.zoomBy(0.05); return; }
     if (action === "center") { this.view.center(); return; }
@@ -477,42 +519,39 @@ class ReviewMindmapController {
     if (action === "collapse-all") { this.view.expandAll(false); return; }
     if (action === "fullscreen") { this.view.fullscreen(); return; }
     if (action === "focus") { this.view.focusBranch(this.nodeIdForSelection()); return; }
-    if (action === "undo") { this.rows = this.history.undo(this.rows); this.emitReplace(); this.render(); return; }
-    if (action === "redo") { this.rows = this.history.redo(this.rows); this.emitReplace(); this.render(); return; }
+    if (action === "undo") { const state = this.history.undoState({ rows: this.rows, mindmap: this.mindmap }); this.rows = state.rows; this.mindmap = state.mindmap; this.emitReplace(); this.render(); return; }
+    if (action === "redo") { const state = this.history.redoState({ rows: this.rows, mindmap: this.mindmap }); this.rows = state.rows; this.mindmap = state.mindmap; this.emitReplace(); this.render(); return; }
     if (["add-child", "add-sibling"].includes(action)) { this.addRow(action === "add-child" ? "child" : "sibling"); return; }
-    if (!this.current()) {
-      if (action === "delete" && this.kind === "points" && this.selectedMeta && ["module", "feature", "scenario"].includes(this.selectedMeta.kind)) {
-        const keys = this.groupKeys(this.selectedMeta);
-        if (keys.length && confirm(`确定删除该分组及其 ${keys.length} 条测试点吗？`)) {
-          this.execute({ type: "delete", uiKeys: keys, label: "删除分组" });
-          this.selectedMeta = null;
-        }
-        return;
-      }
-      this.setNotice("请先选择一个可编辑节点", true);
+    if (action === "duplicate") {
+      if (!this.selectedMeta?.nodeId) { this.setNotice("请先选择要复制的节点", true); return; }
+      this.executeMindmap({ type: "duplicate_node", nodeId: this.selectedMeta.nodeId, label: "复制节点及分支" });
       return;
     }
-    if (action === "duplicate") {
-      this.copySelection(); this.pasteSelection();
+    if (action === "normalize") {
+      if (!confirm(`整理后将按推荐层级重建当前 ${this.rows.length} 条业务数据，空分组会被移除。确定继续吗？`)) return;
+      this.executeMindmap({ type: "normalize_structure", label: "整理为推荐结构" });
+      return;
     }
     if (action === "delete") {
-      const keys = this.selectedKeys.size ? [...this.selectedKeys] : [this.selectedKey];
-      if (confirm(`确定删除选中的 ${keys.length} 个节点吗？`)) { this.execute({ type: "delete", uiKeys: keys, label: "删除" }); this.selectedKeys.clear(); }
+      const meta = this.selectedMeta;
+      if (!meta?.nodeId) { this.setNotice("请先选择要删除的节点", true); return; }
+      if (meta.kind === "root") {
+        if (!confirm(`删除中心根节点将清空当前草稿的 ${this.rows.length} 条业务数据，并重建空白根。历史版本和产物不受影响，确定继续吗？`)) return;
+        if (!confirm("请再次确认：清空当前草稿全部节点？")) return;
+        this.executeMindmap({ type: "delete_root_and_reset", title: this.kind === "points" ? "测试点" : "测试用例", label: "删除根节点并重置" });
+      } else if (confirm("确定删除该节点及其全部子节点吗？")) this.executeMindmap({ type: "delete_node", nodeId: meta.nodeId, label: "删除节点" });
+      this.selectedKey = null; this.selectedMeta = null; this.selectedKeys.clear();
     }
   }
 
   move({ sources, target, placement }) {
-    const selected = sources.length === 1 && sources[0]?.uiKey && this.selectedKeys.size > 1
-      ? this.rows.filter((row) => this.selectedKeys.has(row.__uiKey)).map((row) => ({ uiKey: row.__uiKey, kind: this.kind === "points" ? "point" : "case", pointId: row.test_point_id }))
-      : sources;
-    const command = buildMoveCommand(this.kind, selected, target, this.testPoints, placement || "inside");
-    if (command) this.execute(command);
-    else this.setNotice(this.kind === "points"
-      ? "可将功能拖到模块、场景拖到功能、测试点拖到场景；模块根层级保持固定"
-      : "可将用例或整个测试点用例分组拖到另一个已确认测试点", true);
+    const source = sources?.[0];
+    if (!source?.nodeId || !target?.nodeId) { this.setNotice("拖动节点已变化，请重试", true); return; }
+    this.executeMindmap({ type: "move_node", nodeId: source.nodeId, targetId: target.nodeId, placement: placement || "inside", label: "移动脑图节点" });
   }
 
   nodeIdForSelection() {
+    if (this.selectedMeta?.nodeId) return this.selectedMeta.nodeId;
     if (this.selectedKey) return this.nodeIdByUiKey?.get(this.selectedKey);
     const entry = [...(this.view.metaById || [])].find(([, meta]) => meta === this.selectedMeta);
     return entry?.[0]?.replace(/^me/, "");
@@ -520,11 +559,11 @@ class ReviewMindmapController {
 
   addRow(relation = "child", meta = this.selectedMeta || {}) {
     if (!this.editable || this.viewMode !== "draft") return;
+    if (!meta.nodeId) meta = { ...meta, nodeId: this.mindmap.root.node_id, kind: "root" };
     const context = newRowContext(this.kind, meta, this.current(), this.testPoints);
-    if (this.kind === "cases" && !context.test_point_id) { this.setNotice("当前范围没有已确认测试点，无法新增用例", true); return; }
     const ids = this.rows.map((row) => Number(/\d+/.exec(this.identity(row))?.[0] || 0));
     const next = Math.max(0, ...ids) + 1;
-    const row = this.kind === "points" ? {
+    let row = this.kind === "points" ? {
       id: `TP${String(next).padStart(3, "0")}`, module: context.module || "新模块", feature: context.feature || "新功能",
       scenario: context.scenario || "新场景", test_point: "新测试点", risk_level: "P2",
     } : {
@@ -532,11 +571,16 @@ class ReviewMindmapController {
       module: context.module || "", feature: context.feature || "", scenario: context.scenario || "", case_name: "新测试用例", priority: "P2",
       preconditions: [], test_steps: ["执行测试操作"], test_data: {}, expected_result: "符合预期", actual_result: "",
     };
-    const targetKey = relation === "sibling" ? this.selectedKey : null;
-    this.execute(targetKey ? { type: "insert_relative", targetKey, placement: "after", row, label: "新增同级节点" } : { type: "insert", row, label: "新增子节点" });
-    const inserted = this.rows.find((item) => this.identity(item) === this.identity(row));
-    this.selectedKey = inserted?.__uiKey || null; this.selectedKeys = new Set(this.selectedKey ? [this.selectedKey] : []);
-    setTimeout(() => { const nodeId = this.nodeIdByUiKey?.get(this.selectedKey); this.view.focus(nodeId); this.view.edit(nodeId); }, 0);
+    const nextType = relation === "sibling" ? (meta.kind === "point" ? "test_point" : meta.kind) : (this.kind === "points"
+      ? ({ root: "module", module: "feature", feature: "scenario" }[meta.kind] || "test_point")
+      : ({ root: "module", module: "feature", feature: "test_point" }[meta.kind] || "case"));
+    if (!["test_point", "case"].includes(nextType) || (this.kind === "cases" && nextType === "test_point")) row = null;
+    const label = row ? (this.kind === "points" ? row.test_point : row.case_name) : `新${({ module: "模块", feature: "功能", scenario: "场景", test_point: "测试点" })[nextType] || "节点"}`;
+    this.executeMindmap({ type: "insert_node", targetId: meta.nodeId, relation, nodeType: nextType, text: label, row, label: relation === "sibling" ? "新增同级节点" : "新增子节点" });
+    if (row) {
+      this.selectedKey = this.identity(row); this.selectedKeys = new Set([this.selectedKey]);
+      setTimeout(() => { const nodeId = this.nodeIdByUiKey?.get(this.selectedKey); this.view.focus(nodeId); this.view.edit(nodeId); }, 0);
+    }
   }
 
   copySelection() {
@@ -561,7 +605,7 @@ class ReviewMindmapController {
   showContextMenu(meta, point) {
     this.select(meta); this.contextMenu?.remove();
     const menu = element("div", "mindmap-context-menu"); menu.setAttribute("role", "menu");
-    [["edit", "编辑"], ["add-child", "新增子节点"], ["add-sibling", "新增同级"], ["duplicate", "复制"], ["toggle", "展开/收起"], ["move-parent", "移动到指定父级"], ["focus", "聚焦分支"], ["delete", "删除"]].forEach(([action, label]) => {
+    [["edit", "编辑"], ["add-child", "新增子节点"], ["add-sibling", "新增同级"], ["duplicate", "复制节点及分支"], ["toggle", "展开/收起"], ["move-parent", "移动到指定父级"], ["normalize", "整理为推荐结构"], ["focus", "聚焦分支"], ["delete", "删除"]].forEach(([action, label]) => {
       const button = element("button", "", label); button.type = "button"; button.setAttribute("role", "menuitem");
       button.addEventListener("click", () => {
         menu.remove();
@@ -619,7 +663,7 @@ class ReviewMindmapController {
 
   emitReplace() {
     const eventName = this.kind === "points" ? "review-v2-replace" : "case-review-v2-replace";
-    this.legacyRoot.dispatchEvent(new CustomEvent(eventName, { detail: { rows: cleanRows(this.rows) } }));
+    this.legacyRoot.dispatchEvent(new CustomEvent(eventName, { detail: { rows: cleanRows(this.rows), mindmap: structuredClone(this.mindmap) } }));
   }
 
   syncSelection() {
@@ -634,8 +678,8 @@ class ReviewMindmapController {
     const fields = this.kind === "points"
       ? ["id", "module", "feature", "scenario", "test_point", "risk_level"]
       : ["case_id", "test_point_id", "module", "feature", "scenario", "case_name", "priority", "preconditions", "test_steps", "test_data", "expected_result", "actual_result"];
-    const table = element("table", "editable-review-table");
-    const head = element("thead"); const headRow = element("tr"); fields.forEach((field) => headRow.append(element("th", "", field))); headRow.append(element("th", "", "定位")); head.append(headRow);
+    const table = element("table", `editable-review-table ${this.kind === "cases" ? "is-case-table" : "is-point-table"}`);
+    const head = element("thead"); const headRow = element("tr"); fields.forEach((field) => { const cell = element("th", "", field); cell.dataset.field = field; headRow.append(cell); }); headRow.append(element("th", "", "定位")); head.append(headRow);
     const body = element("tbody");
     const pages = Math.max(1, Math.ceil(rows.length / this.pageSize)); this.page = Math.min(this.page, pages);
     rows.slice((this.page - 1) * this.pageSize, this.page * this.pageSize).forEach((row) => {
@@ -648,7 +692,7 @@ class ReviewMindmapController {
       };
       fields.forEach((field) => {
         const value = row[field];
-        const cell = element("td");
+        const cell = element("td"); cell.dataset.field = field;
         const readonly = !this.editable || this.viewMode !== "draft" || field === "actual_result";
         const multiline = ["test_point", "preconditions", "test_steps", "test_data", "expected_result", "actual_result"].includes(field);
         const control = element(field === "risk_level" || field === "priority" ? "select" : (multiline ? "textarea" : "input"));
@@ -662,9 +706,9 @@ class ReviewMindmapController {
           committed = true;
           let next = control.value;
           if (["preconditions", "test_steps"].includes(field)) next = next.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
-          if (field === "test_data") {
-            try { next = JSON.parse(next || "{}"); }
-            catch (_error) { committed = false; this.setNotice(`${this.identity(row)} 的测试数据必须是合法 JSON`, true); control.focus(); return; }
+      if (field === "test_data") {
+        try { next = JSON.parse(next || "{}"); }
+        catch (_error) { next = control.value; this.setNotice(`${this.identity(row)} 的测试数据将按普通文本保存`, false); }
           }
           this.execute({ type: "update", uiKey: row.__uiKey, updates: { [field]: next }, label: `表格修改 ${field}` });
         };
@@ -710,6 +754,8 @@ class ReviewMindmapController {
     try {
       const result = await globalThis.agentFetch(`/api/v1/tasks/${this.host.dataset.taskId}/${endpoint}?kind=${kind}${version ? `&version=${version}` : ""}`);
       this.rows = wrapRows(this.kind === "points" ? result.points : result.cases, this.kind);
+      this.rows = this.rows.map((row) => ({ ...row, __uiKey: this.identity(row) || row.__uiKey }));
+      this.mindmap = result.mindmap || projectMindmap(this.kind, this.rows, this.testPoints, this.host.dataset.title);
       this.validation = result.validation;
       this.diff = result.diff_summary || {};
       this.coverage = result.coverage || {};
@@ -723,10 +769,10 @@ class ReviewMindmapController {
   updateButtons() {
     this.host.querySelectorAll("[data-mindmap-action]").forEach((button) => {
       const action = button.dataset.mindmapAction;
-      if (["fit", "zoom-in", "zoom-out", "expand-all", "collapse-all", "center", "focus", "fullscreen", "search-prev", "search-next"].includes(action)) button.hidden = this.activeTab !== "mindmap";
+      if (["fit", "zoom-in", "zoom-out", "expand-all", "collapse-all"].includes(action)) button.hidden = this.activeTab !== "mindmap";
       if (action === "undo") button.disabled = !this.history.undoStack.length;
       else if (action === "redo") button.disabled = !this.history.redoStack.length;
-      else if (!["fit", "zoom-in", "zoom-out", "expand-all", "collapse-all", "center", "focus", "fullscreen", "search-prev", "search-next"].includes(action)) button.disabled = !this.editable || this.viewMode !== "draft";
+      else if (!["fit", "zoom-in", "zoom-out", "expand-all", "collapse-all"].includes(action)) button.disabled = !this.editable || this.viewMode !== "draft";
     });
   }
 

@@ -53,24 +53,31 @@ def test_live_and_ready(client: TestClient) -> None:
     assert client.get("/api/v1/health/live").json() == {
         "service": "platform-api",
         "status": "ok",
-        "version": "1.01.000",
+        "version": "1.1.0",
+        "component_version": "unknown",
+        "revision": "unknown",
+        "dirty": True,
+        "runtime_environment": "dev",
     }
     ready_response = client.get("/api/v1/health/ready")
     assert ready_response.status_code == 200
     assert ready_response.json() == {
         "service": "platform-api",
         "status": "ready",
-        "version": "1.01.000",
+        "version": "1.1.0",
+        "component_version": "unknown",
+        "revision": "unknown",
+        "dirty": True,
+        "runtime_environment": "dev",
     }
 
 
-def test_platform_version_rejects_invalid_format(tmp_path) -> None:
-    """验证错误位数的版本不会进入健康接口或发布产物。"""
+def test_platform_version_comes_from_manifest(tmp_path) -> None:
+    """验证产品版本只从组件版本清单读取。"""
 
-    version_file = tmp_path / "VERSION"
-    version_file.write_text("1.0.0\n", encoding="utf-8")
-    with pytest.raises(ValueError, match="平台版本必须符合"):
-        Settings(platform_version_file=str(version_file)).read_platform_version()
+    manifest_file = tmp_path / "versions.json"
+    manifest_file.write_text('{"product":{"version":"2.3.4"}}', encoding="utf-8")
+    assert Settings(versions_manifest_file=str(manifest_file)).read_platform_version() == "2.3.4"
 
 
 def test_tools_are_sorted_and_disabled_items_are_hidden(
@@ -109,13 +116,14 @@ def test_tool_health_success_and_upstream_failure(
 
     healthy_response = httpx.Response(
         200,
-        json={"status": "ok"},
+        json={"status": "ok", "version": "1.0.0", "revision": "abc", "dirty": False, "runtime_environment": "dev"},
         request=httpx.Request("GET", "http://target/health"),
     )
     monkeypatch.setattr("app.services.tool_health.httpx.get", lambda *args, **kwargs: healthy_response)
     response = client.get("/api/v1/tools/target/health")
     assert response.status_code == 200
     assert response.json()["status"] == "healthy"
+    assert response.json()["version"] == "1.0.0"
     datetime.fromisoformat(response.json()["checked_at"])
 
     def raise_timeout(*args, **kwargs):

@@ -62,3 +62,30 @@ def test_draft_cas_and_immutable_confirmation(tmp_path: Path):
     record["review"] = confirmed
     store.save(record)
     assert service.confirm(task_id, revision=1, sha256=saved["sha256"], accept_warnings=True)["version"] == 1
+
+
+def test_point_quality_errors_require_current_risk_acknowledgement(tmp_path: Path):
+    """测试点业务错误可保存，但继续前必须确认当前校验指纹。"""
+
+    _store, task_id, service = prepare(tmp_path)
+    loaded = service.load(task_id)
+    saved = service.save_draft(
+        task_id, [point(id="", module="", risk_level="PX")], revision=0,
+        sha256=loaded["sha256"], user_id="u1", username="tester",
+        max_bytes=1024 * 1024, max_characters=10000,
+    )
+    with pytest.raises(ServiceError) as required:
+        service.confirm(task_id, revision=1, sha256=saved["sha256"])
+    assert required.value.code == "POINT_REVIEW_RISK_CONFIRMATION_REQUIRED"
+    with pytest.raises(ServiceError) as stale:
+        service.confirm(
+            task_id, revision=1, sha256=saved["sha256"], acknowledge_quality_risks=True,
+            expected_validation_sha256="stale",
+        )
+    assert stale.value.code == "REVIEW_REVISION_CONFLICT"
+    confirmed = service.confirm(
+        task_id, revision=1, sha256=saved["sha256"], acknowledge_quality_risks=True,
+        expected_validation_sha256=saved["validation_sha256"],
+    )
+    assert confirmed["version"] == 1
+    assert (service.store.task_dir(task_id) / confirmed["mindmap_relative_path"]).is_file()

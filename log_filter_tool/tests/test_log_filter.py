@@ -280,7 +280,10 @@ class LogFilterTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(
             response.get_json(),
-            {"service": "log-filter", "status": "ok"},
+            {
+                "service": "log-filter", "status": "ok", "version": "unknown",
+                "revision": "unknown", "dirty": True, "runtime_environment": "unknown",
+            },
         )
 
 

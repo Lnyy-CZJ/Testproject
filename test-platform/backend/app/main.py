@@ -10,7 +10,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
-from app.api import admin, audit, auth, configuration, health, internal, llm, tools
+from app.api import admin, audit, auth, configuration, health, internal, llm, system, tools
 from app.core.config import get_settings
 from app.core.errors import PlatformError
 
@@ -80,6 +80,7 @@ app.include_router(configuration.router, prefix="/api/v1")
 app.include_router(llm.router, prefix="/api/v1")
 app.include_router(audit.router, prefix="/api/v1")
 app.include_router(internal.router, prefix="/api/v1")
+app.include_router(system.router, prefix="/api/v1")
 
 
 @app.exception_handler(PlatformError)

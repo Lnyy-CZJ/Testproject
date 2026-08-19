@@ -571,7 +571,13 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
             store.fetch_one("SELECT 1 AS ok")
         except sqlite3.Error:
             return jsonify(service="truthy-search", status="unavailable"), 503
-        return jsonify(service="truthy-search", status="ok")
+        return jsonify(
+            service="truthy-search", status="ok",
+            version=os.getenv("APP_VERSION", "unknown"),
+            revision=os.getenv("APP_REVISION", "unknown"),
+            dirty=os.getenv("APP_BUILD_DIRTY", "true").lower() == "true",
+            runtime_environment=os.getenv("PLATFORM_RUNTIME_ENV", "unknown"),
+        )
 
     def page_number(name: str = "page") -> int:
         """读取最小为1的分页页码。"""

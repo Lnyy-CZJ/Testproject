@@ -5,7 +5,7 @@
   if (!root) return;
   const taskId = root.dataset.taskId;
   const state = {
-    cases: [], original: [], testPoints: [], revision: 0, sha256: "", baselineBody: "[]", validation: {}, coverage: {}, diff: {},
+    cases: [], mindmap: null, original: [], testPoints: [], revision: 0, sha256: "", baselineBody: "[]", validation: {}, coverage: {}, diff: {},
     currentId: null, selected: new Set(), search: "", priority: "", onlyErrors: false, page: 1, pageSize: 50,
     dirty: false, saving: false, editable: root.dataset.editable === "true", aiEnabled: root.dataset.aiEnabled === "true",
     ai: null, lastDeleted: null,
@@ -19,7 +19,7 @@
   function canonical(value) { return JSON.stringify(value, (_key, item) => item && typeof item === "object" && !Array.isArray(item) ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b))) : item); }
   function markDirty() {
     /** 使用规范化正文比较，使撤销到服务端草稿时恢复非 dirty 状态。 */
-    state.dirty = canonical(cleanCases()) !== state.baselineBody;
+    state.dirty = canonical({ rows: cleanCases(), mindmap: state.mindmap }) !== state.baselineBody;
     document.querySelector("#case-review-download-local").classList.toggle("is-hidden", !state.dirty);
     updateControls();
   }
@@ -83,6 +83,7 @@
       cases: cleanCases(), testPoints: state.testPoints, validation: state.validation,
       coverage: state.coverage, diff: state.diff, revision: state.revision,
       sha256: state.sha256, editable: state.editable, versions: state.versions || [],
+      mindmap: state.mindmap,
     } }));
   }
   function render() { renderSummary(); renderIssues(); renderList(); renderDetail(); updateControls(); emitV2State(); }
@@ -97,10 +98,17 @@
     ids.forEach((indexes, id) => { if (id && indexes.length > 1) indexes.forEach((index) => errors.push({ level: "error", code: "CASE_ID_DUPLICATE", message: "测试用例 ID 重复", row_index: index, field: "case_id" })); }); state.validation = { ...state.validation, errors, valid_for_confirm: errors.length === 0 };
   }
   function focusIssue(issue) { if (!Number.isInteger(issue.row_index)) return; const item = state.cases[issue.row_index]; if (!item) return; state.search = ""; state.priority = ""; state.onlyErrors = false; document.querySelector("#case-review-search").value = ""; document.querySelector("#case-review-priority").value = ""; document.querySelector("#case-review-only-errors").checked = false; state.currentId = item.case_id; state.page = Math.floor(issue.row_index / state.pageSize) + 1; render(); requestAnimationFrame(() => detailEl.querySelector(`[data-case-field="${issue.field || "case_name"}"]`)?.focus()); }
-  function applyServer(result) { state.cases = result.cases || []; state.baselineBody = canonical(result.cases || []); state.original = result.original_cases || state.original; state.testPoints = result.test_points || state.testPoints; state.revision = result.revision; state.sha256 = result.sha256; state.validation = result.validation || {}; state.coverage = result.coverage || {}; state.diff = result.diff_summary || {}; state.versions = result.versions || state.versions || []; state.currentId = currentCase()?.case_id || state.cases[0]?.case_id || null; }
-  async function saveDraft() { state.saving = true; setStatus("正在保存…"); updateControls(); try { const result = await agentFetch(`/api/v1/tasks/${taskId}/case-review-draft`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ revision: state.revision, sha256: state.sha256, cases: cleanCases() }) }); applyServer(result); state.dirty = false; document.querySelector("#case-review-download-local").classList.add("is-hidden"); setStatus(`已保存 revision ${state.revision}`); render(); return true; } catch (error) { if (error.code === "CASE_REVIEW_REVISION_CONFLICT") document.querySelector("#case-review-download-local").classList.remove("is-hidden"); setStatus(error.message, true); return false; } finally { state.saving = false; updateControls(); } }
+  function applyServer(result) { state.cases = result.cases || []; state.mindmap = result.mindmap || null; state.baselineBody = canonical({ rows: state.cases, mindmap: state.mindmap }); state.original = result.original_cases || state.original; state.testPoints = result.test_points || state.testPoints; state.revision = result.revision; state.sha256 = result.sha256; state.validation = result.validation || {}; state.coverage = result.coverage || {}; state.diff = result.diff_summary || {}; state.versions = result.versions || state.versions || []; state.currentId = currentCase()?.case_id || state.cases[0]?.case_id || null; }
+  async function saveDraft() { state.saving = true; setStatus("正在保存…"); updateControls(); try { const result = await agentFetch(`/api/v1/tasks/${taskId}/case-review-draft`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ revision: state.revision, sha256: state.sha256, rows: cleanCases(), mindmap: state.mindmap }) }); applyServer(result); state.dirty = false; document.querySelector("#case-review-download-local").classList.add("is-hidden"); setStatus(`已保存 revision ${state.revision}`); globalThis.showAgentToast?.(`测试用例草稿已保存，revision ${state.revision}`); render(); return true; } catch (error) { if (error.code === "CASE_REVIEW_REVISION_CONFLICT") document.querySelector("#case-review-download-local").classList.remove("is-hidden"); setStatus(error.message, true); return false; } finally { state.saving = false; updateControls(); } }
   function dialog(title, message, withInput = false) { const modal = document.querySelector("#case-review-dialog"); document.querySelector("#case-review-dialog-title").textContent = title; document.querySelector("#case-review-dialog-message").textContent = message; const input = document.querySelector("#case-review-dialog-input"); input.classList.toggle("is-hidden", !withInput); input.value = ""; modal.showModal(); return new Promise((resolve) => modal.addEventListener("close", () => resolve(modal.returnValue === "confirm" ? (withInput ? input.value : true) : false), { once: true })); }
-  async function confirmPublish() { if (state.dirty && !(await saveDraft())) return; let acceptWarnings = false; if ((state.validation.warnings || []).length) acceptWarnings = Boolean(await dialog("确认警告", `当前有 ${state.validation.warnings.length} 个警告，仍然发布吗？`)); if ((state.validation.warnings || []).length && !acceptWarnings) return; try { setStatus("正在确认并发布 JSON/XLSX…"); await agentFetch(`/api/v1/tasks/${taskId}/case-review/confirm`, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": `case-confirm-${taskId}-${state.sha256.slice(0, 16)}` }, body: JSON.stringify({ revision: state.revision, sha256: state.sha256, accept_warnings: acceptWarnings }) }); state.dirty = false; location.reload(); } catch (error) { if (error.details?.validation) { state.validation = error.details.validation; render(); } setStatus(error.message, true); } }
+  async function confirmPublish() {
+    if ((state.revision === 0 || state.dirty) && !(await saveDraft())) return;
+    const errors = (state.validation.errors || []).length;
+    const warnings = (state.validation.warnings || []).length;
+    const uncovered = Number(state.coverage.uncovered_test_points || 0);
+    if ((errors || warnings || uncovered) && !(await dialog("带质量风险发布", `当前有 ${errors} 个错误、${warnings} 个警告、${uncovered} 个未覆盖测试点。发布不会修改这些内容，确定生成新版本吗？`))) return;
+    try { setStatus("正在确认并发布 JSON/XLSX…"); await agentFetch(`/api/v1/tasks/${taskId}/case-review/confirm`, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": `case-confirm-${taskId}-${state.sha256.slice(0, 16)}` }, body: JSON.stringify({ revision: state.revision, sha256: state.sha256, accept_warnings: true }) }); state.dirty = false; location.reload(); } catch (error) { if (error.details?.validation) { state.validation = error.details.validation; render(); } setStatus(error.message, true); }
+  }
   function downloadLocal() { const url = URL.createObjectURL(new Blob([JSON.stringify(cleanCases(), null, 2)], { type: "application/json;charset=utf-8" })); const link = document.createElement("a"); link.href = url; link.download = `case-review-local-${taskId}.json`; link.click(); URL.revokeObjectURL(url); }
   function addCase(source = null) { const point = state.testPoints[0] || {}; const value = source ? { ...structuredClone(source), case_id: nextId() } : { case_id: nextId(), test_point_id: point.id || "", module: point.module || "", feature: point.feature || "", scenario: point.scenario || "", case_name: "", priority: point.risk_level || "P2", preconditions: [], test_steps: [""], test_data: {}, expected_result: "", actual_result: "" }; state.cases.push(value); state.currentId = value.case_id; state.page = Math.ceil(state.cases.length / state.pageSize); markDirty(); localValidate(); render(); }
   function removeCurrent() { const index = state.cases.findIndex((item) => item.case_id === state.currentId); if (index < 0) return; state.lastDeleted = { index, item: state.cases[index] }; state.cases.splice(index, 1); state.currentId = state.cases[Math.min(index, state.cases.length - 1)]?.case_id || null; document.querySelector("#case-review-undo").disabled = false; markDirty(); localValidate(); render(); }
@@ -123,6 +131,7 @@
   root.addEventListener("case-review-v2-request-state", emitV2State);
   root.addEventListener("case-review-v2-replace", (event) => {
     state.cases = event.detail.rows || [];
+    state.mindmap = event.detail.mindmap || state.mindmap;
     state.currentId = state.cases.find((item) => item.case_id === state.currentId)?.case_id || state.cases[0]?.case_id || null;
     markDirty(); localValidate(); render();
   });

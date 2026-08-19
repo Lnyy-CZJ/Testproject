@@ -9,3 +9,7 @@ class ServiceHealthResponse(BaseModel):
     service: Literal["platform-api"] = "platform-api"
     status: Literal["ok", "ready"]
     version: str
+    component_version: str
+    revision: str
+    dirty: bool
+    runtime_environment: str

@@ -166,7 +166,10 @@ def test_health_readiness_and_api_workbench(tmp_path: Path) -> None:
     """健康检查无需身份，受保护就绪页和工作台展示独立版本。"""
 
     client, _app = make_client(tmp_path)
-    assert client.get("/health").get_json() == {"service": "api-test-agent", "status": "ok"}
+    assert client.get("/health").get_json() == {
+        "service": "api-test-agent", "status": "ok", "version": "unknown",
+        "revision": "api-test-revision", "dirty": True, "runtime_environment": "dev",
+    }
     assert client.get("/api-test-agent/").status_code == 401
     readiness = client.get("/api-test-agent/api/v1/readiness", headers=headers(permissions="tool.view"))
     assert readiness.status_code == 200

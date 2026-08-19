@@ -124,7 +124,10 @@ class TestPagesAndHealth:
         test_client, _ = client
         response = test_client.get("/health")
         assert response.status_code == 200
-        assert response.get_json() == {"status": "ok", "service": "api-autotest"}
+        assert response.get_json() == {
+            "status": "ok", "service": "api-autotest", "version": "unknown",
+            "revision": "unknown", "dirty": True, "runtime_environment": "unknown",
+        }
 
     def test_index_and_catalog_pages_render(self, client):
         test_client, _ = client

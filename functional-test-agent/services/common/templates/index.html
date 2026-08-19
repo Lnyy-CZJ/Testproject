@@ -64,4 +64,4 @@
 <section class="task-section"><div class="section-heading"><div><p class="eyebrow">RECENT</p><h2>最近任务</h2></div></div>{% if tasks %}<div class="task-table">{% for item in tasks %}<div class="task-row"><code>{{ item.id }}</code><span>{{ item.project_name }}<small>{{ item.module_name }}</small></span><span><strong class="status-pill status-{{ item.status }}">{{ item.status }}</strong><small>{{ item.stage }}</small></span><time>{{ item.created_at }}</time><a href="{{ settings.base_path }}/tasks/{{ item.id }}">查看详情</a></div>{% endfor %}</div>{% else %}<div class="empty-state"><h3>还没有任务</h3><p>上传文档创建第一个任务。</p></div>{% endif %}</section>
 {% endif %}
 {% endblock %}
-{% block scripts %}{% if functional_workbench_v2 %}<script type="module" src="{{ settings.base_path }}/static/functional-workbench-v2.mjs"></script>{% endif %}{% endblock %}
+{% block scripts %}{% if functional_workbench_v2 %}<script type="module" src="{{ settings.base_path }}/static/functional-workbench-v2.mjs?v=20260819-free-review-4"></script>{% endif %}{% endblock %}

@@ -218,7 +218,12 @@ def create_agent_app(
     @app.get("/health")
     @app.get(f"{settings.base_path}/health")
     def health():
-        return jsonify({"status": "ok", "service": settings.tool_id})
+        return jsonify({
+            "status": "ok", "service": settings.tool_id,
+            "version": settings.app_version, "revision": settings.app_revision,
+            "dirty": settings.app_build_dirty,
+            "runtime_environment": settings.runtime_environment,
+        })
 
     @app.get(f"{settings.base_path}/api/v1/readiness")
     def readiness():
@@ -473,10 +478,16 @@ def create_agent_app(
         if not bool(normal.get("ONLINE_REVIEW_ENABLED", False)):
             raise ServiceError(403, "FEATURE_DISABLED", "在线 Review 尚未启用")
         body = request.get_json(silent=True) or {}
-        points = body.get("points")
+        points = body.get("rows", body.get("points"))
         if not isinstance(points, list):
             raise ServiceError(422, "REVIEW_FILE_INVALID", "points 必须是数组")
-        result = review_service.save_draft(task_id, points, revision=int(body.get("revision", -1)), sha256=str(body.get("sha256", "")), user_id=identity.user_id, username=identity.username, max_bytes=int(normal.get("UPLOAD_MAX_BYTES", 5 * 1024 * 1024)), max_characters=int(normal.get("UPLOAD_MAX_CHARACTERS", 500_000)))
+        result = review_service.save_draft(
+            task_id, points, revision=int(body.get("revision", -1)),
+            sha256=str(body.get("sha256", "")), user_id=identity.user_id,
+            username=identity.username, max_bytes=int(normal.get("UPLOAD_MAX_BYTES", 5 * 1024 * 1024)),
+            max_characters=int(normal.get("UPLOAD_MAX_CHARACTERS", 500_000)),
+            mindmap=body.get("mindmap") if "mindmap" in body else None,
+        )
         emit_audit(client, action="agent.review.draft.save", resource_type="agent_task", resource_id=task_id, outcome="success", actor_user_id=identity.user_id, actor_username=identity.username, metadata={"revision": result["revision"], "sha256": result["sha256"], "count": len(result["points"]), "errors": len(result["validation"]["errors"]), "warnings": len(result["validation"]["warnings"])})
         return jsonify(result)
 
@@ -659,7 +670,12 @@ def create_agent_app(
             if not bool(normal.get("ONLINE_REVIEW_ENABLED", False)):
                 raise ServiceError(403, "FEATURE_DISABLED", "在线 Review 尚未启用")
             body = request.get_json(silent=True) or {}
-            metadata = review_service.confirm(task_id, revision=int(body.get("revision", -1)), sha256=str(body.get("sha256", "")), accept_warnings=bool(body.get("accept_warnings", False)))
+            metadata = review_service.confirm(
+                task_id, revision=int(body.get("revision", -1)), sha256=str(body.get("sha256", "")),
+                accept_warnings=bool(body.get("accept_warnings", False)),
+                acknowledge_quality_risks=bool(body.get("acknowledge_quality_risks", False)),
+                expected_validation_sha256=str(body.get("validation_sha256", "")),
+            )
             record["review"] = metadata
             store.save(record)
             request_path = store.task_dir(task_id) / "request.json"
@@ -724,7 +740,7 @@ def create_agent_app(
         version = request.args.get("version", type=int)
         payload = case_review_service.load_version(task_id, kind=kind, version=version, **case_limits(normal))
         payload.update({
-            "editable": record.get("status") == "waiting_case_review" and "tool.execute" in identity.permissions,
+            "editable": record.get("status") in {"waiting_case_review", "succeeded"} and "tool.execute" in identity.permissions,
             "task_status": record.get("status"), "stage": record.get("stage"),
             "test_points": case_point_summaries(task_id), "case_review_ai": record.get("case_review_ai", {}),
             "case_review_ai_enabled": bool(normal.get("CASE_REVIEW_AI_ENABLED", False)),
@@ -741,18 +757,19 @@ def create_agent_app(
             raise ServiceError(404, "TASK_NOT_FOUND", "任务不存在")
         record, identity = get_task(task_id, permission="tool.execute")
         require_csrf(request)
-        if record.get("status") != "waiting_case_review":
+        if record.get("status") not in {"waiting_case_review", "succeeded"}:
             raise ServiceError(409, "INVALID_TASK_STATE", "当前任务状态不允许保存用例草稿")
         _snapshot, normal = safe_limits()
         if not bool(normal.get("ONLINE_CASE_REVIEW_ENABLED", False)):
             raise ServiceError(403, "FEATURE_DISABLED", "在线测试用例 Review 尚未启用")
         body = request.get_json(silent=True) or {}
-        cases = body.get("cases")
+        cases = body.get("rows", body.get("cases"))
         if not isinstance(cases, list):
             raise ServiceError(422, "CASE_REVIEW_FILE_INVALID", "cases 必须是数组")
         result = case_review_service.save_draft(
             task_id, cases, revision=int(body.get("revision", -1)), sha256=str(body.get("sha256", "")),
-            user_id=identity.user_id, username=identity.username, **case_limits(normal),
+            user_id=identity.user_id, username=identity.username,
+            mindmap=body.get("mindmap") if "mindmap" in body else None, **case_limits(normal),
         )
         emit_audit(client, action="agent.case_review.draft.save", resource_type="agent_task", resource_id=task_id, outcome="success", actor_user_id=identity.user_id, actor_username=identity.username, metadata={"revision": result["revision"], "sha256": result["sha256"], "count": len(result["cases"]), "errors": len(result["validation"]["errors"]), "warnings": len(result["validation"]["warnings"])})
         return jsonify(result)
@@ -765,7 +782,7 @@ def create_agent_app(
             raise ServiceError(404, "TASK_NOT_FOUND", "任务不存在")
         record, identity = get_task(task_id, permission="tool.execute")
         require_csrf(request)
-        if record.get("status") != "waiting_case_review":
+        if record.get("status") not in {"waiting_case_review", "succeeded"}:
             raise ServiceError(409, "INVALID_TASK_STATE", "当前任务状态不允许导入用例草稿")
         _snapshot, normal = safe_limits()
         if not bool(normal.get("ONLINE_CASE_REVIEW_ENABLED", False)):
@@ -812,10 +829,14 @@ def create_agent_app(
             name = "case-review-draft.json"
         elif kind == "confirmed":
             version = request.args.get("version", type=int)
-            metadata = record.get("case_review", {})
-            if not version or metadata.get("version") != version:
+            if not version:
                 raise ServiceError(404, "ARTIFACT_NOT_READY", "确认用例版本不存在")
-            data = case_review_service.read_confirmed(task_id, metadata)
+            try:
+                data = case_review_service.load_version(task_id, kind="confirmed", version=version, **case_limits(normal))["cases"]
+            except ServiceError as exc:
+                if exc.code in {"STORAGE_READ_FAILED", "REVIEW_VERSION_NOT_FOUND"}:
+                    raise ServiceError(404, "ARTIFACT_NOT_READY", "确认用例版本不存在") from None
+                raise
             name = f"review-test-cases-v{version}.json"
         else:
             raise ServiceError(422, "INVALID_INPUT", "下载类型不受支持")
@@ -844,11 +865,14 @@ def create_agent_app(
         previous = (record.get("internal", {}).get("case_review_confirm_keys", {}) or {}).get(idempotency_sha)
         if previous and previous != body_sha:
             raise ServiceError(409, "INVALID_INPUT", "同一 Idempotency-Key 不能确认不同草稿")
-        if record.get("status") == "succeeded" and previous == body_sha and record.get("case_review", {}).get("sha256") == digest:
+        if record.get("status") == "succeeded" and previous == body_sha and (
+            record.get("case_review", {}).get("draft_sha256") == digest
+            or record.get("case_review", {}).get("sha256") == digest
+        ):
             # HTTP 重试发生在终态提交之后时，返回同一确认版本和已登记产物。
             metadata = record["case_review"]
             return jsonify({"task": public_task(record), "case_review": {key: metadata[key] for key in ("version", "sha256", "confirmed_at", "test_case_count")}, "artifacts": [item for item in load_registry(store, task_id) if item.get("stage") == "case_review_published"]})
-        if record.get("status") != "waiting_case_review":
+        if record.get("status") not in {"waiting_case_review", "succeeded"}:
             raise ServiceError(409, "INVALID_TASK_STATE", "当前任务状态不允许确认用例")
         metadata = case_review_service.confirm(task_id, revision=revision, sha256=digest, accept_warnings=bool(body.get("accept_warnings", False)), **case_limits(normal))
         from services.functional_agent.case_review_publisher import publish_confirmed_cases

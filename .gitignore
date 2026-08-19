@@ -26,3 +26,13 @@ venv/
 
 # Node
 node_modules/
+
+# Local Codex/browser QA artifacts are evidence only, never release inputs.
+.codex-audit-*/
+.playwright-cli/
+output/playwright/
+api-test-agent/design-qa*.png
+api-test-agent/design-qa.md
+design-reference/
+functional-test-agent/design-qa.md
+test-platform/docs/releases/

@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   CommandHistory,
@@ -7,6 +8,9 @@ import {
   cleanRows,
   executeCommand,
   flattenTree,
+  compileMindmapRows,
+  executeMindmapCommand,
+  projectMindmap,
   newRowContext,
   projectTestCases,
   projectTestPoints,
@@ -52,6 +56,119 @@ test("用例投影保留未覆盖测试点并提供可回写的分组元数据",
   assert.ok(pointNodes.every((node) => node.meta.pointId));
   assert.equal(pointNodes[0].meta.module, "账号");
   assert.equal(pointNodes.find((node) => node.meta.pointId === "TP002").children.length, 0);
+});
+
+test("用例脑图投影完整前置条件、步骤和预期结果", () => {
+  const rows = wrapRows([testCase("TC001", "TP001", {
+    preconditions: ["用户已登录", "账户可用"],
+    test_steps: ["打开页面", "提交表单"],
+    expected_result: "提交成功", test_data: { username: "alice" },
+  })], "case");
+  const data = projectTestCases(rows, [point("TP001")]);
+  const caseNode = data.nodeData.children[0].children[0].children[0].children[0];
+  assert.equal(caseNode.meta.kind, "case");
+  assert.equal(caseNode.expanded, false);
+  assert.deepEqual(caseNode.children.map((node) => node.meta.detailField), [
+    "preconditions", "test_steps", "expected_result", "test_data",
+  ]);
+  assert.deepEqual(caseNode.children.map((node) => node.children.length), [0, 0, 0, 0]);
+  assert.equal(caseNode.children[0].topic, "用户已登录\n账户可用");
+  assert.equal(caseNode.children[1].topic, "1. 打开页面\n2. 提交表单");
+  assert.equal(caseNode.children[2].topic, "提交成功");
+  assert.equal(caseNode.children[3].topic, '{"username":"alice"}');
+});
+
+test("自由脑图允许非推荐层级并确定性编译 rows", () => {
+  const rows = wrapRows([point("TP001")], "points");
+  const mindmap = projectMindmap("points", rows, [], "登录测试");
+  const feature = mindmap.nodes.find((node) => node.node_type === "feature");
+  const leaf = mindmap.nodes.find((node) => node.node_type === "test_point");
+  const moved = executeMindmapCommand({ rows, mindmap, kind: "points" }, {
+    type: "move_node", nodeId: leaf.node_id, parentId: feature.node_id,
+  });
+  const compiled = compileMindmapRows("points", moved.mindmap, moved.rows);
+  assert.equal(compiled.rows[0].module, "账号");
+  assert.equal(compiled.rows[0].feature, "登录");
+  assert.equal(compiled.rows[0].scenario, "");
+  assert.ok(compiled.issues.some((issue) => issue.code === "MINDMAP_HIERARCHY_INVALID"));
+});
+
+test("删除根节点清空当前草稿并可用单个 patch 撤销", () => {
+  const rows = wrapRows([point("TP001")], "points");
+  const mindmap = projectMindmap("points", rows, [], "登录测试");
+  const result = executeMindmapCommand({ rows, mindmap, kind: "points" }, {
+    type: "delete_root_and_reset", title: "测试点",
+  });
+  assert.deepEqual(result.rows, []);
+  assert.equal(result.mindmap.nodes.length, 0);
+  assert.equal(result.mindmap.root.text, "测试点");
+  const history = new CommandHistory(); history.push(result.patch);
+  const restored = history.undoState({ rows: result.rows, mindmap: result.mindmap });
+  assert.equal(restored.rows.length, 1);
+  assert.equal(restored.mindmap.root.text, "登录测试");
+});
+
+test("复制分组会复制整棵分支及其业务记录", () => {
+  const rows = wrapRows([point("TP001"), point("TP002")], "points");
+  const mindmap = projectMindmap("points", rows, [], "登录测试");
+  const moduleNode = mindmap.nodes.find((node) => node.node_type === "module");
+  const result = executeMindmapCommand({ rows, mindmap, kind: "points" }, {
+    type: "duplicate_node", nodeId: moduleNode.node_id,
+  });
+  assert.equal(result.rows.length, 4);
+  assert.equal(new Set(result.rows.map((row) => row.id)).size, 4);
+  assert.equal(result.mindmap.nodes.filter((node) => node.parent_id === result.mindmap.root.node_id).length, 2);
+});
+
+test("一键整理按当前 rows 恢复推荐层级且可撤销", () => {
+  const rows = wrapRows([point("TP001")], "points");
+  const mindmap = projectMindmap("points", rows, [], "登录测试");
+  const feature = mindmap.nodes.find((node) => node.node_type === "feature");
+  const leaf = mindmap.nodes.find((node) => node.node_type === "test_point");
+  const moved = executeMindmapCommand({ rows, mindmap, kind: "points" }, {
+    type: "move_node", nodeId: leaf.node_id, targetId: feature.node_id,
+  });
+  const normalized = executeMindmapCommand({ rows: moved.rows, mindmap: moved.mindmap, kind: "points" }, {
+    type: "normalize_structure",
+  });
+  assert.equal(compileMindmapRows("points", normalized.mindmap, normalized.rows).issues.length, 0);
+  const history = new CommandHistory(); history.push(normalized.patch);
+  const restored = history.undoState({ rows: normalized.rows, mindmap: normalized.mindmap });
+  assert.ok(compileMindmapRows("points", restored.mindmap, restored.rows).issues.some((issue) => issue.code === "MINDMAP_HIERARCHY_INVALID"));
+});
+
+test("用例内容节点可整体回写且非法测试数据保留为文本", () => {
+  const rows = wrapRows([testCase("TC001", "TP001")], "cases");
+  const mindmap = projectMindmap("cases", rows, [point("TP001")]);
+  const steps = mindmap.nodes.find((node) => node.node_type === "steps_content");
+  const data = mindmap.nodes.find((node) => node.node_type === "test_data_content");
+  let result = executeMindmapCommand({ rows, mindmap, kind: "cases" }, {
+    type: "rename_node", nodeId: steps.node_id, text: "打开页面\n提交表单",
+  });
+  result = executeMindmapCommand({ rows: result.rows, mindmap: result.mindmap, kind: "cases" }, {
+    type: "rename_node", nodeId: data.node_id, text: "非 JSON 数据",
+  });
+  assert.deepEqual(result.rows[0].test_steps, ["打开页面", "提交表单"]);
+  assert.equal(result.rows[0].test_data, "非 JSON 数据");
+});
+
+test("用例详情节点修改和删除保持原子且可撤销", () => {
+  const rows = wrapRows([testCase("TC001", "TP001", {
+    preconditions: ["用户存在", "账号启用"], test_steps: ["登录", "查看首页"],
+  })], "case");
+  const updated = executeCommand(rows, {
+    type: "update_nested", uiKey: rows[0].__uiKey, field: "test_steps", index: 1, value: "检查首页",
+  });
+  assert.deepEqual(updated.rows[0].test_steps, ["登录", "检查首页"]);
+  const removed = executeCommand(updated.rows, {
+    type: "delete_nested", uiKey: rows[0].__uiKey, field: "preconditions", index: 0,
+  });
+  assert.deepEqual(removed.rows[0].preconditions, ["账号启用"]);
+  const history = new CommandHistory(); history.push(removed.patch);
+  assert.deepEqual(history.undo(removed.rows)[0].preconditions, ["用户存在", "账号启用"]);
+  assert.throws(() => executeCommand(rows, {
+    type: "delete_nested", uiKey: rows[0].__uiKey, field: "expected_result", index: 0,
+  }), /不支持/);
 });
 
 test("用例测试点分组可用单个原子 patch 重新关联", () => {
@@ -108,6 +225,19 @@ test("缩放以5个百分点对称变化", () => {
   assert.equal(view.instance.scaleVal, 0.5);
   view.zoomBy(-0.05);
   assert.equal(view.instance.scaleVal, 0.45);
+});
+
+test("原位编辑调用 Mind Elixir 5.14 的 beginEdit API", () => {
+  const view = new MindmapView({ addEventListener() {}, querySelectorAll() { return []; } });
+  const topic = { dataset: { nodeid: "node-1" } };
+  let edited = null;
+  view.metaById.set("node-1", { kind: "test_point", nodeId: "node-1" });
+  view.instance = { findEle() { return topic; }, beginEdit(value) { edited = value; } };
+  view.edit("node-1");
+  assert.equal(edited, topic);
+  const source = readFileSync(new URL("../../services/common/static/mindmap-view.mjs", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /this\.ensureVisible\(topic\)/);
+  assert.match(source, /this\.onSelect\(meta, \{ editing: true \}\)/);
 });
 
 test("同级排序是原子命令并可撤销", () => {
@@ -192,4 +322,23 @@ test("5000条投影为线性处理并可统计可见节点", () => {
   const count = flattenTree(projectTestPoints(rows).nodeData).length;
   assert.equal(count, 5004);
   assert.ok(performance.now() - started < 2000);
+});
+
+test("工作台 Tab、筛选和首次发布保留关键交互约束", () => {
+  const controller = readFileSync("services/common/static/functional-workbench-v2.mjs", "utf8");
+  const view = readFileSync("services/common/static/mindmap-view.mjs", "utf8");
+  const caseReview = readFileSync("services/common/static/case-review-workbench.js", "utf8");
+  const css = readFileSync("services/common/static/functional-workbench-v2.css", "utf8");
+  assert.match(css, /\.mindmap-v2-host \[hidden\]\{display:none!important\}/);
+  assert.match(controller, /event\.key === "Enter"/);
+  assert.match(controller, /options\.revealDetails.*this\.view\.expand\(this\.nodeIdByUiKey\?\.get\(meta\.uiKey\), true\)/);
+  assert.doesNotMatch(controller, /\["search-prev", "上一结果"\]/);
+  assert.match(caseReview, /state\.revision === 0 \|\| state\.dirty/);
+  assert.match(caseReview, /测试用例草稿已保存/);
+  assert.match(view, /this\.instance\?\.beginEdit\?\.\(target\)/);
+  assert.doesNotMatch(view, /event\.detail === 2/);
+  assert.match(view, /openFallbackEditor\(target, meta\)/);
+  assert.match(view, /distance > 5[\s\S]*setPointerCapture/);
+  assert.match(view, /hasPointerCapture\?\.\(event\.pointerId\)/);
+  assert.match(caseReview, /带质量风险发布/);
 });

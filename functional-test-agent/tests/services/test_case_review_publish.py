@@ -22,6 +22,7 @@ def test_publish_is_idempotent_and_escapes_formulas(tmp_path: Path) -> None:
         "case_id": "TC001", "test_point_id": "TP001", "module": "登录", "feature": "密码",
         "scenario": "正常", "case_name": "=危险公式", "priority": "P1", "preconditions": [],
         "test_steps": ["输入账号", "点击登录"], "test_data": {}, "expected_result": "进入首页", "actual_result": "",
+        "custom": {"keep": True},
     }]
     source = task_dir / "published" / "test-cases" / "generated.json"
     source.parent.mkdir(parents=True)
@@ -40,3 +41,5 @@ def test_publish_is_idempotent_and_escapes_formulas(tmp_path: Path) -> None:
     workbook = load_workbook(task_dir / first[1]["relative_path"], data_only=False)
     assert workbook.active["F2"].value == "'=危险公式"
     assert workbook.active["I2"].value == "1. 输入账号\n2. 点击登录"
+    assert workbook.active["M1"].value == "其他字段"
+    assert workbook.active["M2"].value == '{"custom":{"keep":true}}'

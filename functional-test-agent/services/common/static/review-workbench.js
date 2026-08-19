@@ -3,7 +3,7 @@
   const root = document.querySelector("[data-review-workbench]");
   if (!root) return;
   const taskId = root.dataset.taskId;
-  const state = { points: [], original: [], revision: 0, sha256: "", baselineBody: "[]", validation: { errors: [], warnings: [] }, diff: {}, selected: new Set(), collapsedModules: new Set(), page: 1, pageSize: 100, search: "", risk: "", onlyErrors: false, dirty: false, saving: false, editable: root.dataset.editable === "true", aiEnabled: root.dataset.aiEnabled === "true", ai: null, lastDeleted: null };
+  const state = { points: [], mindmap: null, original: [], revision: 0, sha256: "", validationSha256: "", baselineBody: "[]", validation: { errors: [], warnings: [] }, diff: {}, selected: new Set(), collapsedModules: new Set(), page: 1, pageSize: 100, search: "", risk: "", onlyErrors: false, dirty: false, saving: false, editable: root.dataset.editable === "true", aiEnabled: root.dataset.aiEnabled === "true", ai: null, lastDeleted: null };
   const fields = ["id", "module", "feature", "scenario", "test_point", "risk_level"];
   const labels = { total: "总数", added: "新增", modified: "修改", deleted: "删除", errors: "错误", warnings: "警告", revision: "Revision", selected: "已选" };
   const bodyEl = document.querySelector("#review-table-body");
@@ -16,7 +16,7 @@
   function canonical(value) { return JSON.stringify(value, (_key, item) => item && typeof item === "object" && !Array.isArray(item) ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b))) : item); }
   function markDirty() {
     /** dirty 由草稿正文决定，撤销回服务端基线时必须自动恢复干净状态。 */
-    state.dirty = canonical(cleanPoints()) !== state.baselineBody;
+    state.dirty = canonical({ rows: cleanPoints(), mindmap: state.mindmap }) !== state.baselineBody;
     document.querySelector("#review-download-local").classList.toggle("is-hidden", !state.dirty);
     setStatus(state.dirty ? "有未保存修改" : `已保存 revision ${state.revision}`);
     updateControls();
@@ -94,6 +94,7 @@
     root.dispatchEvent(new CustomEvent("review-v2-state", { detail: {
       points: cleanPoints(), validation: state.validation, diff: state.diff,
       revision: state.revision, sha256: state.sha256, editable: state.editable,
+      mindmap: state.mindmap,
       versions: state.versions || [],
     } }));
   }
@@ -125,15 +126,15 @@
 
   async function saveDraft() {
     state.saving = true; setStatus("正在保存…"); updateControls();
-    try { const result = await agentFetch(`/api/v1/tasks/${taskId}/review-draft`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ revision: state.revision, sha256: state.sha256, points: cleanPoints() }) }); applyServerReview(result); state.dirty = false; document.querySelector("#review-download-local").classList.add("is-hidden"); setStatus(`已保存 revision ${state.revision}`); render(); return true; }
+    try { const result = await agentFetch(`/api/v1/tasks/${taskId}/review-draft`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ revision: state.revision, sha256: state.sha256, rows: cleanPoints(), mindmap: state.mindmap }) }); applyServerReview(result); state.dirty = false; document.querySelector("#review-download-local").classList.add("is-hidden"); setStatus(`已保存 revision ${state.revision}`); globalThis.showAgentToast?.(`测试点草稿已保存，revision ${state.revision}`); render(); return true; }
     catch (error) { if (error.code === "REVIEW_REVISION_CONFLICT") document.querySelector("#review-download-local").classList.remove("is-hidden"); setStatus(error.message, true); return false; }
     finally { state.saving = false; updateControls(); }
   }
-  function applyServerReview(result) { state.points = withKeys(result.points); state.baselineBody = canonical(result.points || []); state.original = result.original_points || state.original; state.revision = result.revision; state.sha256 = result.sha256; state.validation = result.validation; state.diff = result.diff_summary; state.versions = result.versions || state.versions || []; }
+  function applyServerReview(result) { state.points = withKeys(result.points); state.mindmap = result.mindmap || null; state.baselineBody = canonical({ rows: result.points || [], mindmap: state.mindmap }); state.original = result.original_points || state.original; state.revision = result.revision; state.sha256 = result.sha256; state.validationSha256 = result.validation_sha256 || ""; state.validation = result.validation; state.diff = result.diff_summary; state.versions = result.versions || state.versions || []; }
   function downloadLocalDraft() { const payload = JSON.stringify(cleanPoints(), null, 2); const url = URL.createObjectURL(new Blob([payload], { type: "application/json;charset=utf-8" })); const link = document.createElement("a"); link.href = url; link.download = `review-local-${taskId}.json`; link.click(); URL.revokeObjectURL(url); }
 
   function confirmDialog(title, message, withInput = false) { const dialog = document.querySelector("#review-dialog"); document.querySelector("#review-dialog-title").textContent = title; document.querySelector("#review-dialog-message").textContent = message; const input = document.querySelector("#review-dialog-input"); input.classList.toggle("is-hidden", !withInput); input.value = ""; dialog.showModal(); return new Promise((resolve) => dialog.addEventListener("close", () => resolve(dialog.returnValue === "confirm" ? (withInput ? input.value : true) : false), { once: true })); }
-  async function resume() { if (state.dirty && !(await saveDraft())) return; let acceptWarnings = false; if ((state.validation.warnings || []).length) acceptWarnings = Boolean(await confirmDialog("确认警告", `当前有 ${state.validation.warnings.length} 个非阻塞警告，仍然继续吗？`)); if ((state.validation.warnings || []).length && !acceptWarnings) return; try { setStatus("正在确认并重新排队…"); await agentFetch(`/api/v1/tasks/${taskId}/resume`, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": `review-${taskId}-${state.sha256.slice(0, 16)}` }, body: JSON.stringify({ revision: state.revision, sha256: state.sha256, accept_warnings: acceptWarnings }) }); state.dirty = false; location.reload(); } catch (error) { setStatus(error.message, true); } }
+  async function resume() { if (state.dirty && !(await saveDraft())) return; const risks = (state.validation.errors || []).length + (state.validation.warnings || []).length; let acknowledged = false; if (risks) acknowledged = Boolean(await confirmDialog("确认质量风险", `当前有 ${state.validation.errors?.length || 0} 个错误、${state.validation.warnings?.length || 0} 个警告。问题会保留在版本记录中，仍然继续生成用例吗？`)); if (risks && !acknowledged) return; try { setStatus("正在确认并重新排队…"); await agentFetch(`/api/v1/tasks/${taskId}/resume`, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": `review-${taskId}-${state.sha256.slice(0, 16)}` }, body: JSON.stringify({ revision: state.revision, sha256: state.sha256, acknowledge_quality_risks: acknowledged, validation_sha256: state.validationSha256, accept_warnings: acknowledged }) }); state.dirty = false; location.reload(); } catch (error) { if (error.details?.validation) { state.validation = error.details.validation; render(); } setStatus(error.message, true); } }
 
   async function requestAI(operation) { let instruction = ""; if (operation === "generate_from_instruction") { instruction = await confirmDialog("按说明生成建议", "说明只用于测试设计，不会被当作已确认需求事实。", true); if (!instruction) return; } const selectedIds = state.points.filter((point) => state.selected.has(point._rowKey)).map((point) => point.id); try { setStatus("正在提交 AI 请求…"); await agentFetch(`/api/v1/tasks/${taskId}/review-ai`, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": `review-ai-${Date.now()}` }, body: JSON.stringify({ revision: state.revision, sha256: state.sha256, operation, selected_ids: selectedIds, scope: {}, instruction }) }); state.ai = { status: "queued" }; setReadonlyForAI(true); pollAI(); } catch (error) { setStatus(error.message, true); } }
   function setReadonlyForAI(active) { root.querySelectorAll("input,select,textarea,button").forEach((control) => { if (!control.closest("dialog") && control.id !== "review-ai-cancel") control.disabled = active || !state.editable; }); document.querySelector("#review-ai-cancel").classList.toggle("is-hidden", !active); }
@@ -159,6 +160,7 @@
   root.addEventListener("review-v2-request-state", emitV2State);
   root.addEventListener("review-v2-replace", (event) => {
     state.points = withKeys(event.detail.rows || []);
+    state.mindmap = event.detail.mindmap || state.mindmap;
     markDirty(); localValidate(); render();
   });
   root.addEventListener("review-v2-selection", (event) => {

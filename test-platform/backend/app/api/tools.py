@@ -69,9 +69,13 @@ def tool_health(
     if not has_tool_permission(database, context.user.id, "tool.view", tool_id):
         raise PlatformError(403, "PERMISSION_DENIED", "无权访问该工具")
 
-    is_healthy = probe_tool_health(tool.health_url, settings.tool_health_timeout_seconds)
+    health = probe_tool_health(tool.health_url, settings.tool_health_timeout_seconds)
     return ToolHealthResponse(
         tool_id=tool.id,
-        status="healthy" if is_healthy else "unhealthy",
+        status="healthy" if health["healthy"] else "unhealthy",
         checked_at=datetime.now(UTC),
+        version=health.get("version"),
+        revision=health.get("revision"),
+        dirty=health.get("dirty"),
+        runtime_environment=health.get("runtime_environment"),
     )

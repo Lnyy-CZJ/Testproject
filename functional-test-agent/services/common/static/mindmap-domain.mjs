@@ -99,15 +99,323 @@ export function projectTestCases(rows, testPoints = [], rootTopic = "测试用�
     const pointNode = child(featureNode, nodeId("case-point", [pointId]), pointTopic, "test_point", { module: moduleName, feature: featureName, pointId, value: pointTopic });
     const cases = rows.filter((row) => String(row.test_point_id || "") === pointId);
     for (const row of cases) {
-      pointNode.children.push(treeNode(
+      const caseNode = treeNode(
         nodeId("case", [row.__uiKey]),
         text(row.case_name, "未命名用例"),
         "case",
         { uiKey: row.__uiKey, caseId: row.case_id, pointId, module: moduleName, feature: featureName },
+      );
+      caseNode.expanded = false;
+      const details = [
+        ["preconditions", contentText(row.preconditions)],
+        ["test_steps", stepsText(row.test_steps)],
+        ["expected_result", contentText(row.expected_result)],
+        ["test_data", testDataText(row.test_data)],
+      ];
+      for (const [field, value] of details) caseNode.children.push(treeNode(
+        nodeId("case-content", [row.__uiKey, field]), value || "点击补充", "case_content",
+        { uiKey: row.__uiKey, detailField: field, caseId: row.case_id },
       ));
+      pointNode.children.push(caseNode);
     }
   }
   return { nodeData: root };
+}
+
+function contentText(value) {
+  if (Array.isArray(value)) return value.map((item) => String(item ?? "").trim()).filter(Boolean).join("\n");
+  return String(value ?? "").trim();
+}
+
+function stepsText(value) {
+  const items = Array.isArray(value) ? value : contentText(value).split(/\r?\n/).filter(Boolean);
+  return items.map((item, index) => `${index + 1}. ${String(item).replace(/^\d+[.、]\s*/, "").trim()}`).join("\n");
+}
+
+function testDataText(value) {
+  if (value && typeof value === "object") return JSON.stringify(value);
+  return String(value ?? "").trim();
+}
+
+function businessId(kind, row) {
+  return String(row[kind === "points" ? "id" : "case_id"] || row.__uiKey || nextUiKey(kind));
+}
+
+function flatNode(nodeType, parentId, order, value, bindingId = null) {
+  return {
+    node_id: `node_${nodeType}_${nextUiKey("mm")}`,
+    node_type: nodeType,
+    parent_id: parentId,
+    order,
+    binding_id: bindingId,
+    text: String(value ?? ""),
+  };
+}
+
+export function projectMindmap(kind, rows, testPoints = [], rootTopic = "") {
+  /** 将旧 rows 按推荐层级投影为可持久化的自由脑图；不会修改传入记录。 */
+  const root = { node_id: `root_${kind}`, node_type: "root", text: rootTopic || (kind === "points" ? "测试点" : "测试用例") };
+  const nodes = [];
+  const groups = new Map();
+  const ensure = (nodeType, parentId, value, key, bindingId = null) => {
+    if (groups.has(key)) return groups.get(key);
+    const node = flatNode(nodeType, parentId, nodes.filter((item) => item.parent_id === parentId).length, value, bindingId);
+    nodes.push(node); groups.set(key, node); return node;
+  };
+  for (const row of rows) {
+    const moduleName = String(row.module ?? "");
+    const featureName = String(row.feature ?? "");
+    const moduleNode = ensure("module", root.node_id, moduleName || "未分组模块", `m:${moduleName}`);
+    const featureNode = ensure("feature", moduleNode.node_id, featureName || "未分组功能", `f:${moduleName}:${featureName}`);
+    if (kind === "points") {
+      const scenarioName = String(row.scenario ?? "");
+      const scenarioNode = ensure("scenario", featureNode.node_id, scenarioName || "未分组场景", `s:${moduleName}:${featureName}:${scenarioName}`);
+      nodes.push(flatNode("test_point", scenarioNode.node_id, nodes.filter((item) => item.parent_id === scenarioNode.node_id).length, row.test_point || "未命名测试点", businessId(kind, row)));
+      continue;
+    }
+    const pointId = String(row.test_point_id || "");
+    const point = testPoints.find((item) => String(item.id || "") === pointId) || {};
+    const pointNode = ensure("test_point", featureNode.node_id, point.test_point || pointId || "未关联测试点", `p:${moduleName}:${featureName}:${pointId}`, pointId || null);
+    const caseNode = flatNode("case", pointNode.node_id, nodes.filter((item) => item.parent_id === pointNode.node_id).length, row.case_name || "未命名用例", businessId(kind, row));
+    nodes.push(caseNode);
+    [
+      ["preconditions_content", contentText(row.preconditions)],
+      ["steps_content", stepsText(row.test_steps)],
+      ["expected_content", contentText(row.expected_result)],
+      ["test_data_content", testDataText(row.test_data)],
+    ].forEach(([nodeType, value], order) => nodes.push(flatNode(nodeType, caseNode.node_id, order, value, businessId(kind, row))));
+  }
+  return { root, nodes };
+}
+
+function mindmapIndex(mindmap) {
+  const all = [mindmap.root, ...(mindmap.nodes || [])];
+  const byId = new Map(all.map((node) => [node.node_id, node]));
+  if (!mindmap.root?.node_id || byId.size !== all.length) throw new Error("脑图节点 ID 重复或根节点缺失");
+  for (const node of mindmap.nodes || []) if (!byId.has(node.parent_id)) throw new Error("脑图存在孤立节点");
+  return byId;
+}
+
+function ancestorOfType(node, type, byId) {
+  let current = node;
+  const seen = new Set();
+  while (current && !seen.has(current.node_id)) {
+    if (current.node_type === type) return current;
+    seen.add(current.node_id); current = byId.get(current.parent_id);
+  }
+  return null;
+}
+
+function rowSource(kind, rows, bindingId) {
+  const field = kind === "points" ? "id" : "case_id";
+  return rows.find((row) => String(row[field] || "") === String(bindingId || "")) || {};
+}
+
+export function compileMindmapRows(kind, mindmap, sourceRows = []) {
+  /** 从自由树确定性编译标准 rows；非推荐层级只产生可定位的质量问题。 */
+  const byId = mindmapIndex(mindmap);
+  const nodes = [...(mindmap.nodes || [])].sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
+  const issues = [];
+  const rows = [];
+  const expectedParent = {
+    module: "root", feature: "module", scenario: "feature", test_point: kind === "points" ? "scenario" : "feature",
+    case: "test_point", preconditions_content: "case", steps_content: "case", expected_content: "case", test_data_content: "case",
+  };
+  for (const node of nodes) {
+    const parent = byId.get(node.parent_id);
+    if (expectedParent[node.node_type] && parent?.node_type !== expectedParent[node.node_type]) issues.push({
+      level: "warning", code: "MINDMAP_HIERARCHY_INVALID", node_id: node.node_id,
+      field: "parent_id", message: `${node.node_type} 位于非推荐层级`,
+    });
+  }
+  const leaves = nodes.filter((node) => node.node_type === (kind === "points" ? "test_point" : "case"));
+  for (const leaf of leaves) {
+    const source = clone(rowSource(kind, sourceRows, leaf.binding_id));
+    const moduleNode = ancestorOfType(leaf, "module", byId);
+    const featureNode = ancestorOfType(leaf, "feature", byId);
+    const scenarioNode = ancestorOfType(leaf, "scenario", byId);
+    if (kind === "points") rows.push({
+      ...source,
+      id: source.id ?? leaf.binding_id ?? "",
+      module: moduleNode?.text ?? "", feature: featureNode?.text ?? "", scenario: scenarioNode?.text ?? "",
+      test_point: leaf.text ?? "", risk_level: source.risk_level ?? "",
+    });
+    else {
+      const pointNode = ancestorOfType(leaf, "test_point", byId);
+      const children = nodes.filter((node) => node.parent_id === leaf.node_id);
+      const value = (type) => children.find((node) => node.node_type === type)?.text ?? "";
+      const lines = (raw) => String(raw || "").split(/\r?\n/).map((item) => item.replace(/^\d+[.、]\s*/, "").trim()).filter(Boolean);
+      const rawData = value("test_data_content");
+      let testData = rawData;
+      try { testData = rawData.trim() ? JSON.parse(rawData) : {}; }
+      catch (_error) { issues.push({ level: "warning", code: "CASE_TEST_DATA_TEXT", node_id: children.find((node) => node.node_type === "test_data_content")?.node_id, field: "test_data", message: "测试数据不是 JSON，将按文本发布" }); }
+      rows.push({
+        ...source,
+        case_id: source.case_id ?? leaf.binding_id ?? "", test_point_id: pointNode?.binding_id ?? source.test_point_id ?? "",
+        module: moduleNode?.text ?? "", feature: featureNode?.text ?? "", scenario: scenarioNode?.text ?? source.scenario ?? "",
+        case_name: leaf.text ?? "", priority: source.priority ?? "", preconditions: lines(value("preconditions_content")),
+        test_steps: lines(value("steps_content")), test_data: testData, expected_result: value("expected_content"),
+        actual_result: source.actual_result ?? "",
+      });
+    }
+  }
+  return { rows: wrapRows(rows, kind), issues };
+}
+
+export function mindmapTree(mindmap) {
+  /** 把持久化平面节点转换为 Mind Elixir 树，并保留稳定 node_id 供命令定位。 */
+  const byParent = new Map();
+  for (const node of mindmap.nodes || []) byParent.set(node.parent_id, [...(byParent.get(node.parent_id) || []), node]);
+  const build = (node) => ({
+    id: node.node_id, topic: text(node.text, node.node_type === "root" ? "未命名脑图" : "点击补充"), expanded: node.node_type === "case" ? false : true,
+    children: (byParent.get(node.node_id) || []).sort((a, b) => Number(a.order || 0) - Number(b.order || 0)).map(build),
+    meta: {
+      kind: node.node_type === "test_point" && !(byParent.get(node.node_id) || []).some((childNode) => childNode.node_type === "case") ? "point" : node.node_type,
+      nodeId: node.node_id, bindingId: node.binding_id, uiKey: node.binding_id,
+      label: String(node.text ?? ""),
+      detailField: ({ preconditions_content: "preconditions", steps_content: "test_steps", expected_content: "expected_result", test_data_content: "test_data" })[node.node_type],
+    },
+  });
+  return { nodeData: build(mindmap.root) };
+}
+
+export function syncMindmapRows(kind, mindmap, rows, testPoints = []) {
+  /** 将表格/详情对 rows 的修改同步回现有自由树，尽量保留用户自定义层级与空分组。 */
+  const updated = clone(mindmap);
+  const idField = kind === "points" ? "id" : "case_id";
+  const live = new Map(rows.map((row) => [String(row[idField] || ""), row]));
+  const leafType = kind === "points" ? "test_point" : "case";
+  const bound = new Set(updated.nodes.filter((node) => node.node_type === leafType).map((node) => String(node.binding_id || "")));
+  const missing = rows.filter((row) => !bound.has(String(row[idField] || "")));
+  if (missing.length) {
+    const addition = projectMindmap(kind, missing, testPoints, updated.root.text);
+    const remap = new Map([[addition.root.node_id, updated.root.node_id]]);
+    for (const node of addition.nodes) {
+      const copy = clone(node);
+      copy.parent_id = remap.get(copy.parent_id) || copy.parent_id;
+      if (updated.nodes.some((item) => item.node_id === copy.node_id)) copy.node_id = `${copy.node_id}_${nextUiKey("merge")}`;
+      remap.set(node.node_id, copy.node_id);
+      updated.nodes.push(copy);
+    }
+  }
+  const removed = new Set(updated.nodes.filter((node) => node.node_type === leafType && !live.has(String(node.binding_id || ""))).map((node) => node.node_id));
+  let changed = true;
+  while (changed) { changed = false; for (const node of updated.nodes) if (removed.has(node.parent_id) && !removed.has(node.node_id)) { removed.add(node.node_id); changed = true; } }
+  updated.nodes = updated.nodes.filter((node) => !removed.has(node.node_id));
+  const byId = new Map([updated.root, ...updated.nodes].map((node) => [node.node_id, node]));
+  for (const leaf of updated.nodes.filter((node) => node.node_type === leafType)) {
+    const row = live.get(String(leaf.binding_id || "")); if (!row) continue;
+    leaf.text = String(row[kind === "points" ? "test_point" : "case_name"] ?? "");
+    const moduleNode = ancestorOfType(leaf, "module", byId); if (moduleNode) moduleNode.text = String(row.module ?? "");
+    const featureNode = ancestorOfType(leaf, "feature", byId); if (featureNode) featureNode.text = String(row.feature ?? "");
+    const scenarioNode = ancestorOfType(leaf, "scenario", byId); if (scenarioNode) scenarioNode.text = String(row.scenario ?? "");
+    if (kind === "cases") {
+      const values = {
+        preconditions_content: contentText(row.preconditions), steps_content: stepsText(row.test_steps),
+        expected_content: contentText(row.expected_result), test_data_content: testDataText(row.test_data),
+      };
+      updated.nodes.filter((node) => node.parent_id === leaf.node_id && node.node_type in values)
+        .forEach((node) => { node.text = values[node.node_type]; });
+    }
+  }
+  return updated;
+}
+
+function statePatch(before, after, label) {
+  const changes = [{ kind: "replace_state", before: clone(before), after: clone(after) }];
+  return { label, changes, bytes: JSON.stringify(changes).length };
+}
+
+export function executeMindmapCommand(state, command) {
+  /** 执行自由脑图命令；仅循环、孤立引用和容量等结构安全问题硬阻止。 */
+  const before = clone({ rows: state.rows, mindmap: state.mindmap });
+  let sourceRows = clone(state.rows);
+  const mindmap = clone(state.mindmap);
+  const nodes = mindmap.nodes || [];
+  const find = (id) => id === mindmap.root.node_id ? mindmap.root : nodes.find((node) => node.node_id === id);
+  if (command.type === "rename_node") {
+    const node = find(command.nodeId); if (!node) throw new Error("节点不存在或已被删除");
+    node.text = String(command.text ?? "");
+  } else if (command.type === "insert_node") {
+    const target = find(command.targetId || mindmap.root.node_id);
+    if (!target) throw new Error("新增位置已变化，请重新选择");
+    const parent = command.relation === "sibling" ? find(target.parent_id) : target;
+    if (!parent) throw new Error("中心根节点不能新增同级节点");
+    const row = command.row ? clone(command.row) : null;
+    const bindingId = row ? String(row[state.kind === "points" ? "id" : "case_id"] || "") : null;
+    const node = flatNode(command.nodeType, parent.node_id, nodes.filter((item) => item.parent_id === parent.node_id).length, command.text || "新节点", bindingId);
+    nodes.push(node);
+    if (state.kind === "cases" && command.nodeType === "case") [
+      ["preconditions_content", contentText(row?.preconditions)], ["steps_content", stepsText(row?.test_steps)],
+      ["expected_content", contentText(row?.expected_result)], ["test_data_content", testDataText(row?.test_data)],
+    ].forEach(([nodeType, value], order) => nodes.push(flatNode(nodeType, node.node_id, order, value, bindingId)));
+    if (row) sourceRows = [...sourceRows, row];
+  } else if (command.type === "move_node") {
+    const node = find(command.nodeId); const target = find(command.targetId || command.parentId);
+    const parent = ["before", "after"].includes(command.placement) ? find(target?.parent_id) : target;
+    if (!node || !parent || node === mindmap.root) throw new Error("移动节点不存在");
+    let cursor = parent; const index = mindmapIndex(mindmap);
+    while (cursor) { if (cursor.node_id === node.node_id) throw new Error("不能把节点移动到自身后代"); cursor = index.get(cursor.parent_id); }
+    node.parent_id = parent.node_id;
+    const siblings = nodes.filter((item) => item.parent_id === parent.node_id && item.node_id !== node.node_id).sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
+    let insertAt = siblings.length;
+    if (["before", "after"].includes(command.placement)) {
+      const targetIndex = siblings.findIndex((item) => item.node_id === target.node_id);
+      insertAt = Math.max(0, targetIndex + (command.placement === "after" ? 1 : 0));
+    }
+    siblings.splice(insertAt, 0, node);
+    siblings.forEach((item, order) => { item.order = order; });
+  } else if (command.type === "duplicate_node") {
+    const source = find(command.nodeId);
+    if (!source || source === mindmap.root) throw new Error("中心根节点不能复制");
+    const subtreeIds = new Set([source.node_id]);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const node of nodes) if (subtreeIds.has(node.parent_id) && !subtreeIds.has(node.node_id)) {
+        subtreeIds.add(node.node_id); changed = true;
+      }
+    }
+    const subtree = nodes.filter((node) => subtreeIds.has(node.node_id));
+    const leafType = state.kind === "points" ? "test_point" : "case";
+    const idField = state.kind === "points" ? "id" : "case_id";
+    let sequence = Math.max(0, ...sourceRows.map((row) => Number(/\d+/.exec(String(row[idField] || ""))?.[0] || 0)));
+    const bindingMap = new Map();
+    for (const leaf of subtree.filter((node) => node.node_type === leafType && node.binding_id)) {
+      const original = rowSource(state.kind, sourceRows, leaf.binding_id);
+      if (!Object.keys(original).length) continue;
+      sequence += 1;
+      const newBinding = `${state.kind === "points" ? "TP" : "TC"}${String(sequence).padStart(3, "0")}`;
+      const row = clone(original); row[idField] = newBinding;
+      if (state.kind === "cases") row.actual_result = "";
+      sourceRows.push(row); bindingMap.set(String(leaf.binding_id), newBinding);
+    }
+    const nodeMap = new Map(subtree.map((node) => [node.node_id, `node_${node.node_type}_${nextUiKey("copy")}`]));
+    for (const node of subtree) {
+      const copy = clone(node);
+      copy.node_id = nodeMap.get(node.node_id);
+      copy.parent_id = nodeMap.get(node.parent_id) || node.parent_id;
+      if (bindingMap.has(String(node.binding_id || ""))) copy.binding_id = bindingMap.get(String(node.binding_id));
+      if (node.node_id === source.node_id) copy.order = nodes.filter((item) => item.parent_id === copy.parent_id).length;
+      nodes.push(copy);
+    }
+  } else if (command.type === "normalize_structure") {
+    const normalized = projectMindmap(state.kind, sourceRows, state.testPoints || [], mindmap.root.text);
+    mindmap.root = normalized.root;
+    mindmap.nodes = normalized.nodes;
+  } else if (command.type === "delete_node") {
+    if (command.nodeId === mindmap.root.node_id) throw new Error("请使用根节点重置命令");
+    const ids = new Set([command.nodeId]); let changed = true;
+    while (changed) { changed = false; for (const node of nodes) if (ids.has(node.parent_id) && !ids.has(node.node_id)) { ids.add(node.node_id); changed = true; } }
+    if (!find(command.nodeId)) throw new Error("节点不存在或已被删除");
+    mindmap.nodes = nodes.filter((node) => !ids.has(node.node_id));
+  } else if (command.type === "delete_root_and_reset") {
+    mindmap.root = { node_id: `root_${state.kind}_${nextUiKey("reset")}`, node_type: "root", text: command.title || (state.kind === "points" ? "测试点" : "测试用例") };
+    mindmap.nodes = [];
+  } else throw new Error("不支持的自由脑图操作");
+  const compiled = compileMindmapRows(state.kind, mindmap, sourceRows);
+  const after = { rows: compiled.rows, mindmap };
+  return { ...after, issues: compiled.issues, patch: statePatch(before, after, command.label || "脑图修改") };
 }
 
 export function flattenTree(nodeData) {
@@ -278,6 +586,19 @@ export function executeCommand(currentRows, command) {
     rows[index] = { ...rows[index], ...updates, __uiKey: before.__uiKey };
     return { rows, patch: makePatch([{ kind: "update", index, before, after: clone(rows[index]) }], command.label || "修改") };
   }
+  if (["update_nested", "delete_nested"].includes(type)) {
+    const index = locate(rows, command.uiKey);
+    const field = command.field;
+    if (!["preconditions", "test_steps"].includes(field)) throw new Error("该结构节点不支持此操作");
+    const before = clone(rows[index]);
+    const values = Array.isArray(before[field]) ? [...before[field]] : [];
+    const itemIndex = Number(command.index);
+    if (!Number.isInteger(itemIndex) || itemIndex < 0 || itemIndex >= values.length) throw new Error("详情节点已变化，请刷新后重试");
+    if (type === "update_nested") values[itemIndex] = String(command.value || "").trim();
+    else values.splice(itemIndex, 1);
+    rows[index] = { ...rows[index], [field]: values, __uiKey: before.__uiKey };
+    return { rows, patch: makePatch([{ kind: "update", index, before, after: clone(rows[index]) }], command.label || "修改用例详情") };
+  }
   if (type === "bulk_move") {
     const keys = new Set(command.uiKeys || []);
     if (!keys.size) throw new Error("请选择要移动的节点");
@@ -355,6 +676,15 @@ export function applyPatch(currentRows, patch, reverse = false) {
   return rows;
 }
 
+export function applyStatePatch(currentState, patch, reverse = false) {
+  /** 应用包含 rows 与 mindmap 的整状态事务，供自由编辑撤销和重做。 */
+  const replacement = patch?.changes?.find((change) => change.kind === "replace_state");
+  return replacement ? clone(reverse ? replacement.before : replacement.after) : {
+    ...currentState,
+    rows: applyPatch(currentState.rows, patch, reverse),
+  };
+}
+
 export class CommandHistory {
   /** 最多保存50步且不超过20 MiB，超限时丢弃最旧记录。 */
   constructor(maxSteps = 50, maxBytes = 20 * 1024 * 1024) {
@@ -389,5 +719,21 @@ export class CommandHistory {
     this.undoStack.push(patch);
     this.bytes += patch.bytes;
     return applyPatch(rows, patch, false);
+  }
+
+  undoState(state) {
+    const patch = this.undoStack.pop();
+    if (!patch) return state;
+    this.bytes -= patch.bytes;
+    this.redoStack.push(patch);
+    return applyStatePatch(state, patch, true);
+  }
+
+  redoState(state) {
+    const patch = this.redoStack.pop();
+    if (!patch) return state;
+    this.undoStack.push(patch);
+    this.bytes += patch.bytes;
+    return applyStatePatch(state, patch, false);
   }
 }

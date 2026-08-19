@@ -45,6 +45,7 @@ function mockAuthenticatedCatalog(items = allTools, currentAuth = auth) {
     const url = String(input);
     if (url.endsWith("/auth/me")) return jsonResponse(currentAuth);
     if (url.endsWith("/tools")) return jsonResponse({ items });
+    if (url.endsWith("/health/live")) return jsonResponse({ status: "ok", version: "1.1.0", component_version: "1.1.0", revision: "abc", dirty: false, runtime_environment: "dev" });
     if (url.includes("/credentials?")) return jsonResponse([]);
     return jsonResponse({ tool_id: items[0]?.id, status: "healthy", checked_at: "2026-08-17T00:00:00Z" });
   });
@@ -73,7 +74,9 @@ describe("第三阶段 AI 测试工作台", () => {
     expect(screen.getByRole("link", { name: "自动化" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "质量分析" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "专项评测" })).toBeInTheDocument();
-    expect(screen.getByText("1.01.000")).toBeInTheDocument();
+    expect(screen.getByText("1.1.0")).toBeInTheDocument();
+    expect(screen.getByRole("complementary", { name: "平台状态" })).toHaveTextContent("运行环境DEV");
+    expect(screen.getByRole("link", { name: "查看版本详情" })).toHaveAttribute("href", "/system/versions");
   });
 
   it("只渲染服务端返回的能力，不由 Catalog 补回其余工具", async () => {
@@ -99,7 +102,7 @@ describe("第三阶段 AI 测试工作台", () => {
     fireEvent.click(screen.getByRole("link", { name: "AI 测试" }));
     expect(await screen.findByRole("heading", { name: "AI 测试" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("link", { name: "工作台" }));
-    fireEvent.click(await screen.findByRole("button", { name: "重新检测" }));
+    fireEvent.click(await screen.findByRole("button", { name: "刷新状态" }));
     await waitFor(() => expect(fetchMock.mock.calls.filter(([url]) => String(url).includes("/tools/") && String(url).endsWith("/health"))).toHaveLength(4));
     expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/tools"))).toHaveLength(1);
   });
@@ -122,6 +125,36 @@ describe("第三阶段 AI 测试工作台", () => {
     render(<App />);
     await screen.findByText("平台管理员");
     expect(screen.queryByRole("link", { name: "平台管理" })).not.toBeInTheDocument();
+  });
+
+  it("配置环境切换不改变状态卡的真实运行环境", async () => {
+    mockAuthenticatedCatalog([]);
+    render(<App />);
+    expect(await screen.findByRole("complementary", { name: "平台状态" })).toHaveTextContent("运行环境DEV");
+    fireEvent.change(screen.getByLabelText("当前配置环境"), { target: { value: "prod" } });
+    expect(screen.getByRole("complementary", { name: "平台状态" })).toHaveTextContent("运行环境DEV");
+  });
+
+  it("版本详情展示比较状态、展开身份且允许 Prod 部分失败", async () => {
+    window.history.replaceState({}, "", "/system/versions");
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const url = String(input);
+      if (url.endsWith("/auth/me")) return jsonResponse(auth);
+      if (url.endsWith("/tools")) return jsonResponse({ items: [] });
+      if (url.endsWith("/system/version-matrix")) return jsonResponse({
+        checked_at: "2026-08-19T00:00:00Z", product_version: "1.1.0", runtime_environment: "dev",
+        prod_error: "Prod 无法获取", dev: { database: { alembic_revision: "20260818_0016" }, config_releases: {} }, prod: null,
+        rows: [{ component_id: "functional-test-agent", manifest_version: "1.0.0", dev: { version: "1.0.0", revision: "devsha", dirty: true, runtime_environment: "dev", health: "healthy", digest: "sha256:arm" }, prod: null, prod_expected: null, issues: ["Dirty 构建"], primary_status: "Dirty 构建" }],
+      });
+      return jsonResponse({});
+    });
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: "版本状态" })).toBeInTheDocument();
+    expect(await screen.findByText(/Prod 无法获取/)).toBeInTheDocument();
+    expect(screen.getByText("Dirty 构建")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "详情" }));
+    expect(screen.getByText("devsha")).toBeInTheDocument();
+    expect(screen.getByText("sha256:arm")).toBeInTheDocument();
   });
 
   it("拒绝不安全的工具入口", async () => {

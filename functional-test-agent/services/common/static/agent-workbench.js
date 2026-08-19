@@ -44,6 +44,22 @@ async function agentFetch(path, options = {}) {
 
 // ES Module 工作台复用同一 CSRF/错误协议，不复制第二套请求封装。
 globalThis.agentFetch = agentFetch;
+let toastTimer = null;
+globalThis.showAgentToast = (message, error = false) => {
+  /** 全站只复用一个状态提示，连续保存时重新计时，避免堆叠遮挡工作台。 */
+  let toast = document.querySelector(".agent-toast");
+  if (!toast) {
+    toast = document.createElement("div"); toast.className = "agent-toast";
+    toast.setAttribute("role", "status"); toast.setAttribute("aria-live", "polite"); document.body.append(toast);
+    Object.assign(toast.style, { position: "fixed", top: "72px", right: "24px", zIndex: "1200", maxWidth: "420px", padding: "12px 16px", borderRadius: "10px", boxShadow: "0 12px 32px rgba(0,0,0,.14)", fontSize: "14px", fontWeight: "650" });
+  }
+  clearTimeout(toastTimer); toast.textContent = message; toast.classList.toggle("is-error", Boolean(error));
+  Object.assign(toast.style, error
+    ? { border: "1px solid #fecdca", background: "#fff3f2", color: "#b42318" }
+    : { border: "1px solid rgba(24,121,78,.24)", background: "#f0faf5", color: "#18794e" });
+  toast.hidden = false;
+  toastTimer = setTimeout(() => { toast.hidden = true; }, 3000);
+};
 const initialTokenUsage = document.querySelector("#token-usage")?.dataset.tokenUsage;
 if (initialTokenUsage) { try { renderTokenUsage(JSON.parse(initialTokenUsage)); } catch (_error) { renderTokenUsage({}); } }
 

@@ -9,11 +9,11 @@
 - `functional-test-agent`：独立的需求拆解、测试点 Review 和功能用例生成项目；
 - `api-test-agent`：独立的 API 文档解析、文件化用例生成和受控执行组件项目，真实执行默认关闭。
 
-第二阶段由平台统一负责登录会话、RBAC、网关强制鉴权、审计日志、普通配置、加密 Secret 和凭证续期。`1.01.000` 起，平台同时统一管理功能 Agent、API Agent 与日志分析的 LLM Profile、工具绑定和不可变运行快照。工具仍保留独立源码、容器和独立运行模式。平台或数据库异常时鉴权失败关闭，不提供匿名回退。
+第二阶段由平台统一负责登录会话、RBAC、网关强制鉴权、审计日志、普通配置、加密 Secret 和凭证续期。`1.1.0` 起，平台同时统一管理功能 Agent、API Agent 与日志分析的 LLM Profile、工具绑定和不可变运行快照。工具仍保留独立源码、容器和独立运行模式。平台或数据库异常时鉴权失败关闭，不提供匿名回退。
 
 ## 平台版本
 
-根目录 `VERSION` 是平台版本的唯一真源，格式固定为 `主版本.两位平台版本.三位发布序号`。普通工具或小功能发布递增最后三位（如 `1.00.000 → 1.00.001`）；AI 测试工作台或平台级升级递增中间两位并将发布序号归零（如 `1.00.015 → 1.01.000`）；不兼容升级才递增主版本。发布前只修改该文件，重新构建网关和平台 API 后，首页“平台状态”与 `/api/v1/health/live`、`/api/v1/health/ready` 会显示同一版本。
+`versions.json` 是产品与全部可独立部署组件版本的唯一机器真源，版本使用无前导零的 Semantic Versioning。修复递增 PATCH，向后兼容功能递增 MINOR，不兼容接口递增 MAJOR；数据库继续单独使用 Alembic revision。运行身份同时记录组件版本、Git SHA、dirty 状态和镜像 digest，Release BOM 记录一次生产发布的完整组件组合。
 
 ## 目录与运行边界
 
@@ -36,9 +36,8 @@ Testproject/
 cd /Users/admin/Testproject/test-platform
 cp .env.example .env
 # 修改 .env 中的数据库密码和部署环境设置。
-# 主 Compose 只消费版本化镜像；首次本机构建叠加 local-build 文件。
-docker compose -f docker-compose.yml -f docker-compose.local-build.yml build functional-test-agent api-test-agent
-docker compose up -d
+# 标准入口会注入版本、Git SHA 和组件范围 dirty 状态并完成运行验证。
+./scripts/dev-up.sh
 docker compose ps -a
 ```
 
@@ -70,7 +69,7 @@ cat /Users/admin/Testproject/test-platform/.runtime-secrets/initial-admin-passwo
 | 登录锁定 | 15 分钟内失败 5 次，锁定 15 分钟 |
 | Cookie | `tp_session` HttpOnly；`tp_csrf` 双提交 |
 | dev Cookie Secure | 可关闭，仅限受控内网 HTTP |
-| prod Cookie Secure | 必须开启，且必须 HTTPS |
+| prod Cookie Secure | 当前 HTTP 部署明确设为 `false`；传输风险已接受 |
 | Secret 加密 | AES-256-GCM 信封加密，每版本独立 DEK |
 | 审计保留目标 | 180 天 |
 | 凭证提前刷新 | 60 分钟 |
@@ -232,7 +231,7 @@ V3 开启时使用固定阶段侧栏、紧凑任务中心和聚焦式 Review 工
 
 ## dev → main → prod 发布
 
-本机只在 `dev` 开发并使用 `docker-compose.yml` 原生构建。生产版本只从 `main` 创建 `release-YYYY.MM.DD.N` 标签，由 GitHub Actions 构建 `linux/amd64` 镜像并在 `production` Environment 审批后部署。服务器只执行镜像拉取，不执行 `git pull` 或 `docker compose build`。
+本机只在 `dev` 开发并通过 `scripts/dev-up.sh` 原生构建。生产版本只从 `main` 创建 `release-YYYY.MM.DD.N` 标签，由 GitHub Actions 构建 `linux/amd64` 镜像并在 `production` Environment 审批后部署。服务器只执行镜像拉取，不执行 `git pull` 或 `docker compose build`。
 
 生产基础变量参照 `.env.prod.example` 保存到 `/srv/test-platform/env/.env.prod`，真实密码和 Token 不进入 Git。Release 产物中的 `.env.images` 保存所有服务的完整 GHCR digest；部署时两个 env 文件共同传给 Compose，避免任何镜像回退到默认旧版本。
 
@@ -253,7 +252,7 @@ bash /srv/test-platform/releases/<release>/deploy-prod.sh \
   /srv/test-platform/releases/<release>
 ```
 
-部署前自动备份已有 prod 数据库，随后依次校验无 `build`、拉取 digest、升级数据库、启动服务并检查平台与六个工具入口。应用回滚使用上一 Release 的 `.env.images`；数据库默认不降级。
+部署前自动备份已有 prod 数据库，随后依次校验无 `build`、拉取 digest、升级数据库、启动服务并检查平台与六个工具入口。成功后写入 `/srv/test-platform/state/current.json`、部署 JSON 和 Markdown 记录。功能智能体可传完整 digest 独立切换；API 智能体必须传包含四个 digest 的 env 文件原子切换。失败会恢复前一镜像组合，数据库默认不降级。
 
 ## 测试
 
