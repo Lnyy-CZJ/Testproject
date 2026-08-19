@@ -110,7 +110,20 @@ done
 if [[ ${#buildable[@]} -gt 0 ]]; then
   "${compose[@]}" build "${buildable[@]}"
 fi
-"${compose[@]}" up -d "${compose_services[@]}"
+backend_services=()
+independent_services=()
+for service in "${compose_services[@]}"; do
+  case "$service" in
+    platform-migrate|platform-bootstrap|platform-api|platform-credential-agent) backend_services+=("$service") ;;
+    *) independent_services+=("$service") ;;
+  esac
+done
+if [[ ${#backend_services[@]} -gt 0 ]]; then
+  "${compose[@]}" up -d "${backend_services[@]}"
+fi
+if [[ ${#independent_services[@]} -gt 0 ]]; then
+  "${compose[@]}" up -d --no-deps "${independent_services[@]}"
+fi
 
 snapshot_file="$runtime_dir/snapshot.json"
 peer_token=$(<"$secret_dir/version-peer-token")
