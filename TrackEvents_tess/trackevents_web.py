@@ -1228,6 +1228,7 @@ class TrackEventsHandler(BaseHTTPRequestHandler):
                 "version": os.getenv("APP_VERSION", "unknown"),
                 "revision": os.getenv("APP_REVISION", "unknown"),
                 "dirty": os.getenv("APP_BUILD_DIRTY", "true").lower() == "true",
+                "content_sha256": os.getenv("APP_CONTENT_SHA256", "unknown"),
                 "runtime_environment": os.getenv("PLATFORM_RUNTIME_ENV", "unknown"),
             })
             return

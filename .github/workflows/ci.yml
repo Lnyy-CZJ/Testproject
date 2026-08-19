@@ -123,9 +123,13 @@ jobs:
         id: version
         run: |
           python - <<'PY' >> "$GITHUB_OUTPUT"
-          import json
-          data = json.load(open("test-platform/versions.json", encoding="utf-8"))
-          print("value=" + data["components"]["${{ matrix.component_id }}"]["version"])
+          import json, subprocess
+          data = json.loads(subprocess.check_output([
+              "python", "test-platform/scripts/version_tool.py", "export", "${{ matrix.component_id }}"
+          ], text=True))
+          component = data["components"]["${{ matrix.component_id }}"]
+          print("value=" + component["version"])
+          print("content_sha256=" + component["content_sha256"])
           PY
       - uses: docker/build-push-action@v6
         with:
@@ -137,9 +141,11 @@ jobs:
             APP_VERSION=${{ steps.version.outputs.value }}
             APP_REVISION=${{ github.sha }}
             APP_BUILD_DIRTY=false
+            APP_CONTENT_SHA256=${{ steps.version.outputs.content_sha256 }}
             APP_RUNTIME_ENV=ci
           labels: |
             org.opencontainers.image.version=${{ steps.version.outputs.value }}
             org.opencontainers.image.revision=${{ github.sha }}
+            io.testplatform.source-content-sha256=${{ steps.version.outputs.content_sha256 }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

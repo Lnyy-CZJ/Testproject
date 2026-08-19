@@ -135,6 +135,7 @@ class WebAppTests(unittest.TestCase):
             {
                 "service": "truthy-search", "status": "ok", "version": "unknown",
                 "revision": "unknown", "dirty": True, "runtime_environment": "unknown",
+                "content_sha256": "unknown",
             },
             health_response.get_json(),
         )

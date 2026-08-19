@@ -3,15 +3,18 @@ FROM python:3.12-slim
 ARG APP_VERSION=unknown
 ARG APP_REVISION=unknown
 ARG APP_BUILD_DIRTY=true
+ARG APP_CONTENT_SHA256=unknown
 LABEL org.opencontainers.image.version=$APP_VERSION \
-      org.opencontainers.image.revision=$APP_REVISION
+      org.opencontainers.image.revision=$APP_REVISION \
+      io.testplatform.source-content-sha256=$APP_CONTENT_SHA256
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     APP_VERSION=${APP_VERSION} \
     APP_REVISION=${APP_REVISION} \
-    APP_BUILD_DIRTY=${APP_BUILD_DIRTY}
+    APP_BUILD_DIRTY=${APP_BUILD_DIRTY} \
+    APP_CONTENT_SHA256=${APP_CONTENT_SHA256}
 
 WORKDIR /app
 

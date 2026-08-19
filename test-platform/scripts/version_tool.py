@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import subprocess
@@ -63,6 +64,24 @@ def component_dirty(paths: list[str]) -> bool:
     return bool(output)
 
 
+def component_content_sha256(paths: list[str]) -> str:
+    """Hash component source names and bytes without architecture-dependent metadata."""
+
+    names = git("ls-files", "--cached", "--others", "--exclude-standard", "--", *paths).splitlines()
+    digest = hashlib.sha256()
+    for name in sorted(filter(None, names)):
+        path = ROOT / name
+        if not path.is_file():
+            continue
+        encoded = name.encode("utf-8")
+        content = path.read_bytes()
+        digest.update(len(encoded).to_bytes(8, "big"))
+        digest.update(encoded)
+        digest.update(len(content).to_bytes(8, "big"))
+        digest.update(content)
+    return digest.hexdigest()
+
+
 def command_validate(_: argparse.Namespace) -> int:
     data = load_manifest()
     print(f"valid: product {data['product']['version']}, {len(data['components'])} components")
@@ -83,6 +102,9 @@ def command_export(args: argparse.Namespace) -> int:
             component_id: {
                 "version": data["components"][component_id]["version"],
                 "dirty": component_dirty(data["components"][component_id]["source_paths"]),
+                "content_sha256": component_content_sha256(
+                    data["components"][component_id]["source_paths"]
+                ),
                 "image_envs": data["components"][component_id]["image_envs"],
             }
             for component_id in selected
@@ -147,10 +169,11 @@ def command_bom(args: argparse.Namespace) -> int:
     for component_id, component in data["components"].items():
         components[component_id] = {
             "version": component["version"],
+            "content_sha256": component_content_sha256(component["source_paths"]),
             "images": {key: images[key] for key in component["image_envs"]},
         }
     bom = {
-        "schema_version": 2,
+        "schema_version": 3,
         "product_version": data["product"]["version"],
         "release": args.release,
         "commit": args.commit,
@@ -179,20 +202,27 @@ def command_report(args: argparse.Namespace) -> int:
         f"- Product version: `{manifest['product']['version']}`",
         f"- Dev release: `{dev.get('release') or 'unknown'}`",
         f"- Prod release: `{prod.get('release') or bom.get('release') or 'unknown'}`",
-        "", "| Component | Manifest | Dev actual | Prod actual | Prod expected |",
+        "", "| Component | Manifest | Dev actual | Prod actual | Content verified |",
         "| --- | --- | --- | --- | --- |",
     ]
     for component_id, component in manifest["components"].items():
         dev_version = dev.get("components", {}).get(component_id, {}).get("version", "unknown")
         prod_version = prod.get("components", {}).get(component_id, {}).get("version", "unknown")
-        expected_version = expected.get(component_id, {}).get("version", "旧发布记录 / 版本未知")
+        expected_component = expected.get(component_id, {})
+        expected_version = expected_component.get("version", "旧发布记录 / 版本未知")
+        dev_hash = dev.get("components", {}).get(component_id, {}).get("content_sha256")
+        prod_hash = prod.get("components", {}).get(component_id, {}).get("content_sha256")
+        verified = "yes" if dev_hash and prod_hash and dev_hash == prod_hash else "no"
         lines.append(
-            f"| {component_id} | `{component['version']}` | `{dev_version}` | `{prod_version}` | `{expected_version}` |"
+            f"| {component_id} | `{component['version']}` | `{dev_version}` | `{prod_version}` | {verified} (expected `{expected_version}`) |"
         )
     lines.extend([
         "",
         f"- Dev database: `{dev.get('database', {}).get('alembic_revision', 'unknown')}`",
         f"- Prod database: `{prod.get('database', {}).get('alembic_revision', bom.get('database', {}).get('alembic_revision', 'unknown'))}`",
+        f"- Dev schema fingerprint: `{dev.get('database', {}).get('schema_sha256', 'unknown')}`",
+        f"- Prod schema fingerprint: `{prod.get('database', {}).get('schema_sha256', 'unknown')}`",
+        "- Business data is environment-owned and is not compared.",
     ])
     output = "\n".join(lines) + "\n"
     if args.output:

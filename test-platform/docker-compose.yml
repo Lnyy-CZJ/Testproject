@@ -6,6 +6,7 @@ services:
         APP_VERSION: "${PLATFORM_GATEWAY_VERSION:-unknown}"
         APP_REVISION: "${APP_REVISION:-unknown}"
         APP_BUILD_DIRTY: "${PLATFORM_GATEWAY_DIRTY:-true}"
+        APP_CONTENT_SHA256: "${PLATFORM_GATEWAY_CONTENT_SHA256:-unknown}"
         APP_RUNTIME_ENV: "${PLATFORM_RUNTIME_ENV:-dev}"
     ports:
       - "${PLATFORM_PORT:-8080}:80"
@@ -55,6 +56,7 @@ services:
         APP_VERSION: "${PLATFORM_BACKEND_VERSION:-unknown}"
         APP_REVISION: "${APP_REVISION:-unknown}"
         APP_BUILD_DIRTY: "${PLATFORM_BACKEND_DIRTY:-true}"
+        APP_CONTENT_SHA256: "${PLATFORM_BACKEND_CONTENT_SHA256:-unknown}"
     command: ["alembic", "upgrade", "head"]
     environment:
       DATABASE_URL: "postgresql+psycopg://${POSTGRES_USER:-platform}:${POSTGRES_PASSWORD:-platform_dev_password}@platform-db:5432/${POSTGRES_DB:-test_platform}"
@@ -73,6 +75,7 @@ services:
         APP_VERSION: "${PLATFORM_BACKEND_VERSION:-unknown}"
         APP_REVISION: "${APP_REVISION:-unknown}"
         APP_BUILD_DIRTY: "${PLATFORM_BACKEND_DIRTY:-true}"
+        APP_CONTENT_SHA256: "${PLATFORM_BACKEND_CONTENT_SHA256:-unknown}"
     command: ["python", "-m", "app.bootstrap_clients"]
     environment:
       DATABASE_URL: "postgresql+psycopg://${POSTGRES_USER:-platform}:${POSTGRES_PASSWORD:-platform_dev_password}@platform-db:5432/${POSTGRES_DB:-test_platform}"
@@ -92,6 +95,7 @@ services:
         APP_VERSION: "${PLATFORM_BACKEND_VERSION:-unknown}"
         APP_REVISION: "${APP_REVISION:-unknown}"
         APP_BUILD_DIRTY: "${PLATFORM_BACKEND_DIRTY:-true}"
+        APP_CONTENT_SHA256: "${PLATFORM_BACKEND_CONTENT_SHA256:-unknown}"
     environment:
       DATABASE_URL: "postgresql+psycopg://${POSTGRES_USER:-platform}:${POSTGRES_PASSWORD:-platform_dev_password}@platform-db:5432/${POSTGRES_DB:-test_platform}"
       APP_ENV: "${APP_ENV:-development}"
@@ -142,6 +146,7 @@ services:
         APP_VERSION: "${PLATFORM_BACKEND_VERSION:-unknown}"
         APP_REVISION: "${APP_REVISION:-unknown}"
         APP_BUILD_DIRTY: "${PLATFORM_BACKEND_DIRTY:-true}"
+        APP_CONTENT_SHA256: "${PLATFORM_BACKEND_CONTENT_SHA256:-unknown}"
     command: ["python", "-m", "app.jobs.credential_agent"]
     environment:
       DATABASE_URL: "postgresql+psycopg://${POSTGRES_USER:-platform}:${POSTGRES_PASSWORD:-platform_dev_password}@platform-db:5432/${POSTGRES_DB:-test_platform}"
@@ -165,6 +170,7 @@ services:
         APP_VERSION: "${TRACKEVENTS_VERSION:-unknown}"
         APP_REVISION: "${APP_REVISION:-unknown}"
         APP_BUILD_DIRTY: "${TRACKEVENTS_DIRTY:-true}"
+        APP_CONTENT_SHA256: "${TRACKEVENTS_CONTENT_SHA256:-unknown}"
     environment:
       TRACKEVENTS_HOST: 0.0.0.0
       TRACKEVENTS_PORT: 8000
@@ -192,6 +198,7 @@ services:
         APP_VERSION: "${LOG_FILTER_VERSION:-unknown}"
         APP_REVISION: "${APP_REVISION:-unknown}"
         APP_BUILD_DIRTY: "${LOG_FILTER_DIRTY:-true}"
+        APP_CONTENT_SHA256: "${LOG_FILTER_CONTENT_SHA256:-unknown}"
     environment:
       LOG_FILTER_BASE_PATH: /log-filter
       # 将导出文件保存到宿主机固定目录，避免容器重建后临时文件丢失。
@@ -232,6 +239,7 @@ services:
         APP_VERSION: "${TRUTHY_SEARCH_VERSION:-unknown}"
         APP_REVISION: "${APP_REVISION:-unknown}"
         APP_BUILD_DIRTY: "${TRUTHY_SEARCH_DIRTY:-true}"
+        APP_CONTENT_SHA256: "${TRUTHY_SEARCH_CONTENT_SHA256:-unknown}"
     environment:
       SEARCH_WEB_BASE_PATH: /truthy-search
       PLATFORM_HOME_URL: /
@@ -277,6 +285,7 @@ services:
         APP_VERSION: "${API_AUTOTEST_VERSION:-unknown}"
         APP_REVISION: "${APP_REVISION:-unknown}"
         APP_BUILD_DIRTY: "${API_AUTOTEST_DIRTY:-true}"
+        APP_CONTENT_SHA256: "${API_AUTOTEST_CONTENT_SHA256:-unknown}"
     environment:
       API_AUTOTEST_HOST: 0.0.0.0
       API_AUTOTEST_PORT: "5003"

@@ -5,6 +5,7 @@ ARG APP_VERSION=unknown
 ARG APP_REVISION=unknown
 ARG APP_BUILD_DIRTY=true
 ARG APP_RUNTIME_ENV=unknown
+ARG APP_CONTENT_SHA256=unknown
 
 WORKDIR /workspace/frontend
 
@@ -23,14 +24,16 @@ ARG APP_VERSION=unknown
 ARG APP_REVISION=unknown
 ARG APP_BUILD_DIRTY=true
 ARG APP_RUNTIME_ENV=unknown
+ARG APP_CONTENT_SHA256=unknown
 LABEL org.opencontainers.image.version=$APP_VERSION \
-      org.opencontainers.image.revision=$APP_REVISION
+      org.opencontainers.image.revision=$APP_REVISION \
+      io.testplatform.source-content-sha256=$APP_CONTENT_SHA256
 
 COPY --from=frontend-builder /workspace/frontend/dist/ /usr/share/nginx/html/
 COPY nginx/nginx.conf /etc/nginx/nginx.conf
 COPY nginx/tool-unavailable.html /etc/nginx/errors/tool-unavailable.html
-RUN printf '{"service":"platform-gateway","status":"ok","version":"%s","revision":"%s","dirty":%s,"runtime_environment":"%s"}\n' \
-    "$APP_VERSION" "$APP_REVISION" "$APP_BUILD_DIRTY" "$APP_RUNTIME_ENV" \
+RUN printf '{"service":"platform-gateway","status":"ok","version":"%s","revision":"%s","dirty":%s,"runtime_environment":"%s","content_sha256":"%s"}\n' \
+    "$APP_VERSION" "$APP_REVISION" "$APP_BUILD_DIRTY" "$APP_RUNTIME_ENV" "$APP_CONTENT_SHA256" \
     > /usr/share/nginx/html/version.json
 
 EXPOSE 80

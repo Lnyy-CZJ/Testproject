@@ -190,6 +190,7 @@ def create_agent_app(
             "status": "ok", "service": settings.tool_id,
             "version": settings.app_version, "revision": settings.app_revision,
             "dirty": settings.app_build_dirty,
+            "content_sha256": settings.app_content_sha256,
             "runtime_environment": settings.runtime_environment,
         })
 

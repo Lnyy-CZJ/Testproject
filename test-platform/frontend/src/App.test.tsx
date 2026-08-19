@@ -147,6 +147,7 @@ describe("第三阶段 AI 测试工作台", () => {
       if (url.endsWith("/system/version-matrix")) return jsonResponse({
         checked_at: "2026-08-19T00:00:00Z", product_version: "1.1.0", runtime_environment: "dev",
         prod_error: "Prod 无法获取", dev: { database: { alembic_revision: "20260818_0016" }, config_releases: {} }, prod: null,
+        database_comparison: { dev: { alembic_revision: "20260818_0016", schema_sha256: "schema-dev" }, prod: {}, issues: ["不可用"], primary_status: "不可用", data_compared: false },
         rows: [{ component_id: "functional-test-agent", manifest_version: "1.0.0", dev: { version: "1.0.0", revision: "devsha", dirty: true, runtime_environment: "dev", health: "healthy", digest: "sha256:arm" }, prod: null, prod_expected: null, issues: ["Dirty 构建"], primary_status: "Dirty 构建" }],
       });
       return jsonResponse({});

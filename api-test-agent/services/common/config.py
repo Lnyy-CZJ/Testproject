@@ -24,6 +24,7 @@ class ServiceSettings:
     app_revision: str
     app_version: str = "unknown"
     app_build_dirty: bool = True
+    app_content_sha256: str = "unknown"
 
 
 def load_service_settings(tool_id: str, agent_type: str, default_path: str, default_port: int) -> ServiceSettings:
@@ -56,4 +57,5 @@ def load_service_settings(tool_id: str, agent_type: str, default_path: str, defa
         app_version=os.getenv("APP_VERSION", "unknown"),
         app_revision=os.getenv("APP_REVISION", "unknown"),
         app_build_dirty=os.getenv("APP_BUILD_DIRTY", "true").lower() == "true",
+        app_content_sha256=os.getenv("APP_CONTENT_SHA256", "unknown"),
     )

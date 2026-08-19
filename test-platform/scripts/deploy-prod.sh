@@ -78,7 +78,7 @@ PY
 }
 
 verify_runtime() {
-  local target=${1:-} expected_version=${2:-} expected_revision=${3:-} snapshot
+  local target=${1:-} expected_version=${2:-} expected_revision=${3:-} expected_content=${4:-} snapshot
   snapshot=$(mktemp)
   if ! curl --fail --silent --show-error --retry 12 --retry-delay 5 --retry-all-errors \
     -H "Authorization: Bearer $(</srv/test-platform/secrets/prod/version-peer-token)" \
@@ -86,22 +86,25 @@ verify_runtime() {
     rm -f "$snapshot"
     return 1
   fi
-  python3 - "$snapshot" "$target" "$expected_version" "$expected_revision" "$release_dir/release-manifest.json" <<'PY'
+  python3 - "$snapshot" "$target" "$expected_version" "$expected_revision" "$expected_content" "$release_dir/release-manifest.json" <<'PY'
 import json, sys
 from pathlib import Path
 
 snapshot = json.loads(Path(sys.argv[1]).read_text())
 target = sys.argv[2]
 expected_version, expected_revision = sys.argv[3:5]
-manifest = json.loads(Path(sys.argv[5]).read_text())
+expected_content = sys.argv[5]
+manifest = json.loads(Path(sys.argv[6]).read_text())
 components = snapshot.get("components", {})
 selected = {target: components.get(target)} if target else components
 if not selected:
     raise SystemExit("runtime version verification returned no components")
 for component_id, item in selected.items():
-    version = expected_version or manifest.get("components", {}).get(component_id, {}).get("version")
+    expected_component = manifest.get("components", {}).get(component_id, {})
+    version = expected_version or expected_component.get("version")
     revision = expected_revision or manifest.get("commit")
-    if not item or item.get("health") != "healthy" or item.get("version") != version or item.get("revision") != revision or item.get("dirty"):
+    content_sha256 = expected_content or expected_component.get("content_sha256")
+    if not item or item.get("health") != "healthy" or item.get("version") != version or item.get("revision") != revision or item.get("content_sha256") != content_sha256 or item.get("dirty"):
         raise SystemExit(f"{component_id} runtime identity does not match release metadata")
 print(f"verified {len(selected)} production component identities")
 PY
@@ -111,19 +114,25 @@ PY
 }
 
 write_record() {
-  local operation=$1 target=${2:-} image_env=$3 config_releases=${4:-}
+  local operation=$1 target=${2:-} image_env=$3 config_releases=${4:-} snapshot
+  snapshot=$(mktemp)
+  curl --fail --silent --show-error \
+    -H "Authorization: Bearer $(</srv/test-platform/secrets/prod/version-peer-token)" \
+    "http://127.0.0.1:41873/api/v1/internal/version-snapshot" > "$snapshot"
   DEPLOYED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
   OPERATION="$operation" TARGET_COMPONENT="$target" CONFIG_RELEASES="$config_releases" \
   TARGET_VERSION="${expected_version:-}" TARGET_REVISION="${expected_revision:-}" \
+  TARGET_CONTENT="${expected_content:-}" \
   PREVIOUS_RELEASE="$previous_release" \
-  python3 - "$release_dir/release-manifest.json" "$state_dir/current.json" "$image_env" "$release_dir/versions.json" "$deployments_dir/$deployment_id.json" "$deployments_dir/$deployment_id.md" <<'PY'
+  python3 - "$release_dir/release-manifest.json" "$state_dir/current.json" "$image_env" "$release_dir/versions.json" "$deployments_dir/$deployment_id.json" "$deployments_dir/$deployment_id.md" "$snapshot" <<'PY'
 import json, os, sys
 from pathlib import Path
 
-manifest_path, current_path, images_path, versions_path, json_path, markdown_path = map(Path, sys.argv[1:])
+manifest_path, current_path, images_path, versions_path, json_path, markdown_path, snapshot_path = map(Path, sys.argv[1:])
 manifest = json.loads(manifest_path.read_text())
 current = json.loads(current_path.read_text()) if current_path.stat().st_size else {}
 versions = json.loads(versions_path.read_text())
+snapshot = json.loads(snapshot_path.read_text())
 images = dict(line.split("=", 1) for line in images_path.read_text().splitlines() if line)
 target = os.environ["TARGET_COMPONENT"]
 if os.environ["OPERATION"] == "full" or not current.get("components"):
@@ -134,6 +143,7 @@ else:
     record["components"][target] = {
         "version": os.environ["TARGET_VERSION"] or versions["components"][target]["version"],
         "revision": os.environ["TARGET_REVISION"] or manifest.get("commit"),
+        "content_sha256": os.environ["TARGET_CONTENT"] or source.get("content_sha256", "unknown"),
         "images": {key: images[key] for key in source["images"]},
     }
 record["images"] = images
@@ -147,6 +157,8 @@ record.update({
         {"owner_type": a, "owner_id": b, "release_id": c}
         for a, b, c in (line.split("|", 2) for line in os.environ["CONFIG_RELEASES"].splitlines() if line)
     ],
+    "database": snapshot.get("database", {}),
+    "config_fingerprints": snapshot.get("config_fingerprints", {}),
     "acceptance": {"result": "passed", "smoke_tests": 8 if os.environ["OPERATION"] == "full" else 1},
 })
 temp = current_path.with_suffix(".tmp")
@@ -168,8 +180,17 @@ rows = [
 for component_id, component in sorted(record.get("components", {}).items()):
     image_list = "<br>".join(f"`{key}={value}`" for key, value in component.get("images", {}).items())
     rows.append(f"| {component_id} | `{component.get('version', 'unknown')}` | {image_list} |")
+database = record.get("database", {})
+rows.extend([
+    "", "## Database structure", "",
+    f"- Alembic revision: `{database.get('alembic_revision', 'unknown')}`",
+    f"- Schema SHA-256: `{database.get('schema_sha256', 'unknown')}`",
+    "- Business data: not compared",
+    f"- Config fingerprints: `{len(record.get('config_fingerprints', {}))}` scopes",
+])
 markdown_path.write_text("\n".join(rows) + "\n")
 PY
+  rm -f "$snapshot"
   chmod 600 "$state_dir/current.json" "$deployments_dir/$deployment_id.json" "$deployments_dir/$deployment_id.md"
 }
 
@@ -204,14 +225,16 @@ if [[ -n "$component" ]]; then
   primary_image=$(grep "^${primary_key}=" "$candidate_images" | cut -d= -f2-)
   expected_version=$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' "$primary_image")
   expected_revision=$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$primary_image")
+  expected_content=$(docker image inspect --format '{{ index .Config.Labels "io.testplatform.source-content-sha256" }}' "$primary_image")
   if [[ "$component" == "api-test-agent" ]]; then
     for key in API_EXECUTION_CONTROLLER_IMAGE API_EGRESS_PROXY_IMAGE API_EXECUTOR_IMAGE; do
       image=$(grep "^${key}=" "$candidate_images" | cut -d= -f2-)
       [[ $(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' "$image") == "$expected_version" ]]
       [[ $(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$image") == "$expected_revision" ]]
+      [[ $(docker image inspect --format '{{ index .Config.Labels "io.testplatform.source-content-sha256" }}' "$image") == "$expected_content" ]]
     done
   fi
-  if ! "${compose[@]}" up -d --no-deps "${services[0]}" || ! verify_runtime "$component" "$expected_version" "$expected_revision"; then
+  if ! "${compose[@]}" up -d --no-deps "${services[0]}" || ! verify_runtime "$component" "$expected_version" "$expected_revision" "$expected_content"; then
     rollback=(docker compose --env-file "$base_env" --env-file "$previous_images" -p test-platform-prod -f "$release_dir/docker-compose.yml" -f "$release_dir/docker-compose.prod.yml")
     "${rollback[@]}" up -d --no-deps "${services[0]}"
     echo "$component 部署失败，已恢复前一镜像组合" >&2
@@ -254,6 +277,10 @@ fi
 for path in / /api/v1/health/live; do
   curl --fail --silent --show-error --retry 12 --retry-delay 5 --retry-all-errors "http://127.0.0.1:41873$path" >/dev/null
 done
+# V3 是功能智能体的生产界面契约；使用容器内只读请求验证，不依赖用户 Session。
+"${compose[@]}" exec -T functional-test-agent python -c \
+  'import urllib.request; request=urllib.request.Request("http://127.0.0.1:5004/functional-test-agent/", headers={"X-Platform-User-ID":"release-smoke","X-Platform-Permissions":"tool.view"}); print(urllib.request.urlopen(request, timeout=5).read().decode())' \
+  | grep -q '测试用例生成'
 verify_runtime
 config_releases=$("${compose[@]}" exec -T platform-db sh -c \
   'psql -At -F "|" -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "select owner_type, owner_id, active_release_id from config_activations where environment_id='"'"'prod'"'"' order by owner_type, owner_id;"')

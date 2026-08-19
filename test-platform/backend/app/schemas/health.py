@@ -12,4 +12,5 @@ class ServiceHealthResponse(BaseModel):
     component_version: str
     revision: str
     dirty: bool
+    content_sha256: str
     runtime_environment: str
