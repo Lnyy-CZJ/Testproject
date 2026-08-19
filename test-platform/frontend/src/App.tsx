@@ -194,12 +194,19 @@ function LoginPage() {
 }
 
 function LoginLayout({ children }: PropsWithChildren) {
+  const [runtimeEnvironment, setRuntimeEnvironment] = useState("UNKNOWN");
+  useEffect(() => {
+    fetch("/version.json")
+      .then((response) => response.ok ? response.json() : Promise.reject())
+      .then((identity: Pick<RuntimeIdentity, "runtime_environment">) => setRuntimeEnvironment(identity.runtime_environment.toUpperCase()))
+      .catch(() => undefined);
+  }, []);
   return <div className="login-shell">
     <header className="login-header">
       <div className="login-header-content">
         <span className="brand"><span className="brand-mark" aria-hidden="true">T</span><span>测试开发平台</span></span>
         <nav className="login-capabilities" aria-label="平台能力预览"><span>工作台</span><span>AI 测试</span><span>自动化</span><span>质量分析</span><span>专项评测</span></nav>
-        <div className="login-header-meta"><span>DEV</span><span>工程工作台</span></div>
+        <div className="login-header-meta"><span>{runtimeEnvironment}</span><span>工程工作台</span></div>
       </div>
     </header>
     <main className="login-page">
