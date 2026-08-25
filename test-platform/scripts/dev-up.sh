@@ -93,6 +93,7 @@ if [[ ${#selected[@]} -eq 0 ]]; then
 fi
 
 compose_services=()
+api_suite_selected=false
 for component in "${selected[@]}"; do
   case "$component" in
     platform-gateway) compose_services+=(platform-gateway) ;;
@@ -108,6 +109,7 @@ for component in "${selected[@]}"; do
       docker build -f "$repo_dir/api-test-agent/Dockerfile.egress" --build-arg APP_VERSION="$API_AGENT_VERSION" --build-arg APP_REVISION="$APP_REVISION" --build-arg APP_BUILD_DIRTY="$API_AGENT_DIRTY" --build-arg APP_CONTENT_SHA256="$API_AGENT_CONTENT_SHA256" -t "$API_EGRESS_PROXY_IMAGE" "$repo_dir/api-test-agent"
       docker build -f "$repo_dir/api-test-agent/Dockerfile.executor" --build-arg APP_VERSION="$API_AGENT_VERSION" --build-arg APP_REVISION="$APP_REVISION" --build-arg APP_BUILD_DIRTY="$API_AGENT_DIRTY" --build-arg APP_CONTENT_SHA256="$API_AGENT_CONTENT_SHA256" -t "$API_EXECUTOR_IMAGE" "$repo_dir/api-test-agent"
       compose_services+=(api-test-agent)
+      api_suite_selected=true
       ;;
     *) echo "unknown component: $component" >&2; exit 2 ;;
   esac
@@ -127,6 +129,16 @@ for service in "${compose_services[@]}"; do
 done
 if [[ ${#buildable[@]} -gt 0 ]]; then
   "${compose[@]}" build "${buildable[@]}"
+fi
+if [[ "$api_suite_selected" == true ]]; then
+  # API Suite 的四个镜像共享一个版本。Executor 只作为任务镜像保存；
+  # Controller/Egress 仅在原本已启用时重建，避免 Dev 选择性发布擅自开启执行链。
+  running_services=$("${compose[@]}" ps --services --status running)
+  for service in api-execution-controller api-egress-proxy; do
+    if grep -qx "$service" <<<"$running_services"; then
+      compose_services+=("$service")
+    fi
+  done
 fi
 backend_services=()
 independent_services=()
@@ -150,14 +162,16 @@ for attempt in {1..12}; do
   if curl --fail --silent --show-error --retry 2 --retry-delay 1 --retry-all-errors \
     -H "Authorization: Bearer $peer_token" \
     "http://127.0.0.1:${PLATFORM_PORT:-8080}/api/v1/internal/version-snapshot" > "$snapshot_temp" \
-    && python3 - "$snapshot_temp" <<'PY'
+    && python3 - "$snapshot_temp" "${selected[@]}" <<'PY'
 import json, sys
 from pathlib import Path
 
 components = json.loads(Path(sys.argv[1]).read_text()).get("components", {})
-raise SystemExit(0 if components and all(
-    item.get("health") == "healthy" and item.get("version") not in {None, "unknown"}
-    for item in components.values()
+selected = set(sys.argv[2:])
+raise SystemExit(0 if selected and all(
+    components.get(component_id, {}).get("health") == "healthy"
+    and components.get(component_id, {}).get("version") not in {None, "unknown"}
+    for component_id in selected
 ) else 1)
 PY
   then

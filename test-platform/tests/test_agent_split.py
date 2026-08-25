@@ -88,6 +88,15 @@ class AgentSplitComposeTest(unittest.TestCase):
             "test-platform/frontend/src/types",
         }.issubset(paths))
 
+    def test_dev_component_update_is_selective_and_keeps_api_suite_atomic(self) -> None:
+        """选择性 Dev 构建只校验目标组件，但必须同步已运行的 API 执行链。"""
+
+        script = (ROOT / "scripts/dev-up.sh").read_text(encoding="utf-8")
+        self.assertIn('python3 - "$snapshot_temp" "${selected[@]}"', script)
+        self.assertIn("selected = set(sys.argv[2:])", script)
+        self.assertIn('api_suite_selected=true', script)
+        self.assertIn('ps --services --status running', script)
+
 
 if __name__ == "__main__":
     unittest.main()
