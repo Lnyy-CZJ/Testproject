@@ -395,6 +395,7 @@ def create_app(base_path=None):
     app.config["PLATFORM_HOME_URL"] = os.environ.get("PLATFORM_HOME_URL", "").strip()
     app.config["PLATFORM_API_URL"] = os.environ.get("PLATFORM_API_URL", "").rstrip("/")
     app.config["PLATFORM_CLIENT_TOKEN_FILE"] = os.environ.get("PLATFORM_CLIENT_TOKEN_FILE", "")
+    app.config["PLATFORM_ENVIRONMENT"] = os.environ.get("PLATFORM_RUNTIME_ENV", "dev").strip() or "dev"
     app.config["PEOPLE_SEARCH_ANALYZER_ENABLED"] = os.environ.get(
         "PEOPLE_SEARCH_ANALYZER_ENABLED", "true"
     ).lower() in ("1", "true", "yes", "on")
@@ -410,6 +411,84 @@ def create_app(base_path=None):
             return Path(app.config["PLATFORM_CLIENT_TOKEN_FILE"]).read_text(encoding="utf-8").strip()
         except (OSError, TypeError):
             return ""
+
+    def verified_resource_access(action, resource_type, root_resource_id=None):
+        """向平台核验 opaque 资源上下文，工具端绝不解析身份或角色。
+
+        独立部署没有平台地址时返回 ``None`` 以保持原有单用户行为。启用平台
+        后，缺失、失效或被拒绝的资源上下文都按不可见处理，调用方统一返回
+        404，避免暴露资源是否存在。
+        """
+        platform_api_url = app.config["PLATFORM_API_URL"]
+        if not platform_api_url:
+            return None
+        opaque_context = request.headers.get("X-Platform-Resource-Context", "")
+        token = client_token()
+        if not opaque_context or not token:
+            return {"allowed": False}
+        body = json.dumps(
+            {
+                "action": action,
+                "resource_type": resource_type,
+                "root_resource_id": root_resource_id,
+            },
+            ensure_ascii=False,
+        ).encode("utf-8")
+        access_request = urlrequest.Request(
+            f"{platform_api_url}/internal/tools/log-filter/resource-access/check",
+            data=body,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+                "X-Platform-Resource-Context": opaque_context,
+            },
+            method="POST",
+        )
+        try:
+            with urlrequest.urlopen(access_request, timeout=3) as response:
+                decision = json.loads(response.read().decode("utf-8"))
+        except (OSError, ValueError, json.JSONDecodeError):
+            # 无法得到平台的可验证决策时必须失败关闭，不能降级为公开导出。
+            return {"allowed": False}
+        return decision if isinstance(decision, dict) else {"allowed": False}
+
+    def register_root_resource(resource_type, resource_id):
+        """在写文件前登记平台不可变 owner/project 快照，字段缺失一律拒绝。"""
+
+        platform_api_url = app.config["PLATFORM_API_URL"]
+        if not platform_api_url:
+            return True
+        opaque_context = request.headers.get("X-Platform-Resource-Context", "")
+        token = client_token()
+        if not opaque_context or not token:
+            return False
+        register_request = urlrequest.Request(
+            f"{platform_api_url}/internal/resources",
+            data=json.dumps({
+                "tool_id": "log-filter",
+                "resource_type": resource_type,
+                "resource_id": resource_id,
+            }, ensure_ascii=False).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+                "X-Platform-Resource-Context": opaque_context,
+            },
+            method="POST",
+        )
+        try:
+            with urlrequest.urlopen(register_request, timeout=3) as response:
+                registered = json.loads(response.read().decode("utf-8"))
+                status = response.status
+        except (OSError, ValueError, json.JSONDecodeError):
+            return False
+        return (
+            status == 201
+            and isinstance(registered, dict)
+            and registered.get("resource_id") == resource_id
+            and registered.get("environment_id") == app.config.get("PLATFORM_ENVIRONMENT", "dev")
+            and bool(registered.get("owner_user_id"))
+        )
 
     @app.before_request
     def validate_platform_csrf():
@@ -594,7 +673,10 @@ def create_app(base_path=None):
             # 任何失败（超时、HTTP 错、非法响应）都只降级为规则报告。
             ai_status = {"status": "DISABLED"}
             if app.config["PEOPLE_SEARCH_ANALYZER_AI_ENABLED"]:
-                ai_cfg = load_ai_config()
+                ai_cfg = load_ai_config(
+                    signed_user_context=request.headers.get("X-Platform-User-Context", ""),
+                    resource_id=f"request-{uuid.uuid4().hex}",
+                )
                 ai_text, ai_status, _ = summarize_with_ai(result, ai_cfg)
                 report_markdown = attach_ai_to_report(report_markdown, ai_text)
 
@@ -635,17 +717,46 @@ def create_app(base_path=None):
             不允许客户端控制服务端保存目录。
         """
         payload = request.get_json(silent=True) or {}
+        # 纯参数校验必须先于平台快照登记，避免 400 请求留下永久孤儿 ACL。
+        if payload.get("export_type") not in EXPORT_FILE_TYPES:
+            return jsonify({"message": "不支持的导出类型"}), 400
+        if not isinstance(payload.get("content"), str) or not payload["content"].strip():
+            return jsonify({"message": "当前内容为空，无法导出"}), 400
+        # 平台模式下必须先得到对象级 create 决策；不能根据浏览器自报 owner、
+        # project 或文件名决定导出路径。独立模式保持既有本地导出兼容行为。
+        decision = verified_resource_access("export", "export")
+        if decision is not None and decision.get("allowed") is not True:
+            return jsonify({"message": "资源不存在"}), 404
+        export_root_id = f"export_{uuid.uuid4().hex}"
+        export_dir = app.config["LOG_EXPORT_DIR"]
+        if decision is not None:
+            owner_user_id = str(decision.get("user_id") or "")
+            if not owner_user_id:
+                return jsonify({"message": "资源不存在"}), 404
+            if not register_root_resource("export", export_root_id):
+                return jsonify({"message": "资源不存在"}), 404
+            # 使用平台确认的 owner 和不可预测根资源 ID 物理隔离文件，阻断
+            # 公共目录枚举与通过时间戳猜测其他用户导出物的可能。
+            export_dir = Path(export_dir) / owner_user_id / export_root_id
         try:
             saved_path = save_exported_log(
                 payload.get("content"),
                 payload.get("export_type"),
-                app.config["LOG_EXPORT_DIR"],
+                export_dir,
             )
         except ValueError as error:
             return jsonify({"message": str(error)}), 400
         except OSError as error:
             return jsonify({"message": f"导出失败：{error}"}), 500
 
+        if decision is not None:
+            return jsonify(
+                {
+                    "message": "导出成功",
+                    # 外部只获得当前请求绑定的下载标识，不泄露服务端文件名或路径。
+                    "download_id": export_root_id,
+                }
+            )
         display_path = Path(app.config["LOG_EXPORT_DISPLAY_DIR"]) / saved_path.name
         return jsonify(
             {

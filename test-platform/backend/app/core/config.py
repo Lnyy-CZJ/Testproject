@@ -37,6 +37,13 @@ class Settings(BaseSettings):
     audit_retention_days: int = 180
     credential_refresh_window_seconds: int = 3600
     credential_agent_interval_seconds: int = 60
+    # 两个开关故意相互独立：先开放个人配置写入，完成数据迁移与验收后，
+    # 再让运行时 Resolver 切换到个人数据。默认关闭可避免升级过程中意外改写读取语义。
+    personal_credentials_write_enabled: bool = False
+    personal_credentials_enabled: bool = False
+    user_context_signing_key_file: str = ""
+    user_context_ttl_seconds: int = 300
+    runtime_context_ttl_seconds: int = 86400
     versions_manifest_file: str = str(Path(__file__).resolve().parents[3] / "versions.json")
     app_version: str = "unknown"
     app_revision: str = "unknown"

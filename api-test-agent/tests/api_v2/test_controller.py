@@ -2,6 +2,8 @@
 
 import pytest
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from types import SimpleNamespace
 from pydantic import ValidationError
 
 from services.execution_controller.contracts import ContainerPolicy, CreateRunRequest, InternalAuthClaims, validate_internal_claims
@@ -15,6 +17,7 @@ def request_payload():
         "output_id": "task_20260813_0123456789abcdef0123/run_123/executor-output.json",
         "input_sha256": "a" * 64, "resource_policy_id": "resource_1",
         "egress_policy_id": "egress_1", "timeout_seconds": 30,
+        "plan_id": "plan_001", "plan_sha256": "b" * 64,
     }
 
 
@@ -26,6 +29,53 @@ def test_controller_rejects_runtime_escape_fields_and_reclaims_orphan():
     assert result.status == "succeeded"
     assert runtime.reconcile(set()) == ["run_123"]
     assert runtime.states["run_123"].status == "cancelled"
+
+
+def test_controller_accepts_only_plan_audit_reference_not_business_cases():
+    """Controller 只接收计划 ID/SHA，不能接收用例、Host 或动态命令。"""
+
+    request = CreateRunRequest(**request_payload())
+    assert request.plan_id == "plan_001"
+    with pytest.raises(ValidationError):
+        CreateRunRequest(**request_payload(), cases=[{"request": {"path": "/health"}}])
+    with pytest.raises(ValidationError):
+        CreateRunRequest(**{key: value for key, value in request_payload().items() if key != "plan_sha256"})
+    with pytest.raises(ValidationError):
+        CreateRunRequest(**{key: value for key, value in request_payload().items() if key != "plan_id"})
+
+
+def test_docker_runtime_requires_resolved_sha256_image_id(monkeypatch, tmp_path: Path):
+    """固定镜像引用必须在 Controller 启动时解析为不可变 sha256 ID 并记录门禁。"""
+
+    from services.execution_controller import docker_runtime
+
+    invalid_client = SimpleNamespace(images=SimpleNamespace(get=lambda _reference: SimpleNamespace(id="executor:latest")))
+    monkeypatch.setattr(docker_runtime.docker, "from_env", lambda: invalid_client)
+    with pytest.raises(RuntimeError, match="EXECUTOR_IMAGE_DIGEST_INVALID"):
+        docker_runtime.DockerRuntimeAdapter(
+            runs_root=tmp_path, image_reference="executor:latest", executor_network="executor",
+            proxy_url="http://proxy:5011", resource_policy_id="resource", egress_policy_id="egress",
+        )
+
+    valid_client = SimpleNamespace(images=SimpleNamespace(get=lambda _reference: SimpleNamespace(id="sha256:" + "a" * 64)))
+    monkeypatch.setattr(docker_runtime.docker, "from_env", lambda: valid_client)
+    runtime = docker_runtime.DockerRuntimeAdapter(
+        runs_root=tmp_path, image_reference="executor:latest", executor_network="executor",
+        proxy_url="http://proxy:5011", resource_policy_id="resource", egress_policy_id="egress",
+    )
+    assert runtime.image_id == "sha256:" + "a" * 64
+    assert runtime.image_gate == "EXECUTOR_IMAGE_DIGEST_VERIFIED"
+
+
+def test_controller_requires_input_plan_reference_to_match_narrow_request() -> None:
+    """即使输入文件 SHA 正确，计划 ID/SHA 与窄请求不一致也必须失败关闭。"""
+
+    from services.execution_controller.docker_runtime import plan_reference_matches
+
+    request = CreateRunRequest(**request_payload())
+    assert plan_reference_matches({"plan": {"plan_id": "plan_001", "sha256": "b" * 64}}, request)
+    assert not plan_reference_matches({"plan": {"plan_id": "plan_other", "sha256": "b" * 64}}, request)
+    assert not plan_reference_matches({"plan": {"plan_id": "plan_001", "sha256": "c" * 64}}, request)
 
 
 def test_egress_blocks_ssrf_host_header_redirect_and_unregistered_paths():

@@ -55,6 +55,8 @@ def create_app(runtime=None) -> Flask:
         return jsonify({
             "status": "ok", "service": "api-execution-controller",
             "image_id": getattr(active_runtime, "image_id", "fake"),
+            "image_digest": getattr(active_runtime, "image_digest", "fake"),
+            "image_gate": getattr(active_runtime, "image_gate", "not_applicable"),
             "version": os.getenv("APP_VERSION", "unknown"),
             "revision": os.getenv("APP_REVISION", "unknown"),
             "dirty": os.getenv("APP_BUILD_DIRTY", "true").lower() == "true",

@@ -76,6 +76,7 @@ class TaskManager:
         python: 子进程解释器，默认当前解释器；测试可注入。
         cancel_grace_seconds: SIGTERM 后等待退出的宽限秒数，超过则 SIGKILL。
         runtime_environment_provider: 平台模式的运行时配置快照提供器。
+        runtime_plan_provider: 使用网关签名 Header 为新任务规划 Context/selector。
         platform_secret_keys_provider: 平台模式的 Secret 键名清单读取器，
             返回已配置键名集合，平台配置不可用时返回 None；仅供提交前
             Admin 凭证预检使用，Secret 值不进入壳服务内存。
@@ -89,8 +90,9 @@ class TaskManager:
         retain: int = 50,
         python: str | None = None,
         cancel_grace_seconds: float = 10.0,
-        runtime_environment_provider: Callable[[], tuple[dict[str, str], dict[str, Any]]] | None = None,
-        platform_secret_keys_provider: Callable[[], set[str] | None] | None = None,
+        runtime_plan_provider: Callable[[str, str], dict[str, Any]] | None = None,
+        runtime_environment_provider: Callable[[dict[str, Any]], tuple[dict[str, str], dict[str, Any]]] | None = None,
+        platform_secret_keys_provider: Callable[[str], set[str] | None] | None = None,
     ) -> None:
         self._project_root = Path(project_root)
         self._store = store
@@ -98,6 +100,7 @@ class TaskManager:
         self._retain = int(retain)
         self._python = python or sys.executable
         self._cancel_grace_seconds = float(cancel_grace_seconds)
+        self._runtime_plan_provider = runtime_plan_provider
         self._runtime_environment_provider = runtime_environment_provider
         self._platform_secret_keys_provider = platform_secret_keys_provider
         self._lock = threading.Lock()
@@ -169,7 +172,11 @@ class TaskManager:
 
         return {"env": env, "run_type": run_type, "flow": flow, "tag": tag}
 
-    def _precheck_credentials(self, task_input: dict[str, Any]) -> None:
+    def _precheck_credentials(
+        self,
+        task_input: dict[str, Any],
+        signed_user_context: str,
+    ) -> None:
         """配置合并级与任务级凭证预检。
 
         功能说明:
@@ -195,7 +202,7 @@ class TaskManager:
             task_input["tag"],
         ):
             if self._platform_secret_keys_provider is not None:
-                secret_keys = self._platform_secret_keys_provider()
+                secret_keys = self._platform_secret_keys_provider(signed_user_context)
                 if secret_keys is None:
                     raise SubmissionError(
                         503,
@@ -224,6 +231,7 @@ class TaskManager:
         run_type: str,
         flow: str | None = None,
         tag: str | None = None,
+        signed_user_context: str = "",
     ) -> dict[str, Any]:
         """提交一个新任务；校验失败或槽位被占用时抛出 SubmissionError。
 
@@ -231,7 +239,7 @@ class TaskManager:
             落盘后的任务记录（status 为 pending 或 running）。
         """
         task_input = self._validate_input(env, run_type, flow, tag)
-        self._precheck_credentials(task_input)
+        self._precheck_credentials(task_input, signed_user_context)
 
         with self._lock:
             if self._active_id is not None:
@@ -244,6 +252,27 @@ class TaskManager:
                         409, SLOT_BUSY, f"已有任务在执行: {self._active_id}"
                     )
             task_id = new_task_id()
+            runtime_context = (
+                self._runtime_plan_provider(task_id, signed_user_context)
+                if self._runtime_plan_provider is not None
+                else None
+            )
+            # runtime_plan_provider 仅由平台 client 注入；这里不读取请求 payload
+            # 中的 owner/project。root task 的快照一经落盘便不可被重试、报告或
+            # 前端参数改写，派生产物一律通过 task_id 回溯到这一条记录。
+            resource_snapshot = None
+            if isinstance(runtime_context, dict):
+                candidate_snapshot = runtime_context.get("resource_snapshot")
+                if isinstance(candidate_snapshot, dict):
+                    resource_snapshot = {
+                        key: candidate_snapshot.get(key)
+                        for key in (
+                            "owner_user_id",
+                            "access_scope_snapshot",
+                            "project_id_snapshot",
+                            "authorization_source_snapshot",
+                        )
+                    }
             record = {
                 "id": task_id,
                 "status": "pending",
@@ -267,6 +296,11 @@ class TaskManager:
                     "errors": 0,
                     "skipped": 0,
                 },
+                # 只允许规划提供器返回不透明 Context ID 与非敏感 selector；
+                # signed_user_context 从不加入 record，也不会传给子进程。
+                "runtime_context": runtime_context,
+                "resource_root_id": task_id,
+                "resource_snapshot": resource_snapshot,
             }
             self._store.save(record)
             self._active_id = task_id
@@ -318,7 +352,7 @@ class TaskManager:
         args = self._build_command(record["input"], junit_path)
         task_environment = os.environ.copy()
         if self._runtime_environment_provider is not None:
-            runtime_values, snapshot_metadata = self._runtime_environment_provider()
+            runtime_values, snapshot_metadata = self._runtime_environment_provider(record)
             task_environment.update(runtime_values)
             record["config_release_id"] = snapshot_metadata.get("release_id")
             record["config_release_version"] = snapshot_metadata.get("release_version")

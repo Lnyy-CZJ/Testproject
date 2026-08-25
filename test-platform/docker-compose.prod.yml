@@ -12,6 +12,9 @@ services:
     image: "${PLATFORM_BACKEND_IMAGE:?PLATFORM_BACKEND_IMAGE is required}"
     environment:
       PLATFORM_RUNTIME_ENV: prod
+      # 固定角色发布的首个兼容批次只执行 Expand。角色/资源 manifest、shadow
+      # 对比和阻断校验全部清零后，Contract 发布再显式覆盖为 head。
+      ALEMBIC_TARGET: "${ALEMBIC_TARGET:-20260824_0019}"
       SECRET_KEK_FILE: /run/secrets/platform-kek.json
     volumes: !override
       - /srv/test-platform/secrets/prod-kek.json:/run/secrets/platform-kek.json:ro
@@ -25,16 +28,25 @@ services:
   platform-api:
     build: !reset null
     image: "${PLATFORM_BACKEND_IMAGE:?PLATFORM_BACKEND_IMAGE is required}"
+    environment:
+      # 本轮只补齐生产结构，不启用或迁移 prod 个人配置。
+      PERSONAL_CREDENTIALS_WRITE_ENABLED: "false"
+      PERSONAL_CREDENTIALS_ENABLED: "false"
+      USER_CONTEXT_SIGNING_KEY_FILE: /run/secrets/user-context-signing-key
     volumes: !override
       - ./versions.json:/run/versions.json:ro
       - /srv/test-platform/secrets/prod/bootstrap-token:/run/secrets/platform-bootstrap-token:ro
       - /srv/test-platform/secrets/prod-kek.json:/run/secrets/platform-kek.json:ro
       - /srv/test-platform/secrets/prod/version-peer-token:/run/secrets/version-peer-token:ro
+      - /srv/test-platform/secrets/prod/user-context-signing-key:/run/secrets/user-context-signing-key:ro
       - /srv/test-platform/state:/run/deployment:ro
 
   platform-credential-agent:
     build: !reset null
     image: "${PLATFORM_BACKEND_IMAGE:?PLATFORM_BACKEND_IMAGE is required}"
+    environment:
+      PERSONAL_CREDENTIALS_WRITE_ENABLED: "false"
+      PERSONAL_CREDENTIALS_ENABLED: "false"
     volumes: !override
       - /srv/test-platform/secrets/prod-kek.json:/run/secrets/platform-kek.json:ro
 

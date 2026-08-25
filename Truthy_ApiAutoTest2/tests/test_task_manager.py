@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 from pathlib import Path
 
@@ -186,7 +187,7 @@ class TestCredentialPrecheck:
         (fake_project / ".env").write_text(DOTENV_WITHOUT_ADMIN, encoding="utf-8")
         manager = make_manager(
             fake_project,
-            platform_secret_keys_provider=lambda: {
+            platform_secret_keys_provider=lambda _signed_context: {
                 "ADMIN_SESSION_TOKEN",
                 "ADMIN_OPERATOR_ID",
                 "ADMIN_OPERATOR_NAME",
@@ -204,7 +205,7 @@ class TestCredentialPrecheck:
         (fake_project / ".env").write_text(BASE_DOTENV, encoding="utf-8")
         manager = make_manager(
             fake_project,
-            platform_secret_keys_provider=lambda: {"ADMIN_SESSION_TOKEN"},
+            platform_secret_keys_provider=lambda _signed_context: {"ADMIN_SESSION_TOKEN"},
         )
         with pytest.raises(SubmissionError) as exc_info:
             manager.submit(env="test", run_type="flow", flow="AdminFlow")
@@ -221,7 +222,7 @@ class TestCredentialPrecheck:
         # 平台运行配置提供器返回 None（不可达）→ 503 PLATFORM_CONFIG_UNAVAILABLE。
         (fake_project / ".env").write_text(BASE_DOTENV, encoding="utf-8")
         manager = make_manager(
-            fake_project, platform_secret_keys_provider=lambda: None
+            fake_project, platform_secret_keys_provider=lambda _signed_context: None
         )
         with pytest.raises(SubmissionError) as exc_info:
             manager.submit(env="test", run_type="flow", flow="AdminFlow")
@@ -490,3 +491,59 @@ class TestRecoveryAndStartFailure:
         patch_command(monkeypatch, manager, "print('ok')")
         record = manager.submit(env="test", run_type="single")
         assert wait_terminal(manager, record["id"])["status"] == "succeeded"
+    def test_runtime_selector_is_persisted_and_secret_only_materialized_in_memory(
+        self, fake_project, make_manager, monkeypatch
+    ):
+        """任务落盘不含签名/Secret，子进程启动前才按 selector 物化。"""
+
+        calls: dict[str, object] = {}
+
+        def plan(task_id: str, signed_context: str) -> dict:
+            calls["plan"] = (task_id, signed_context)
+            return {
+                "runtime_context_id": "rtx_autotest_user_1",
+                "runtime_context_expires_at": "2026-08-24T12:00:00Z",
+                "snapshot_selector": {
+                    "release_id": "rel_autotest_v1",
+                    "credential_versions": {"ucred_gateway": 3},
+                },
+            }
+
+        def materialize(record: dict) -> tuple[dict[str, str], dict]:
+            calls["materialize"] = record["runtime_context"]["runtime_context_id"]
+            return (
+                {"AUTH_TOKEN": "runtime-secret-sentinel"},
+                {"release_id": "rel_autotest_v1", "credential_version": 3},
+            )
+
+        manager = make_manager(
+            fake_project,
+            runtime_plan_provider=plan,
+            runtime_environment_provider=materialize,
+        )
+        staged = fake_project / "runtime-junit.xml"
+        staged.write_text(junit_xml([("runtime", "passed")]), encoding="utf-8")
+        patch_command(
+            monkeypatch,
+            manager,
+            "import os, shutil; "
+            "assert os.environ['AUTH_TOKEN'] == 'runtime-secret-sentinel'; "
+            f"shutil.copy({str(staged)!r}, '{{junit}}')",
+        )
+
+        created = manager.submit(
+            env="test",
+            run_type="single",
+            signed_user_context="signed-autotest-user-1",
+        )
+        finished = wait_terminal(manager, created["id"])
+
+        assert finished["status"] == "succeeded"
+        assert calls["plan"] == (created["id"], "signed-autotest-user-1")
+        assert calls["materialize"] == "rtx_autotest_user_1"
+        persisted = json.dumps(finished, ensure_ascii=False)
+        assert "signed-autotest-user-1" not in persisted
+        assert "runtime-secret-sentinel" not in persisted
+        assert finished["runtime_context"]["snapshot_selector"]["credential_versions"] == {
+            "ucred_gateway": 3
+        }

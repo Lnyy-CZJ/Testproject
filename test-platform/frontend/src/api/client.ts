@@ -19,6 +19,24 @@ export class ApiError extends Error {
   }
 }
 
+const ACTIONABLE_ERROR_MESSAGES: Record<string, string> = {
+  PERSONAL_CREDENTIAL_NOT_CONFIGURED: "请先填写并保存当前工具的个人凭证",
+  PERSONAL_LLM_NOT_CONFIGURED: "请先配置个人 LLM 连接并发布能力绑定",
+  PERSONAL_CREDENTIAL_WRITE_DISABLED: "个人配置正在分阶段开放，请稍后重试",
+  VERSION_CONFLICT: "配置已被其他请求更新，请刷新状态后再保存",
+  LLM_PROFILE_IN_USE: "该连接仍被能力绑定使用，请先解绑",
+};
+
+/**
+ * 把后端稳定错误码转换为可操作提示，同时保留错误码供排查和自动化断言。
+ * 响应栈、对象 ID 与原始响应体不会进入页面。
+ */
+export function describeApiError(error: unknown, fallback: string): string {
+  if (!(error instanceof ApiError)) return fallback;
+  if (!error.code) return error.message || fallback;
+  return `${ACTIONABLE_ERROR_MESSAGES[error.code] ?? error.message ?? fallback} (${error.code})`;
+}
+
 /**
  * 发送带超时控制的同源请求。
  *

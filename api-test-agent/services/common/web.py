@@ -10,14 +10,14 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable
 
-from flask import Flask, Response, g, jsonify, render_template, request, send_file
+from flask import Flask, Response, current_app, g, jsonify, render_template, request, send_file
 from jinja2 import ChoiceLoader, FileSystemLoader
 from pydantic import ValidationError
 
 from services.common.artifacts import load_registry, resolve_artifact
 from services.common.audit import emit_audit
 from services.common.config import ServiceSettings
-from services.common.errors import ServiceError, error_payload
+from services.common.errors import ServiceError, error_payload, structured_log
 from services.common.identity import (
     identity_from_request,
     require_csrf,
@@ -114,7 +114,7 @@ def _new_record(task_id: str, settings: ServiceSettings, identity, form: dict[st
 def create_agent_app(
     *,
     settings: ServiceSettings,
-    manager_factory: Callable[[TaskStore, Callable[[], dict[str, Any]]], TaskManager],
+    manager_factory: Callable[[TaskStore, Callable[[dict[str, Any]], dict[str, Any]]], TaskManager],
     operations: set[str],
     title: str,
     description: str,
@@ -136,18 +136,27 @@ def create_agent_app(
         settings.platform_api_url, settings.tool_id, settings.runtime_environment,
         settings.platform_client_token_file,
     )
-    load_safe = safe_config_loader or (lambda: client.runtime_config(include_secrets=False))
-    manager = manager_factory(store, lambda: client.runtime_config(include_secrets=True))
+    load_safe = safe_config_loader or (
+        lambda: client.runtime_config(include_secrets=False, llm_capability=None)
+    )
+    manager = manager_factory(
+        store,
+        lambda record: client.materialize_runtime_config(record.get("internal", {})),
+    )
     app.extensions["task_store"] = store
     app.extensions["task_manager"] = manager
     app.extensions["platform_client"] = client
 
-    def current_identity():
-        return identity_from_request(request)
+    def current_identity(*, action: str, root_resource_id: str | None = None):
+        """只接受平台 resource-access/check 确认的数据范围。"""
 
-    def get_task(task_id: str, permission: str = "tool.result.view") -> tuple[dict, Any]:
-        identity = current_identity()
-        record = store.load(task_id)
+        return identity_from_request(
+            request, client, action=action, root_resource_id=root_resource_id,
+        )
+
+    def get_task(task_id: str, permission: str = "tool.result.view", *, action: str = "read") -> tuple[dict, Any]:
+        identity = current_identity(action=action, root_resource_id=task_id)
+        record = store.load_visible(task_id, identity)
         if not record:
             raise ServiceError(404, "TASK_NOT_FOUND", "任务不存在")
         require_task_access(identity, record, permission=permission)
@@ -164,6 +173,8 @@ def create_agent_app(
         """为每个请求生成不可信输入无法覆盖的关联 ID。"""
 
         g.request_id = f"req_{secrets.token_hex(10)}"
+        import time
+        g.request_started = time.monotonic()
 
     @app.after_request
     def secure_headers(response: Response) -> Response:
@@ -172,10 +183,22 @@ def create_agent_app(
         response.headers["X-Request-ID"] = g.get("request_id", "")
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "same-origin"
+        import time
+        structured_log(
+            current_app.logger, "warning" if response.status_code >= 400 else "info",
+            request_id=g.get("request_id"), event="http_request", status=response.status_code,
+            method=request.method, path=request.path,
+            duration_ms=int((time.monotonic() - g.get("request_started", time.monotonic())) * 1000),
+        )
         return response
 
     @app.errorhandler(ServiceError)
     def handle_service_error(error: ServiceError):
+        structured_log(
+            current_app.logger, "error" if error.status_code >= 500 else "warning",
+            request_id=g.get("request_id"), event="service_error", status=error.status_code,
+            error_code=error.code, method=request.method, path=request.path,
+        )
         return jsonify(error_payload(error, g.get("request_id", "unknown"))), error.status_code
 
     @app.errorhandler(413)
@@ -196,7 +219,7 @@ def create_agent_app(
 
     @app.get(f"{settings.base_path}/api/v1/readiness")
     def readiness():
-        identity = current_identity()
+        identity = current_identity(action="read")
         require_permission(identity, "tool.view")
         storage_writable = settings.data_dir.exists() and settings.data_dir.is_dir()
         try:
@@ -216,10 +239,10 @@ def create_agent_app(
 
     @app.get(f"{settings.base_path}/")
     def index():
-        identity = current_identity()
+        identity = current_identity(action="read")
         require_permission(identity, "tool.view")
         _snapshot, normal = safe_limits()
-        source_records = [item for item in store.list() if item.get("created_by_user_id") == identity.user_id or "task.view.all" in identity.permissions]
+        source_records = store.list_visible(identity)
         records = safe_public_tasks(source_records)
         return render_template(
             "index.html", title=title, description=description, settings=settings,
@@ -236,11 +259,19 @@ def create_agent_app(
             artifacts=load_registry(store, task_id), csrf_token=request.cookies.get("tp_csrf", ""),
             platform_home_url=settings.platform_home_url,
             can_edit_review="tool.execute" in identity.permissions,
+            api_capabilities={
+                "contract_review": "api-test-agent.contract.review" in identity.permissions,
+                "case_review": "api-test-agent.case.review" in identity.permissions,
+                "executable_generate": "api-test-agent.executable.generate" in identity.permissions,
+                "executable_review": "api-test-agent.executable.review" in identity.permissions,
+                "execute": "api-test-agent.execute" in identity.permissions,
+                "defect_create": "api-test-agent.defect.create" in identity.permissions,
+            },
         )
 
     @app.post(f"{settings.base_path}/api/v1/tasks")
     def create_task():
-        identity = current_identity()
+        identity = current_identity(action="create")
         require_permission(identity, "tool.execute")
         require_csrf(request)
         snapshot, normal = safe_limits()
@@ -299,11 +330,34 @@ def create_agent_app(
             atomic_write_bytes(input_path, data)
             form = {"operation": operation, "project_name": project_name, "module_name": module_name, "title": task_title}
             record = _new_record(task_id, settings, identity, form)
+            if identity.access_scope_snapshot not in {"public", "project"}:
+                raise ServiceError(503, "RESOURCE_CONTEXT_INVALID", "平台未返回资源授权快照")
+            if identity.access_scope_snapshot == "project" and not identity.project_id_snapshot:
+                raise ServiceError(503, "RESOURCE_CONTEXT_INVALID", "平台未返回项目资源快照")
+            # 根任务保存平台签发的不可变快照；派生版本、Run 和缺陷草稿均回溯此根任务。
+            record.setdefault("internal", {}).update({
+                "owner_user_id": identity.user_id,
+                "access_scope_snapshot": identity.access_scope_snapshot,
+                "project_id_snapshot": identity.project_id_snapshot,
+                "authorization_source_snapshot": identity.authorization_source_snapshot,
+            })
+            runtime_metadata = client.plan_runtime_config(
+                request.headers.get("X-Platform-User-Context", ""),
+                resource_type="task",
+                resource_id=task_id,
+                resource_context=request.headers.get("X-Platform-Resource-Context", ""),
+            )
+            record.setdefault("internal", {}).update({
+                "runtime_context_id": runtime_metadata["runtime_context_id"],
+                "runtime_context_expires_at": runtime_metadata.get("runtime_context_expires_at"),
+                "snapshot_selector": runtime_metadata.get("snapshot_selector"),
+                "llm_capability": runtime_metadata.get("llm_capability", "default"),
+            })
             record["artifacts_expire_at"] = (
                 datetime.now(UTC) + timedelta(days=int(normal.get("TASK_ARTIFACT_RETENTION_DAYS", 90)))
             ).isoformat()
-            record["config_release_id"] = snapshot.get("release_id")
-            record["config_release_version"] = snapshot.get("release_version")
+            record["config_release_id"] = runtime_metadata.get("release_id")
+            record["config_release_version"] = runtime_metadata.get("release_version")
             request_payload = {
                 "operation": operation,
                 "project_id": record["project_id"], "module_id": record["module_id"],
@@ -329,7 +383,7 @@ def create_agent_app(
 
     @app.get(f"{settings.base_path}/api/v1/tasks")
     def list_tasks():
-        identity = current_identity()
+        identity = current_identity(action="read")
         require_permission(identity, "tool.result.view")
         page = max(1, request.args.get("page", 1, type=int))
         page_size = min(100, max(1, request.args.get("page_size", 20, type=int)))
@@ -342,7 +396,7 @@ def create_agent_app(
             raise ServiceError(422, "INVALID_INPUT", "任务状态筛选值不受支持")
         if operation and operation not in operations:
             raise ServiceError(422, "INVALID_INPUT", "操作类型筛选值不受支持")
-        visible = [item for item in store.list() if item.get("created_by_user_id") == identity.user_id or "task.view.all" in identity.permissions]
+        visible = store.list_visible(identity)
         if status:
             visible = [item for item in visible if item.get("status") == status]
         if operation:
@@ -370,7 +424,7 @@ def create_agent_app(
 
     @app.post(f"{settings.base_path}/api/v1/tasks/<task_id>/cancel")
     def cancel_task(task_id: str):
-        record, identity = get_task(task_id, permission="task.cancel")
+        record, identity = get_task(task_id, permission="task.cancel", action="cancel")
         require_csrf(request)
         cancelled = manager.cancel(record["id"])
         emit_audit(
@@ -387,15 +441,17 @@ def create_agent_app(
         cursor = max(0, request.args.get("cursor", 0, type=int))
         limit = min(256 * 1024, max(1, request.args.get("limit", 65_536, type=int)))
         path = store.task_dir(task_id) / "console.log"
+        # Review、部分成功和执行准备态都表示当前 Runner 已退出；只有排队或运行中仍可能追加日志。
+        complete = record.get("status") not in {"pending", "running"}
         if not path.exists():
-            return jsonify({"content": "", "next_cursor": cursor, "truncated": False, "complete": record.get("status") in {"succeeded", "failed", "cancelled", "waiting_review"}})
+            return jsonify({"content": "", "next_cursor": cursor, "truncated": False, "complete": complete})
         size = path.stat().st_size
         with path.open("rb") as handle:
             handle.seek(min(cursor, size))
             data = handle.read(limit)
             next_cursor = handle.tell()
         content = redact_text(data.decode("utf-8", errors="replace"))
-        return jsonify({"content": content, "next_cursor": next_cursor, "truncated": next_cursor < size, "complete": record.get("status") in {"succeeded", "failed", "cancelled", "waiting_review"}})
+        return jsonify({"content": content, "next_cursor": next_cursor, "truncated": next_cursor < size, "complete": complete})
 
     @app.get(f"{settings.base_path}/api/v1/tasks/<task_id>/artifacts")
     def artifacts(task_id: str):

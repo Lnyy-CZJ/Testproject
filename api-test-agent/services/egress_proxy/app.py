@@ -60,6 +60,10 @@ class ProxyHandler(BaseHTTPRequestHandler):
         if target is None:
             self._deny("EGRESS_TARGET_NOT_REGISTERED")
             return
+        # 当前代理只实现受控 HTTP 转发；不能以明文 HTTPConnection 冒充 HTTPS 成功。
+        if parsed.scheme == "https":
+            self._deny("EGRESS_HTTPS_NOT_READY", 501)
+            return
         try:
             before = sorted({item[4][0] for item in socket.getaddrinfo(parsed.hostname, parsed.port or 80, type=socket.SOCK_STREAM)})
             after = sorted({item[4][0] for item in socket.getaddrinfo(parsed.hostname, parsed.port or 80, type=socket.SOCK_STREAM)})
@@ -96,7 +100,8 @@ class ProxyHandler(BaseHTTPRequestHandler):
             return
         self.send_response(response.status)
         for key, value in response.getheaders():
-            if key.lower() not in {"connection", "transfer-encoding", "set-cookie", "location", "content-length"}:
+            # Set-Cookie 只沿当前 Executor 请求链转发，Proxy 不记录它到日志或持久化输出。
+            if key.lower() not in {"connection", "transfer-encoding", "location", "content-length"}:
                 self.send_header(key, value)
         location = response.getheader("Location")
         if location:

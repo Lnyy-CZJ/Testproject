@@ -57,7 +57,7 @@ services:
         APP_REVISION: "${APP_REVISION:-unknown}"
         APP_BUILD_DIRTY: "${PLATFORM_BACKEND_DIRTY:-true}"
         APP_CONTENT_SHA256: "${PLATFORM_BACKEND_CONTENT_SHA256:-unknown}"
-    command: ["alembic", "upgrade", "head"]
+    command: ["alembic", "upgrade", "${ALEMBIC_TARGET:-20260824_0019}"]
     environment:
       DATABASE_URL: "postgresql+psycopg://${POSTGRES_USER:-platform}:${POSTGRES_PASSWORD:-platform_dev_password}@platform-db:5432/${POSTGRES_DB:-test_platform}"
       APP_ENV: "${APP_ENV:-development}"
@@ -114,11 +114,19 @@ services:
       VERSION_PEER_TOKEN_FILE: /run/secrets/version-peer-token
       PROD_VERSION_SNAPSHOT_URL: "${PROD_VERSION_SNAPSHOT_URL:-}"
       PROD_RELEASE_BOM_FILE: "${PROD_RELEASE_BOM_FILE:-/run/deployment/current.json}"
+      # 个人配置采用“先写后读”两阶段发布；默认值必须保持关闭。
+      PERSONAL_CREDENTIALS_WRITE_ENABLED: "${PERSONAL_CREDENTIALS_WRITE_ENABLED:-false}"
+      PERSONAL_CREDENTIALS_ENABLED: "${PERSONAL_CREDENTIALS_ENABLED:-false}"
+      USER_CONTEXT_SIGNING_KEY_FILE: /run/secrets/user-context-signing-key
+      USER_CONTEXT_TTL_SECONDS: "${USER_CONTEXT_TTL_SECONDS:-300}"
+      RUNTIME_CONTEXT_TTL_SECONDS: "${RUNTIME_CONTEXT_TTL_SECONDS:-86400}"
     volumes:
       - ./versions.json:/run/versions.json:ro
       - ./.runtime-secrets/${PLATFORM_RUNTIME_ENV:-dev}/bootstrap-token:/run/secrets/platform-bootstrap-token:ro
       - ./.runtime-secrets/${PLATFORM_RUNTIME_ENV:-dev}-kek.json:/run/secrets/platform-kek.json:ro
       - ./.runtime-secrets/${PLATFORM_RUNTIME_ENV:-dev}/version-peer-token:/run/secrets/version-peer-token:ro
+      # 独立 HMAC 密钥只挂载给平台 API，工具容器永远拿不到用户签名密钥。
+      - ./.runtime-secrets/${PLATFORM_RUNTIME_ENV:-dev}/user-context-signing-key:/run/secrets/user-context-signing-key:ro
       - ./.runtime/${PLATFORM_RUNTIME_ENV:-dev}:/run/deployment:ro
     expose:
       - "8000"
@@ -156,6 +164,8 @@ services:
       SECRET_KEK_FILE: /run/secrets/platform-kek.json
       CREDENTIAL_REFRESH_WINDOW_SECONDS: "${CREDENTIAL_REFRESH_WINDOW_SECONDS:-3600}"
       CREDENTIAL_AGENT_INTERVAL_SECONDS: "${CREDENTIAL_AGENT_INTERVAL_SECONDS:-60}"
+      PERSONAL_CREDENTIALS_WRITE_ENABLED: "${PERSONAL_CREDENTIALS_WRITE_ENABLED:-false}"
+      PERSONAL_CREDENTIALS_ENABLED: "${PERSONAL_CREDENTIALS_ENABLED:-false}"
     volumes:
       - ./.runtime-secrets/${PLATFORM_RUNTIME_ENV:-dev}-kek.json:/run/secrets/platform-kek.json:ro
     depends_on:
@@ -211,17 +221,12 @@ services:
       PLATFORM_RUNTIME_ENV: "${PLATFORM_RUNTIME_ENV:-dev}"
       PEOPLE_SEARCH_ANALYZER_ENABLED: "true"
       PEOPLE_SEARCH_ANALYZER_AI_ENABLED: "true"
-      # 在三个 LLM Release 发布前保持 env；发布验收后由本地 .env 显式切为 platform。
-      LOG_FILTER_LLM_CONFIG_SOURCE: "${LOG_FILTER_LLM_CONFIG_SOURCE:-env}"
-      PEOPLE_SEARCH_ANALYZER_LLM_ENDPOINT: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
-      PEOPLE_SEARCH_ANALYZER_LLM_MODEL: "deepseek-v4-flash"
-      PEOPLE_SEARCH_ANALYZER_LLM_API_KEY_FILE: "/run/secrets/llm-api-key"
+      # 平台模式只接受当前用户的 Runtime Context，不再读取进程级 LLM Secret。
+      LOG_FILTER_LLM_CONFIG_SOURCE: platform
     volumes:
       # 页面提示使用宿主机路径，容器实际写入对应的 /exports 目录。
       - ${LOG_EXPORT_HOST_DIR:-/Users/admin/Documents/log}:/exports
       - ./.runtime-secrets/log-filter-client-token:/run/secrets/platform-client-token:ro
-      # 仅保留到 LLM Profile/Binding 发布并完成 platform 模式验收。
-      - ./.runtime-secrets/llm-api-key:/run/secrets/llm-api-key:ro
     expose:
       - "5001"
     healthcheck:

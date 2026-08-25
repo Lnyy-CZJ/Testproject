@@ -6,7 +6,8 @@ from services.execution_controller.fake_runtime import FakeRuntimeAdapter
 
 def payload():
     return {
-        "run_id": "run_123", "input_id": "task_20260813_0123456789abcdef0123/run_123/input.json",
+        "run_id": "run_123", "plan_id": "plan_123", "plan_sha256": "b" * 64,
+        "input_id": "task_20260813_0123456789abcdef0123/run_123/input.json",
         "output_id": "task_20260813_0123456789abcdef0123/run_123/executor-output.json",
         "input_sha256": "a" * 64, "resource_policy_id": "resource_1",
         "egress_policy_id": "egress_1", "timeout_seconds": 30,

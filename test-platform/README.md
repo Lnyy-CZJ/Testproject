@@ -9,7 +9,7 @@
 - `functional-test-agent`：独立的需求拆解、测试点 Review 和功能用例生成项目；
 - `api-test-agent`：独立的 API 文档解析、文件化用例生成和受控执行组件项目，真实执行默认关闭。
 
-第二阶段由平台统一负责登录会话、RBAC、网关强制鉴权、审计日志、普通配置、加密 Secret 和凭证续期。`1.1.0` 起，平台同时统一管理功能 Agent、API Agent 与日志分析的 LLM Profile、工具绑定和不可变运行快照。工具仍保留独立源码、容器和独立运行模式。平台或数据库异常时鉴权失败关闭，不提供匿名回退。
+第二阶段由平台统一负责登录会话、RBAC、网关强制鉴权、审计日志和普通系统配置。业务账号、密码、Token、Credential、LLM Profile 与工具能力 Binding 则按登录用户隔离；用户未配置时失败关闭，不回退管理员、其他用户、legacy 数据或环境变量。工具仍保留独立源码、容器和独立运行模式。
 
 ## 平台版本
 
@@ -41,13 +41,16 @@ cp .env.example .env
 docker compose ps -a
 ```
 
-Compose 会依次运行 PostgreSQL、`alembic upgrade head`、工具 Client Token 注册、平台 API、Credential Agent 和统一网关。宿主机只暴露 `${PLATFORM_PORT:-8080}`。
+Compose 会依次运行 PostgreSQL、`alembic upgrade ${ALEMBIC_TARGET:-20260824_0019}`、工具 Client Token 注册、平台 API、Credential Agent 和统一网关。固定角色权限首次生产发布默认把 `ALEMBIC_TARGET` 固定为 `20260824_0019`（Expand）；只有角色与历史资源 manifest、shadow 对比和阻断校验清零后，Contract 发布才允许显式设置为 `head`。宿主机只暴露 `${PLATFORM_PORT:-8080}`。
+
+历史资源先用 `scripts/export_business_resource_manifest.py` 从五个工具的只读存储枚举，再补齐 `user_roles`、`tool_projects` 和 `memberships`。Contract 发布（`ALEMBIC_TARGET=head` 或任何非 `20260824_0019` 目标）必须同时提供 `PROJECT_ACCESS_MANIFEST=/absolute/path/manifest.json`；部署脚本会先执行 dry-run 和原子 apply，0020 自身还会复核 readiness marker。任何源端计数不一致、owner/来源不明、非法关系或未经批准的 shadow 扩权都会在收紧约束前阻断。
 
 开发环境初始化文件位于 Git 忽略的 `.runtime-secrets/`：
 
 - `dev-kek.json`：dev Secret KEK；
 - `prod-kek.json`：prod 准备使用的独立 KEK，不在 dev Compose 挂载；
 - `<environment>/bootstrap-token`：仅用于对应环境数据库无用户时的 `/setup`；
+- `<environment>/user-context-signing-key`：Nginx 可信用户上下文的独立 HMAC 密钥，只挂载给平台 API；
 - `<environment>/*-client-token`：两个 AI 智能体按环境和工具独立的启动身份；
 - `*-client-token`：既有工具的独立启动身份；
 - `initial-admin-password`：自动初始化后的临时管理员密码。
@@ -73,59 +76,54 @@ cat /Users/admin/Testproject/test-platform/.runtime-secrets/initial-admin-passwo
 | Secret 加密 | AES-256-GCM 信封加密，每版本独立 DEK |
 | 审计保留目标 | 180 天 |
 | 凭证提前刷新 | 60 分钟 |
+| 签名用户上下文 | 最长 5 分钟 |
+| Runtime Context | 最长 24 小时，可因 Session、用户或权限变化提前失效 |
 
 Nginx 对全部六个工具前缀执行 `auth_request`。匿名页面请求重定向 `/login`，API 请求返回 401；无权限返回 403；身份服务异常返回 503。浏览器提供的 `X-Platform-*` 会被清除，只有授权成功后由网关注入可信身份和权限。
 
-## 配置、Secret 与 Credential
+## 共享配置与用户级凭证
 
-Web 配置控制面只允许修改迁移中登记的白名单键：
+普通非敏感配置和明确标记为 `system` 的系统级 Secret 保持共享。业务凭证只在“我的凭证”中由当前用户维护：
 
 1. 在 `/settings/config` 选择 `dev/prod` 和工具；
 2. 创建草稿，编辑普通配置，保存并校验；
-3. 在 `/settings/secrets` 写入 Secret。保存后永不回显明文；
+3. 管理员只在 `/settings/secrets` 写入系统级 Secret，保存后永不回显明文；
 4. 发布 Release；每个新 Run/任务保存 Release ID；
-5. 在 `/settings/credentials` 创建 `gateway_session` 或 `admin_login` Credential；
-6. Credential Agent 每分钟扫描临期凭证并刷新或重新登录。
+5. 用户在 `/account/credentials` 保存自己有执行权限工具的账号、密码或 Token；字段值保存后立即从表单清空；
+6. 管理员在 `/settings/credentials` 只读查看用户就绪度，不能解密或代改；
+7. Credential Agent 每分钟按用户分别扫描、加锁、刷新并写回个人 Credential。
 
 配置生效模式为 `immediate`、`next_task`、`restart` 或 `deployment`。平台不挂载 Docker Socket；`restart/deployment` 只显示待操作状态，由管理员执行文档化的 Compose 命令。
 
 `dev/prod` 的 PostgreSQL 卷、任务目录、配置、Secret、Credential、Client Token 和 KEK 必须隔离。Compose 默认使用 `test-platform-<environment>-db-data`，普通配置可人工提升为 prod 草稿，Secret 不自动复制。
 
-### LLM 统一配置
+### 我的 LLM
 
-`/settings/llm` 将模型配置分为公共 Profile 和预登记工具绑定。首期只登记：
+`/account/llm` 管理当前用户自己的 OpenAI-compatible Profile 与预登记工具能力 Binding。首期能力包括：
 
 - `functional-test-agent/default`；
 - `api-test-agent/default`；
 - `log-filter/people-search-summary`。
 
-Profile 保存 OpenAI-compatible Base URL、模型和加密 API Key；Binding 可覆盖模型、Temperature、Max Tokens、超时或独立 API Key。普通参数经 Release 发布，Secret 保存后不回显，任务/请求只读取一次已发布快照。TrackEvents、Truthy_Search 和 API AutoTest 没有直接 LLM 调用，因此不显示无效配置。
+Profile 保存 Base URL、模型和加密 API Key；Binding 可覆盖模型、Temperature、Max Tokens、超时或独立 API Key。新 API 不接受 `user_id`，所有权只来自登录 Session；Secret 保存后不回显。旧 `/settings/llm` 地址重定向到个人页面，legacy 空所有者 Profile 仅作为关闭开关时的回滚材料，不进入个人 Resolver。
 
-旧配置导入先 dry-run，`apply` 只创建草稿和 Secret，不自动发布，也不会输出值、长度、前后缀或哈希：
+工具请求先由 Nginx 清除客户端伪造的 `X-Platform-User-Context`，再用独立 HMAC 密钥注入最长 5 分钟的签名身份。工具凭 Tool Client Token 将其兑换成 Runtime Context；创建任务只记录不含 Secret 的 `snapshot_selector`，执行开始时才重新校验并物化精确历史版本。Session 撤销、用户禁用、权限变化、过期或跨用户/工具/环境请求均拒绝物化。
+
+### dev 数据迁移与开关
+
+升级后先保持两个开关关闭，迁移只处理当前环境且只认唯一有效 `admin`。命令默认 dry-run，apply 会重新加密 Secret，冲突整笔回滚且可重复执行：
 
 ```bash
-cd /Users/admin/Testproject/test-platform/backend
-python3 -m app.migrate_llm_config --environment dev --dry-run
-python3 -m app.migrate_llm_config --environment dev --apply \
-  --log-base-url https://dashscope.aliyuncs.com/compatible-mode/v1 \
-  --log-model deepseek-v4-flash \
-  --log-key-file /只读临时挂载/log-analyzer-key
+cd /Users/admin/Testproject/test-platform
+docker compose exec -T platform-api \
+  python -m app.migrate_personal_credentials \
+  --environment dev --admin-username admin --dry-run
+docker compose exec -T platform-api \
+  python -m app.migrate_personal_credentials \
+  --environment dev --admin-username admin --apply
 ```
 
-之后在 Web 依次发布 Profile、三个 Binding，并由管理员手动执行一次最小连接测试。平台模式不回退旧 LLM Secret；独立模式仍使用各工具原 `.env`/key file。
-
-## 真实凭证迁移门禁
-
-用户曾在对话中暴露过 Truthy_Search Access/Refresh Token。迁移真实凭证前必须先在上游撤销或刷新这些 Token，并确认旧值失效；本实现不会把已暴露值写入数据库或代码。
-
-完成门禁后才能切换 Provider：
-
-```text
-Truthy_Search: SEARCH_CONFIG_SOURCE=platform
-Truthy_ApiAutoTest2: API_AUTOTEST_SESSION_PROVIDER=platform
-```
-
-切换前先暂停新任务并确认没有 `RUNNING` Run。验证双读结果一致后，删除平台 Compose 中 `Truthy_Search/.env` 和 `Truthy_ApiAutoTest2/.env.platform` 的旧凭证挂载。未完成门禁时保持 env Provider，避免错误迁移真实 Secret。
+发布顺序固定为：`PERSONAL_CREDENTIALS_WRITE_ENABLED=true`、验证个人页面可写，再设置 `PERSONAL_CREDENTIALS_ENABLED=true` 切换 Resolver。读取开关开启后不允许任何 legacy/admin/env fallback。prod Compose 本轮只预留结构，两个开关保持 `false`，不执行迁移。
 
 ## 常用运维命令
 
@@ -153,7 +151,7 @@ test-platform/.runtime-secrets/<environment>/functional-test-agent-client-token
 test-platform/.runtime-secrets/<environment>/api-test-agent-client-token
 ```
 
-两个 Agent 在平台模式优先读取 `/settings/llm` 发布的 `llm` 快照；迁移期若快照不存在，继续兼容旧工具 Release 中的 `LLM_*` 字段。API 工具初始值必须保持：
+两个 Agent 在平台模式使用签名用户上下文兑换 Runtime Context，并在任务执行开始时物化当前用户的个人 LLM 快照；缺少个人 Binding 时直接返回 `PERSONAL_LLM_NOT_CONFIGURED`，不读取旧工具 Release 中的 `LLM_*` 或进程环境变量。API 工具初始值必须保持：
 
 ```text
 API_EXECUTION_ENABLED=false

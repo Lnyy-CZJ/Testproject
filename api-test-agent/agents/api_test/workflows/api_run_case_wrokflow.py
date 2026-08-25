@@ -1,11 +1,13 @@
 import inspect
+import hashlib
 import json
 import operator
 import os
+import re
 import sys
 import threading
 from datetime import datetime
-from typing import Annotated, List, Optional, TypedDict
+from typing import Annotated, Any, List, Optional, TypedDict
 from urllib.parse import urlsplit
 
 import pymysql
@@ -19,8 +21,25 @@ from pydantic import BaseModel, Field
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
 from agents.api_test.prompts import api_case_generator
+from agents.api_test.cases.executable import validate_executable_cases
 from agents.common.config.settings import llm
 from agents.common.tools import global_tools
+from services.api_agent.models import (
+    ApiContract,
+    AssertionDefinition,
+    BaseTestCase,
+    ExecutableCase,
+    ExecutableRequest,
+    GenerationRejection,
+    ReviewIssue,
+    StageEvent,
+    VariableConsumer,
+    VariableDefinition,
+    VariableProducer,
+    WorkflowProvenance,
+    WorkflowResult,
+    WorkflowRuntimeContext,
+)
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # 【重要修复】：引入线程隔离的数据库连接管理器，避免多线程环境下数据库连接冲突
@@ -107,10 +126,366 @@ class ApiState(TypedDict):
     data_file_path: str  # 数据文件路径
     loaded_test_data: dict  # 已加载的测试数据
     data_lineage: dict  # 测试数据继承与覆盖来源
+    generation_kernel: str  # v2_fused 时委托共享纯生成内核
+    v2_contract: dict  # 已确认的 V2 契约；旧 CLI 可不传
+
+
+class PlatformApiState(TypedDict, total=False):
+    """V2.4 阶段三 LangGraph 进程内状态，不含路径、数据库或目标网络能力。"""
+
+    base_cases: list[BaseTestCase]
+    contracts: list[ApiContract]
+    controlled_manifest: dict[str, Any]
+    runtime: WorkflowRuntimeContext
+    confirmed_cases: list[BaseTestCase]
+    contracts_by_id: dict[str, ApiContract]
+    manifest: dict[str, Any]
+    raw_candidates: list[tuple[int, BaseTestCase, ApiContract, dict[str, Any]]]
+    candidates: list[ExecutableCase]
+    rejections: list[GenerationRejection]
+    error_code: str
+    error_message: str
+    workflow_result: WorkflowResult
 
 
 class ApiRunCaseGeneratorWorkFlow:
     """可运行的接口用例生成的工作流 - 已移除断言相关逻辑，支持数据驱动"""
+
+    # 平台主图的节点列表。保留本文件的旧 CLI 图，平台则显式使用 ``run``，
+    # 从而不会继承旧图的目录扫描、MySQL 保存或直接执行副作用。
+    _PLATFORM_NODES = (
+        "validate_confirmed_inputs", "load_controlled_manifest", "legacy_generate_api_cases",
+        "load_controlled_test_data", "normalize_request_candidates", "repair_invalid_candidate",
+        "validate_request_completeness", "validate_dependencies_and_variables",
+        "validate_assertions_and_grounding", "validate_script_ast", "output_executable_candidates",
+    )
+
+    def __init__(self, *, legacy_case_generator=None):
+        """初始化平台适配入口；旧 CLI 仍可无参数调用 ``create_workflow``。
+
+        ``legacy_case_generator`` 是旧完整请求生成节点的受控注入点。它只接收当前
+        confirmed BaseCase、对应 Contract 和受控 manifest，避免获得任务路径、DB
+        配置、Host 或真实 Credential。
+        """
+
+        self._legacy_case_generator = legacy_case_generator
+
+    def run(
+        self,
+        *,
+        base_cases: list[BaseTestCase],
+        contracts: list[ApiContract],
+        controlled_manifest: dict,
+        runtime: WorkflowRuntimeContext,
+    ) -> WorkflowResult:
+        """运行 V2.4 平台阶段三主链，并只返回内存中的可执行候选。
+
+        所有单条候选均在独立 try/except 中处理：一条模型输出或静态门禁失败只能
+        令该项 disabled，不能让已通过的候选丢失。函数不调用旧图中的文件扫描、
+        MySQL 保存节点或任何真实 API 执行入口。
+        """
+
+        state = self.create_platform_workflow().invoke({
+            "base_cases": base_cases,
+            "contracts": contracts,
+            "controlled_manifest": controlled_manifest,
+            "runtime": runtime,
+            "candidates": [],
+            "rejections": [],
+            "raw_candidates": [],
+        })
+        result = state.get("workflow_result")
+        return result if isinstance(result, WorkflowResult) else self._failed_result(
+            runtime, "WORKFLOW_RESULT_INVALID", "阶段三 Workflow 未返回有效结果",
+        )
+
+    def create_platform_workflow(self):
+        """构建平台无副作用 LangGraph；旧 ``create_workflow`` 继续服务 legacy CLI。
+
+        每个节点只读写传入的进程内状态。图中没有 TaskStore、MySQL、目录扫描、
+        Executor 或目标网络入口，因此 Runner 仍是版本持久化和状态切换的唯一主体。
+        """
+
+        graph = StateGraph(PlatformApiState)
+        graph.add_node("validate_confirmed_inputs", self._platform_validate_inputs)
+        graph.add_node("load_controlled_manifest", self._platform_load_manifest)
+        graph.add_node("legacy_generate_api_cases", self._platform_generate_candidates)
+        graph.add_node("load_controlled_test_data", self._platform_load_test_data)
+        graph.add_node("normalize_request_candidates", self._platform_normalize_candidates)
+        graph.add_node("repair_invalid_candidate", self._platform_repair_candidates)
+        for node_name in (
+            "validate_request_completeness", "validate_dependencies_and_variables",
+            "validate_assertions_and_grounding", "validate_script_ast",
+        ):
+            graph.add_node(node_name, self._platform_validation_node(node_name))
+        graph.add_node("output_executable_candidates", self._platform_output)
+        graph.add_edge(START, self._PLATFORM_NODES[0])
+        for source, target in zip(self._PLATFORM_NODES, self._PLATFORM_NODES[1:]):
+            graph.add_edge(source, target)
+        graph.add_edge(self._PLATFORM_NODES[-1], END)
+        return graph.compile()
+
+    def _platform_validate_inputs(self, state: PlatformApiState) -> dict[str, Any]:
+        runtime = state["runtime"]
+        self._emit(runtime, "validate_confirmed_inputs", "started", "running", "")
+        contracts_by_id = {item.contract_id: item for item in state["contracts"] if item.status == "confirmed"}
+        confirmed_cases = [item for item in state["base_cases"] if item.status == "confirmed"]
+        if not confirmed_cases or not contracts_by_id:
+            return {
+                "error_code": "CONFIRMED_INPUT_REQUIRED",
+                "error_message": "至少需要已确认的契约和基础用例",
+                "contracts_by_id": contracts_by_id,
+                "confirmed_cases": confirmed_cases,
+            }
+        self._emit(runtime, "validate_confirmed_inputs", "completed", "completed", "")
+        return {"contracts_by_id": contracts_by_id, "confirmed_cases": confirmed_cases}
+
+    def _platform_load_manifest(self, state: PlatformApiState) -> dict[str, Any]:
+        runtime = state["runtime"]
+        if state.get("error_code"):
+            self._emit(runtime, "load_controlled_manifest", "skipped", "completed", "上游输入无效")
+            return {}
+        self._emit(runtime, "load_controlled_manifest", "started", "running", "")
+        manifest = self._normalise_manifest(state.get("controlled_manifest", {}))
+        self._emit(runtime, "load_controlled_manifest", "completed", "completed", "")
+        return {"manifest": manifest}
+
+    def _platform_generate_candidates(self, state: PlatformApiState) -> dict[str, Any]:
+        runtime = state["runtime"]
+        if state.get("error_code"):
+            self._emit(runtime, "legacy_generate_api_cases", "skipped", "completed", "上游输入无效")
+            return {}
+        raw_candidates = []
+        rejections = list(state.get("rejections", []))
+        for index, base_case in enumerate(state.get("confirmed_cases", [])):
+            contract = state.get("contracts_by_id", {}).get(base_case.contract_id)
+            if contract is None:
+                rejections.append(self._rejection(base_case.contract_id, index, "CONTRACT_NOT_CONFIRMED"))
+                continue
+            try:
+                self._emit(runtime, "legacy_generate_api_cases", "started", "running", base_case.case_id)
+                raw = self._legacy_generate_api_cases(base_case, contract, state["manifest"])
+                raw_candidates.append((index, base_case, contract, raw))
+                self._emit(runtime, "legacy_generate_api_cases", "completed", "completed", base_case.case_id)
+            except Exception:
+                rejections.append(self._rejection(base_case.contract_id, index, "EXECUTABLE_CANDIDATE_INVALID"))
+        return {"raw_candidates": raw_candidates, "rejections": rejections}
+
+    def _platform_load_test_data(self, state: PlatformApiState) -> dict[str, Any]:
+        self._emit(state["runtime"], "load_controlled_test_data", "completed", "completed", "仅使用 manifest data_refs")
+        return {}
+
+    def _platform_normalize_candidates(self, state: PlatformApiState) -> dict[str, Any]:
+        candidates = list(state.get("candidates", []))
+        rejections = list(state.get("rejections", []))
+        for index, base_case, contract, raw in state.get("raw_candidates", []):
+            try:
+                candidates.append(self._normalise_candidate(base_case, contract, raw, state["manifest"]))
+            except Exception:
+                rejections.append(self._rejection(contract.contract_id, index, "EXECUTABLE_CANDIDATE_INVALID"))
+        self._emit(state["runtime"], "normalize_request_candidates", "completed", "completed", "")
+        return {"candidates": candidates, "rejections": rejections}
+
+    def _platform_repair_candidates(self, state: PlatformApiState) -> dict[str, Any]:
+        self._emit(state["runtime"], "repair_invalid_candidate", "skipped", "completed", "平台模式不进行越权重试")
+        return {}
+
+    def _platform_validation_node(self, node_name: str):
+        def validate(state: PlatformApiState) -> dict[str, Any]:
+            # 完整静态校验已由 normalize 节点统一调用，后续节点保留旧图的职责边界
+            # 和可观察事件，不能在图外伪造“节点已运行”。
+            self._emit(state["runtime"], node_name, "completed", "completed", "")
+            return {}
+        return validate
+
+    def _platform_output(self, state: PlatformApiState) -> dict[str, Any]:
+        runtime = state["runtime"]
+        if state.get("error_code"):
+            result = self._failed_result(runtime, state["error_code"], state.get("error_message", ""))
+            return {"workflow_result": result}
+        candidates = state.get("candidates", [])
+        ready_count = sum(item.validation_status == "ready" for item in candidates)
+        status = "ready" if candidates and ready_count == len(candidates) else "partial_ready" if ready_count else "failed"
+        self._emit(runtime, "output_executable_candidates", "completed", "completed", f"输出 {len(candidates)} 条")
+        return {"workflow_result": WorkflowResult(
+            status=status,
+            items=[item.model_dump(mode="json") for item in candidates],
+            rejections=state.get("rejections", []),
+            quality_summary={
+                "candidate_count": len(candidates), "ready_count": ready_count,
+                "disabled_count": len(candidates) - ready_count,
+            },
+            workflow_provenance=self._provenance(runtime),
+        )}
+
+    def _legacy_generate_api_cases(self, base_case, contract, manifest):
+        """执行旧完整请求生成语义的受控节点，而不是调用外部主生成器。"""
+
+        if self._legacy_case_generator is None:
+            raise ValueError("平台模式必须注入受控 legacy_case_generator")
+        return self._legacy_case_generator(base_case, contract, manifest)
+
+    @staticmethod
+    def _normalise_manifest(manifest: dict) -> dict:
+        """仅保留阶段三允许的资源元数据，拒绝路径、Host 和凭证注入。"""
+
+        value = manifest if isinstance(manifest, dict) else {}
+        return {
+            "data_refs": [str(item) for item in value.get("data_refs", []) if str(item).strip()],
+            "capabilities": [str(item) for item in value.get("capabilities", []) if str(item).strip()],
+            "precondition_case_ids": [str(item) for item in value.get("precondition_case_ids", []) if str(item).strip()],
+        }
+
+    def _normalise_candidate(self, base_case, contract, raw, manifest) -> ExecutableCase:
+        """将旧节点输出规范化，并将 V2 静态校验作为图内工具执行。"""
+
+        if not isinstance(raw, dict) or not isinstance(raw.get("request"), dict):
+            raise ValueError("旧生成节点必须返回包含 request 的对象")
+        request_data = dict(raw["request"])
+        raw_path = str(request_data.get("path", ""))
+        issues: list[ReviewIssue] = []
+        if urlsplit(raw_path).scheme or urlsplit(raw_path).netloc:
+            issues.append(self._issue("request.path", "HOST_FORBIDDEN", "执行定义不得包含 Host"))
+            request_data["path"] = contract.path
+        if not str(request_data.get("path", "")).startswith("/"):
+            request_data["path"] = contract.path
+
+        if self._has_plaintext_credential(request_data, raw.get("variable_consumers", [])):
+            issues.append(self._issue(
+                "request", "PLAINTEXT_CREDENTIAL_FORBIDDEN",
+                "请求或变量默认值不得包含明文凭证，请改用受控运行时变量",
+            ))
+
+        data_refs = [str(item) for item in raw.get("data_refs", []) if str(item).strip()]
+        unknown_refs = sorted(set(data_refs) - set(manifest["data_refs"]))
+        if unknown_refs:
+            issues.append(self._issue("data_refs", "DATA_REF_FORBIDDEN", f"未登记 data_ref: {unknown_refs}"))
+
+        producers = [VariableProducer.model_validate(item) for item in raw.get("variable_producers", [])]
+        consumers = [VariableConsumer.model_validate(item) for item in raw.get("variable_consumers", [])]
+        variables = [
+            VariableDefinition(name=item.name, source="precondition", source_path=item.source_path)
+            for item in producers
+        ]
+        declared = {item.name for item in variables}
+        for name in self._template_names(request_data):
+            if name not in declared:
+                variables.append(VariableDefinition(
+                    name=name, source="input", source_path=data_refs[0] if data_refs else "",
+                ))
+                declared.add(name)
+
+        raw_assertions = raw.get("assertions") if isinstance(raw.get("assertions"), list) else []
+        # 旧模型偶尔遗漏断言。正常场景只能从已确认契约的 2xx 响应补齐，绝不
+        # 使用固定 200；负向或探索场景没有明确预期时仍由静态门禁阻断。
+        if not raw_assertions and base_case.scenario_type == "normal":
+            documented_success = next((
+                item.status_code for item in contract.responses
+                if str(item.status_code).isdigit() and 200 <= int(item.status_code) < 300
+            ), None)
+            if documented_success is not None:
+                raw_assertions = [{"operator": "status_code", "expected": int(documented_success)}]
+
+        case = ExecutableCase(
+            executable_case_id=f"exec_{base_case.case_id.removeprefix('case_')}",
+            artifact_schema_version=3,
+            base_case_id=base_case.case_id,
+            contract_id=contract.contract_id,
+            name=base_case.name,
+            risk_level=base_case.risk_level,
+            document_sla_ms=contract.sla_ms,
+            request=ExecutableRequest.model_validate(request_data),
+            precondition_case_ids=[str(item) for item in raw.get("precondition_case_ids", [])],
+            assertions=[AssertionDefinition.model_validate(item) for item in raw_assertions],
+            variables=variables,
+            variable_producers=producers,
+            variable_consumers=consumers,
+            data_refs=data_refs,
+            observation_targets=[str(item) for item in raw.get("observation_targets", []) if str(item).strip()],
+            generation_kernel="v2_core_workflow",
+            generation_sources=["legacy_generate_api_cases", f"contract:{contract.contract_id}"],
+            validation_issues=issues,
+        )
+        # 复用既有契约、变量、依赖、断言和 AST 校验；跨批次已确认前置用例由受控
+        # manifest 显式声明，避免把其当成缺失依赖。
+        case = validate_executable_cases([case], [contract])[0]
+        external_dependencies = set(manifest["precondition_case_ids"])
+        case.validation_issues = [
+            issue for issue in case.validation_issues
+            if not (issue.code == "DEPENDENCY_MISSING" and set(case.precondition_case_ids) <= external_dependencies)
+        ]
+        case.validation_status = "disabled" if case.validation_issues else "ready"
+        case.enabled = case.validation_status == "ready"
+        if case.validation_status == "disabled":
+            case.review_status = "disabled"
+        return case
+
+    @staticmethod
+    def _template_names(value) -> set[str]:
+        """提取受控 ``{{name}}`` 占位符，用于补齐 data_ref 输入声明。"""
+
+        return set(re.findall(r"\{\{\s*([A-Za-z_][A-Za-z0-9_.-]*)\s*\}\}", json.dumps(value, ensure_ascii=False)))
+
+    @staticmethod
+    def _has_plaintext_credential(request_data: dict, consumers: list | None = None) -> bool:
+        """递归检查 Header、Query、Cookie、Body 及变量默认值中的明文凭证。"""
+
+        sensitive = re.compile(
+            r"(?i)(?:authorization|proxy[_-]?authorization|api[_-]?key|token|password|passwd|secret|cookie|session|csrf)"
+        )
+        placeholder = re.compile(r"\{\{\s*[A-Za-z_][A-Za-z0-9_.-]*\s*\}\}")
+
+        def unsafe(value, key=""):
+            if isinstance(value, dict):
+                return any(unsafe(child, str(child_key)) for child_key, child in value.items())
+            if isinstance(value, list):
+                return any(unsafe(child, key) for child in value)
+            if not sensitive.search(key) or value is None or value == "":
+                return False
+            text = str(value).strip()
+            remainder = placeholder.sub("", text).strip().lower()
+            return not placeholder.search(text) or remainder not in {"", "bearer", "basic"}
+
+        if unsafe(request_data):
+            return True
+        for consumer in consumers if isinstance(consumers, list) else []:
+            if not isinstance(consumer, dict) or consumer.get("default_policy") != "use_default":
+                continue
+            key = f"{consumer.get('name', '')}.{consumer.get('field_path', '')}"
+            if unsafe(consumer.get("default_value"), key):
+                return True
+        return False
+
+    @staticmethod
+    def _issue(field_path: str, code: str, message: str) -> ReviewIssue:
+        return ReviewIssue(code=code, field_path=field_path, message=message, severity="blocker")
+
+    @staticmethod
+    def _rejection(contract_id: str, index: int, code: str) -> GenerationRejection:
+        return GenerationRejection(
+            contract_id=contract_id, item_index=index, prompt_id="api_case_generator.v2.4",
+            prompt_sha256="", error_code=code, rejection_stage="schema",
+            suggestion="修复该条完整请求候选后重试",
+        )
+
+    @classmethod
+    def _provenance(cls, runtime: WorkflowRuntimeContext) -> WorkflowProvenance:
+        return WorkflowProvenance(
+            workflow_id=runtime.workflow_id, workflow_version=runtime.workflow_version,
+            workflow_sha256=hashlib.sha256("|".join(cls._PLATFORM_NODES).encode()).hexdigest(),
+            input_versions=runtime.input_versions, node_ids=list(cls._PLATFORM_NODES),
+        )
+
+    @classmethod
+    def _emit(cls, runtime, node, event_type, status, message):
+        runtime.event_sink(StageEvent(
+            event_id=f"workflow_{hashlib.sha256(f'{runtime.attempt_id}|{node}|{event_type}'.encode()).hexdigest()[:20]}",
+            task_id=runtime.task_id, attempt_id=runtime.attempt_id, stage="executable_generation",
+            node=node, event_type=event_type, status=status, message=message,
+            input_versions=runtime.input_versions, workflow_id=runtime.workflow_id,
+            workflow_version=runtime.workflow_version,
+            workflow_sha256=hashlib.sha256("|".join(cls._PLATFORM_NODES).encode()).hexdigest(),
+        ))
 
     @staticmethod
     def _safe_json_loads(value):
@@ -339,6 +714,39 @@ class ApiRunCaseGeneratorWorkFlow:
     @staticmethod
     def generator_api_case(state: ApiState):
         """生成可执行的接口用例"""
+        if state.get("generation_kernel") == "v2_fused" and state.get("v2_contract"):
+            # 仅显式融合模式委托无副作用适配层，保持旧 CLI 默认输出路径不变。
+            from agents.api_test.cases.executable import build_executable_cases
+            from services.api_agent.models import ApiContract, BaseTestCase
+
+            contract = ApiContract.model_validate(state["v2_contract"])
+            base_case = BaseTestCase.model_validate(state.get("base_case"))
+            generated = build_executable_cases([base_case], [contract])
+            if generated:
+                case = generated[0]
+                return {
+                    "api_case": {
+                        "name": case.name,
+                        "description": base_case.objective,
+                        "interface": case.request.path,
+                        "preconditions": case.precondition_case_ids,
+                        "request": {
+                            "method": case.request.method,
+                            "url": case.request.path,
+                            "base_url": "${{base_url}}",
+                            "headers": case.request.headers,
+                            "params": case.request.query,
+                            "cookies": case.request.cookies,
+                            "body": case.request.body,
+                            "setup_script": case.setup_script,
+                            "teardown_script": case.teardown_script,
+                        },
+                        "assertions": [item.model_dump(mode="json") for item in case.assertions],
+                        "observation_targets": case.observation_targets,
+                        "validation_status": case.validation_status,
+                    },
+                    "generator_count": state.get("generator_count", 0) + 1,
+                }
         for _ in range(3):
             try:
                 parser = JsonOutputParser(pydantic_object=APICaseRuntimeParser)
@@ -435,7 +843,7 @@ class ApiRunCaseGeneratorWorkFlow:
             writer("【保存用例跳过】：没有可保存的用例数据")
             return {"saved": False, "message": "没有用例数据"}
 
-        if not state.get("persist_to_database", bool(state.get("interface_id"))):
+        if not state.get("persist_to_database", False):
             writer("【保存用例跳过】：数据库持久化已关闭，保留内存可执行用例")
             return {
                 "saved": False,

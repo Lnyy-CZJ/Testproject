@@ -11,10 +11,24 @@ import yaml
 from agents.api_test.contracts.format_detector import DocumentFormat, detect_document_format
 from agents.api_test.contracts.openapi_parser import parse_openapi_document
 from agents.api_test.contracts.unstructured_parser import parse_unstructured_document
+from agents.api_test.parsers.ai_parser_api_document import ParametersModel
 from services.common.errors import ServiceError
 
 
 FIXTURES = Path(__file__).parent / "fixtures"
+
+
+def test_legacy_parser_schema_accepts_cookie_parameters() -> None:
+    """会话 Cookie 必须能从旧 AI 解析器进入核心契约，而不是被 Parser Schema 丢弃。"""
+
+    parsed = ParametersModel.model_validate({
+        "header": [], "path": [], "query": [],
+        "cookie": [{
+            "name": "SESSION", "description": "登录会话", "required": True,
+            "type": {"type": "string"},
+        }],
+    })
+    assert parsed.cookie[0].name == "SESSION"
 
 
 @pytest.mark.parametrize(
@@ -72,6 +86,22 @@ def test_unstructured_ungrounded_fact_is_blocked() -> None:
     assert sections
     assert contracts[0].status == "draft"
     assert any(item.field_path == "parameters[0].name" for item in contracts[0].unresolved)
+
+
+def test_logout_csrf_golden_sample_locates_header_but_keeps_required_for_review() -> None:
+    """Curl 可证明 Header 位置，但未声明必填性时仍需人工决定。"""
+
+    text = (FIXTURES / "logout-csrf.md").read_text(encoding="utf-8")
+    contracts, _sections = parse_unstructured_document(text, parser=lambda _text: [{
+        "name": "退出登录", "method": "POST", "path": "/api/logout",
+        "parameters": {"header": [{"name": "X-CSRF-Token", "required": False}]},
+        "responses": [{"http_code": 204}],
+    }])
+    contract = contracts[0]
+    location = next(item for item in contract.field_evidence if item.field_path == "parameters[0].location")
+    assert location.evidence_type == "explicit"
+    assert "curl" in location.quote
+    assert any(item.field_path == "parameters[0].required" for item in contract.unresolved)
 
 
 def test_unstructured_model_retry_is_finite_and_auth_fails_fast() -> None:

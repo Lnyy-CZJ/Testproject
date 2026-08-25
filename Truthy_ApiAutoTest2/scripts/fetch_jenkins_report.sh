@@ -23,6 +23,7 @@
 #   BUILD_NUMBER   可选，显式指定构建号；缺省从新到旧扫描已完成构建，
 #                  选择第一个包含 allure-report-publish/index.html 的
 #                  构建，不按 SUCCESS/FAILURE/UNSTABLE 过滤。
+#   PUBLISH_TASK_ID 必填的平台根任务 ID；拉取与发布全链路显式透传。
 #
 # 返回值（退出码）:
 #   0  拉取并发布成功；
@@ -48,6 +49,9 @@ ARTIFACT_ENTRY="$ARTIFACT_DIR/index.html"
 
 [ -n "${JENKINS_USER:-}" ] || die 2 "缺少环境变量 JENKINS_USER"
 [ -n "${JENKINS_TOKEN:-}" ] || die 2 "缺少环境变量 JENKINS_TOKEN"
+[ -n "${PUBLISH_TASK_ID:-}" ] || die 2 "缺少环境变量 PUBLISH_TASK_ID"
+printf '%s' "$PUBLISH_TASK_ID" | LC_ALL=C grep -Eq '^[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$' \
+    || die 2 "PUBLISH_TASK_ID 格式非法: $PUBLISH_TASK_ID"
 
 # curl 统一参数：-s 静默、-g 关闭 URL 通配（Jenkins zip 路径含 *）、
 # -f HTTP 错误即失败、--retry 抗瞬时网络抖动。
@@ -56,19 +60,30 @@ jenkins_curl() {
         -u "$JENKINS_USER:$JENKINS_TOKEN" "$@"
 }
 
-# 查询构建的归档清单，判断是否包含 HTML 报告入口。
-# 返回 0 表示包含；构建无归档或请求失败返回非 0。
+# 查询构建的归档清单与参数，只有 HTML 入口和 PLATFORM_TASK_ID 同时匹配
+# 才允许被选中。调用者环境变量不能覆盖 Jenkins 已固化的构建归属。
 build_has_report_artifact() {
     local build_number="$1"
     local body
     body="$(jenkins_curl \
-        "$JENKINS_URL/job/$JOB_NAME/$build_number/api/json?tree=artifacts[relativePath]" \
+        "$JENKINS_URL/job/$JOB_NAME/$build_number/api/json?tree=artifacts[relativePath],actions[parameters[name,value]]" \
         2>/dev/null)" || return 1
-    printf '%s' "$body" | ARTIFACT_ENTRY="$ARTIFACT_ENTRY" python3 -c '
+    printf '%s' "$body" | ARTIFACT_ENTRY="$ARTIFACT_ENTRY" \
+        EXPECTED_TASK_ID="$PUBLISH_TASK_ID" python3 -c '
 import json, os, sys
 data = json.load(sys.stdin)
 paths = [a.get("relativePath", "") for a in data.get("artifacts", [])]
-sys.exit(0 if os.environ["ARTIFACT_ENTRY"] in paths else 1)
+parameters = [
+    parameter
+    for action in data.get("actions", []) if isinstance(action, dict)
+    for parameter in (action.get("parameters") or []) if isinstance(parameter, dict)
+]
+task_ids = [p.get("value") for p in parameters if p.get("name") == "PLATFORM_TASK_ID"]
+valid = (
+    os.environ["ARTIFACT_ENTRY"] in paths
+    and task_ids == [os.environ["EXPECTED_TASK_ID"]]
+)
+sys.exit(0 if valid else 1)
 '
 }
 
@@ -132,6 +147,30 @@ jenkins_curl --output "$ZIP_PATH" \
 unzip -q "$ZIP_PATH" -d "$WORK_DIR" || die 6 "解压归档失败: $ZIP_PATH"
 HTML_DIR="$WORK_DIR/$ARTIFACT_DIR"
 [ -f "$HTML_DIR/index.html" ] || die 6 "归档中缺少 index.html: $HTML_DIR"
+TASK_META="$HTML_DIR/platform-task-meta.json"
+[ -f "$TASK_META" ] || die 6 "归档中缺少受控任务元数据: platform-task-meta.json"
+EXPECTED_TASK_ID="$PUBLISH_TASK_ID" \
+EXPECTED_BUILD_NUMBER="$SELECTED_BUILD" \
+EXPECTED_JOB_NAME="$JOB_NAME" \
+python3 - "$TASK_META" <<'PYEOF' \
+    || die 6 "归档任务元数据与 Jenkins 构建参数不一致"
+import json
+import os
+import sys
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as file:
+        metadata = json.load(file)
+except (OSError, json.JSONDecodeError):
+    raise SystemExit(1)
+
+expected = {
+    "task_id": os.environ["EXPECTED_TASK_ID"],
+    "build_number": int(os.environ["EXPECTED_BUILD_NUMBER"]),
+    "job_name": os.environ["EXPECTED_JOB_NAME"],
+}
+raise SystemExit(0 if metadata == expected else 1)
+PYEOF
 
 # ---------------- 调用发布脚本 ----------------
 
@@ -140,4 +179,5 @@ PUBLISH_JOB_NAME="$JOB_NAME" \
 PUBLISH_BUILD_NUMBER="$SELECTED_BUILD" \
 PUBLISH_BUILD_RESULT="$BUILD_RESULT" \
 PUBLISH_BUILD_URL="$BUILD_URL" \
+PUBLISH_TASK_ID="$PUBLISH_TASK_ID" \
     "$SCRIPT_DIR/publish_allure_report.sh" "$HTML_DIR" "$REPORT_ROOT" jenkins

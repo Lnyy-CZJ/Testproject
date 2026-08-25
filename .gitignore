@@ -31,6 +31,7 @@ node_modules/
 .codex-audit-*/
 .playwright-cli/
 output/playwright/
+test-platform/output/playwright/
 api-test-agent/design-qa*.png
 api-test-agent/design-qa.md
 design-reference/

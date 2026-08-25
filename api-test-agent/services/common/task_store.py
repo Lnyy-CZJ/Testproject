@@ -110,6 +110,42 @@ class TaskStore:
         except (FileNotFoundError, json.JSONDecodeError, OSError, ValueError):
             return None
 
+    @staticmethod
+    def _is_visible_to(record: dict[str, Any], identity: Any) -> bool:
+        """以根任务不变授权快照过滤 own/project/global 可见范围。
+
+        不读取浏览器声称的 owner/project 或旧 ``task.view.all``；快照缺失的
+        历史记录按不可见处理，避免迁移期间的未知资源泄露。
+        """
+
+        internal = record.get("internal") or {}
+        owner = internal.get("owner_user_id")
+        project_id = internal.get("project_id_snapshot")
+        access_scope = internal.get("access_scope_snapshot")
+        if not isinstance(owner, str) or not isinstance(access_scope, str):
+            return False
+        if identity.data_scope == "global":
+            return True
+        if identity.data_scope == "own":
+            return owner == identity.user_id
+        return (
+            identity.data_scope == "project"
+            and access_scope == "project"
+            and isinstance(project_id, str)
+            and project_id in identity.managed_project_ids
+        )
+
+    def load_visible(self, task_id: str, identity: Any) -> dict[str, Any] | None:
+        """读取单根资源；越权与缺失统一返回 None，防止 IDOR 探测。"""
+
+        record = self.load(task_id)
+        return record if record and self._is_visible_to(record, identity) else None
+
+    def list_visible(self, identity: Any) -> list[dict[str, Any]]:
+        """在任务存储边界过滤查询结果，而非将完整列表交给浏览器。"""
+
+        return [record for record in self.list() if self._is_visible_to(record, identity)]
+
     def list(self) -> list[dict[str, Any]]:
         """返回按创建时间倒序排列的有效任务，并隔离损坏记录。"""
 

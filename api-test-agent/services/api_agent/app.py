@@ -56,6 +56,12 @@ def create_app(
         safe_config_loader=safe_config_loader,
     )
     app.register_blueprint(create_api_v2_blueprint(active_settings.base_path))
+    configured_pre_review = os.getenv("API_PRE_REVIEW_V21_ENABLED")
+    app.config["API_PRE_REVIEW_V21_ENABLED"] = (
+        configured_pre_review.strip().lower() in {"1", "true", "yes", "on"}
+        if configured_pre_review is not None
+        else active_settings.runtime_environment.lower() not in {"prod", "production"}
+    )
     app.extensions["api_execution_targets"] = load_execution_targets()
     app.extensions["api_execution_enabled"] = execution_enabled()
     if app.extensions["api_execution_enabled"]:

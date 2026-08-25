@@ -23,6 +23,9 @@ class DisabledRuntimeAdapter:
 class FakeRuntimeAdapter:
     """使用内存场景函数验证生命周期，不调用 HTTP、Docker、Kubernetes 或宿主进程。"""
 
+    resource_policy_id = "s1-fake-resource"
+    egress_policy_id = "s1-no-egress"
+
     def __init__(self, scenario: Callable[[CreateRunRequest], RuntimeResult] | None = None):
         self.scenario = scenario or (lambda request: RuntimeResult(status="succeeded", result_id=request.output_id))
         self.states: dict[str, RuntimeResult] = {}

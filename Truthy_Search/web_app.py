@@ -86,6 +86,38 @@ DEFAULT_DISPLAY_TIMEZONE = "Asia/Shanghai"
 DISPLAY_TIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 
+class PlatformRuntimeError(RuntimeError):
+    """携带平台安全状态码、稳定错误码与可展示消息的运行时异常。"""
+
+    def __init__(self, status_code: int, error_code: str, message: str) -> None:
+        super().__init__(f"{error_code}: {message}")
+        self.status_code = status_code
+        self.error_code = error_code
+        self.message = message
+
+
+def _platform_json_response(response: Any) -> dict[str, Any]:
+    """解析平台响应；合法业务错误原样上抛，非法响应交给通用降级。"""
+
+    status_code = getattr(response, "status_code", 200)
+    if isinstance(status_code, int) and status_code >= 400:
+        try:
+            error = response.json()
+            code = error.get("code") if isinstance(error, dict) else None
+            message = error.get("message") if isinstance(error, dict) else None
+        except ValueError:
+            code = message = None
+        if isinstance(code, str) and code and isinstance(message, str) and message:
+            raise PlatformRuntimeError(status_code, code, message)
+        response.raise_for_status()
+        raise ValueError("invalid platform error response")
+    response.raise_for_status()
+    payload = response.json()
+    if not isinstance(payload, dict):
+        raise ValueError("invalid platform response")
+    return payload
+
+
 def normalize_base_path(value: Any) -> str:
     """规范化平台挂载前缀并拒绝可能改变 URL 语义的输入。
 
@@ -256,63 +288,214 @@ class RunCoordinator:
         self._lock = threading.Lock()
         self._futures: dict[str, Future[None]] = {}
 
-    def prepare_run_client(self) -> tuple[SearchClient | None, str | None, int | None]:
-        """在创建新 Run 前获取一次平台快照；独立模式保持后台延迟构造。"""
+    @staticmethod
+    def _platform_mode() -> bool:
+        """判断当前部署是否启用平台运行配置来源。"""
 
-        source = os.getenv("SEARCH_CONFIG_SOURCE", "env").strip().lower()
-        if source != "platform":
-            return None, None, None
+        return os.getenv("SEARCH_CONFIG_SOURCE", "env").strip().lower() == "platform"
+
+    @staticmethod
+    def _platform_connection() -> tuple[str, str]:
+        """按调用读取工具 Token，返回平台 API 地址与 Token。"""
+
         platform_api_url = os.getenv("PLATFORM_API_URL", "").rstrip("/")
         token_file = Path(os.getenv("PLATFORM_CLIENT_TOKEN_FILE", ""))
         if not platform_api_url or not token_file.is_file():
-            raise RuntimeError("平台运行配置客户端未正确部署")
+            raise PlatformRuntimeError(
+                503,
+                "PLATFORM_CONFIG_UNAVAILABLE",
+                "平台运行配置客户端未正确部署",
+            )
         token = token_file.read_text(encoding="utf-8").strip()
+        if len(token) < 32:
+            raise PlatformRuntimeError(
+                503,
+                "PLATFORM_CONFIG_UNAVAILABLE",
+                "平台运行配置客户端未正确部署",
+            )
+        return platform_api_url, token
+
+    def prepare_run_runtime(
+        self,
+        signed_user_context: str,
+        run_id: str,
+        opaque_resource_context: str = "",
+    ) -> dict[str, Any]:
+        """兑换签名 Header 并规划 Run 的非敏感版本选择器。
+
+        独立模式返回空字典；平台模式缺少签名时失败关闭。签名值只出现在兑换
+        请求 Header，不进入返回值和 SQLite。
+        """
+
+        if not self._platform_mode():
+            return {}
+        if not signed_user_context:
+            raise PlatformRuntimeError(
+                403,
+                "RUNTIME_CONTEXT_REQUIRED",
+                "当前请求缺少可信用户上下文",
+            )
+        platform_api_url, token = self._platform_connection()
         try:
-            response = requests.get(
-                f"{platform_api_url}/internal/tools/truthy-search/runtime-config",
-                headers={"Authorization": f"Bearer {token}"},
+            context_headers = {
+                "Authorization": f"Bearer {token}",
+                "X-Platform-User-Context": signed_user_context,
+            }
+            if opaque_resource_context:
+                context_headers["X-Platform-Resource-Context"] = opaque_resource_context
+            context_response = requests.post(
+                f"{platform_api_url}/internal/tools/truthy-search/runtime-contexts",
+                headers=context_headers,
+                json={"resource_type": "run", "resource_id": run_id},
                 timeout=5,
             )
-            response.raise_for_status()
-            payload = response.json()
+            context_payload = _platform_json_response(context_response)
+            runtime_context_id = context_payload.get("runtime_context_id")
+            if not isinstance(runtime_context_id, str) or not runtime_context_id:
+                raise ValueError("invalid runtime context")
+            plan_response = requests.get(
+                f"{platform_api_url}/internal/tools/truthy-search/runtime-config",
+                headers={"Authorization": f"Bearer {token}"},
+                params={
+                    "include_secrets": "false",
+                    "runtime_context_id": runtime_context_id,
+                },
+                timeout=5,
+            )
+            payload = _platform_json_response(plan_response)
+        except PlatformRuntimeError:
+            raise
         except (requests.RequestException, ValueError) as exc:
-            raise RuntimeError("平台运行配置暂时不可用") from exc
+            raise PlatformRuntimeError(
+                503,
+                "PLATFORM_CONFIG_UNAVAILABLE",
+                "平台运行配置暂时不可用",
+            ) from exc
         if not isinstance(payload, dict) or payload.get("tool_id") != "truthy-search" or not payload.get("release_id"):
-            raise RuntimeError("平台未发布可用的 Truthy Search 配置")
-        normal = payload.get("normal") if isinstance(payload.get("normal"), dict) else {}
-        secrets = payload.get("secrets") if isinstance(payload.get("secrets"), dict) else {}
-        snapshot = {**normal, **secrets}
-        # 平台模式不读取旧 .env，新 Run 仅使用本次不可变快照。
+            raise PlatformRuntimeError(
+                503,
+                "PLATFORM_CONFIG_UNAVAILABLE",
+                "平台未发布可用的 Truthy Search 配置",
+            )
+        selector = payload.get("snapshot_selector")
+        if selector is not None and not isinstance(selector, dict):
+            raise PlatformRuntimeError(
+                503,
+                "PLATFORM_CONFIG_UNAVAILABLE",
+                "平台运行配置选择器无效",
+            )
         credential_metadata = payload.get("credential_metadata") if isinstance(payload.get("credential_metadata"), dict) else {}
         credential_version = credential_metadata.get("credential_version")
-        return (
-            SearchClient(Config.from_env(None, overrides=snapshot)),
-            str(payload["release_id"]),
-            int(credential_version) if isinstance(credential_version, int) else None,
+        return {
+            "runtime_context_id": runtime_context_id,
+            "snapshot_selector": selector,
+            "release_id": str(payload["release_id"]),
+            "credential_version": (
+                int(credential_version) if isinstance(credential_version, int) else None
+            ),
+            # 平台按已验证资源上下文派生的根资源快照；绝不由表单 owner/project
+            # 回填。SQLite 仅保存这一份不可变结果以支持本地列表过滤。
+            "resource_snapshot": context_payload.get("resource_snapshot"),
+        }
+
+    def materialize_run_client(self, run_id: str) -> SearchClient:
+        """执行开始时按 Run 已保存的 selector 物化一次内存配置。"""
+
+        if not self._platform_mode():
+            return self.client_factory()
+        row = self.service.store.fetch_one(
+            """
+            SELECT platform_runtime_context_id, platform_snapshot_selector_json
+            FROM runs WHERE run_id = ?
+            """,
+            (run_id,),
         )
+        if row is None or not row["platform_runtime_context_id"]:
+            raise RuntimeError("Run 缺少可信用户上下文")
+        runtime_context_id = str(row["platform_runtime_context_id"])
+        selector = None
+        if row["platform_snapshot_selector_json"]:
+            try:
+                selector = json.loads(row["platform_snapshot_selector_json"])
+            except (TypeError, json.JSONDecodeError) as exc:
+                raise RuntimeError("Run 配置快照无效") from exc
+            if not isinstance(selector, dict):
+                raise RuntimeError("Run 配置快照无效")
+        platform_api_url, token = self._platform_connection()
+        try:
+            if selector is None:
+                # 仅用于个人读取开关尚未启用的灰度阶段。
+                response = requests.get(
+                    f"{platform_api_url}/internal/tools/truthy-search/runtime-config",
+                    headers={"Authorization": f"Bearer {token}"},
+                    params={
+                        "include_secrets": "true",
+                        "runtime_context_id": runtime_context_id,
+                    },
+                    timeout=5,
+                )
+            else:
+                response = requests.post(
+                    f"{platform_api_url}/internal/tools/truthy-search/runtime-config/materialize",
+                    headers={"Authorization": f"Bearer {token}"},
+                    json={
+                        "runtime_context_id": runtime_context_id,
+                        "snapshot_selector": selector,
+                    },
+                    timeout=5,
+                )
+            payload = _platform_json_response(response)
+        except PlatformRuntimeError:
+            raise
+        except (requests.RequestException, ValueError) as exc:
+            raise PlatformRuntimeError(
+                503,
+                "PLATFORM_CONFIG_UNAVAILABLE",
+                "平台运行配置暂时不可用",
+            ) from exc
+        if not isinstance(payload, dict) or payload.get("tool_id") != "truthy-search":
+            raise PlatformRuntimeError(
+                503,
+                "PLATFORM_CONFIG_UNAVAILABLE",
+                "平台运行配置作用域不匹配",
+            )
+        normal = payload.get("normal") if isinstance(payload.get("normal"), dict) else {}
+        secrets = payload.get("secrets") if isinstance(payload.get("secrets"), dict) else {}
+        # 平台模式显式传 None，禁止读取旧 .env；Secret 仅保存在此 Worker 内存。
+        client = SearchClient(Config.from_env(None, overrides={**normal, **secrets}))
+        client._platform_runtime_context_id = runtime_context_id
+        client._platform_credential_metadata = (
+            payload.get("credential_metadata")
+            if isinstance(payload.get("credential_metadata"), dict)
+            else {}
+        )
+        return client
 
     def _default_client(self) -> SearchClient:
-        """构造独立模式客户端；平台模式的客户端必须在 Run 创建前锁定。"""
+        """构造独立模式客户端；平台模式必须按具体 Run 物化。"""
 
-        prepared, _release_id, _credential_version = self.prepare_run_client()
-        if prepared is None:
-            return SearchClient(Config.from_env(self.env_file))
-        return prepared
+        if self._platform_mode():
+            raise RuntimeError("平台模式必须使用 Run 绑定的配置快照")
+        return SearchClient(Config.from_env(self.env_file))
 
-    @staticmethod
-    def _report_admin_status(client: SearchClient) -> None:
-        """平台模式只上报 Admin 状态和过期时间，绝不发送 Session Token。"""
+    def _report_admin_status(self, client: SearchClient, run_id: str) -> None:
+        """按 Run 用户上下文上报不含 Token 的 Admin 状态。"""
 
-        if os.getenv("SEARCH_CONFIG_SOURCE", "env").strip().lower() != "platform":
+        if not self._platform_mode():
             return
         admin = client.admin_client
         if not admin.available or (admin.expire_time is None and admin.last_duration_ms is None):
             return
-        platform_api_url = os.getenv("PLATFORM_API_URL", "").rstrip("/")
-        token_file = Path(os.getenv("PLATFORM_CLIENT_TOKEN_FILE", ""))
-        if not platform_api_url or not token_file.is_file():
+        runtime_context_id = getattr(client, "_platform_runtime_context_id", "")
+        if not runtime_context_id:
             return
+        try:
+            platform_api_url, token = self._platform_connection()
+        except (OSError, RuntimeError):
+            return
+        headers = {"Authorization": f"Bearer {token}"}
         payload = {
+            "runtime_context_id": runtime_context_id,
             "provider_type": "admin_login",
             "status": "healthy" if admin.expire_time is not None else "action_required",
             "expires_at": admin.expire_time.isoformat() if admin.expire_time else None,
@@ -321,11 +504,11 @@ class RunCoordinator:
         try:
             requests.post(
                 f"{platform_api_url}/internal/tools/truthy-search/credential-status",
-                headers={"Authorization": f"Bearer {token_file.read_text(encoding='utf-8').strip()}"},
+                headers=headers,
                 json=payload,
                 timeout=3,
             ).raise_for_status()
-        except (OSError, requests.RequestException):
+        except requests.RequestException:
             # 状态上报是旁路能力，不得改变 Run 的业务终态。
             return
 
@@ -334,7 +517,7 @@ class RunCoordinator:
 
         client: SearchClient | None = None
         try:
-            client = prepared_client or self.client_factory()
+            client = prepared_client or self.materialize_run_client(run_id)
             self.service.execute_run(
                 run_id,
                 client,
@@ -347,7 +530,7 @@ class RunCoordinator:
             )
         finally:
             if client is not None:
-                self._report_admin_status(client)
+                self._report_admin_status(client, run_id)
             with self._lock:
                 self._futures.pop(run_id, None)
 
@@ -359,7 +542,7 @@ class RunCoordinator:
             self.service.execute_query_retry(
                 run_id,
                 query_id,
-                self.client_factory(),
+                self.materialize_run_client(run_id),
                 sleep_fn=time.sleep,
             )
         except Exception as exc:
@@ -524,6 +707,92 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
             return Path(app.config["PLATFORM_CLIENT_TOKEN_FILE"]).read_text(encoding="utf-8").strip()
         except (OSError, TypeError):
             return ""
+
+    def require_resource_access(
+        action: str,
+        root_run_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        """对一个根 Run 请求平台对象授权；失败统一表现为不存在。
+
+        平台模式仅接受网关注入的 opaque Context。工具不解析 token，也不相信
+        任意请求中的 owner/project；报告、Raw 和下载先解析回根 Run 后复用此
+        决策，从而避免派生资源形成绕过入口。
+
+        ``list`` 和 ``download`` 是工具内部语义；发送平台时分别映射为显式
+        注册的 ``read``（无 root_resource_id）与 ``export``，避免未知动作被
+        平台默认拒绝或不同入口形成不一致契约。
+        """
+        platform_api_url = app.config["PLATFORM_API_URL"]
+        if not platform_api_url:
+            return None
+        platform_action = {
+            "list": "read",
+            "read": "read",
+            "download": "export",
+            "retry": "retry",
+            "review": "review",
+            "create": "create",
+            "cancel": "cancel",
+        }.get(action)
+        if platform_action is None:
+            abort(404)
+        opaque_context = request.headers.get("X-Platform-Resource-Context", "")
+        token = platform_client_token()
+        if not opaque_context or not token:
+            abort(404)
+        payload: dict[str, Any] = {
+            "action": platform_action,
+            "resource_type": "run",
+        }
+        if root_run_id:
+            payload["root_resource_id"] = root_run_id
+        try:
+            response = requests.post(
+                f"{platform_api_url}/internal/tools/truthy-search/resource-access/check",
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "X-Platform-Resource-Context": opaque_context,
+                },
+                json=payload,
+                timeout=3,
+            )
+            decision = _platform_json_response(response)
+        except (PlatformRuntimeError, requests.RequestException, ValueError):
+            abort(404)
+        if decision.get("allowed") is not True:
+            abort(404)
+        return decision
+
+    def run_scope_sql(
+        decision: dict[str, Any] | None,
+        alias: str,
+    ) -> tuple[str, list[Any]]:
+        """把平台 list scope 编译成绑定参数 SQL，未知范围失败关闭。
+
+        独立部署没有平台 URL 时保留原有全量行为。平台部署中只允许 own、
+        project、global 三个显式值，且 owner/project 均使用创建时不可变快照。
+        返回的 SQL 仅包含受控别名和占位符，用户值永远通过参数绑定传入。
+        """
+
+        if decision is None:
+            return "1 = 1", []
+        data_scope = decision.get("data_scope")
+        if data_scope == "global":
+            return "1 = 1", []
+        if data_scope == "own" and decision.get("user_id"):
+            return f"{alias}.owner_user_id = ?", [str(decision["user_id"])]
+        project_ids = [
+            str(item)
+            for item in decision.get("managed_project_ids", [])
+            if isinstance(item, str) and item
+        ]
+        if data_scope == "project" and project_ids:
+            placeholders = ", ".join("?" for _ in project_ids)
+            return (
+                f"{alias}.project_id_snapshot IN ({placeholders})",
+                project_ids,
+            )
+        return "0 = 1", []
 
     @app.before_request
     def validate_platform_csrf() -> Response | None:
@@ -819,8 +1088,10 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
     def index() -> str:
         """展示 Evaluation 汇总和最近10份报告快捷入口。"""
 
+        list_decision = require_resource_access("list")
+        run_clause, run_parameters = run_scope_sql(list_decision, "r")
         evaluations = store.fetch_all(
-            """
+            f"""
             SELECT e.*,
                    COUNT(r.run_id) AS run_count,
                    SUM(CASE WHEN r.status = 'RUNNING' THEN 1 ELSE 0 END)
@@ -828,11 +1099,21 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
                    MAX(r.created_at) AS latest_run_at
             FROM evaluations AS e
             LEFT JOIN runs AS r ON r.evaluation_id = e.evaluation_id
+            WHERE {run_clause}
             GROUP BY e.evaluation_id
             ORDER BY e.updated_at DESC
-            """
+            """,
+            run_parameters,
         )
-        recent_reports = report_summary_rows(limit=10)
+        report_clause, report_parameters = run_scope_sql(
+            list_decision,
+            "candidate_run",
+        )
+        recent_reports = report_summary_rows(
+            [report_clause],
+            report_parameters,
+            limit=10,
+        )
         return render_template(
             "index.html",
             evaluations=evaluations,
@@ -843,6 +1124,7 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
     def reports() -> str:
         """按固定条件筛选报告摘要，并提供每页50条服务端分页。"""
 
+        list_decision = require_resource_access("list")
         page = page_number()
         per_page = 50
         filters = {
@@ -867,6 +1149,12 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
 
         where: list[str] = []
         parameters: list[Any] = []
+        scope_clause, scope_parameters = run_scope_sql(
+            list_decision,
+            "candidate_run",
+        )
+        where.append(scope_clause)
+        parameters.extend(scope_parameters)
         if filters["evaluation_id"]:
             where.append("rp.evaluation_id = ?")
             parameters.append(filters["evaluation_id"])
@@ -912,12 +1200,19 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
             offset=(page - 1) * per_page,
             with_artifacts=True,
         )
+        evaluation_clause, evaluation_parameters = run_scope_sql(
+            list_decision,
+            "r",
+        )
         evaluations = store.fetch_all(
-            """
-            SELECT evaluation_id, name
-            FROM evaluations
-            ORDER BY updated_at DESC
-            """
+            f"""
+            SELECT DISTINCT e.evaluation_id, e.name
+            FROM evaluations AS e
+            JOIN runs AS r ON r.evaluation_id = e.evaluation_id
+            WHERE {evaluation_clause}
+            ORDER BY e.updated_at DESC
+            """,
+            evaluation_parameters,
         )
         return render_template(
             "reports.html",
@@ -1154,19 +1449,22 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
             )
         except ReviewValidationError:
             thresholds = normalize_evaluation_thresholds({})
+        list_decision = require_resource_access("list")
+        run_clause, run_parameters = run_scope_sql(list_decision, "runs")
         runs = store.fetch_all(
-            """
+            f"""
             SELECT * FROM runs
-            WHERE evaluation_id = ?
+            WHERE evaluation_id = ? AND {run_clause}
             ORDER BY created_at DESC
             """,
-            (evaluation_id,),
+            [evaluation_id, *run_parameters],
         )
         datasets = store.fetch_all(
             "SELECT * FROM datasets ORDER BY created_at DESC"
         )
+        report_clause, report_parameters = run_scope_sql(list_decision, "r")
         reports = store.fetch_all(
-            """
+            f"""
             SELECT rp.*, pr.run_id, r.run_label, r.system_version,
                    CASE WHEN json_valid(rp.metrics_json)
                         THEN json_extract(
@@ -1177,10 +1475,10 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
             JOIN process_runs AS pr
               ON pr.process_id = rp.candidate_process_id
             JOIN runs AS r ON r.run_id = pr.run_id
-            WHERE rp.evaluation_id = ?
+            WHERE rp.evaluation_id = ? AND {report_clause}
             ORDER BY rp.created_at DESC
             """,
-            (evaluation_id,),
+            [evaluation_id, *report_parameters],
         )
         return render_template(
             "evaluation_detail.html",
@@ -1269,9 +1567,18 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
 
         try:
             coordinator = app.extensions["run_coordinator"]
-            prepare = getattr(coordinator, "prepare_run_client", None)
-            prepared_client, release_id, credential_version = (
-                prepare() if callable(prepare) else (None, None, None)
+            # Run ID 在兑换前确定，使 Runtime Context 的 resource_id 与最终数据库
+            # 主键完全一致；签名 Header 不传给后台线程或持久化层。
+            run_id = f"run_{uuid.uuid4().hex}"
+            prepare = getattr(coordinator, "prepare_run_runtime", None)
+            runtime_metadata = (
+                prepare(
+                    request.headers.get("X-Platform-User-Context", ""),
+                    run_id,
+                    request.headers.get("X-Platform-Resource-Context", ""),
+                )
+                if callable(prepare)
+                else {}
             )
             run_id = service.create_execution_run(
                 evaluation_id=evaluation_id,
@@ -1282,13 +1589,14 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
                     "evaluation_phase",
                     "",
                 ).strip(),
-                platform_release_id=release_id,
-                platform_credential_version=credential_version,
+                run_id=run_id,
+                platform_release_id=runtime_metadata.get("release_id"),
+                platform_credential_version=runtime_metadata.get("credential_version"),
+                platform_runtime_context_id=runtime_metadata.get("runtime_context_id"),
+                platform_snapshot_selector=runtime_metadata.get("snapshot_selector"),
+                resource_snapshot=runtime_metadata.get("resource_snapshot"),
             )
-            if prepared_client is None:
-                coordinator.submit(run_id)
-            else:
-                coordinator.submit(run_id, prepared_client)
+            coordinator.submit(run_id)
         except ActiveRunError as exc:
             return (
                 render_template(
@@ -1298,6 +1606,16 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
                     status_code=409,
                 ),
                 409,
+            )
+        except PlatformRuntimeError as exc:
+            return (
+                render_template(
+                    "error.html",
+                    title="无法启动新的执行",
+                    message=f"{exc.error_code} · {exc.message}",
+                    status_code=exc.status_code,
+                ),
+                exc.status_code,
             )
         except RuntimeError as exc:
             return (
@@ -1337,6 +1655,7 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
         )
         if run is None:
             abort(404)
+        require_resource_access("read", run_id)
         page = page_number()
         per_page = 50
         keyword = request.args.get("q", "").strip()
@@ -1495,6 +1814,7 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
     def run_evaluation_phase_update(run_id: str) -> Response | tuple[str, int]:
         """人工补录或修正 Run 评估阶段，不根据名称自动猜测。"""
 
+        require_resource_access("review", run_id)
         try:
             service.update_run_evaluation_phase(
                 run_id,
@@ -1522,6 +1842,10 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
         返回400。
         """
 
+        require_resource_access(
+            "review" if request.method == "POST" else "read",
+            run_id,
+        )
         baseline_sets = store.fetch_all(
             """
             SELECT bs.baseline_version, bs.name,
@@ -1696,6 +2020,7 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
         )
         if query is None:
             abort(404)
+        require_resource_access("read", run_id)
         page = page_number()
         per_page = 50
         candidate_total = store.fetch_one(
@@ -1794,6 +2119,7 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
     def query_retry(run_id: str, query_id: str) -> Response | tuple[str, int]:
         """校验后在原 Run 中排队重跑单条失败或中断 Query。"""
 
+        require_resource_access("retry", run_id)
         try:
             service.validate_query_retry(run_id, query_id)
             app.extensions["run_coordinator"].submit_query_retry(run_id, query_id)
@@ -1819,6 +2145,7 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
         )
         if candidate is None:
             abort(404)
+        require_resource_access("read", str(candidate["run_id"]))
         raw_records = store.fetch_all(
             """
             SELECT raw_id, stage, sequence_no, collected_at
@@ -2680,11 +3007,20 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
                 filters={},
                 definitions={},
             )
+        matrix_process_id = request.args.get("process_id", "").strip()
+        if matrix_process_id:
+            matrix_root = store.fetch_one(
+                "SELECT run_id FROM process_runs WHERE process_id = ?",
+                (matrix_process_id,),
+            )
+            if matrix_root is None:
+                abort(404)
+            require_resource_access("read", str(matrix_root["run_id"]))
         try:
             matrix = service.build_field_comparison_matrix(
                 schema_version,
                 baseline_version,
-                process_id=request.args.get("process_id", "").strip() or None,
+                process_id=matrix_process_id or None,
                 person_id=request.args.get("person_id", "").strip() or None,
             )
         except FieldSchemaValidationError as exc:
@@ -2731,7 +3067,7 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
         }
         discovery = service.discover_field_candidates(
             schema_version=schema_version,
-            process_id=request.args.get("process_id", "").strip() or None,
+            process_id=matrix_process_id or None,
             baseline_version=baseline_version,
         )
         return render_template(
@@ -2758,6 +3094,7 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
     def process_run(run_id: str) -> Response | tuple[str, int]:
         """同步启动字段处理；历史重处理只读取已入库数据。"""
 
+        require_resource_access("create", run_id)
         try:
             processing_mode = request.form.get(
                 "processing_mode",
@@ -2847,6 +3184,10 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
         )
         if process is None:
             abort(404)
+        resource_decision = require_resource_access(
+            "read",
+            str(process["run_id"]),
+        )
         definitions = parse_json(process["definitions_json"], [])
         definitions_by_key = {
             item.get("field_key"): item
@@ -2864,6 +3205,13 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
             "",
         ).strip()
         if compare_process_id:
+            compare_root = store.fetch_one(
+                "SELECT run_id FROM process_runs WHERE process_id = ?",
+                (compare_process_id,),
+            )
+            if compare_root is None:
+                abort(404)
+            require_resource_access("read", str(compare_root["run_id"]))
             try:
                 comparison = service.compare_processes(
                     compare_process_id,
@@ -2871,8 +3219,12 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
                 )
             except ReviewValidationError as exc:
                 comparison_error = str(exc)
+        compatible_clause, compatible_parameters = run_scope_sql(
+            resource_decision,
+            "r",
+        )
         compatible_processes = store.fetch_all(
-            """
+            f"""
             SELECT other.process_id, other.run_id, other.schema_version,
                    other.baseline_version, other.rule_version,
                    other.created_at, r.run_label, r.system_version,
@@ -2883,17 +3235,18 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
             JOIN evaluations AS e ON e.evaluation_id = r.evaluation_id
             WHERE other.process_id <> ?
               AND other.status = 'COMPLETED'
+              AND {compatible_clause}
             ORDER BY e.name, r.evaluation_id, other.created_at DESC
             """,
-            (process_id,),
+            [process_id, *compatible_parameters],
         )
         reports = store.fetch_all(
             """
             SELECT * FROM reports
-            WHERE candidate_process_id = ? OR baseline_process_id = ?
+            WHERE candidate_process_id = ?
             ORDER BY created_at DESC
             """,
-            (process_id, process_id),
+            (process_id,),
         )
         page = page_number()
         per_page = 50
@@ -3043,6 +3396,16 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
     ) -> str | Response | tuple[str, int]:
         """展示并保存一个 Query 的候选人身份归类。"""
 
+        process_root = store.fetch_one(
+            "SELECT run_id FROM process_runs WHERE process_id = ?",
+            (process_id,),
+        )
+        if process_root is None:
+            abort(404)
+        require_resource_access(
+            "review" if request.method == "POST" else "read",
+            str(process_root["run_id"]),
+        )
         try:
             context = service.get_query_classification_context(
                 process_id,
@@ -3137,6 +3500,13 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
     ) -> Response | tuple[str, int]:
         """保存候选人最终判定及字段得分，拒绝旧页面覆盖新记录。"""
 
+        process_root = store.fetch_one(
+            "SELECT run_id FROM process_runs WHERE process_id = ?",
+            (process_id,),
+        )
+        if process_root is None:
+            abort(404)
+        require_resource_access("review", str(process_root["run_id"]))
         try:
             raw_scores = request.form.get("field_scores_json", "").strip()
             if raw_scores:
@@ -3210,18 +3580,34 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
     def report_create() -> Response | tuple[str, int]:
         """创建报告模型快照、静态 HTML，并尽力生成 processed Excel。"""
 
+        candidate_process_id = request.form.get(
+            "candidate_process_id",
+            "",
+        ).strip()
+        candidate_root = store.fetch_one(
+            "SELECT run_id FROM process_runs WHERE process_id = ?",
+            (candidate_process_id,),
+        )
+        if candidate_root is None:
+            abort(404)
+        require_resource_access("create", str(candidate_root["run_id"]))
+        baseline_process_id = request.form.get(
+            "baseline_process_id",
+            "",
+        ).strip()
+        if baseline_process_id:
+            baseline_root = store.fetch_one(
+                "SELECT run_id FROM process_runs WHERE process_id = ?",
+                (baseline_process_id,),
+            )
+            if baseline_root is None:
+                abort(404)
+            require_resource_access("read", str(baseline_root["run_id"]))
         report = None
         try:
             report = service.create_report(
-                candidate_process_id=request.form.get(
-                    "candidate_process_id",
-                    "",
-                ).strip(),
-                baseline_process_id=request.form.get(
-                    "baseline_process_id",
-                    "",
-                ).strip()
-                or None,
+                candidate_process_id=candidate_process_id,
+                baseline_process_id=baseline_process_id or None,
                 data_marker=request.form.get(
                     "data_marker",
                     "REAL_TEST_DATA",
@@ -3290,6 +3676,12 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
         )
         if row is None:
             abort(404)
+        require_resource_access("read", str(row["candidate_run_id"]))
+        if (
+            row["baseline_run_id"]
+            and row["baseline_run_id"] != row["candidate_run_id"]
+        ):
+            require_resource_access("read", str(row["baseline_run_id"]))
         model = parse_json(row["metrics_json"], {})
         html_available = report_artifact_available(
             report_id,
@@ -3314,6 +3706,19 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
     def report_rename(report_id: str) -> Response | tuple[str, int]:
         """保存报告显示名称，并同步重新生成已有静态 HTML。"""
 
+        report_root = store.fetch_one(
+            """
+            SELECT pr.run_id
+            FROM reports AS rp
+            JOIN process_runs AS pr
+              ON pr.process_id = rp.candidate_process_id
+            WHERE rp.report_id = ?
+            """,
+            (report_id,),
+        )
+        if report_root is None:
+            abort(404)
+        require_resource_access("review", str(report_root["run_id"]))
         try:
             model = service.rename_report(
                 report_id,
@@ -3355,6 +3760,7 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
         run = store.fetch_one("SELECT * FROM runs WHERE run_id = ?", (run_id,))
         if run is None:
             abort(404)
+        require_resource_access("read", run_id)
         current = store.fetch_one(
             """
             SELECT query_id, current_stage
@@ -3414,11 +3820,20 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
         ).strip()
         if not baseline_version:
             return jsonify({"error": "baseline_version 不能为空"}), 400
+        matrix_process_id = request.args.get("process_id", "").strip()
+        if matrix_process_id:
+            matrix_root = store.fetch_one(
+                "SELECT run_id FROM process_runs WHERE process_id = ?",
+                (matrix_process_id,),
+            )
+            if matrix_root is None:
+                abort(404)
+            require_resource_access("read", str(matrix_root["run_id"]))
         try:
             matrix = service.build_field_comparison_matrix(
                 schema_version,
                 baseline_version,
-                process_id=request.args.get("process_id", "").strip() or None,
+                process_id=matrix_process_id or None,
                 person_id=request.args.get("person_id", "").strip() or None,
             )
         except FieldSchemaValidationError as exc:
@@ -3439,12 +3854,20 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
         )
         if process is None:
             abort(404)
+        require_resource_access("read", str(process["run_id"]))
         return jsonify(dict(process))
 
     @app.get("/api/processes/<process_id>/metrics")
     def process_metrics(process_id: str) -> Response:
         """返回与 Process 页面相同的可追溯指标模型。"""
 
+        process_root = store.fetch_one(
+            "SELECT run_id FROM process_runs WHERE process_id = ?",
+            (process_id,),
+        )
+        if process_root is None:
+            abort(404)
+        require_resource_access("read", str(process_root["run_id"]))
         try:
             return jsonify(service.calculate_process_metrics(process_id))
         except ReviewValidationError:
@@ -3464,6 +3887,7 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
         )
         if raw is None:
             abort(404)
+        require_resource_access("read", str(raw["run_id"]))
         return jsonify(
             {
                 "raw_id": raw["raw_id"],
@@ -3482,6 +3906,20 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
         """通过数据库 ID 下载 Run JSONL 或报告 HTML/Excel。"""
 
         if file_type in {"report-html", "report-excel"}:
+            report_root = store.fetch_one(
+                """
+                SELECT pr.run_id
+                FROM reports AS rp
+                JOIN process_runs AS pr
+                  ON pr.process_id = rp.candidate_process_id
+                WHERE rp.report_id = ?
+                """,
+                (run_id,),
+            )
+            if report_root is None:
+                abort(404)
+            # 报告 ID 不能直接冒充根资源；必须先解析到 candidate Run。
+            require_resource_access("download", str(report_root["run_id"]))
             try:
                 target = service.resolve_report_artifact(
                     run_id,
@@ -3499,6 +3937,7 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
         column = columns.get(file_type)
         if column is None:
             abort(404)
+        require_resource_access("download", run_id)
         row = store.fetch_one(
             f"SELECT {column} AS relative_path FROM runs WHERE run_id = ?",
             (run_id,),

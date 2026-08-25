@@ -32,6 +32,7 @@ export function ToolCard({
         </div>
         <div className="card-topline">
           <span className="tool-code">{tool.short_code}</span>
+          <span className="access-source-badge">{tool.access_source === "extra_grant" ? "额外授权" : tool.access_source === "public" ? "公共工具" : tool.project?.name ?? (tool.access_scope === "project" ? "项目工具" : "公共工具")}</span>
           <ServiceStatus state={health} />
         </div>
       </div>
@@ -42,6 +43,7 @@ export function ToolCard({
           <li key={feature}>{feature}</li>
         ))}
       </ul>
+      {tool.can_manage && <a className="tool-manage-link" href={`/admin/tool-access/${encodeURIComponent(tool.id)}`}>管理此工具</a>}
       {safeEntry ? <a className="tool-link" href={tool.entry_url}>打开工具 <span aria-hidden="true">›</span></a> : <span className="tool-link tool-link-disabled">入口不可用</span>}
     </article>
   );

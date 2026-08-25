@@ -369,23 +369,31 @@ allure open allure-report
 
 ## 12. 报告发布与同步
 
-平台展示的报告统一从 `reports/allure-current` 读取。该指针由发布脚本原子
-切换：报告先完整复制到 `reports/allure-reports/<版本>/`，再通过 rename 切换
-软链接，切换前旧报告始终可用。
+平台报告按根任务保存到
+`reports/task-reports/<task_id>/versions/<版本>/`。每个任务拥有独立的
+`current` 指针，发布其他任务不会覆盖或删除已有报告；Web 路由还会再次校验
+报告元数据中的 `task_id` 与已授权任务一致。
 
 手动发布本地生成的报告（来源记为 `manual`）：
 
 ```bash
-scripts/publish_allure_report.sh allure-report
+PUBLISH_TASK_ID=20260824-120000-a1b2 \
+  scripts/publish_allure_report.sh allure-report
 ```
 
 从 Jenkins 拉取最近一次包含 HTML 归档的已完成构建并发布（来源记为
 `jenkins`，凭证通过环境变量传入，不得写入仓库）：
 
 ```bash
+PUBLISH_TASK_ID=<平台根任务ID> \
 JENKINS_USER=<用户名> JENKINS_TOKEN=<API令牌> \
   scripts/fetch_jenkins_report.sh
 ```
+
+Jenkins 构建必须由派发方将同一根任务 ID 作为 `PLATFORM_TASK_ID` 参数传入。
+Pipeline 会把任务 ID、构建号和 Job 名写入归档内
+`platform-task-meta.json`；拉取脚本只有在 Jenkins API 构建参数、归档元数据
+和本次 `PUBLISH_TASK_ID` 三者完全一致时才会发布。
 
 可选环境变量：`JENKINS_URL`（默认 http://10.0.30.33:8081）、`JOB_NAME`
 （默认 truthy-api-autotest）、`BUILD_NUMBER`（指定构建号，缺省自动选取）。
@@ -433,7 +441,7 @@ Jenkins 侧的 HTML 归档由 `Jenkinsfile` post 阶段的
 | 网关显示"工具暂时不可用" | `docker compose ps api-autotest`，查看容器健康检查与日志 |
 | 409 `SLOT_BUSY` | 上一任务未结束；在任务详情页等待或取消 |
 | `TASK_TIMEOUT` | 默认 1800 秒；按上表环境变量调整或拆分任务 |
-| 页面显示"暂无报告" | `reports/allure-current` 未指向版本目录；按第 12 节发布 |
+| 页面显示"暂无报告" | 检查对应 `reports/task-reports/<task_id>/current` 及元数据绑定；按第 12 节发布 |
 | `ADMIN_CREDENTIALS_MISSING` | `.env.platform` 缺少三个 `ADMIN_*` 字段 |
 | 发布后页面仍显示旧报告/暂无报告 | Docker Desktop 挂载缓存：`docker compose restart api-autotest` 刷新视图 |
 

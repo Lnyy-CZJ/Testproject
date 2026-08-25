@@ -125,8 +125,14 @@ def gateway_api(
     if os.getenv("API_AUTOTEST_SESSION_PROVIDER", "dotenv") == "platform":
         platform_api_url = os.getenv("PLATFORM_API_URL", "").rstrip("/")
         credential_id = os.getenv("PLATFORM_CREDENTIAL_ID", "")
+        runtime_context_id = os.getenv("PLATFORM_RUNTIME_CONTEXT_ID", "")
         token_path = Path(os.getenv("PLATFORM_CLIENT_TOKEN_FILE", ""))
-        if not platform_api_url or not credential_id or not token_path.is_file():
+        if (
+            not platform_api_url
+            or not credential_id
+            or not runtime_context_id
+            or not token_path.is_file()
+        ):
             raise RuntimeError("平台会话写回客户端未正确部署")
         token = token_path.read_text(encoding="utf-8").strip()
         version = [int(os.getenv("PLATFORM_CREDENTIAL_VERSION", "0"))]
@@ -144,9 +150,13 @@ def gateway_api(
                 if values.get(runtime_key) not in (None, "")
             }
             response = requests.put(
-                f"{platform_api_url}/internal/tools/api-autotest/credentials/{credential_id}/session",
+                f"{platform_api_url}/internal/tools/api-autotest/user-credentials/{credential_id}/session",
                 headers={"Authorization": f"Bearer {token}"},
-                json={"expected_version": version[0], "values": payload_values},
+                json={
+                    "runtime_context_id": runtime_context_id,
+                    "expected_version": version[0],
+                    "values": payload_values,
+                },
                 timeout=5,
             )
             response.raise_for_status()

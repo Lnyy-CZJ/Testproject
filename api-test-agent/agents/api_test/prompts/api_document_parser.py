@@ -44,7 +44,7 @@ prompt = PromptTemplate(
 
         - 如果文档包含 baseURL/base_url/baseUrl, 必须写入 base_url
         - 如果文档包含接口 url, 必须写入 raw_url; path 必须只保留相对接口路径, 不能包含 base_url 或完整域名
-        - 参数需要按类型分类到 header、path、query 三个数组中,
+        - 参数需要按类型分类到 header、path、query、cookie 四个数组中；Cookie、Session 必须进入 cookie，不得混入普通 Header,
         - 对于常见的非必填请求头无需保存到header中,比如：Accept-Encoding，Accept-Language、Origin等等
         - 路径参数识别：URL中用{{}}包围的变量（如{{userId}}、{{id}}，{{user_id}}）
         - 无请求体时，requestBody 各字段均填 null
@@ -92,6 +92,17 @@ prompt = PromptTemplate(
                 "param_role": "required|optional|fixed",
                 "fixed_value": "固定值参数的文档指定值，非固定值为null",
                 "default_value": "默认值，无默认值为null",
+                "allow_omit": true/false,
+                "source_note": "参数分类依据"
+            }}],
+            "cookie": [{{
+                "name": "Cookie 或 Session 名称",
+                "type": "参数类型",
+                "description": "会话说明",
+                "required": true/false,
+                "param_role": "required|optional|conditional|fixed",
+                "fixed_value": null,
+                "default_value": null,
                 "allow_omit": true/false,
                 "source_note": "参数分类依据"
             }}]

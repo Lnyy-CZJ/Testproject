@@ -120,10 +120,12 @@
     } catch (e) { /* 状态展示失败不影响提交 */ }
   }
 
-  async function loadReportMeta() {
+  async function loadReportMeta(taskId) {
     const el = document.getElementById("report-area");
+    if (!taskId) { el.textContent = "报告尚未发布。"; return; }
     try {
-      const resp = await fetch(BASE + "/api/report/meta");
+      const params = new URLSearchParams({task_id: taskId});
+      const resp = await fetch(BASE + "/api/report/meta?" + params);
       const meta = await resp.json();
       if (!meta.exists) { el.textContent = "报告尚未发布。"; return; }
       let detail = "同步时间：" + (meta.synced_at || meta.generated_at || "未知") +
@@ -150,6 +152,7 @@
       const rows = document.getElementById("task-rows");
       if (!data.items.length) {
         rows.innerHTML = '<tr><td colspan="6" class="muted">暂无任务</td></tr>';
+        loadReportMeta(null);
         return false;
       }
       rows.innerHTML = data.items.map(t => {
@@ -160,6 +163,9 @@
                "</td><td>" + summary + '</td><td><a href="' + BASE + "/tasks/" + t.id +
                '">详情</a></td></tr>';
       }).join("");
+      // 报告只能通过具体根任务访问；列表最新任务只用于选择查询目标，
+      // 服务端仍会校验任务可见性与报告元数据绑定。
+      loadReportMeta(data.items[0].id);
       return data.items.some(t => !TERMINAL.includes(t.status));
     } catch (e) { return false; }
   }
@@ -207,7 +213,6 @@
     document.getElementById(id).addEventListener("change", refreshCredentialStatus));
 
   refreshCredentialStatus();
-  loadReportMeta();
   pollOnce();
 </script>
 </body>

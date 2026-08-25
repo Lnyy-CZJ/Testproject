@@ -88,6 +88,12 @@ CREATE TABLE IF NOT EXISTS runs (
     evaluation_phase TEXT NOT NULL DEFAULT 'UNSPECIFIED',
     platform_release_id TEXT,
     platform_credential_version INTEGER,
+    platform_runtime_context_id TEXT,
+    platform_snapshot_selector_json TEXT,
+    owner_user_id TEXT,
+    access_scope_snapshot TEXT,
+    project_id_snapshot TEXT,
+    authorization_source_snapshot TEXT,
     created_at TEXT NOT NULL,
     FOREIGN KEY (evaluation_id) REFERENCES evaluations(evaluation_id),
     FOREIGN KEY (dataset_id) REFERENCES datasets(dataset_id)
@@ -678,6 +684,29 @@ class AnalysisStore:
             "platform_credential_version",
             "platform_credential_version INTEGER",
         )
+        cls._add_column_if_missing(
+            connection,
+            "runs",
+            "platform_runtime_context_id",
+            "platform_runtime_context_id TEXT",
+        )
+        cls._add_column_if_missing(
+            connection,
+            "runs",
+            "platform_snapshot_selector_json",
+            "platform_snapshot_selector_json TEXT",
+        )
+        for column, definition in (
+            ("owner_user_id", "owner_user_id TEXT"),
+            ("access_scope_snapshot", "access_scope_snapshot TEXT"),
+            ("project_id_snapshot", "project_id_snapshot TEXT"),
+            ("authorization_source_snapshot", "authorization_source_snapshot TEXT"),
+        ):
+            cls._add_column_if_missing(connection, "runs", column, definition)
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_runs_resource_scope "
+            "ON runs(owner_user_id, project_id_snapshot, run_id)"
+        )
 
         connection.execute(
             """
@@ -820,6 +849,25 @@ class AnalysisStore:
                 connection, "runs", "platform_credential_version",
                 "platform_credential_version INTEGER",
             )
+            self._add_column_if_missing(
+                connection, "runs", "platform_runtime_context_id",
+                "platform_runtime_context_id TEXT",
+            )
+            self._add_column_if_missing(
+                connection, "runs", "platform_snapshot_selector_json",
+                "platform_snapshot_selector_json TEXT",
+            )
+            for column, definition in (
+                ("owner_user_id", "owner_user_id TEXT"),
+                ("access_scope_snapshot", "access_scope_snapshot TEXT"),
+                ("project_id_snapshot", "project_id_snapshot TEXT"),
+                ("authorization_source_snapshot", "authorization_source_snapshot TEXT"),
+            ):
+                self._add_column_if_missing(connection, "runs", column, definition)
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_runs_resource_scope "
+                "ON runs(owner_user_id, project_id_snapshot, run_id)"
+            )
 
     def schema_version(self) -> int:
         """读取已初始化数据库的 Schema 版本。"""
@@ -850,6 +898,36 @@ class AnalysisStore:
 
         with self.connection() as connection:
             return list(connection.execute(sql, parameters).fetchall())
+
+    def list_runs_for_scope(
+        self,
+        *,
+        user_id: str,
+        data_scope: str,
+        managed_project_ids: Sequence[str],
+    ) -> list[sqlite3.Row]:
+        """按平台确认的查询范围读取根 Run，派生资源必须回溯到该 Run。
+
+        ``data_scope`` 不是来自 HTTP 参数，而是 resource-access/check 的输出。
+        own 仅匹配不可变 owner 快照；project 仅匹配平台确认的项目集合；global
+        才允许读取全部历史资源。未知范围失败关闭并返回空列表。
+        """
+        if data_scope == "global":
+            return self.fetch_all("SELECT * FROM runs ORDER BY created_at DESC")
+        if data_scope == "own" and user_id:
+            return self.fetch_all(
+                "SELECT * FROM runs WHERE owner_user_id = ? ORDER BY created_at DESC",
+                (user_id,),
+            )
+        projects = [str(project) for project in managed_project_ids if str(project)]
+        if data_scope == "project" and projects:
+            placeholders = ", ".join("?" for _ in projects)
+            return self.fetch_all(
+                f"SELECT * FROM runs WHERE project_id_snapshot IN ({placeholders}) "
+                "ORDER BY created_at DESC",
+                projects,
+            )
+        return []
 
     def create_evaluation(
         self,

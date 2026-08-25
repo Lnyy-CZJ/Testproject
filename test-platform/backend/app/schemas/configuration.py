@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ConfigDefinitionResponse(BaseModel):
@@ -24,6 +24,8 @@ class ConfigDefinitionResponse(BaseModel):
     apply_mode: str
     editable: bool
     sort_order: int
+    value_scope: str
+    credential_provider_type: str | None
 
 
 class ReleaseItemRequest(BaseModel):
@@ -112,3 +114,51 @@ class CredentialResponse(BaseModel):
     refresh_expires_at: datetime | None
     last_error_code: str | None
     last_checked_at: datetime | None
+
+
+class PersonalCredentialPutRequest(BaseModel):
+    """原子创建或替换当前登录用户的一版个人凭证。
+
+    ``extra=forbid`` 是所有权边界的一部分：客户端不能通过附带 ``user_id``
+    或其他未声明字段指定写入主体，服务端始终从认证会话解析用户。
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    environment_id: str = Field(pattern="^[a-z][a-z0-9-]{1,31}$")
+    expected_version: int = Field(ge=0)
+    values: dict[str, Any] = Field(min_length=1, max_length=100)
+
+
+class PersonalCredentialFieldResponse(BaseModel):
+    """可展示的个人凭证字段状态；永不包含值、长度、掩码或指纹。"""
+
+    key: str
+    display_name: str
+    required: bool
+    configured: bool
+
+
+class PersonalCredentialResponse(BaseModel):
+    """个人凭证元数据与字段就绪状态。"""
+
+    id: str
+    tool_id: str
+    environment_id: str
+    provider_type: str
+    status: str
+    current_version: int
+    expires_at: datetime | None
+    refresh_expires_at: datetime | None
+    last_checked_at: datetime | None
+    last_error_code: str | None
+    fields: list[PersonalCredentialFieldResponse]
+
+
+class PersonalCredentialValidationResponse(BaseModel):
+    """受控验证请求的调度结果；不把未实现的 Provider 校验伪装为成功。"""
+
+    id: str
+    validation_state: str
+    status: str
+    current_version: int

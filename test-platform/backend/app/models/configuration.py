@@ -3,7 +3,20 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, LargeBinary, String, Text, UniqueConstraint, func
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    JSON,
+    LargeBinary,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -24,7 +37,18 @@ class ConfigDefinition(Base):
     """登记允许通过 Web 管理的配置项及其约束。"""
 
     __tablename__ = "config_definitions"
-    __table_args__ = (UniqueConstraint("owner_type", "owner_id", "key", name="uq_config_definition_owner_key"),)
+    __table_args__ = (
+        UniqueConstraint("owner_type", "owner_id", "key", name="uq_config_definition_owner_key"),
+        CheckConstraint(
+            "value_scope IN ('system', 'user')",
+            name="ck_config_definitions_value_scope",
+        ),
+        CheckConstraint(
+            "credential_provider_type IS NULL OR "
+            "(owner_type = 'tool' AND value_scope = 'user')",
+            name="ck_config_definitions_credential_provider_scope",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(128), primary_key=True)
     key: Mapped[str] = mapped_column(String(128), nullable=False)
@@ -41,6 +65,10 @@ class ConfigDefinition(Base):
     apply_mode: Mapped[str] = mapped_column(String(32), nullable=False, default="next_task")
     editable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    value_scope: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="system", server_default="system"
+    )
+    credential_provider_type: Mapped[str | None] = mapped_column(String(64))
 
 
 class ConfigRelease(Base):
@@ -163,3 +191,91 @@ class CredentialItem(Base):
     key: Mapped[str] = mapped_column(String(128), nullable=False)
     secret_version_id: Mapped[str | None] = mapped_column(String(64))
     value_json: Mapped[Any | None] = mapped_column(JSON)
+
+
+class UserCredential(Base):
+    """保存某个登录用户在指定工具和环境下的个人 Credential 状态。
+
+    个人 Credential 使用独立表，确保旧 Resolver 无法通过 legacy ``credentials``
+    表误读普通用户数据。唯一范围包含 ``user_id``，因此相同 Provider 可以被不同
+    用户分别配置和轮换，刷新租约也不会跨用户互相阻塞。
+    """
+
+    __tablename__ = "user_credentials"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "tool_id", "environment_id", "provider_type",
+            name="uq_user_credential_scope",
+        ),
+        Index(
+            "ix_user_credentials_environment_status_expires",
+            "environment_id", "status", "expires_at",
+        ),
+        Index(
+            "ix_user_credentials_user_environment_tool",
+            "user_id", "environment_id", "tool_id",
+        ),
+        Index(
+            "ix_user_credentials_refresh_lease_status",
+            "refresh_lease_until", "status",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    tool_id: Mapped[str] = mapped_column(
+        ForeignKey("tools.id", ondelete="CASCADE"), nullable=False
+    )
+    environment_id: Mapped[str] = mapped_column(
+        ForeignKey("environments.id"), nullable=False
+    )
+    provider_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="missing")
+    current_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    refresh_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    refresh_lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    refresh_owner: Mapped[str | None] = mapped_column(String(64))
+    last_error_code: Mapped[str | None] = mapped_column(String(128))
+    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class UserCredentialItem(Base):
+    """保存个人 Credential 某一版本的加密 Secret 引用或非敏感值。
+
+    每个条目必须且只能选择一种值来源。Secret 明文始终保存在信封加密的
+    ``secret_versions`` 中，本表仅保存版本引用；这样历史任务可以稳定解析精确
+    版本，同时避免把敏感值复制进业务表。
+    """
+
+    __tablename__ = "user_credential_items"
+    __table_args__ = (
+        UniqueConstraint(
+            "credential_id", "credential_version", "key",
+            name="uq_user_credential_item",
+        ),
+        CheckConstraint(
+            "(secret_version_id IS NOT NULL AND value_json IS NULL) OR "
+            "(secret_version_id IS NULL AND value_json IS NOT NULL)",
+            name="ck_user_credential_items_value_source",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    credential_id: Mapped[str] = mapped_column(
+        ForeignKey("user_credentials.id", ondelete="CASCADE"), nullable=False
+    )
+    credential_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    key: Mapped[str] = mapped_column(String(128), nullable=False)
+    secret_version_id: Mapped[str | None] = mapped_column(
+        ForeignKey("secret_versions.id"), nullable=True
+    )
+    value_json: Mapped[Any | None] = mapped_column(JSON(none_as_null=True), nullable=True)

@@ -4,9 +4,9 @@
 #
 # 功能说明:
 #   把一份生成好的 Allure HTML 报告完整复制到版本目录
-#   reports/allure-reports/<version>/，写入 report-meta.json 元信息，
-#   然后通过临时相对软链接 + rename(2) 原子切换 reports/allure-current
-#   指针。切换完成前旧报告始终可用，不会出现半份报告或 404 空窗。
+#   reports/task-reports/<task_id>/versions/<version>/，写入报告元信息，
+#   然后通过临时相对软链接 + rename(2) 原子切换该任务自己的 current。
+#   不同任务目录互不覆盖，切换完成前旧报告始终可用。
 #
 # 用法:
 #   publish_allure_report.sh <源HTML目录> [报告根目录] [来源]
@@ -23,6 +23,7 @@
 #   PUBLISH_BUILD_RESULT   Jenkins 构建结果（SUCCESS/FAILURE/UNSTABLE 等）
 #   PUBLISH_BUILD_URL      Jenkins 构建页面 URL
 #   PUBLISH_ALLURE_VERSION Allure 版本号，默认 unknown
+#   PUBLISH_TASK_ID        必填的平台根任务 ID；用于物理目录和元数据绑定。
 #
 # 返回值（退出码）:
 #   0  发布成功；
@@ -49,9 +50,13 @@ case "$SOURCE" in
     jenkins|manual) ;;
     *) die 2 "来源必须是 jenkins 或 manual，实际: $SOURCE" ;;
 esac
+[ -n "${PUBLISH_TASK_ID:-}" ] || die 2 "缺少环境变量 PUBLISH_TASK_ID"
+printf '%s' "$PUBLISH_TASK_ID" | LC_ALL=C grep -Eq '^[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$' \
+    || die 2 "PUBLISH_TASK_ID 格式非法: $PUBLISH_TASK_ID"
 
-ALLURE_REPORTS_DIR="$REPORT_ROOT/allure-reports"
-CURRENT_LINK="$REPORT_ROOT/allure-current"
+TASK_REPORT_ROOT="$REPORT_ROOT/task-reports/$PUBLISH_TASK_ID"
+ALLURE_REPORTS_DIR="$TASK_REPORT_ROOT/versions"
+CURRENT_LINK="$TASK_REPORT_ROOT/current"
 LOCK_DIR="$REPORT_ROOT/.publish.lock"
 LOCK_MAX_AGE_SECONDS=600   # 锁超过该时间视为残留，强制回收
 TMP_MAX_AGE_SECONDS=3600   # 无引用临时目录超过该时间才允许清理
@@ -77,7 +82,7 @@ make_version() {
 VERSION="$(make_version)"
 VERSION_DIR="$ALLURE_REPORTS_DIR/$VERSION"
 STAGING_DIR="$ALLURE_REPORTS_DIR/.$VERSION.tmp"
-TMP_LINK="$REPORT_ROOT/.allure-current.tmp"
+TMP_LINK="$TASK_REPORT_ROOT/.current.tmp"
 
 # ---------------- 发布锁 ----------------
 
@@ -139,6 +144,7 @@ write_meta() {
     PUBLISH_BUILD_RESULT="${PUBLISH_BUILD_RESULT:-}" \
     PUBLISH_BUILD_URL="${PUBLISH_BUILD_URL:-}" \
     PUBLISH_ALLURE_VERSION="${PUBLISH_ALLURE_VERSION:-unknown}" \
+    PUBLISH_TASK_ID="${PUBLISH_TASK_ID:-}" \
     python3 - "$target_dir" <<'PYEOF'
 import json
 import os
@@ -151,6 +157,8 @@ meta = {
     "allure_version": os.environ["PUBLISH_ALLURE_VERSION"],
     "version": os.environ["VERSION"],
 }
+if os.environ["PUBLISH_TASK_ID"]:
+    meta["task_id"] = os.environ["PUBLISH_TASK_ID"]
 if os.environ["SOURCE"] == "jenkins":
     meta["job_name"] = os.environ["PUBLISH_JOB_NAME"]
     build_number = os.environ["PUBLISH_BUILD_NUMBER"]
@@ -167,7 +175,7 @@ PYEOF
 
 # 报告根与版本目录必须先存在，否则 mkdir 锁目录会因缺少父目录失败，
 # 并被误判为锁冲突。
-mkdir -p "$ALLURE_REPORTS_DIR"
+mkdir -p "$REPORT_ROOT" "$ALLURE_REPORTS_DIR"
 acquire_lock
 cleanup_stale_tmp
 
@@ -193,19 +201,19 @@ if [ -e "$VERSION_DIR" ]; then
 fi
 mv "$STAGING_DIR" "$VERSION_DIR"
 
-# 4. 创建指向新版本的临时相对软链接（相对目标，容器挂载后同样可解析），
-#    再用 rename(2) 原子替换 allure-current。
+# 4. 创建指向任务新版本的临时相对软链接，再用 rename(2) 原子替换
+#    该任务的 current。其他任务的目录与 current 不参与本次切换。
 #    注意: macOS 的 mv 遇到"符号链接指向目录"会把源移入目录内而非替换，
 #    因此必须用 python3 os.replace（直接调用 rename(2)，不跟随符号链接）。
 LEGACY_DIR=""
 if [ -e "$CURRENT_LINK" ] && [ ! -L "$CURRENT_LINK" ]; then
     # 历史遗留的实体目录 current：挪开后再建软链接体系。
-    LEGACY_DIR="$REPORT_ROOT/.legacy-current.$(date +%s).tmp"
+    LEGACY_DIR="$TASK_REPORT_ROOT/.legacy-current.$(date +%s).tmp"
     mv "$CURRENT_LINK" "$LEGACY_DIR"
 fi
-ln -s "allure-reports/$VERSION" "$TMP_LINK"
+ln -s "versions/$VERSION" "$TMP_LINK"
 python3 -c 'import os,sys; os.replace(sys.argv[1], sys.argv[2])' "$TMP_LINK" "$CURRENT_LINK"
-log "allure-current 已切换到 $VERSION"
+log "任务 $PUBLISH_TASK_ID 的 current 已切换到 $VERSION"
 
 # 5. 切换成功后清理：同名旧版本、历史遗留实体目录、其余过期版本目录
 #    （只保留 current 指向的一份，【确认项 6】对外只展示一份）。

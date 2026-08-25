@@ -6,6 +6,8 @@ import hmac
 import json
 import os
 import secrets
+import stat
+import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -79,6 +81,141 @@ def new_id(prefix: str) -> str:
     """生成带业务前缀且不可预测的稳定标识。"""
 
     return f"{prefix}_{uuid.uuid4().hex}"
+
+
+class UserContextTokenError(ValueError):
+    """签名用户上下文结构、签名或作用域无效。"""
+
+
+class UserContextTokenExpired(UserContextTokenError):
+    """签名用户上下文已超过其短期有效时间。"""
+
+
+def load_user_context_signing_key(path: str) -> bytes:
+    """从仅当前用户可读的独立文件加载 HMAC-SHA256 密钥。
+
+    异常说明:
+        OSError: 文件缺失、不可读或向组/其他用户开放权限。
+        ValueError: 去除文本文件末尾换行后密钥不足 32 字节。
+    """
+
+    if not path:
+        raise ValueError("用户上下文签名密钥文件未配置")
+    key_path = Path(path)
+    mode = stat.S_IMODE(key_path.stat().st_mode)
+    if mode & 0o077:
+        raise PermissionError("用户上下文签名密钥文件权限过宽")
+    key = key_path.read_bytes().rstrip(b"\r\n")
+    if len(key) < 32:
+        raise ValueError("用户上下文签名密钥至少需要 32 字节")
+    return key
+
+
+def _base64url_encode(value: bytes) -> str:
+    """生成无填充的 URL-safe Base64。"""
+
+    return base64.urlsafe_b64encode(value).rstrip(b"=").decode("ascii")
+
+
+def _base64url_decode(value: str) -> bytes:
+    """严格解码 URL-safe Base64，拒绝非字母表字符。"""
+
+    if not value or len(value) > 8192:
+        raise UserContextTokenError("签名用户上下文格式无效")
+    try:
+        return base64.b64decode(
+            value + "=" * (-len(value) % 4), altchars=b"-_", validate=True
+        )
+    except (ValueError, TypeError):
+        raise UserContextTokenError("签名用户上下文格式无效") from None
+
+
+def sign_user_context(claims: dict[str, object], key: bytes) -> str:
+    """对规范 JSON Claims 生成短期 HMAC-SHA256 用户上下文 Token。"""
+
+    if len(key) < 32:
+        raise ValueError("用户上下文签名密钥至少需要 32 字节")
+    payload = json.dumps(
+        claims, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    signature = hmac.new(key, payload, hashlib.sha256).digest()
+    return f"{_base64url_encode(payload)}.{_base64url_encode(signature)}"
+
+
+def verify_user_context(
+    token: str,
+    key: bytes,
+    *,
+    expected_tool_id: str,
+    expected_environment_id: str,
+    max_ttl_seconds: int = 300,
+    now_epoch: int | None = None,
+) -> dict[str, object]:
+    """验证签名、规范 Claims、时间窗口及工具/环境绑定并返回 Claims。
+
+    签名比较使用常量时间语义。只有签名真实且时间过期的 Token 才返回独立的
+    expired 异常；格式错误和作用域不匹配统一视为 invalid，减少验证预言信息。
+    """
+
+    if len(token) > 16384:
+        raise UserContextTokenError("签名用户上下文格式无效")
+    try:
+        payload_segment, signature_segment = token.split(".")
+    except ValueError:
+        raise UserContextTokenError("签名用户上下文格式无效") from None
+    payload = _base64url_decode(payload_segment)
+    signature = _base64url_decode(signature_segment)
+    expected_signature = hmac.new(key, payload, hashlib.sha256).digest()
+    if not hmac.compare_digest(signature, expected_signature):
+        raise UserContextTokenError("签名用户上下文无效")
+    try:
+        claims = json.loads(payload)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        raise UserContextTokenError("签名用户上下文格式无效") from None
+    if not isinstance(claims, dict):
+        raise UserContextTokenError("签名用户上下文格式无效")
+    canonical = json.dumps(
+        claims, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    if canonical != payload:
+        raise UserContextTokenError("签名用户上下文格式无效")
+    required = {"v", "sid", "uid", "pv", "tid", "env", "iat", "exp", "nonce"}
+    if set(claims) != required:
+        raise UserContextTokenError("签名用户上下文 Claims 无效")
+    integer_keys = ("v", "pv", "iat", "exp")
+    if any(
+        not isinstance(claims[key], int) or isinstance(claims[key], bool)
+        for key in integer_keys
+    ):
+        raise UserContextTokenError("签名用户上下文 Claims 无效")
+    string_keys = ("sid", "uid", "tid", "env", "nonce")
+    if any(
+        not isinstance(claims[key], str) or not claims[key] or len(claims[key]) > 128
+        for key in string_keys
+    ):
+        raise UserContextTokenError("签名用户上下文 Claims 无效")
+    if claims["v"] != 1 or claims["pv"] < 1:
+        raise UserContextTokenError("签名用户上下文版本无效")
+    ttl = claims["exp"] - claims["iat"]
+    if ttl <= 0 or ttl > min(max_ttl_seconds, 300):
+        raise UserContextTokenError("签名用户上下文时间窗口无效")
+    now = int(time.time()) if now_epoch is None else now_epoch
+    if claims["exp"] <= now:
+        raise UserContextTokenExpired("签名用户上下文已过期")
+    if claims["iat"] > now + 30:
+        raise UserContextTokenError("签名用户上下文签发时间无效")
+    if (
+        claims["tid"] != expected_tool_id
+        or claims["env"] != expected_environment_id
+    ):
+        raise UserContextTokenError("签名用户上下文作用域无效")
+    return claims
+
+
+def new_runtime_context_id() -> str:
+    """生成包含 256 位随机熵且可放入 String(64) 的 Runtime Context ID。"""
+
+    return f"rtx_{secrets.token_urlsafe(32)}"
 
 
 @dataclass(frozen=True)

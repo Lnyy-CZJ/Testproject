@@ -3,7 +3,19 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint, func
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    JSON,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -22,6 +34,8 @@ class User(Base):
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
     must_change_password: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     permission_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    # 迁移窗口内允许为空；0019 回填并完成预检后由 0020 收紧为非空。
+    platform_role: Mapped[str | None] = mapped_column(String(32))
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
@@ -133,3 +147,63 @@ class ToolClient(Base):
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     rotated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class RuntimeContext(Base):
+    """保存工具后台任务可使用的短期、可撤销用户运行上下文。
+
+    记录只包含身份和资源绑定元数据，不保存签名 Header、权限列表、业务输入或
+    Secret。每次物化配置时仍需校验 Session、用户状态和权限版本，避免已撤销的
+    浏览器身份继续读取个人配置。
+    """
+
+    __tablename__ = "runtime_contexts"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('active', 'revoked', 'expired')",
+            name="ck_runtime_contexts_status",
+        ),
+        CheckConstraint(
+            "resource_type IN ('task', 'run', 'request')",
+            name="ck_runtime_contexts_resource_type",
+        ),
+        Index(
+            "ix_runtime_contexts_tool_environment_status_expires",
+            "tool_id", "environment_id", "status", "expires_at",
+        ),
+        Index(
+            "ix_runtime_contexts_user_status_expires",
+            "user_id", "status", "expires_at",
+        ),
+        Index(
+            "ix_runtime_contexts_session_status", "session_id", "status"
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    session_id: Mapped[str] = mapped_column(
+        ForeignKey("platform_sessions.id", ondelete="CASCADE"), nullable=False
+    )
+    tool_id: Mapped[str] = mapped_column(
+        ForeignKey("tools.id", ondelete="CASCADE"), nullable=False
+    )
+    environment_id: Mapped[str] = mapped_column(
+        ForeignKey("environments.id"), nullable=False
+    )
+    permission_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    project_id_snapshot: Mapped[str | None] = mapped_column(String(64))
+    authorization_source_snapshot: Mapped[str | None] = mapped_column(String(32))
+    allowed_config_refs: Mapped[list[Any]] = mapped_column(JSON, nullable=False, default=list)
+    allowed_credential_refs: Mapped[list[Any]] = mapped_column(JSON, nullable=False, default=list)
+    emergency_revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    resource_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    resource_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="active")
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

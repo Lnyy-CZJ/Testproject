@@ -15,6 +15,18 @@ if [[ ! -s "$secret_dir/version-peer-token" ]]; then
   python3 -c 'import secrets,sys; print(secrets.token_urlsafe(48))' > "$secret_dir/version-peer-token"
   chmod 600 "$secret_dir/version-peer-token"
 fi
+if [[ ! -s "$secret_dir/user-context-signing-key" ]]; then
+  # 签名密钥与 KEK/Tool Client Token 分离；随机二进制不会进入 shell
+  # 参数、进程列表或构建日志。
+  python3 - "$secret_dir/user-context-signing-key" <<'PY'
+import secrets
+import sys
+from pathlib import Path
+
+Path(sys.argv[1]).write_bytes(secrets.token_bytes(48))
+PY
+  chmod 600 "$secret_dir/user-context-signing-key"
+fi
 
 python3 - "$metadata_file" "$runtime_dir/build.env" "$runtime_dir/current.json" <<'PY'
 import json

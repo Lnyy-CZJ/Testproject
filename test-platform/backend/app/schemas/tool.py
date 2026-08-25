@@ -16,6 +16,11 @@ class ToolResponse(BaseModel):
     category: str
     features: list[str]
     sort_order: int
+    access_scope: Literal["public", "project"] = "project"
+    project_id: str | None = None
+    project_name: str | None = None
+    access_source: str | None = None
+    can_manage: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 

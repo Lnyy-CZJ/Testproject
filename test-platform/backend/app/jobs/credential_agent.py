@@ -21,9 +21,16 @@ from app.models.configuration import (
     CredentialItem,
     Secret,
     SecretVersion,
+    UserCredential,
+    UserCredentialItem,
 )
 from app.services.audit import add_audit_event
-from app.services.secret_store import decrypt_secret, load_secret_cipher, replace_secret
+from app.services.secret_store import (
+    decrypt_secret,
+    decrypt_secret_version,
+    load_secret_cipher,
+    replace_secret,
+)
 
 
 RUNNING = True
@@ -53,21 +60,50 @@ def _as_datetime(value: Any) -> datetime:
     raise ValueError("凭证响应缺少有效过期时间")
 
 
-def _definition_maps(database: Session, credential: Credential) -> tuple[dict[str, ConfigDefinition], dict[str, ConfigDefinition]]:
-    """返回凭证工具的普通配置和 Secret 定义映射。"""
+def _definition_maps(
+    database: Session,
+    credential: Credential | UserCredential,
+) -> tuple[dict[str, ConfigDefinition], dict[str, ConfigDefinition]]:
+    """返回系统普通配置与当前 Credential 可写字段定义。
+
+    个人 Credential 的字段必须同时匹配 ``value_scope=user`` 和 Provider；系统
+    URL 等普通配置仍来自全局 Release。legacy 模式保持原有定义范围，仅用于两个
+    功能开关尚未切换时的发布兼容。
+    """
 
     rows = database.scalars(select(ConfigDefinition).where(
         ConfigDefinition.owner_type == "tool",
         ConfigDefinition.owner_id == credential.tool_id,
     )).all()
+    if isinstance(credential, UserCredential):
+        return (
+            {
+                row.key: row
+                for row in rows
+                if row.value_scope == "system" and row.sensitivity == "normal"
+            },
+            {
+                row.key: row
+                for row in rows
+                if row.value_scope == "user"
+                and row.credential_provider_type == credential.provider_type
+            },
+        )
     return (
         {row.key: row for row in rows if row.sensitivity == "normal"},
         {row.key: row for row in rows if row.sensitivity == "secret"},
     )
 
 
-def _runtime_inputs(database: Session, credential: Credential) -> tuple[dict[str, Any], dict[str, str]]:
-    """从当前 Release 和 Secret 版本读取单次刷新内存快照。"""
+def _runtime_inputs(
+    database: Session,
+    credential: Credential | UserCredential,
+) -> tuple[dict[str, Any], dict[str, str]]:
+    """从系统 Release 和当前 Credential 版本读取单次刷新内存快照。
+
+    个人模式只解密该 ``UserCredential`` 当前版本显式引用的 SecretVersion；不查
+    全局 Secret 当前值，也不回退其他用户或 legacy Credential。
+    """
 
     normal_definitions, secret_definitions = _definition_maps(database, credential)
     normal: dict[str, Any] = {
@@ -88,8 +124,46 @@ def _runtime_inputs(database: Session, credential: Credential) -> tuple[dict[str
         for item in items:
             if item.definition_id in by_id and item.value_json is not None:
                 normal[by_id[item.definition_id].key] = item.value_json
-    cipher = load_secret_cipher(get_settings())
     secrets: dict[str, str] = {}
+    cipher = load_secret_cipher(get_settings())
+    if isinstance(credential, UserCredential):
+        items = database.scalars(select(UserCredentialItem).where(
+            UserCredentialItem.credential_id == credential.id,
+            UserCredentialItem.credential_version == credential.current_version,
+        )).all()
+        for item in items:
+            definition = secret_definitions.get(item.key)
+            if definition is None:
+                raise ValueError("个人凭证包含未登记字段")
+            if item.secret_version_id:
+                version = database.get(SecretVersion, item.secret_version_id)
+                secret = database.get(Secret, version.secret_id) if version else None
+                if secret is None or (
+                    secret.environment_id,
+                    secret.owner_type,
+                    secret.owner_id,
+                    secret.definition_id,
+                ) != (
+                    credential.environment_id,
+                    "user_credential",
+                    credential.id,
+                    definition.id,
+                ):
+                    raise ValueError("个人凭证 Secret 作用域损坏")
+                secrets[item.key] = decrypt_secret_version(
+                    database, cipher, secret, version.id
+                )
+            elif item.value_json is not None and definition.sensitivity == "normal":
+                secrets[item.key] = str(item.value_json)
+            else:
+                raise ValueError("个人凭证字段没有有效值来源")
+        if any(
+            definition.required and key not in secrets
+            for key, definition in secret_definitions.items()
+        ):
+            raise ValueError("个人凭证缺少必需字段")
+        return normal, secrets
+
     by_definition = {row.id: key for key, row in secret_definitions.items()}
     rows = database.scalars(select(Secret).where(
         Secret.environment_id == credential.environment_id,
@@ -207,12 +281,175 @@ def _admin_login(normal: dict[str, Any], secrets: dict[str, str]) -> dict[str, A
         raise ValueError("Admin Login 响应缺少必需字段")
     return {
         "ADMIN_SESSION_TOKEN": required[0], "expires_at": _as_datetime(required[1]),
-        "operator_id": required[2], "operator_name": required[3],
+        "ADMIN_OPERATOR_ID": required[2], "ADMIN_OPERATOR_NAME": required[3],
     }
 
 
-def _activate(database: Session, credential: Credential, expected_version: int, values: dict[str, Any]) -> None:
+def _activate_personal(
+    database: Session,
+    credential: UserCredential,
+    expected_version: int,
+    values: dict[str, Any],
+) -> None:
+    """创建并激活当前用户 Credential 的完整新版本。
+
+    Provider 只返回轮换字段时，未变化字段从同一用户旧版本复制；这是个人 Resolver
+    按 CredentialVersion 精确物化的前提。任何定义缺失或字段越界都会令本次刷新
+    失败并回滚，避免激活半个版本。
+    """
+
+    database.refresh(credential)
+    if credential.current_version != expected_version:
+        credential.refresh_lease_until = None
+        credential.refresh_owner = None
+        return
+    _, definitions = _definition_maps(database, credential)
+    aliases = {
+        "operator_id": "ADMIN_OPERATOR_ID",
+        "operator_name": "ADMIN_OPERATOR_NAME",
+    }
+    normalized_values = {
+        aliases.get(key, key): value
+        for key, value in values.items()
+        if key not in {"expires_at", "refresh_expires_at"}
+    }
+    unknown_keys = set(normalized_values) - set(definitions)
+    # Admin Login 的统一响应会同时带回 Session 与操作者信息。API AutoTest 将这些
+    # 字段登记为可持久化 Credential Item，而 Truthy Search 只登记账号和密码，
+    # 因此后者必须丢弃这组已知瞬态字段，不能把另一工具的字段写进个人凭证。
+    transient_admin_keys = {
+        "ADMIN_SESSION_TOKEN",
+        "ADMIN_OPERATOR_ID",
+        "ADMIN_OPERATOR_NAME",
+    }
+    if unknown_keys and (
+        credential.provider_type != "admin_login"
+        or bool(unknown_keys - transient_admin_keys)
+    ):
+        raise ValueError("刷新响应包含未登记的个人凭证字段")
+    if unknown_keys:
+        normalized_values = {
+            key: value
+            for key, value in normalized_values.items()
+            if key in definitions
+        }
+    previous_items = {
+        item.key: item
+        for item in database.scalars(select(UserCredentialItem).where(
+            UserCredentialItem.credential_id == credential.id,
+            UserCredentialItem.credential_version == expected_version,
+        )).all()
+    }
+    desired_keys = set(previous_items) | set(normalized_values)
+    if any(
+        definition.required and key not in desired_keys
+        for key, definition in definitions.items()
+    ):
+        raise ValueError("刷新后的个人凭证缺少必需字段")
+
+    new_version = expected_version + 1
+    cipher = None
+    for key, definition in definitions.items():
+        if key not in desired_keys:
+            continue
+        if key not in normalized_values:
+            previous = previous_items[key]
+            database.add(UserCredentialItem(
+                credential_id=credential.id,
+                credential_version=new_version,
+                key=key,
+                secret_version_id=previous.secret_version_id,
+                value_json=previous.value_json,
+            ))
+            continue
+
+        value = normalized_values[key]
+        if definition.sensitivity == "secret":
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, (str, int, float))
+                or not str(value)
+            ):
+                raise ValueError("刷新响应中的 Secret 类型不正确")
+            secret = database.scalar(select(Secret).where(
+                Secret.environment_id == credential.environment_id,
+                Secret.owner_type == "user_credential",
+                Secret.owner_id == credential.id,
+                Secret.definition_id == definition.id,
+            ))
+            if secret is None:
+                secret = Secret(
+                    id=f"sec_{uuid.uuid4().hex}",
+                    environment_id=credential.environment_id,
+                    owner_type="user_credential",
+                    owner_id=credential.id,
+                    definition_id=definition.id,
+                    status="missing",
+                )
+                database.add(secret)
+                database.flush()
+            if cipher is None:
+                cipher = load_secret_cipher(get_settings())
+            secret_version = replace_secret(
+                database, cipher, secret, str(value), "credential-agent"
+            )
+            database.flush()
+            database.add(UserCredentialItem(
+                credential_id=credential.id,
+                credential_version=new_version,
+                key=key,
+                secret_version_id=secret_version.id,
+            ))
+        else:
+            if value is None:
+                raise ValueError("刷新响应中的普通字段不能为空")
+            database.add(UserCredentialItem(
+                credential_id=credential.id,
+                credential_version=new_version,
+                key=key,
+                value_json=value,
+            ))
+
+    credential.current_version = new_version
+    if values.get("expires_at") is not None:
+        credential.expires_at = values["expires_at"]
+    if values.get("refresh_expires_at") is not None:
+        credential.refresh_expires_at = values["refresh_expires_at"]
+    credential.status = "healthy"
+    credential.last_error_code = None
+    credential.last_checked_at = datetime.now(UTC)
+    credential.refresh_lease_until = None
+    credential.refresh_owner = None
+    add_audit_event(
+        database,
+        action="personal.credential.refresh",
+        resource_type="user_credential",
+        resource_id=credential.id,
+        tool_id=credential.tool_id,
+        environment_id=credential.environment_id,
+        outcome="success",
+        actor_type="service",
+        actor_id="credential-agent",
+        before={"version": expected_version},
+        after={"version": new_version, "status": "healthy"},
+        metadata={
+            "subject_user_id": credential.user_id,
+            "provider_type": credential.provider_type,
+        },
+    )
+
+
+def _activate(
+    database: Session,
+    credential: Credential | UserCredential,
+    expected_version: int,
+    values: dict[str, Any],
+) -> None:
     """在单一事务中创建加密 Secret 版本并激活新 Credential 版本。"""
+
+    if isinstance(credential, UserCredential):
+        _activate_personal(database, credential, expected_version, values)
+        return
 
     database.refresh(credential)
     if credential.current_version != expected_version:
@@ -270,26 +507,31 @@ def _activate(database: Session, credential: Credential, expected_version: int, 
 
 
 def process_one() -> bool:
-    """抢占一个到期凭证租约，网络请求在短数据库事务之外执行。"""
+    """抢占一个到期凭证租约，网络请求在短数据库事务之外执行。
+
+    ``PERSONAL_CREDENTIALS_ENABLED`` 是读取语义的切换点：开启后只扫描个人表，
+    legacy 表保留为只读回滚材料，不再刷新或双写。
+    """
 
     settings = get_settings()
     now = datetime.now(UTC)
     owner = f"agent_{uuid.uuid4().hex}"
+    credential_model = UserCredential if settings.personal_credentials_enabled else Credential
     with SessionLocal() as database:
         retry_before = now - timedelta(seconds=settings.credential_agent_interval_seconds)
-        row = database.scalar(select(Credential).where(
-            or_(Credential.refresh_lease_until.is_(None), Credential.refresh_lease_until < now),
+        row = database.scalar(select(credential_model).where(
+            or_(credential_model.refresh_lease_until.is_(None), credential_model.refresh_lease_until < now),
             or_(
-                Credential.status.in_(["pending_validation", "expiring", "expired"]),
+                credential_model.status.in_(["pending_validation", "expiring", "expired"]),
                 and_(
-                    Credential.status == "action_required",
-                    or_(Credential.last_checked_at.is_(None), Credential.last_checked_at <= retry_before),
+                    credential_model.status == "action_required",
+                    or_(credential_model.last_checked_at.is_(None), credential_model.last_checked_at <= retry_before),
                 ),
                 and_(
-                    Credential.status.in_(["healthy", "refreshing", "missing"]),
+                    credential_model.status.in_(["healthy", "refreshing", "missing"]),
                     or_(
-                        Credential.expires_at.is_(None),
-                        Credential.expires_at <= now + timedelta(seconds=settings.credential_refresh_window_seconds),
+                        credential_model.expires_at.is_(None),
+                        credential_model.expires_at <= now + timedelta(seconds=settings.credential_refresh_window_seconds),
                     ),
                 ),
             ),
@@ -306,13 +548,13 @@ def process_one() -> bool:
     try:
         values = _gateway_session(normal, secrets) if row.provider_type == "gateway_session" else _admin_login(normal, secrets)
         with SessionLocal() as database:
-            current = database.get(Credential, credential_id)
+            current = database.get(credential_model, credential_id)
             if current and current.refresh_owner == owner:
                 _activate(database, current, expected_version, values)
                 database.commit()
     except Exception as exc:
         with SessionLocal() as database:
-            current = database.get(Credential, credential_id)
+            current = database.get(credential_model, credential_id)
             if current and current.refresh_owner == owner:
                 current.status = "action_required"
                 current.last_error_code = f"CREDENTIAL_REFRESH_{type(exc).__name__.upper()}"
@@ -320,11 +562,28 @@ def process_one() -> bool:
                 current.refresh_lease_until = None
                 current.refresh_owner = None
                 add_audit_event(
-                    database, action="credential.refresh", resource_type="credential",
+                    database,
+                    action=(
+                        "personal.credential.refresh"
+                        if isinstance(current, UserCredential)
+                        else "credential.refresh"
+                    ),
+                    resource_type=(
+                        "user_credential"
+                        if isinstance(current, UserCredential)
+                        else "credential"
+                    ),
                     resource_id=current.id, tool_id=current.tool_id,
                     environment_id=current.environment_id, outcome="failed",
                     error_code="CREDENTIAL_REFRESH_FAILED", actor_type="service",
-                    actor_id="credential-agent", metadata=redact({"exception_type": type(exc).__name__}),
+                    actor_id="credential-agent",
+                    metadata=redact({
+                        "exception_type": type(exc).__name__,
+                        "subject_user_id": (
+                            current.user_id if isinstance(current, UserCredential) else None
+                        ),
+                        "provider_type": current.provider_type,
+                    }),
                 )
                 database.commit()
     return True

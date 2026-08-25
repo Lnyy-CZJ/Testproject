@@ -35,7 +35,10 @@ class ControllerClient:
         except urllib.error.HTTPError as exc:
             try:
                 body = json.loads(exc.read().decode())
-                code = body.get("error", {}).get("code", "CONTROLLER_REJECTED")
+                # Controller 的运行时失败使用 ``RuntimeResult`` 顶层 error_code；
+                # 鉴权和请求校验错误仍沿用标准 error.code 信封。两种结构都要
+                # 保留稳定错误码，避免页面只能看到没有诊断价值的笼统拒绝。
+                code = body.get("error_code") or body.get("error", {}).get("code", "CONTROLLER_REJECTED")
             except (ValueError, json.JSONDecodeError):
                 code = "CONTROLLER_REJECTED"
             return RuntimeResult(status="failed", error_code=code)

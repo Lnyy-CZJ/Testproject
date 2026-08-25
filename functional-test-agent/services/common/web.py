@@ -113,7 +113,7 @@ def _new_record(task_id: str, settings: ServiceSettings, identity, form: dict[st
 def create_agent_app(
     *,
     settings: ServiceSettings,
-    manager_factory: Callable[[TaskStore, Callable[[], dict[str, Any]]], TaskManager],
+    manager_factory: Callable[[TaskStore, Callable[[dict[str, Any]], dict[str, Any]]], TaskManager],
     operations: set[str],
     title: str,
     description: str,
@@ -135,8 +135,15 @@ def create_agent_app(
         settings.platform_api_url, settings.tool_id, settings.runtime_environment,
         settings.platform_client_token_file,
     )
-    load_safe = safe_config_loader or (lambda: client.runtime_config(include_secrets=False))
-    manager = manager_factory(store, lambda: client.runtime_config(include_secrets=True))
+    # 页面容量限制只读取 system 普通配置，不请求个人凭证或 LLM；任务 Worker
+    # 则必须使用创建时落盘的 Context + selector 做二阶段物化。
+    load_safe = safe_config_loader or (
+        lambda: client.runtime_config(include_secrets=False, llm_capability=None)
+    )
+    manager = manager_factory(
+        store,
+        lambda record: client.materialize_runtime_config(record.get("internal", {})),
+    )
     review_service = ReviewService(store)
     case_review_service = CaseReviewService(store)
     app.extensions["task_store"] = store
@@ -145,12 +152,16 @@ def create_agent_app(
     app.extensions["case_review_service"] = case_review_service
     app.extensions["platform_client"] = client
 
-    def current_identity():
-        return identity_from_request(request)
+    def current_identity(*, action: str, root_resource_id: str | None = None):
+        """对每次业务操作核验不透明资源上下文，不复用浏览器自报范围。"""
 
-    def get_task(task_id: str, permission: str = "tool.result.view") -> tuple[dict, Any]:
-        identity = current_identity()
-        record = store.load(task_id)
+        return identity_from_request(
+            request, client, action=action, root_resource_id=root_resource_id,
+        )
+
+    def get_task(task_id: str, permission: str = "tool.result.view", *, action: str = "read") -> tuple[dict, Any]:
+        identity = current_identity(action=action, root_resource_id=task_id)
+        record = store.load_visible(task_id, identity)
         if not record:
             raise ServiceError(404, "TASK_NOT_FOUND", "任务不存在")
         require_task_access(identity, record, permission=permission)
@@ -228,7 +239,7 @@ def create_agent_app(
 
     @app.get(f"{settings.base_path}/api/v1/readiness")
     def readiness():
-        identity = current_identity()
+        identity = current_identity(action="read")
         require_permission(identity, "tool.view")
         storage_writable = settings.data_dir.exists() and settings.data_dir.is_dir()
         try:
@@ -252,13 +263,13 @@ def create_agent_app(
 
     @app.get(f"{settings.base_path}/")
     def index():
-        identity = current_identity()
+        identity = current_identity(action="read")
         require_permission(identity, "tool.view")
         _snapshot, normal = safe_limits()
         workbench_v2 = bool(normal.get("FUNCTIONAL_WORKBENCH_V2_ENABLED", False))
         workbench_v3 = bool(normal.get("FUNCTIONAL_WORKBENCH_V3_ENABLED", False))
         mindmap_workbench = workbench_v2 or workbench_v3
-        source_records = [item for item in store.list() if item.get("created_by_user_id") == identity.user_id or "task.view.all" in identity.permissions]
+        source_records = store.list_visible(identity)
         for item in source_records:
             item["workbench_v2_enabled"] = workbench_v2
             item["workbench_v3_enabled"] = workbench_v3
@@ -295,7 +306,7 @@ def create_agent_app(
 
     @app.post(f"{settings.base_path}/api/v1/tasks")
     def create_task():
-        identity = current_identity()
+        identity = current_identity(action="create")
         require_permission(identity, "tool.execute")
         require_csrf(request)
         snapshot, normal = safe_limits()
@@ -354,11 +365,36 @@ def create_agent_app(
             atomic_write_bytes(input_path, data)
             form = {"operation": operation, "project_name": project_name, "module_name": module_name, "title": task_title}
             record = _new_record(task_id, settings, identity, form)
+            if identity.access_scope_snapshot not in {"public", "project"}:
+                raise ServiceError(503, "RESOURCE_CONTEXT_INVALID", "平台未返回资源授权快照")
+            if identity.access_scope_snapshot == "project" and not identity.project_id_snapshot:
+                raise ServiceError(503, "RESOURCE_CONTEXT_INVALID", "平台未返回项目资源快照")
+            # 这些字段由 resource-access/check 的签名上下文派生，客户端表单不可覆盖。
+            record.setdefault("internal", {}).update({
+                "owner_user_id": identity.user_id,
+                "access_scope_snapshot": identity.access_scope_snapshot,
+                "project_id_snapshot": identity.project_id_snapshot,
+                "authorization_source_snapshot": identity.authorization_source_snapshot,
+            })
+            runtime_metadata = client.plan_runtime_config(
+                request.headers.get("X-Platform-User-Context", ""),
+                resource_type="task",
+                resource_id=task_id,
+                resource_context=request.headers.get("X-Platform-Resource-Context", ""),
+            )
+            # 只保存不透明 Context ID 与非敏感 selector；短期签名 Header 在本次
+            # 调用返回后即丢弃，绝不进入任务 JSON、日志或子进程环境。
+            record.setdefault("internal", {}).update({
+                "runtime_context_id": runtime_metadata["runtime_context_id"],
+                "runtime_context_expires_at": runtime_metadata.get("runtime_context_expires_at"),
+                "snapshot_selector": runtime_metadata.get("snapshot_selector"),
+                "llm_capability": runtime_metadata.get("llm_capability", "default"),
+            })
             record["artifacts_expire_at"] = (
                 datetime.now(UTC) + timedelta(days=int(normal.get("TASK_ARTIFACT_RETENTION_DAYS", 90)))
             ).isoformat()
-            record["config_release_id"] = snapshot.get("release_id")
-            record["config_release_version"] = snapshot.get("release_version")
+            record["config_release_id"] = runtime_metadata.get("release_id")
+            record["config_release_version"] = runtime_metadata.get("release_version")
             request_payload = {
                 "operation": operation,
                 "project_id": record["project_id"], "module_id": record["module_id"],
@@ -386,7 +422,7 @@ def create_agent_app(
 
     @app.get(f"{settings.base_path}/api/v1/tasks")
     def list_tasks():
-        identity = current_identity()
+        identity = current_identity(action="read")
         require_permission(identity, "tool.result.view")
         page = max(1, request.args.get("page", 1, type=int))
         page_size = min(100, max(1, request.args.get("page_size", 20, type=int)))
@@ -399,7 +435,7 @@ def create_agent_app(
             raise ServiceError(422, "INVALID_INPUT", "任务状态筛选值不受支持")
         if operation and operation not in operations:
             raise ServiceError(422, "INVALID_INPUT", "操作类型筛选值不受支持")
-        visible = [item for item in store.list() if item.get("created_by_user_id") == identity.user_id or "task.view.all" in identity.permissions]
+        visible = store.list_visible(identity)
         if status:
             visible = [item for item in visible if item.get("status") == status]
         if operation:
@@ -436,7 +472,7 @@ def create_agent_app(
 
     @app.post(f"{settings.base_path}/api/v1/tasks/<task_id>/cancel")
     def cancel_task(task_id: str):
-        record, identity = get_task(task_id, permission="task.cancel")
+        record, identity = get_task(task_id, permission="task.cancel", action="cancel")
         require_csrf(request)
         cancelled = manager.cancel(record["id"])
         emit_audit(
@@ -471,7 +507,7 @@ def create_agent_app(
 
         if settings.agent_type != "functional":
             raise ServiceError(404, "TASK_NOT_FOUND", "任务不存在")
-        record, identity = get_task(task_id, permission="tool.execute")
+        record, identity = get_task(task_id, permission="tool.execute", action="review")
         require_csrf(request)
         if record.get("status") != "waiting_review":
             raise ServiceError(409, "INVALID_TASK_STATE", "当前任务状态不允许保存草稿")
@@ -498,7 +534,7 @@ def create_agent_app(
 
         if settings.agent_type != "functional":
             raise ServiceError(404, "TASK_NOT_FOUND", "任务不存在")
-        record, identity = get_task(task_id, permission="tool.execute")
+        record, identity = get_task(task_id, permission="tool.execute", action="review")
         require_csrf(request)
         if record.get("status") != "waiting_review":
             raise ServiceError(409, "INVALID_TASK_STATE", "当前任务状态不允许导入草稿")
@@ -524,7 +560,7 @@ def create_agent_app(
 
         if settings.agent_type != "functional":
             raise ServiceError(404, "TASK_NOT_FOUND", "任务不存在")
-        record, _identity = get_task(task_id)
+        record, _identity = get_task(task_id, action="export")
         if record.get("artifacts_expired"):
             raise ServiceError(410, "ARTIFACT_EXPIRED", "Review 文件已过期")
         kind = request.args.get("kind", "draft")
@@ -555,7 +591,7 @@ def create_agent_app(
 
         if settings.agent_type != "functional":
             raise ServiceError(404, "TASK_NOT_FOUND", "任务不存在")
-        record, identity = get_task(task_id, permission="tool.execute")
+        record, identity = get_task(task_id, permission="tool.execute", action="review")
         require_csrf(request)
         if record.get("status") != "waiting_review":
             raise ServiceError(409, "INVALID_TASK_STATE", "当前任务状态不允许发起 AI 辅助")
@@ -652,7 +688,7 @@ def create_agent_app(
 
         if settings.agent_type != "functional":
             raise ServiceError(404, "TASK_NOT_FOUND", "任务不存在")
-        _record, identity = get_task(task_id, permission="task.cancel")
+        _record, identity = get_task(task_id, permission="task.cancel", action="cancel")
         require_csrf(request)
         cancelled = manager.cancel_review_ai(task_id)
         emit_audit(client, action="agent.review.ai.cancel", resource_type="agent_task", resource_id=task_id, outcome="success", actor_user_id=identity.user_id, actor_username=identity.username, metadata={"request_version": cancelled.get("review_ai", {}).get("request_version")})
@@ -662,7 +698,7 @@ def create_agent_app(
     def resume_task(task_id: str):
         if settings.agent_type != "functional":
             raise ServiceError(404, "TASK_NOT_FOUND", "任务不存在")
-        record, identity = get_task(task_id, permission="tool.execute")
+        record, identity = get_task(task_id, permission="tool.execute", action="retry")
         require_csrf(request)
         if record.get("status") != "waiting_review":
             raise ServiceError(409, "INVALID_TASK_STATE", "当前任务状态不允许继续")
@@ -756,7 +792,7 @@ def create_agent_app(
 
         if settings.agent_type != "functional":
             raise ServiceError(404, "TASK_NOT_FOUND", "任务不存在")
-        record, identity = get_task(task_id, permission="tool.execute")
+        record, identity = get_task(task_id, permission="tool.execute", action="review")
         require_csrf(request)
         if record.get("status") not in {"waiting_case_review", "succeeded"}:
             raise ServiceError(409, "INVALID_TASK_STATE", "当前任务状态不允许保存用例草稿")
@@ -781,7 +817,7 @@ def create_agent_app(
 
         if settings.agent_type != "functional":
             raise ServiceError(404, "TASK_NOT_FOUND", "任务不存在")
-        record, identity = get_task(task_id, permission="tool.execute")
+        record, identity = get_task(task_id, permission="tool.execute", action="review")
         require_csrf(request)
         if record.get("status") not in {"waiting_case_review", "succeeded"}:
             raise ServiceError(409, "INVALID_TASK_STATE", "当前任务状态不允许导入用例草稿")
@@ -817,7 +853,7 @@ def create_agent_app(
 
         if settings.agent_type != "functional":
             raise ServiceError(404, "TASK_NOT_FOUND", "任务不存在")
-        record, _identity = get_task(task_id)
+        record, _identity = get_task(task_id, action="export")
         if record.get("artifacts_expired"):
             raise ServiceError(410, "ARTIFACT_EXPIRED", "测试用例 Review 文件已过期")
         _snapshot, normal = safe_limits()
@@ -851,7 +887,7 @@ def create_agent_app(
 
         if settings.agent_type != "functional":
             raise ServiceError(404, "TASK_NOT_FOUND", "任务不存在")
-        record, identity = get_task(task_id, permission="tool.execute")
+        record, identity = get_task(task_id, permission="tool.execute", action="review")
         require_csrf(request)
         _snapshot, normal = safe_limits()
         if not bool(normal.get("ONLINE_CASE_REVIEW_ENABLED", False)):
@@ -897,7 +933,7 @@ def create_agent_app(
 
         if settings.agent_type != "functional":
             raise ServiceError(404, "TASK_NOT_FOUND", "任务不存在")
-        record, identity = get_task(task_id, permission="tool.execute")
+        record, identity = get_task(task_id, permission="tool.execute", action="review")
         require_csrf(request)
         if record.get("status") != "waiting_case_review":
             raise ServiceError(409, "INVALID_TASK_STATE", "当前任务状态不允许发起用例 AI")
@@ -982,7 +1018,7 @@ def create_agent_app(
 
         if settings.agent_type != "functional":
             raise ServiceError(404, "TASK_NOT_FOUND", "任务不存在")
-        _record, identity = get_task(task_id, permission="task.cancel")
+        _record, identity = get_task(task_id, permission="task.cancel", action="cancel")
         require_csrf(request)
         cancelled = manager.cancel_case_review_ai(task_id)
         emit_audit(client, action="agent.case_review.ai.cancel", resource_type="agent_task", resource_id=task_id, outcome="success", actor_user_id=identity.user_id, actor_username=identity.username, metadata={"request_version": cancelled.get("case_review_ai", {}).get("request_version")})
@@ -1015,7 +1051,7 @@ def create_agent_app(
 
     @app.get(f"{settings.base_path}/api/v1/tasks/<task_id>/artifacts/<artifact_id>")
     def download_artifact(task_id: str, artifact_id: str):
-        record, identity = get_task(task_id)
+        record, identity = get_task(task_id, action="export")
         if record.get("artifacts_expired"):
             raise ServiceError(410, "ARTIFACT_EXPIRED", "任务产物已过期")
         try:

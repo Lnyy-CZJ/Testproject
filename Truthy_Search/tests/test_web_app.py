@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import sqlite3
 import tempfile
 import time
@@ -12,6 +13,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
+
+import requests
 
 from analysis_service import AnalysisService
 from analysis_store import AnalysisStore
@@ -42,6 +45,30 @@ class RecordingCoordinator:
         """记录单条重跑提交，避免 Web 路由测试启动真实线程。"""
 
         self.retried.append((run_id, query_id))
+
+
+class PlanningCoordinator(RecordingCoordinator):
+    """模拟平台规划阶段，验证签名 Header 不进入 Run 持久化。"""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.planned: list[tuple[str, str]] = []
+
+    def prepare_run_runtime(
+        self, signed_user_context: str, run_id: str, opaque_resource_context: str = ""
+    ) -> dict:
+        """返回固定的 Runtime Context 与非敏感版本选择器。"""
+
+        self.planned.append((signed_user_context, run_id))
+        return {
+            "runtime_context_id": "rtx_truthy_user_1",
+            "snapshot_selector": {
+                "release_id": "rel_truthy_v1",
+                "credential_versions": {"ucred_truthy": 4},
+            },
+            "release_id": "rel_truthy_v1",
+            "credential_version": 4,
+        }
 
 
 class CoordinatorClient:
@@ -85,6 +112,21 @@ class CoordinatorClient:
         if not self.responses:
             raise AssertionError(f"未预期的接口调用: {stage} {params}")
         return self.responses.pop(0)
+
+
+class PlatformResponse:
+    """提供 RunCoordinator 平台调用所需的最小 requests 响应契约。"""
+
+    def __init__(self, status_code: int, payload: dict) -> None:
+        self.status_code = status_code
+        self._payload = payload
+
+    def raise_for_status(self) -> None:
+        if self.status_code >= 400:
+            raise requests.HTTPError(f"platform returned {self.status_code}")
+
+    def json(self) -> dict:
+        return self._payload
 
 
 class WebAppTests(unittest.TestCase):
@@ -298,6 +340,43 @@ class WebAppTests(unittest.TestCase):
             content_type="multipart/form-data",
         )
         self.assertEqual(302, response.status_code)
+
+    def enable_platform_resource_access(self) -> None:
+        """为对象权限测试启用平台模式，并写入不含业务 Secret 的工具令牌。"""
+
+        token_file = self.root / "truthy-resource-client-token"
+        token_file.write_text("r" * 40, encoding="utf-8")
+        self.app.config.update(
+            PLATFORM_API_URL="http://platform-api.invalid/api/v1",
+            PLATFORM_CLIENT_TOKEN_FILE=str(token_file),
+        )
+
+    @staticmethod
+    def resource_decision(
+        *,
+        user_id: str = "tester-a",
+        data_scope: str = "own",
+        managed_project_ids: list[str] | None = None,
+    ) -> PlatformResponse:
+        """返回平台 ``resource-access/check`` 的真实最小成功响应。"""
+
+        return PlatformResponse(
+            200,
+            {
+                "allowed": True,
+                "action": "read",
+                "user_id": user_id,
+                "username": user_id,
+                "display_name": user_id,
+                "tool_id": "truthy-search",
+                "environment": "test",
+                "data_scope": data_scope,
+                "managed_project_ids": managed_project_ids or [],
+                "access_scope_snapshot": "project",
+                "project_id_snapshot": "project-a",
+                "authorization_source_snapshot": "project-member",
+            },
+        )
 
     def test_web_import_and_run_filter_support_full_name_social_photo(self):
         """Web 现有导入与运行页面应独立识别 Social+Photo 组合 Stage。"""
@@ -532,6 +611,95 @@ class WebAppTests(unittest.TestCase):
         self.assertEqual([run["run_id"]], self.coordinator.submitted)
         self.assertEqual(409, duplicate.status_code)
         self.assertIn("已有执行任务", duplicate.get_data(as_text=True))
+
+    def test_platform_run_persists_selector_but_never_signed_context(self):
+        """平台 Run 只保存 Context ID/selector，执行前签名 Header 用后即弃。"""
+
+        self.import_dataset("dataset-platform-runtime")
+        coordinator = PlanningCoordinator()
+        self.app.extensions["run_coordinator"] = coordinator
+        response = self.client.post(
+            "/evaluations/eval-web/runs",
+            headers={"X-Platform-User-Context": "signed-truthy-user-1"},
+            data={
+                "dataset_id": "dataset-platform-runtime",
+                "run_label": "platform-runtime",
+                "system_version": "web-v1",
+                "evaluation_phase": "PHASE_1_BASELINE",
+            },
+        )
+
+        self.assertEqual(302, response.status_code)
+        row = self.store.fetch_one(
+            """
+            SELECT run_id, platform_runtime_context_id,
+                   platform_snapshot_selector_json, platform_release_id,
+                   platform_credential_version
+            FROM runs WHERE run_label = 'platform-runtime'
+            """
+        )
+        self.assertEqual("rtx_truthy_user_1", row["platform_runtime_context_id"])
+        self.assertEqual(
+            {"ucred_truthy": 4},
+            json.loads(row["platform_snapshot_selector_json"])["credential_versions"],
+        )
+        self.assertNotIn("signed-truthy-user-1", json.dumps(dict(row)))
+        self.assertEqual(
+            [("signed-truthy-user-1", row["run_id"])], coordinator.planned
+        )
+        self.assertEqual([row["run_id"]], coordinator.submitted)
+
+    def test_platform_planning_preserves_personal_credential_error(self):
+        """Truthy Search 创建 Run 时应保留平台个人凭证稳定错误码。"""
+
+        token_file = self.root / "truthy-client-token"
+        token_file.write_text("t" * 40, encoding="utf-8")
+        coordinator = RunCoordinator(self.service, self.root / ".env")
+        context_response = PlatformResponse(
+            201,
+            {
+                "runtime_context_id": "rtx_truthy_missing_user",
+                "expires_at": "2026-08-24T12:00:00Z",
+            },
+        )
+        missing_response = PlatformResponse(
+            409,
+            {
+                "code": "PERSONAL_CREDENTIAL_NOT_CONFIGURED",
+                "message": "请先配置当前工具的个人凭证",
+            },
+        )
+
+        try:
+            with patch.dict(
+                os.environ,
+                {
+                    "SEARCH_CONFIG_SOURCE": "platform",
+                    "PLATFORM_API_URL": "http://platform-api.invalid/api/v1",
+                    "PLATFORM_CLIENT_TOKEN_FILE": str(token_file),
+                },
+            ), patch(
+                "web_app.requests.post", return_value=context_response
+            ), patch(
+                "web_app.requests.get", return_value=missing_response
+            ):
+                with self.assertRaises(RuntimeError) as raised:
+                    coordinator.prepare_run_runtime(
+                        "signed-truthy-missing-user",
+                        "run-truthy-missing-user",
+                    )
+        finally:
+            coordinator.shutdown(wait=False)
+
+        self.assertEqual(409, getattr(raised.exception, "status_code", None))
+        self.assertEqual(
+            "PERSONAL_CREDENTIAL_NOT_CONFIGURED",
+            getattr(raised.exception, "error_code", None),
+        )
+        self.assertEqual(
+            "请先配置当前工具的个人凭证",
+            getattr(raised.exception, "message", None),
+        )
 
     def test_failed_query_can_be_queued_for_retry_in_its_original_run(self):
         """详情页的单条重跑入口复用原 Run，不创建新的执行记录。"""
@@ -881,6 +1049,220 @@ class WebAppTests(unittest.TestCase):
         self.assertEqual(200, download_response.status_code)
         self.assertEqual(404, invalid_download.status_code)
         download_response.close()
+
+    def test_platform_home_and_report_lists_apply_own_scope_in_sql(self):
+        """主页与报告列表必须使用平台 list scope，且 SQL 不读取他人根 Run。
+
+        平台真实契约没有单独的 ``list`` 动作：列表通过 ``action=read`` 且省略
+        ``root_resource_id`` 获取 own/project/global 范围。这个测试同时防止把
+        全量行读入 Python 后再过滤，避免信息泄露和分页数量错误。
+        """
+
+        run_id, _candidate_pk, _raw_id = self.seed_imported_result()
+        process = self.service.process_run(
+            run_id=run_id,
+            schema_version=self.store.fetch_one(
+                "SELECT schema_version FROM field_schemas WHERE is_active = 1"
+            )["schema_version"],
+        )
+        with self.store.transaction() as connection:
+            connection.execute(
+                """
+                UPDATE runs
+                SET owner_user_id = 'tester-other',
+                    project_id_snapshot = 'project-a',
+                    authorization_source_snapshot = 'project-member'
+                WHERE run_id = ?
+                """,
+                (run_id,),
+            )
+            connection.execute(
+                """
+                INSERT INTO reports(
+                    report_id, evaluation_id, candidate_process_id,
+                    report_type, status, metrics_json, html_file, created_at
+                ) VALUES (
+                    'report-other', 'eval-web', ?, 'SINGLE', 'READY',
+                    '{"metadata":{"report_name":"Other Tester Report"}}',
+                    'other.html', '2026-08-24T00:00:00+00:00'
+                )
+                """,
+                (process.process_id,),
+            )
+        self.enable_platform_resource_access()
+        calls: list[dict] = []
+
+        def platform_check(*_args, **kwargs):
+            calls.append(kwargs["json"])
+            return self.resource_decision(user_id="tester-a", data_scope="own")
+
+        with patch("web_app.requests.post", side_effect=platform_check):
+            home = self.client.get(
+                "/", headers={"X-Platform-Resource-Context": "opaque-a"}
+            )
+            reports = self.client.get(
+                "/reports", headers={"X-Platform-Resource-Context": "opaque-a"}
+            )
+
+        self.assertEqual(200, home.status_code)
+        self.assertEqual(200, reports.status_code)
+        self.assertNotIn("Web 阶段3", home.get_data(as_text=True))
+        self.assertNotIn("Other Tester Report", reports.get_data(as_text=True))
+        self.assertEqual(
+            [
+                {"action": "read", "resource_type": "run"},
+                {"action": "read", "resource_type": "run"},
+            ],
+            calls,
+        )
+
+    def test_platform_derived_routes_resolve_root_and_use_read_or_export_contract(self):
+        """Candidate、Process、Report、Raw 与下载均回溯根 Run 后请求平台。
+
+        下载对应平台已注册的 ``export`` 动作，而不是工具自造的 ``download``；
+        其余派生只读入口使用 ``read``。平台拒绝时统一返回 404，不能暴露对象
+        是否存在，也不能先解析本地文件路径。
+        """
+
+        run_id, candidate_pk, raw_id = self.seed_imported_result()
+        process = self.service.process_run(
+            run_id=run_id,
+            schema_version=self.store.fetch_one(
+                "SELECT schema_version FROM field_schemas WHERE is_active = 1"
+            )["schema_version"],
+        )
+        with self.store.transaction() as connection:
+            connection.execute(
+                """
+                INSERT INTO reports(
+                    report_id, evaluation_id, candidate_process_id,
+                    report_type, status, metrics_json, html_file, created_at
+                ) VALUES (
+                    'report-derived', 'eval-web', ?, 'SINGLE', 'READY',
+                    '{"metadata":{"report_name":"Derived"}}',
+                    'derived.html', '2026-08-24T00:00:00+00:00'
+                )
+                """,
+                (process.process_id,),
+            )
+        self.enable_platform_resource_access()
+        calls: list[dict] = []
+
+        def deny(*_args, **kwargs):
+            calls.append(kwargs["json"])
+            return PlatformResponse(404, {"code": "NOT_FOUND", "message": "不存在"})
+
+        headers = {"X-Platform-Resource-Context": "opaque-other"}
+        with patch("web_app.requests.post", side_effect=deny):
+            responses = [
+                self.client.get(f"/candidates/{candidate_pk}", headers=headers),
+                self.client.get(f"/processes/{process.process_id}", headers=headers),
+                self.client.get("/reports/report-derived", headers=headers),
+                self.client.get(f"/api/raw/{raw_id}", headers=headers),
+                self.client.get("/downloads/report-html/report-derived", headers=headers),
+            ]
+
+        self.assertEqual([404, 404, 404, 404, 404], [item.status_code for item in responses])
+        self.assertEqual(
+            [
+                {"action": "read", "resource_type": "run", "root_resource_id": run_id},
+                {"action": "read", "resource_type": "run", "root_resource_id": run_id},
+                {"action": "read", "resource_type": "run", "root_resource_id": run_id},
+                {"action": "read", "resource_type": "run", "root_resource_id": run_id},
+                {"action": "export", "resource_type": "run", "root_resource_id": run_id},
+            ],
+            calls,
+        )
+
+    def test_process_page_does_not_show_report_where_current_process_is_only_baseline(self):
+        """Process 页面不能因被他人报告用作 baseline 而泄漏报告元数据。
+
+        当前用户拥有 baseline Process，但报告真正的根业务资源是 candidate
+        Process 对应的另一名 tester Run。页面若使用
+        ``candidate_process_id = current OR baseline_process_id = current``，会在
+        未授权 candidate 根 Run 的情况下泄漏报告名称和 ID。
+        """
+
+        run_id, _candidate_pk, _raw_id = self.seed_imported_result()
+        schema_version = self.store.fetch_one(
+            "SELECT schema_version FROM field_schemas WHERE is_active = 1"
+        )["schema_version"]
+        own_process = self.service.process_run(
+            run_id=run_id,
+            schema_version=schema_version,
+        )
+        with self.store.transaction() as connection:
+            connection.execute(
+                """
+                UPDATE runs
+                SET owner_user_id = 'tester-a',
+                    project_id_snapshot = 'project-a',
+                    authorization_source_snapshot = 'project-member'
+                WHERE run_id = ?
+                """,
+                (run_id,),
+            )
+            connection.execute(
+                """
+                INSERT INTO runs(
+                    run_id, evaluation_id, run_label, system_version,
+                    source_type, status, result_schema_version, created_at,
+                    owner_user_id, project_id_snapshot,
+                    authorization_source_snapshot
+                ) VALUES (
+                    'run-other-report', 'eval-web', 'other', 'other-v1',
+                    'JSONL_IMPORT', 'COMPLETED', '1.3',
+                    '2026-08-24T00:00:00+00:00', 'tester-b', 'project-a',
+                    'project-member'
+                )
+                """
+            )
+            connection.execute(
+                """
+                INSERT INTO process_runs(
+                    process_id, run_id, schema_version, rule_version,
+                    status, created_at
+                ) VALUES (
+                    'process-other-report', 'run-other-report', ?,
+                    'identity-rule-v1', 'COMPLETED',
+                    '2026-08-24T00:00:00+00:00'
+                )
+                """,
+                (schema_version,),
+            )
+            connection.execute(
+                """
+                INSERT INTO reports(
+                    report_id, evaluation_id, baseline_process_id,
+                    candidate_process_id, report_type, status, metrics_json,
+                    html_file, created_at
+                ) VALUES (
+                    'report-secret-other', 'eval-web', ?,
+                    'process-other-report', 'COMPARE', 'READY',
+                    '{"metadata":{"report_name":"Other Tester Secret"}}',
+                    'secret.html', '2026-08-24T00:00:00+00:00'
+                )
+                """,
+                (own_process.process_id,),
+            )
+        self.enable_platform_resource_access()
+
+        with patch(
+            "web_app.requests.post",
+            return_value=self.resource_decision(
+                user_id="tester-a",
+                data_scope="own",
+            ),
+        ):
+            page = self.client.get(
+                f"/processes/{own_process.process_id}",
+                headers={"X-Platform-Resource-Context": "opaque-a"},
+            )
+
+        self.assertEqual(200, page.status_code)
+        html = page.get_data(as_text=True)
+        self.assertNotIn("report-secret-other", html)
+        self.assertNotIn("Other Tester Secret", html)
 
     def test_run_query_list_uses_fifty_row_server_pagination(self):
         """101条 Query 只在首屏加载50条，并可访问第三页。"""

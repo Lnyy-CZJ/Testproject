@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 from urllib import error as urlerror
+from urllib.parse import urlencode
 from urllib import request as urlrequest
 
 from people_search_rules import build_evidence_packet
@@ -46,6 +47,20 @@ _FRONTMATTER_RE = re.compile(
 
 DEFAULT_TIMEOUT_SECONDS = 20
 DEFAULT_MAX_EVIDENCE_BYTES = 524_288  # 512 KiB
+LLM_CONFIG_UNAVAILABLE = "LLM_CONFIG_UNAVAILABLE"
+
+
+def _platform_http_error_code(error: urlerror.HTTPError) -> str:
+    """从平台错误响应中提取安全稳定码，格式异常时使用日志工具通用码。"""
+
+    try:
+        payload = json.loads(error.read().decode("utf-8"))
+        code = payload.get("code") if isinstance(payload, dict) else None
+    except (UnicodeDecodeError, json.JSONDecodeError, OSError):
+        return LLM_CONFIG_UNAVAILABLE
+    if isinstance(code, str) and re.fullmatch(r"[A-Z][A-Z0-9_]{1,127}", code):
+        return code
+    return LLM_CONFIG_UNAVAILABLE
 
 
 # ---------------------------------------------------------------------------
@@ -78,12 +93,23 @@ class AIConfig:
         )
 
 
-def load_ai_config(environ=None, skill_path: Path = SKILL_PATH, _urlopen=None) -> AIConfig:
+def load_ai_config(
+    environ=None,
+    skill_path: Path = SKILL_PATH,
+    signed_user_context: str | None = None,
+    resource_id: str | None = None,
+    _urlopen=None,
+) -> AIConfig:
     """按 env/platform 来源读取一次 AI 配置；平台模式绝不回退旧文件。"""
     env = environ if environ is not None else os.environ
     source = env.get("LOG_FILTER_LLM_CONFIG_SOURCE", "env").strip().lower()
     if source == "platform":
-        return _load_platform_ai_config(env, _urlopen=_urlopen)
+        return _load_platform_ai_config(
+            env,
+            signed_user_context=signed_user_context,
+            resource_id=resource_id,
+            _urlopen=_urlopen,
+        )
     cfg = AIConfig(
         ai_enabled=env.get(
             "PEOPLE_SEARCH_ANALYZER_AI_ENABLED", "false"
@@ -108,8 +134,18 @@ def load_ai_config(environ=None, skill_path: Path = SKILL_PATH, _urlopen=None) -
     return cfg
 
 
-def _load_platform_ai_config(env, _urlopen=None) -> AIConfig:
-    """使用工具 Client Token 获取 People Search 单请求不可变 LLM 快照。"""
+def _load_platform_ai_config(
+    env,
+    *,
+    signed_user_context: str | None,
+    resource_id: str | None,
+    _urlopen=None,
+) -> AIConfig:
+    """使用可信用户上下文规划并物化单请求 LLM 快照。
+
+    签名 Header 仅用于兑换 Runtime Context；selector 与 Secret 都只存在于当前
+    同步请求调用栈，不写入模块缓存、环境变量或日志。
+    """
 
     enabled = env.get("PEOPLE_SEARCH_ANALYZER_AI_ENABLED", "false").lower() in ("1", "true", "yes", "on")
     api_url = env.get("PLATFORM_API_URL", "").rstrip("/")
@@ -117,15 +153,68 @@ def _load_platform_ai_config(env, _urlopen=None) -> AIConfig:
     environment = env.get("PLATFORM_RUNTIME_ENV", "dev").strip()
     try:
         token = Path(token_file).read_text(encoding="utf-8").strip()
-        if not api_url or len(token) < 32:
+        if not api_url or len(token) < 32 or not signed_user_context or not resource_id:
             raise ValueError("platform identity missing")
-        request = urlrequest.Request(
-            f"{api_url}/internal/tools/log-filter/runtime-config?include_secrets=true&llm_capability=people-search-summary",
+        opener = _urlopen or urlrequest.urlopen
+        context_request = urlrequest.Request(
+            f"{api_url}/internal/tools/log-filter/runtime-contexts",
+            data=json.dumps({
+                "resource_type": "request",
+                "resource_id": resource_id,
+            }).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+                "X-Platform-User-Context": signed_user_context,
+            },
+            method="POST",
+        )
+        with opener(context_request, timeout=5) as response:
+            context_payload = json.loads(response.read().decode("utf-8"))
+        runtime_context_id = context_payload.get("runtime_context_id")
+        if not isinstance(runtime_context_id, str) or not runtime_context_id:
+            raise ValueError("runtime context missing")
+        plan_query = urlencode({
+            "include_secrets": "false",
+            "llm_capability": "people-search-summary",
+            "runtime_context_id": runtime_context_id,
+        })
+        plan_request = urlrequest.Request(
+            f"{api_url}/internal/tools/log-filter/runtime-config?{plan_query}",
             headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
             method="GET",
         )
-        opener = _urlopen or urlrequest.urlopen
-        with opener(request, timeout=5) as response:
+        with opener(plan_request, timeout=5) as response:
+            plan = json.loads(response.read().decode("utf-8"))
+        selector = plan.get("snapshot_selector") if isinstance(plan, dict) else None
+        if selector is None:
+            # 仅用于个人读取开关尚未开启的部署阶段。
+            materialize_query = urlencode({
+                "include_secrets": "true",
+                "llm_capability": "people-search-summary",
+                "runtime_context_id": runtime_context_id,
+            })
+            materialize_request = urlrequest.Request(
+                f"{api_url}/internal/tools/log-filter/runtime-config?{materialize_query}",
+                headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
+                method="GET",
+            )
+        elif isinstance(selector, dict):
+            materialize_request = urlrequest.Request(
+                f"{api_url}/internal/tools/log-filter/runtime-config/materialize",
+                data=json.dumps({
+                    "runtime_context_id": runtime_context_id,
+                    "snapshot_selector": selector,
+                }).encode("utf-8"),
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json",
+                },
+                method="POST",
+            )
+        else:
+            raise ValueError("runtime selector invalid")
+        with opener(materialize_request, timeout=5) as response:
             payload = json.loads(response.read().decode("utf-8"))
         if payload.get("tool_id") != "log-filter" or payload.get("environment") != environment:
             raise ValueError("platform scope mismatch")
@@ -145,8 +234,15 @@ def _load_platform_ai_config(env, _urlopen=None) -> AIConfig:
             profile_release_id=llm.get("profile_release_id"),
             binding_release_id=llm.get("binding_release_id"),
         )
+    except urlerror.HTTPError as exc:
+        # 日志规则分析仍正常返回，但 AI 状态应保留 PERSONAL_LLM_* 或
+        # RUNTIME_* 等平台稳定码，便于用户采取正确动作。
+        return AIConfig(
+            ai_enabled=enabled,
+            config_error_code=_platform_http_error_code(exc),
+        )
     except (OSError, ValueError, KeyError, TypeError, urlerror.URLError, json.JSONDecodeError):
-        return AIConfig(ai_enabled=enabled, config_error_code="LLM_CONFIG_UNAVAILABLE")
+        return AIConfig(ai_enabled=enabled, config_error_code=LLM_CONFIG_UNAVAILABLE)
 
 
 # ---------------------------------------------------------------------------

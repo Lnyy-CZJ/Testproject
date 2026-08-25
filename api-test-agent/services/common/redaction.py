@@ -42,7 +42,12 @@ def redact_structure(value: Any, *, key: str = "") -> Any:
     """
 
     normalized = key.lower().replace("_", "-")
-    if normalized in {item.replace("_", "-") for item in _SENSITIVE_KEYS}:
+    # Header 名称经常使用 ``X-Access-Token``、``X-Client-Secret`` 等前缀，
+    # 只匹配固定键会把这类值写入阶段结果。后缀判断仍然限定在凭证语义，
+    # 不会把普通业务字段（如 token_count）误判为 Secret。
+    sensitive_names = {item.replace("_", "-") for item in _SENSITIVE_KEYS}
+    sensitive_suffix = normalized.endswith(("-token", "-secret", "-password", "-api-key"))
+    if normalized in sensitive_names or sensitive_suffix:
         return "[REDACTED]"
     if isinstance(value, dict):
         return {str(item_key): redact_structure(item, key=str(item_key)) for item_key, item in value.items()}

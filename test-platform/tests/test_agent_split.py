@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import unittest
@@ -64,6 +65,28 @@ class AgentSplitComposeTest(unittest.TestCase):
         self.assertLess(promotion, startup)
         override = (ROOT / "docker-compose.prod.yml").read_text(encoding="utf-8")
         self.assertIn("/srv/test-platform/secrets/prod-kek.json:/run/secrets/platform-kek.json:ro", override)
+
+    def test_api_agent_component_deploy_updates_every_running_suite_service(self) -> None:
+        """API Suite 独立发布必须原子重建、验证并回滚所有正在运行的套件服务。"""
+
+        script = (ROOT / "scripts/deploy-prod.sh").read_text(encoding="utf-8")
+        self.assertIn('deployment_services=(api-test-agent)', script)
+        self.assertIn('up -d --no-deps "${deployment_services[@]}"', script)
+        self.assertIn('verify_deployed_service_images "${deployment_services[@]}"', script)
+        self.assertIn('"${rollback[@]}" up -d --no-deps "${deployment_services[@]}"', script)
+
+    def test_gateway_version_hash_covers_all_production_source_directories(self) -> None:
+        """网关内容哈希必须覆盖 API、组件、上下文、数据和类型源码，避免假一致。"""
+
+        manifest = json.loads((ROOT / "versions.json").read_text(encoding="utf-8"))
+        paths = set(manifest["components"]["platform-gateway"]["source_paths"])
+        self.assertTrue({
+            "test-platform/frontend/src/api",
+            "test-platform/frontend/src/components",
+            "test-platform/frontend/src/context",
+            "test-platform/frontend/src/data",
+            "test-platform/frontend/src/types",
+        }.issubset(paths))
 
 
 if __name__ == "__main__":

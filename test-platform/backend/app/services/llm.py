@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from app.core.config import Settings
 from app.core.errors import PlatformError
 from app.models.configuration import ConfigActivation, ConfigDefinition, ConfigRelease, ConfigReleaseItem, Secret, SecretVersion
-from app.models.llm import LlmProfile, ToolLlmBinding
+from app.models.llm import LlmProfile, ToolLlmBinding, UserLlmBinding
 from app.services.secret_store import decrypt_secret_version, load_secret_cipher
 
 
@@ -97,7 +97,7 @@ def validate_llm_release(database: Session, release: ConfigRelease) -> None:
         raise PlatformError(422, "LLM_SECRET_UNAVAILABLE", "LLM API Key 尚未配置")
 
 
-def resolve_llm_snapshot(
+def resolve_legacy_llm_snapshot(
     database: Session,
     settings: Settings,
     environment_id: str,
@@ -106,7 +106,11 @@ def resolve_llm_snapshot(
     *,
     include_secrets: bool,
 ) -> dict[str, Any]:
-    """合并 Profile、Binding 覆盖和固定 Secret Version，形成单次运行快照。"""
+    """解析迁移期全局 LLM 快照，仅供旧管理接口兼容使用。
+
+    新任务不得调用此函数。它被单独命名后，任何缺少用户上下文的调用都会在
+    代码评审和搜索中显式可见，避免误把 global Binding 当成个人配置兜底。
+    """
 
     binding = database.scalar(select(ToolLlmBinding).where(
         ToolLlmBinding.tool_id == tool_id,
@@ -158,6 +162,257 @@ def resolve_llm_snapshot(
             )
         except (ValueError, KeyError):
             raise PlatformError(503, "LLM_SECRET_UNAVAILABLE", "LLM API Key 暂时不可用") from None
+    return effective
+
+
+def resolve_llm_snapshot(
+    database: Session,
+    settings: Settings,
+    environment_id: str,
+    tool_id: str,
+    capability_key: str,
+    user_id: str,
+    *,
+    include_secrets: bool,
+) -> dict[str, Any]:
+    """只从指定用户的 Profile 与 Binding 解析不可变 LLM 快照。
+
+    参数说明:
+        user_id: 已由可信 Runtime Context 解析出的登录用户 ID，不能来自业务请求体。
+        include_secrets: false 时只计算版本元数据且完全不加载 KEK；true 时才解密
+            已冻结的精确 SecretVersion。
+    异常说明:
+        PERSONAL_LLM_NOT_CONFIGURED: 任一用户级 Binding/Profile/Release/Key 缺失。
+        LLM_SECRET_UNAVAILABLE: 已冻结 Secret 损坏或 KEK 不可用。
+
+    解析路径从 ``UserLlmBinding.user_id`` 开始，绝不查询 global ``llm_binding``
+    Activation，因此不存在 admin、legacy Profile 或环境变量回退。
+    """
+
+    catalog_binding = database.scalar(select(ToolLlmBinding).where(
+        ToolLlmBinding.tool_id == tool_id,
+        ToolLlmBinding.capability_key == capability_key,
+    ))
+    if catalog_binding is None:
+        raise PlatformError(404, "LLM_BINDING_NOT_FOUND", "LLM 工具绑定不存在")
+    user_binding = database.scalar(select(UserLlmBinding).where(
+        UserLlmBinding.user_id == user_id,
+        UserLlmBinding.binding_id == catalog_binding.id,
+    ))
+    if user_binding is None:
+        raise PlatformError(
+            409, "PERSONAL_LLM_NOT_CONFIGURED", "请先配置并发布个人 LLM 连接"
+        )
+    binding_release = active_release(
+        database, environment_id, "user_llm_binding", user_binding.id
+    )
+    binding_values, binding_secrets = release_values(database, binding_release)
+    profile_id = binding_values.get("PROFILE_ID")
+    profile = database.scalar(select(LlmProfile).where(
+        LlmProfile.owner_user_id == user_id,
+        LlmProfile.id == profile_id,
+        LlmProfile.is_archived.is_(False),
+    )) if isinstance(profile_id, str) else None
+    if binding_release is None or profile is None or not binding_values.get("ENABLED", True):
+        raise PlatformError(
+            409, "PERSONAL_LLM_NOT_CONFIGURED", "请先配置并发布个人 LLM 连接"
+        )
+    profile_release = active_release(
+        database, environment_id, "llm_profile", profile.id
+    )
+    profile_values, profile_secrets = release_values(database, profile_release)
+    if profile_release is None or not profile_values.get("ENABLED", True):
+        raise PlatformError(
+            409, "PERSONAL_LLM_NOT_CONFIGURED", "请先配置并发布个人 LLM 连接"
+        )
+    chosen_secret = binding_secrets.get("API_KEY_OVERRIDE") or profile_secrets.get("API_KEY")
+    if chosen_secret is None:
+        raise PlatformError(
+            409, "PERSONAL_LLM_NOT_CONFIGURED", "请先配置并发布个人 LLM 连接"
+        )
+    secret, secret_version = chosen_secret
+    effective = {
+        "status": "ready",
+        "binding_id": user_binding.id,
+        "capability_key": catalog_binding.capability_key,
+        "binding_release_id": binding_release.id,
+        "binding_release_version": binding_release.version,
+        "profile_id": profile.id,
+        "profile_name": profile.name,
+        "profile_release_id": profile_release.id,
+        "profile_release_version": profile_release.version,
+        "protocol": profile.protocol,
+        "base_url": profile_values.get("BASE_URL"),
+        "model": binding_values.get("MODEL_OVERRIDE") or profile_values.get("MODEL"),
+        "temperature": binding_values.get(
+            "TEMPERATURE_OVERRIDE", profile_values.get("TEMPERATURE")
+        ),
+        "max_tokens": binding_values.get(
+            "MAX_TOKENS_OVERRIDE", profile_values.get("MAX_TOKENS")
+        ),
+        "timeout_seconds": binding_values.get(
+            "TIMEOUT_SECONDS_OVERRIDE", profile_values.get("TIMEOUT_SECONDS")
+        ),
+        "api_key_configured": True,
+        "api_key_version": secret_version.version,
+        "api_key_secret_version_id": secret_version.id,
+    }
+    if not effective["base_url"] or not effective["model"]:
+        raise PlatformError(
+            409, "PERSONAL_LLM_NOT_CONFIGURED", "请先配置并发布个人 LLM 连接"
+        )
+    fingerprint = {
+        "user": user_id,
+        "environment": environment_id,
+        "tool": tool_id,
+        "capability": capability_key,
+        "binding": user_binding.id,
+        "binding_release": binding_release.id,
+        "profile_release": profile_release.id,
+        "secret_version": secret_version.id,
+        **{
+            key: effective[key]
+            for key in (
+                "base_url", "model", "temperature", "max_tokens", "timeout_seconds"
+            )
+        },
+    }
+    effective["snapshot_id"] = "llms_" + hashlib.sha256(
+        json.dumps(fingerprint, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    if include_secrets:
+        try:
+            effective["api_key"] = decrypt_secret_version(
+                database, load_secret_cipher(settings), secret, secret_version.id
+            )
+        except (ValueError, KeyError):
+            raise PlatformError(
+                503, "LLM_SECRET_UNAVAILABLE", "LLM API Key 暂时不可用"
+            ) from None
+    return effective
+
+
+def materialize_llm_snapshot(
+    database: Session,
+    settings: Settings,
+    environment_id: str,
+    tool_id: str,
+    capability_key: str,
+    user_id: str,
+    *,
+    binding_release_id: str,
+    profile_release_id: str,
+    secret_version_id: str,
+) -> dict[str, Any]:
+    """按规划阶段选择的个人 Release/SecretVersion 物化历史 LLM 快照。
+
+    任一选择器对象必须重新从当前用户的 ``UserLlmBinding`` 开始验证。对象已被
+    归档、跨用户/工具/环境、历史版本损坏或 Key 选择不一致时统一返回
+    ``RUNTIME_SNAPSHOT_INVALID``，绝不切换到当前 active Release。
+    """
+
+    def invalid() -> PlatformError:
+        return PlatformError(
+            409, "RUNTIME_SNAPSHOT_INVALID", "任务配置快照无效，请重新提交任务"
+        )
+
+    catalog_binding = database.scalar(select(ToolLlmBinding).where(
+        ToolLlmBinding.tool_id == tool_id,
+        ToolLlmBinding.capability_key == capability_key,
+    ))
+    if catalog_binding is None:
+        raise invalid()
+    user_binding = database.scalar(select(UserLlmBinding).where(
+        UserLlmBinding.user_id == user_id,
+        UserLlmBinding.binding_id == catalog_binding.id,
+    ))
+    if user_binding is None:
+        raise invalid()
+    binding_release = database.get(ConfigRelease, binding_release_id)
+    if binding_release is None or (
+        binding_release.environment_id,
+        binding_release.owner_type,
+        binding_release.owner_id,
+    ) != (environment_id, "user_llm_binding", user_binding.id):
+        raise invalid()
+    binding_values, binding_secrets = release_values(database, binding_release)
+    profile_id = binding_values.get("PROFILE_ID")
+    profile = database.scalar(select(LlmProfile).where(
+        LlmProfile.owner_user_id == user_id,
+        LlmProfile.id == profile_id,
+        LlmProfile.is_archived.is_(False),
+    )) if isinstance(profile_id, str) else None
+    if profile is None or not binding_values.get("ENABLED", True):
+        raise invalid()
+    profile_release = database.get(ConfigRelease, profile_release_id)
+    if profile_release is None or (
+        profile_release.environment_id,
+        profile_release.owner_type,
+        profile_release.owner_id,
+    ) != (environment_id, "llm_profile", profile.id):
+        raise invalid()
+    profile_values, profile_secrets = release_values(database, profile_release)
+    if not profile_values.get("ENABLED", True):
+        raise invalid()
+    chosen_secret = binding_secrets.get("API_KEY_OVERRIDE") or profile_secrets.get("API_KEY")
+    if chosen_secret is None or chosen_secret[1].id != secret_version_id:
+        raise invalid()
+    secret, secret_version = chosen_secret
+    effective = {
+        "status": "ready",
+        "binding_id": user_binding.id,
+        "capability_key": catalog_binding.capability_key,
+        "binding_release_id": binding_release.id,
+        "binding_release_version": binding_release.version,
+        "profile_id": profile.id,
+        "profile_name": profile.name,
+        "profile_release_id": profile_release.id,
+        "profile_release_version": profile_release.version,
+        "protocol": profile.protocol,
+        "base_url": profile_values.get("BASE_URL"),
+        "model": binding_values.get("MODEL_OVERRIDE") or profile_values.get("MODEL"),
+        "temperature": binding_values.get(
+            "TEMPERATURE_OVERRIDE", profile_values.get("TEMPERATURE")
+        ),
+        "max_tokens": binding_values.get(
+            "MAX_TOKENS_OVERRIDE", profile_values.get("MAX_TOKENS")
+        ),
+        "timeout_seconds": binding_values.get(
+            "TIMEOUT_SECONDS_OVERRIDE", profile_values.get("TIMEOUT_SECONDS")
+        ),
+        "api_key_configured": True,
+        "api_key_version": secret_version.version,
+        "api_key_secret_version_id": secret_version.id,
+    }
+    if not effective["base_url"] or not effective["model"]:
+        raise invalid()
+    fingerprint = {
+        "user": user_id,
+        "environment": environment_id,
+        "tool": tool_id,
+        "capability": capability_key,
+        "binding": user_binding.id,
+        "binding_release": binding_release.id,
+        "profile_release": profile_release.id,
+        "secret_version": secret_version.id,
+        **{
+            key: effective[key]
+            for key in (
+                "base_url", "model", "temperature", "max_tokens", "timeout_seconds"
+            )
+        },
+    }
+    effective["snapshot_id"] = "llms_" + hashlib.sha256(
+        json.dumps(fingerprint, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    try:
+        effective["api_key"] = decrypt_secret_version(
+            database, load_secret_cipher(settings), secret, secret_version.id
+        )
+    except (ValueError, KeyError):
+        raise PlatformError(
+            503, "LLM_SECRET_UNAVAILABLE", "LLM API Key 暂时不可用"
+        ) from None
     return effective
 
 

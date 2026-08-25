@@ -33,29 +33,166 @@ class PlatformClient:
             raise ServiceError(503, PLATFORM_CONFIG_UNAVAILABLE, "平台工具身份不可用")
         return token
 
-    def _json(self, method: str, path: str, payload: dict | None = None) -> dict[str, Any]:
-        """发送内部 JSON 请求，并把网络错误映射为稳定错误码。"""
+    def _json(
+        self,
+        method: str,
+        path: str,
+        payload: dict | None = None,
+        *,
+        extra_headers: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        """发送内部 JSON 请求，并保留平台返回的安全稳定错误码。"""
 
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8") if payload is not None else None
+        headers = {
+            "Authorization": f"Bearer {self._token()}",
+            "Content-Type": "application/json",
+        }
+        headers.update(extra_headers or {})
         request = Request(
             f"{self.api_url}{path}", data=data, method=method,
-            headers={"Authorization": f"Bearer {self._token()}", "Content-Type": "application/json"},
+            headers=headers,
         )
         try:
             with urlopen(request, timeout=self.timeout) as response:
                 body = response.read()
             return json.loads(body) if body else {}
-        except (HTTPError, URLError, TimeoutError, json.JSONDecodeError):
+        except HTTPError as exc:
+            # 平台业务错误已经过统一脱敏，工具应保留 PERSONAL_*/RUNTIME_* 等
+            # 稳定码，才能给用户准确提示；解析失败仍降级为通用 503。
+            try:
+                error = json.loads(exc.read().decode("utf-8"))
+                code = str(error["code"])
+                message = str(error["message"])
+            except (KeyError, TypeError, ValueError, UnicodeDecodeError, json.JSONDecodeError):
+                raise ServiceError(503, PLATFORM_CONFIG_UNAVAILABLE, "平台配置服务暂时不可用") from None
+            raise ServiceError(int(exc.code), code, message) from None
+        except (URLError, TimeoutError, json.JSONDecodeError):
             raise ServiceError(503, PLATFORM_CONFIG_UNAVAILABLE, "平台配置服务暂时不可用") from None
 
-    def runtime_config(self, *, include_secrets: bool) -> dict[str, Any]:
-        """读取当前环境的配置快照，并复核服务绑定范围。"""
+    def runtime_config(
+        self,
+        *,
+        include_secrets: bool,
+        runtime_context_id: str | None = None,
+        llm_capability: str | None = "default",
+    ) -> dict[str, Any]:
+        """读取规划快照或兼容期当前快照，并复核服务绑定范围。"""
 
-        query = urlencode({
-            "include_secrets": "true" if include_secrets else "false",
-            "llm_capability": "default",
-        })
+        query_values = {"include_secrets": "true" if include_secrets else "false"}
+        if runtime_context_id:
+            query_values["runtime_context_id"] = runtime_context_id
+        if llm_capability:
+            query_values["llm_capability"] = llm_capability
+        query = urlencode(query_values)
         result = self._json("GET", f"/internal/tools/{self.tool_id}/runtime-config?{query}")
+        if result.get("tool_id") != self.tool_id or result.get("environment") != self.environment:
+            raise ServiceError(503, PLATFORM_CONFIG_UNAVAILABLE, "平台配置作用域不匹配")
+        return result
+
+    def resource_access_check(
+        self,
+        resource_context: str,
+        *,
+        action: str,
+        root_resource_id: str | None = None,
+    ) -> dict[str, Any]:
+        """核验网关注入的 opaque 资源上下文，绝不在 Agent 侧解析 claims。
+
+        ``root_resource_id`` 始终指向根任务；日志、Review、报告和下载等派生
+        资源借此复用同一份不可变授权快照，而不为单个文件维护可变 ACL。
+        """
+
+        if not resource_context:
+            raise ServiceError(401, "RESOURCE_CONTEXT_REQUIRED", "当前请求缺少可信资源上下文")
+        payload = {
+            "action": action,
+            "resource_type": "task",
+            "root_resource_id": root_resource_id,
+        }
+        result = self._json(
+            "POST", f"/internal/tools/{self.tool_id}/resource-access/check", payload,
+            extra_headers={"X-Platform-Resource-Context": resource_context},
+        )
+        # tool/environment 是授权响应的强绑定字段；字段缺失与值不匹配均拒绝，
+        # 防止错误响应或串线响应被当前 Agent 接受。
+        if result.get("tool_id") != self.tool_id or result.get("environment") != self.environment:
+            raise ServiceError(503, PLATFORM_CONFIG_UNAVAILABLE, "平台资源授权作用域不匹配")
+        return result
+
+    def plan_runtime_config(
+        self,
+        signed_user_context: str,
+        *,
+        resource_type: str,
+        resource_id: str,
+        llm_capability: str = "default",
+        resource_context: str | None = None,
+    ) -> dict[str, Any]:
+        """兑换可信 Header，并规划可安全落盘的任务版本选择器。
+
+        签名 Header 只进入兑换请求；返回值仅含不透明 Context ID、过期时间和
+        非敏感 selector，调用方不得把 ``signed_user_context`` 写入任务记录。
+        """
+
+        if not signed_user_context:
+            raise ServiceError(403, "RUNTIME_CONTEXT_REQUIRED", "当前请求缺少可信用户上下文")
+        context = self._json(
+            "POST",
+            f"/internal/tools/{self.tool_id}/runtime-contexts",
+            {"resource_type": resource_type, "resource_id": resource_id},
+            extra_headers={
+                "X-Platform-User-Context": signed_user_context,
+                **({"X-Platform-Resource-Context": resource_context} if resource_context else {}),
+            },
+        )
+        runtime_context_id = context.get("runtime_context_id")
+        if not isinstance(runtime_context_id, str) or not runtime_context_id:
+            raise ServiceError(503, PLATFORM_CONFIG_UNAVAILABLE, "平台用户上下文响应无效")
+        snapshot = self.runtime_config(
+            include_secrets=False,
+            runtime_context_id=runtime_context_id,
+            llm_capability=llm_capability,
+        )
+        selector = snapshot.get("snapshot_selector")
+        if selector is not None and not isinstance(selector, dict):
+            raise ServiceError(503, PLATFORM_CONFIG_UNAVAILABLE, "平台配置选择器无效")
+        return {
+            "runtime_context_id": runtime_context_id,
+            "runtime_context_expires_at": context.get("expires_at"),
+            "snapshot_selector": selector,
+            "llm_capability": llm_capability,
+            "release_id": snapshot.get("release_id"),
+            "release_version": snapshot.get("release_version"),
+        }
+
+    def materialize_runtime_config(self, runtime_metadata: dict[str, Any]) -> dict[str, Any]:
+        """在 Worker 启动时重新校验 Context 并物化精确历史版本。
+
+        selector 为空仅表示平台仍处于个人读取开关关闭的兼容阶段，此时调用旧的
+        单请求读取；个人模式返回 selector 后始终走 materialize，绝不读最新值。
+        """
+
+        runtime_context_id = runtime_metadata.get("runtime_context_id")
+        if not isinstance(runtime_context_id, str) or not runtime_context_id:
+            raise ServiceError(403, "RUNTIME_CONTEXT_REQUIRED", "当前任务缺少可信用户上下文")
+        selector = runtime_metadata.get("snapshot_selector")
+        if selector is None:
+            return self.runtime_config(
+                include_secrets=True,
+                runtime_context_id=runtime_context_id,
+                llm_capability=str(runtime_metadata.get("llm_capability") or "default"),
+            )
+        if not isinstance(selector, dict):
+            raise ServiceError(409, "RUNTIME_SNAPSHOT_INVALID", "任务配置快照无效，请重新提交任务")
+        result = self._json(
+            "POST",
+            f"/internal/tools/{self.tool_id}/runtime-config/materialize",
+            {
+                "runtime_context_id": runtime_context_id,
+                "snapshot_selector": selector,
+            },
+        )
         if result.get("tool_id") != self.tool_id or result.get("environment") != self.environment:
             raise ServiceError(503, PLATFORM_CONFIG_UNAVAILABLE, "平台配置作用域不匹配")
         return result
