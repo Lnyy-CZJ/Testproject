@@ -320,10 +320,24 @@ fi
 for path in / /api/v1/health/live; do
   curl --fail --silent --show-error --retry 12 --retry-delay 5 --retry-all-errors "http://127.0.0.1:41873$path" >/dev/null
 done
-# V3 是功能智能体的生产界面契约；使用容器内只读请求验证，不依赖用户 Session。
-"${compose[@]}" exec -T functional-test-agent python -c \
-  'import urllib.request; request=urllib.request.Request("http://127.0.0.1:5004/functional-test-agent/", headers={"X-Platform-User-ID":"release-smoke","X-Platform-Permissions":"tool.view"}); print(urllib.request.urlopen(request, timeout=5).read().decode())' \
-  | grep -q '测试用例生成'
+# V3 是功能智能体的生产界面契约。发布验收使用工具自己的最小权限
+# Client Token 读取普通配置，并核对当前镜像模板；不能伪造用户 Header 绕过可信身份层。
+"${compose[@]}" exec -T functional-test-agent python -c '
+from pathlib import Path
+from services.common.config import load_service_settings
+from services.common.platform_client import PlatformClient
+settings = load_service_settings("functional-test-agent", "functional", "/functional-test-agent", 5004)
+snapshot = PlatformClient(
+    settings.platform_api_url,
+    settings.tool_id,
+    settings.runtime_environment,
+    settings.platform_client_token_file,
+).runtime_config(include_secrets=False, llm_capability=None)
+assert snapshot.get("normal", {}).get("FUNCTIONAL_WORKBENCH_V3_ENABLED") is True
+template = Path("services/common/templates/index.html").read_text(encoding="utf-8")
+assert "functional_workbench_v3" in template and "测试用例生成" in template
+print("functional V3 config and image template verified")
+'
 verify_runtime
 config_releases=$("${compose[@]}" exec -T platform-db sh -c \
   'psql -At -F "|" -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "select owner_type, owner_id, active_release_id from config_activations where environment_id='"'"'prod'"'"' order by owner_type, owner_id;"')
