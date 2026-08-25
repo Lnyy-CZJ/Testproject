@@ -47,7 +47,10 @@ jobs:
           (cd functional-test-agent && python -m pytest && node --test tests/ui/*.test.mjs)
       - name: API agent tests
         run: |
+          # API Suite 测试同时覆盖 Agent 与 Controller；Controller 契约会导入
+          # Docker SDK，因此 CI 必须安装两套既有锁文件，不能依赖 runner 预装包。
           python -m pip install -r api-test-agent/requirements-agent.lock
+          python -m pip install "$(grep '^docker==' api-test-agent/requirements-controller.lock)"
           (cd api-test-agent && python -m pytest)
       - uses: actions/setup-node@v4
         with:
