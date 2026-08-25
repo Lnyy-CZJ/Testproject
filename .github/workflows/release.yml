@@ -25,6 +25,9 @@ jobs:
           python -m pip install -r test-platform/backend/requirements.txt
           (cd test-platform/backend && python -m pytest)
           python -m pip install -r functional-test-agent/requirements.lock -r api-test-agent/requirements-agent.lock
+          # API Suite 回归包含 Controller 契约；从 Controller 锁文件读取 Docker SDK
+          # 精确版本，避免 Release runner 偶然预装依赖造成门禁结果不一致。
+          python -m pip install "$(grep '^docker==' api-test-agent/requirements-controller.lock)"
           (cd functional-test-agent && python -m pytest && node --test tests/ui/*.test.mjs)
           (cd api-test-agent && python -m pytest)
       - uses: actions/setup-node@v4
