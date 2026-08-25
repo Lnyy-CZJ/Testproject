@@ -97,6 +97,15 @@ class AgentSplitComposeTest(unittest.TestCase):
         self.assertIn('api_suite_selected=true', script)
         self.assertIn('ps --services --status running', script)
 
+    def test_prod_v3_smoke_uses_tool_identity_instead_of_forged_user_headers(self) -> None:
+        """发布验收必须读取工具配置，不能伪造已被可信身份层拒绝的用户 Header。"""
+
+        script = (ROOT / "scripts/deploy-prod.sh").read_text(encoding="utf-8")
+        self.assertNotIn('"X-Platform-User-ID":"release-smoke"', script)
+        self.assertIn('runtime_config(include_secrets=False, llm_capability=None)', script)
+        self.assertIn('FUNCTIONAL_WORKBENCH_V3_ENABLED', script)
+        self.assertIn('测试用例生成', script)
+
 
 if __name__ == "__main__":
     unittest.main()
