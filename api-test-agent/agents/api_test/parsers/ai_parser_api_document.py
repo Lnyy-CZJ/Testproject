@@ -65,6 +65,7 @@ class ParametersModel(BaseModel):
     header: List[Parameter] = Field(description="请求头参数")
     path: List[Parameter] = Field(description="路径参数")
     query: List[Parameter] = Field(description="查询参数")
+    cookie: List[Parameter] = Field(default_factory=list, description="Cookie/Session 参数")
 
 
 class ResponsesModel(BaseModel):
@@ -349,7 +350,7 @@ class AIAPIDocumentParser:
 
         return api_info
 
-    def parser(self, api_document: str):
+    def parser(self, api_document: str, *, model_invoker=None):
         """
         :param api_document:
         :param document_type:
@@ -357,10 +358,14 @@ class AIAPIDocumentParser:
         """
         # 定义一个结果提取器
         parser = JsonOutputParser(pydantic_object=InterfaceDocumentParserModel)
-        # 创建一个调用链
-        chain = api_document_parser.prompt | llm | parser
-        # 调用大模型对接口文档进行解析
-        response = chain.invoke({"input_text": api_document})
+        if model_invoker is None:
+            # 旧 CLI 保持原调用链；平台可注入带 Token 记录的调用器。
+            chain = api_document_parser.prompt | llm | parser
+            response = chain.invoke({"input_text": api_document})
+        else:
+            prompt_text = api_document_parser.prompt.format(input_text=api_document)
+            model_response = model_invoker(prompt_text)
+            response = parser.parse(getattr(model_response, "content", model_response))
         return self.normalize_parameter_roles(response)
 
 

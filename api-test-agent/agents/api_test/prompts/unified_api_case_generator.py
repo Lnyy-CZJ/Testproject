@@ -122,7 +122,7 @@ prompt = PromptTemplate(
 ### 2.3 安全性检查
 - SQL 注入：`' OR '1'='1`, `; DROP TABLE users;`
 - XSS 攻击：`<script>alert(1)</script>`, `javascript:alert(1)`
-- 路径遍历：`../../../etc/passwd`, `..\..\windows\system32`
+- 路径遍历：`../../../etc/passwd`, `..\\..\\windows\\system32`
 - 特殊字符：`\n\t\r`, Unicode 编码, Emoji
 
 ### 2.4 业务逻辑检查

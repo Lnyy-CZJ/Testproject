@@ -13215,6 +13215,9 @@ class AnalysisService:
         run_id: str | None = None,
         platform_release_id: str | None = None,
         platform_credential_version: int | None = None,
+        platform_runtime_context_id: str | None = None,
+        platform_snapshot_selector: dict[str, Any] | None = None,
+        resource_snapshot: dict[str, Any] | None = None,
     ) -> str:
         """创建一个等待后台执行的 Run 和全部 PENDING Query。
 
@@ -13231,6 +13234,10 @@ class AnalysisService:
             run_id: 测试或外部编排可显式提供的唯一标识。
             platform_release_id: 平台模式本次任务锁定的配置 Release；独立模式为空。
             platform_credential_version: 平台模式本次任务使用的凭证版本；独立模式为空。
+            platform_runtime_context_id: 绑定当前用户、环境和 Run 的不透明 Context ID。
+            platform_snapshot_selector: 创建时规划的非敏感精确版本选择器。
+            resource_snapshot: 平台依据可信资源上下文生成的不可变 owner/project
+                快照；调用方不得从浏览器提交的字段构造该值。
 
         返回值:
             新创建的 Run ID。
@@ -13299,7 +13306,10 @@ class AnalysisService:
                         result_schema_version, total_queries, success_queries,
                         failed_queries, message, evaluation_phase, created_at
                         , platform_release_id, platform_credential_version
-                    ) VALUES (?, ?, ?, ?, ?, 'EXECUTION', 'PENDING', ?, ?, 0, 0, ?, ?, ?, ?, ?)
+                        , platform_runtime_context_id, platform_snapshot_selector_json
+                        , owner_user_id, access_scope_snapshot, project_id_snapshot,
+                          authorization_source_snapshot
+                    ) VALUES (?, ?, ?, ?, ?, 'EXECUTION', 'PENDING', ?, ?, 0, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         object_id,
@@ -13314,6 +13324,41 @@ class AnalysisService:
                         now,
                         platform_release_id,
                         platform_credential_version,
+                        platform_runtime_context_id,
+                        (
+                            json.dumps(
+                                platform_snapshot_selector,
+                                ensure_ascii=False,
+                                sort_keys=True,
+                                separators=(",", ":"),
+                            )
+                            if platform_snapshot_selector is not None
+                            else None
+                        ),
+                        (
+                            str(resource_snapshot.get("owner_user_id"))
+                            if isinstance(resource_snapshot, dict)
+                            and resource_snapshot.get("owner_user_id") is not None
+                            else None
+                        ),
+                        (
+                            str(resource_snapshot.get("access_scope_snapshot"))
+                            if isinstance(resource_snapshot, dict)
+                            and resource_snapshot.get("access_scope_snapshot") is not None
+                            else None
+                        ),
+                        (
+                            str(resource_snapshot.get("project_id_snapshot"))
+                            if isinstance(resource_snapshot, dict)
+                            and resource_snapshot.get("project_id_snapshot") is not None
+                            else None
+                        ),
+                        (
+                            str(resource_snapshot.get("authorization_source_snapshot"))
+                            if isinstance(resource_snapshot, dict)
+                            and resource_snapshot.get("authorization_source_snapshot") is not None
+                            else None
+                        ),
                     ),
                 )
                 for query in dataset_queries:

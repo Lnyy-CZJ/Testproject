@@ -133,7 +133,7 @@ prompt = PromptTemplate(
 ### 2.3 安全性检查
 - SQL 注入：`' OR '1'='1`, `; DROP TABLE users;`
 - XSS 攻击：`<script>alert(1)</script>`, `javascript:alert(1)`
-- 路径遍历：`../../../etc/passwd`, `..\..\windows\system32`
+- 路径遍历：`../../../etc/passwd`, `..\\..\\windows\\system32`
 - 特殊字符：`\n\t\r`, Unicode 编码, Emoji
 
 ### 2.4 业务逻辑检查
@@ -232,4 +232,31 @@ prompt = PromptTemplate(
 
 请开始为上述接口编写测试用例，确保覆盖所有关键测试点，输出格式严格遵守结构要求。
 """
+)
+
+
+# V2.2 只接收单接口的脱敏 GenerationContext；旧 prompt 保持原样供 CLI 使用。
+v2_prompt = PromptTemplate(
+    input_variables=["generation_context"],
+    template="""
+你是 API 测试设计助手。沿用旧核心的 L1～L5 测试层次和 T1～T4 测试类型设计候选，但只能依据下面这个接口的契约事实，不得引入其他接口、商品、订单、支付等未出现的业务域。
+
+测试设计规则：
+- L1 接口层：方法、路径、Content-Type、鉴权协议；
+- L2 参数层：必填、类型、格式、长度、枚举和边界；
+- L3 业务层：仅限契约或相关原文明确描述的状态、权限和参数依赖；
+- L4 安全层：仅对文档中的用户输入设计注入、特殊字符和未授权候选；
+- L5 异常层：错误组合、重复提交、超时等不确定行为必须使用 exploratory；
+- T1 正向、T2 异常、T3 边界、T4 组合；一条异常用例只改变一个目标参数，其余参数保持基准值；
+- 保留前置依赖、测试步骤、参数变化和预期/观察目标。预期必须来自契约响应或原文依据。
+
+生成上下文：
+{generation_context}
+
+仅返回 JSON 数组。每项字段限定为：name、objective、dimension、scenario_type、preconditions、steps、expected_results。dimension 建议使用 L1_T1、L2_T2_required_missing、L2_T3_boundary、L3_T4_dependency、L4_T2_security 或 L5_exploratory 等可追溯标识。
+scenario_type 只能是 normal、negative、exploratory：normal 表示正常或正向场景；negative 表示错误输入、缺失、越权或异常场景；exploratory 表示文档无法支持确定预期，只记录观察目标。
+最小合法示例：[{{"name":"正常请求","objective":"验证接口按契约处理有效请求","dimension":"business_scenario","scenario_type":"normal","preconditions":[],"steps":[{{"order":1,"action":"按契约发送请求"}}],"expected_results":["返回文档明确声明的结果"]}}]
+steps 中每项必须是对象并包含 action；expected_results 必须能够由契约响应或原文证据支持。
+无法确定预期时将 scenario_type 设为 exploratory，并把 expected_results 写成需要人工确认的观察目标；不得自行假设状态码或业务结果。
+""".strip(),
 )

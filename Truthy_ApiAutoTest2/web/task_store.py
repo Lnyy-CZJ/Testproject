@@ -125,7 +125,7 @@ class TaskStore:
         return records
 
     def delete(self, task_id: str) -> bool:
-        """删除任务记录及其 console 目录与任务 JUnit。
+        """删除任务记录及其 console、JUnit 与任务专属报告目录。
 
         返回值:
             记录存在并完成删除返回 True；记录不存在返回 False。
@@ -139,6 +139,11 @@ class TaskStore:
         junit_path = self._reports_dir / f"junit-task-{task_id}.xml"
         if junit_path.is_file():
             junit_path.unlink()
+        # 报告以根任务 ID 作为物理隔离边界；任务因保留策略或人工操作被
+        # 删除后，同步移除不可再授权访问的报告，避免产生永久孤儿产物。
+        task_report_directory = self._reports_dir / "task-reports" / task_id
+        if task_report_directory.is_dir():
+            shutil.rmtree(task_report_directory, ignore_errors=True)
         console_directory = self.console_dir(task_id)
         if console_directory.is_dir():
             shutil.rmtree(console_directory, ignore_errors=True)

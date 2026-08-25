@@ -160,7 +160,7 @@ prompt = PromptTemplate(
 ### 2.3 安全性检查
 - SQL 注入：`' OR '1'='1`, `; DROP TABLE users;`
 - XSS 攻击：`<script>alert(1)</script>`, `javascript:alert(1)`
-- 路径遍历：`../../../etc/passwd`, `..\..\windows\system32`
+- 路径遍历：`../../../etc/passwd`, `..\\..\\windows\\system32`
 - 特殊字符：`\n\t\r`, Unicode 编码, Emoji
 
 ### 2.4 业务逻辑检查
@@ -463,6 +463,19 @@ token = test_env_variables.get("token", "")
 
 请根据上述信息生成完整的可执行测试用例，确保符合探索式测试模式的要求。
 """
+)
+
+
+# V2.2 平台只使用该无 Host 模板；旧 prompt 继续服务旧 CLI。
+v2_prompt = PromptTemplate(
+    input_variables=["generation_context"],
+    template=r"""
+你只负责把已确认的 API 基础用例转换为无 Host 的结构化执行定义。
+输入：{generation_context}
+只返回 JSON 对象，包含 request、preconditions、variables、assertions、observation_targets。
+request 只能包含 method、相对 path、headers、query、cookies、body；不得输出 Host、Credential、网络模式、文件路径或进程命令。
+不得默认断言 200。断言必须来自已确认契约；探索性用例只返回 observation_targets。
+""".strip(),
 )
 api_case_output_format = {
     "name": "用例名称（格式：[层次]-[类型]-[场景]-[输入]，例如：L2-T2-参数缺失-用户名必填）",

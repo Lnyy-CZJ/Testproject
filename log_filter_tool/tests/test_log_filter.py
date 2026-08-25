@@ -1,6 +1,8 @@
+import json
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from app import (
     build_interface_statistics,
@@ -60,6 +62,94 @@ class LogFilterTests(unittest.TestCase):
                 (Path(export_dir) / payload["filename"]).read_text(encoding="utf-8"),
                 "filtered log",
             )
+
+    def test_export_refuses_foreign_resource_context_without_creating_enumerable_file(self):
+        """平台拒绝时，导出文件不得落入可猜测或可枚举的公共目录。"""
+        app = create_app()
+        app.testing = True
+
+        class DeniedPlatformResponse:
+            """提供 urlopen 上下文管理器协议的最小平台拒绝响应。"""
+
+            def read(self):
+                return b'{"allowed": false, "code": "RESOURCE_NOT_FOUND"}'
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+        with TemporaryDirectory() as export_dir, TemporaryDirectory() as token_dir:
+            token_file = Path(token_dir) / "platform-token"
+            token_file.write_text("test-tool-token", encoding="utf-8")
+            app.config.update(
+                LOG_EXPORT_DIR=export_dir,
+                LOG_EXPORT_DISPLAY_DIR=export_dir,
+                PLATFORM_API_URL="http://platform.invalid/api/v1",
+                PLATFORM_CLIENT_TOKEN_FILE=str(token_file),
+            )
+            with patch("app.urlrequest.urlopen", return_value=DeniedPlatformResponse()):
+                client = app.test_client()
+                client.set_cookie("tp_csrf", "test-csrf")
+                response = client.post(
+                    "/export",
+                    json={"export_type": "filtered_result", "content": "secret log"},
+                    headers={
+                        "X-Platform-Resource-Context": "opaque-tester-b",
+                        "X-CSRF-Token": "test-csrf",
+                    },
+                )
+
+            self.assertEqual(404, response.status_code)
+            self.assertEqual([], list(Path(export_dir).rglob("*")))
+
+    def test_platform_export_registers_snapshot_before_writing_owner_directory(self):
+        """平台导出必须先登记同一随机根 ID，再写入 owner 私有目录。"""
+
+        app = create_app()
+        app.testing = True
+        calls = []
+
+        class PlatformResponse:
+            def __init__(self, payload, status=200):
+                self.payload = payload
+                self.status = status
+
+            def read(self):
+                return json.dumps(self.payload).encode("utf-8")
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+        def platform_call(outgoing, timeout):
+            calls.append(outgoing.full_url)
+            if outgoing.full_url.endswith("/internal/resources"):
+                request_payload = json.loads(outgoing.data.decode("utf-8"))
+                return PlatformResponse({
+                    "resource_id": request_payload["resource_id"],
+                    "owner_user_id": "tester-a",
+                    "environment_id": "dev",
+                }, 201)
+            return PlatformResponse({"allowed": True, "user_id": "tester-a"})
+
+        with TemporaryDirectory() as export_dir, TemporaryDirectory() as token_dir:
+            token_file = Path(token_dir) / "platform-token"
+            token_file.write_text("test-tool-token", encoding="utf-8")
+            app.config.update(LOG_EXPORT_DIR=export_dir, PLATFORM_API_URL="http://platform.invalid/api/v1", PLATFORM_CLIENT_TOKEN_FILE=str(token_file))
+            with patch("app.urlrequest.urlopen", side_effect=platform_call):
+                client = app.test_client()
+                client.set_cookie("tp_csrf", "test-csrf")
+                response = client.post("/export", json={"export_type": "filtered_result", "content": "private log"}, headers={"X-Platform-Resource-Context": "opaque", "X-CSRF-Token": "test-csrf"})
+
+            self.assertEqual(200, response.status_code)
+            self.assertGreaterEqual(len(calls), 2)
+            self.assertTrue(calls[1].endswith("/internal/resources"))
+            download_id = response.get_json()["download_id"]
+            self.assertEqual(1, len(list((Path(export_dir) / "tester-a" / download_id).glob("*.log"))))
 
     def test_export_log_rejects_empty_content(self):
         """空内容不应创建导出文件。"""

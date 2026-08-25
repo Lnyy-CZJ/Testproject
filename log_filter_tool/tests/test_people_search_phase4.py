@@ -93,6 +93,23 @@ class RecordingURLOpen:
         return MockResponse(payload)
 
 
+class SequenceURLOpen:
+    """按顺序返回 Context、规划和物化响应，并记录全部请求。"""
+
+    def __init__(self, payloads: list[dict | Exception]):
+        self.payloads = list(payloads)
+        self.requests: list[Any] = []
+
+    def __call__(self, request, timeout=None):
+        self.requests.append(request)
+        if not self.payloads:
+            raise AssertionError("收到未预期的平台请求")
+        payload = self.payloads.pop(0)
+        if isinstance(payload, Exception):
+            raise payload
+        return MockResponse(json.dumps(payload).encode("utf-8"))
+
+
 # ---------------------------------------------------------------------------
 # 配置与 Skill 加载
 # ---------------------------------------------------------------------------
@@ -140,16 +157,33 @@ class AIConfigTests(unittest.TestCase):
         with NamedTemporaryFile("w", delete=False, encoding="utf-8") as token_file:
             token_file.write("t" * 40)
             token_path = token_file.name
-        opener = RecordingURLOpen(body_json={
-            "tool_id": "log-filter", "environment": "dev",
-            "llm": {
-                "status": "ready", "base_url": "https://example.com/v1",
-                "model": "shared-model", "api_key": "platform-key",
-                "temperature": 0.1, "max_tokens": 3400, "timeout_seconds": 28,
-                "snapshot_id": "llms_test", "profile_release_id": "rel_p",
-                "binding_release_id": "rel_b",
+        opener = SequenceURLOpen([
+            {
+                "runtime_context_id": "rtx_log_user_1",
+                "expires_at": "2026-08-24T12:00:00Z",
             },
-        })
+            {
+                "tool_id": "log-filter", "environment": "dev",
+                "snapshot_selector": {
+                    "release_id": "rel_log_v1",
+                    "llm_capability": "people-search-summary",
+                    "llm_binding_release_id": "rel_b",
+                    "llm_profile_release_id": "rel_p",
+                    "llm_secret_version_id": "secv_log_1",
+                },
+                "llm": {"status": "ready", "model": "shared-model"},
+            },
+            {
+                "tool_id": "log-filter", "environment": "dev",
+                "llm": {
+                    "status": "ready", "base_url": "https://example.com/v1",
+                    "model": "shared-model", "api_key": "platform-key",
+                    "temperature": 0.1, "max_tokens": 3400, "timeout_seconds": 28,
+                    "snapshot_id": "llms_test", "profile_release_id": "rel_p",
+                    "binding_release_id": "rel_b",
+                },
+            },
+        ])
         cfg = load_ai_config(environ={
             "LOG_FILTER_LLM_CONFIG_SOURCE": "platform",
             "PLATFORM_API_URL": "http://platform-api:8000/api/v1",
@@ -157,12 +191,20 @@ class AIConfigTests(unittest.TestCase):
             "PLATFORM_RUNTIME_ENV": "dev",
             "PEOPLE_SEARCH_ANALYZER_AI_ENABLED": "true",
             "PEOPLE_SEARCH_ANALYZER_LLM_MODEL": "must-not-be-used",
-        }, _urlopen=opener)
+        }, signed_user_context="signed-log-user-1", resource_id="request-log-1", _urlopen=opener)
         self.assertTrue(cfg.callable)
         self.assertEqual(cfg.model, "shared-model")
         self.assertEqual(cfg.endpoint, "https://example.com/v1/chat/completions")
         self.assertEqual((cfg.temperature, cfg.max_tokens, cfg.timeout_seconds), (0.1, 3400, 28))
         self.assertEqual(cfg.snapshot_id, "llms_test")
+        self.assertEqual(3, len(opener.requests))
+        self.assertTrue(opener.requests[0].full_url.endswith("/runtime-contexts"))
+        self.assertEqual(
+            "signed-log-user-1",
+            opener.requests[0].get_header("X-platform-user-context"),
+        )
+        self.assertIn("include_secrets=false", opener.requests[1].full_url)
+        self.assertTrue(opener.requests[2].full_url.endswith("/runtime-config/materialize"))
 
     def test_platform_source_failure_never_falls_back_to_env_key(self):
         """平台身份或配置失败时返回稳定错误，不能静默使用旧 Secret。"""
@@ -175,6 +217,54 @@ class AIConfigTests(unittest.TestCase):
         })
         self.assertFalse(cfg.callable)
         self.assertEqual(cfg.config_error_code, "LLM_CONFIG_UNAVAILABLE")
+
+    def test_platform_source_preserves_personal_llm_error_code(self):
+        """平台明确返回个人 LLM 未配置时，规则报告应保留该稳定错误码。"""
+
+        with NamedTemporaryFile("w", delete=False, encoding="utf-8") as token_file:
+            token_file.write("t" * 40)
+            token_path = token_file.name
+        platform_error = urlerror.HTTPError(
+            "http://platform-api.invalid/runtime-config",
+            409,
+            "Conflict",
+            {},
+            io.BytesIO(
+                json.dumps(
+                    {
+                        "code": "PERSONAL_LLM_NOT_CONFIGURED",
+                        "message": "请先配置并发布个人 LLM 连接",
+                    }
+                ).encode("utf-8")
+            ),
+        )
+        opener = SequenceURLOpen(
+            [
+                {
+                    "runtime_context_id": "rtx_log_missing_llm",
+                    "expires_at": "2026-08-24T12:00:00Z",
+                },
+                platform_error,
+            ]
+        )
+        try:
+            cfg = load_ai_config(
+                environ={
+                    "LOG_FILTER_LLM_CONFIG_SOURCE": "platform",
+                    "PLATFORM_API_URL": "http://platform-api.invalid/api/v1",
+                    "PLATFORM_CLIENT_TOKEN_FILE": token_path,
+                    "PLATFORM_RUNTIME_ENV": "dev",
+                    "PEOPLE_SEARCH_ANALYZER_AI_ENABLED": "true",
+                },
+                signed_user_context="signed-log-missing-llm",
+                resource_id="request-log-missing-llm",
+                _urlopen=opener,
+            )
+        finally:
+            Path(token_path).unlink(missing_ok=True)
+
+        self.assertFalse(cfg.callable)
+        self.assertEqual("PERSONAL_LLM_NOT_CONFIGURED", cfg.config_error_code)
 
 
 class SkillLoadingTests(unittest.TestCase):

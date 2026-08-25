@@ -26,10 +26,14 @@ def apply_quality_gate(contract: ApiContract, *, minimum_score: float = 0.90) ->
             code="MISSING_CRITICAL_EVIDENCE", field_path="field_evidence",
             message=f"关键字段缺少证据: {', '.join(missing)}", severity="blocker",
         ))
-    blockers.extend(item for item in contract.conflict_items if item.severity == "blocker")
-    blockers.extend(item for item in contract.unresolved if item.severity == "blocker")
-    blockers.extend(item for item in contract.ambiguity_notes if item.severity == "blocker")
-    unsupported = sum(1 for item in contract.field_evidence if item.evidence_type == "inferred")
+    active = {"open", "reopened"}
+    blockers.extend(item for item in contract.conflict_items if item.severity == "blocker" and item.status in active)
+    blockers.extend(item for item in contract.unresolved if item.severity == "blocker" and item.status in active)
+    blockers.extend(item for item in contract.ambiguity_notes if item.severity == "blocker" and item.status in active)
+    unsupported = sum(
+        1 for item in contract.field_evidence
+        if item.evidence_type == "inferred" and item.field_path not in evidence_paths
+    )
     if unsupported:
         blockers.append(ReviewIssue(
             code="UNSUPPORTED_FACTS", field_path="field_evidence",
@@ -37,7 +41,7 @@ def apply_quality_gate(contract: ApiContract, *, minimum_score: float = 0.90) ->
         ))
     evidence_rate = 1.0 if not critical else round(len(critical & evidence_paths) / len(critical), 4)
     completeness = sum(bool(value) for value in (contract.method, contract.path, contract.name)) / 3
-    conflict_rate = 1.0 if not contract.conflict_items else 0.0
+    conflict_rate = 1.0 if not any(item.status in active for item in contract.conflict_items) else 0.0
     schema_rate = 1.0
     score = round(
         completeness * 0.25 + evidence_rate * 0.25 + schema_rate * 0.20

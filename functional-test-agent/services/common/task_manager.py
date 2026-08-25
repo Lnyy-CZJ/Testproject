@@ -18,7 +18,7 @@ from services.common.task_models import TERMINAL_STATUSES, utc_now
 from services.common.task_store import TaskStore
 
 
-ConfigLoader = Callable[[], dict[str, Any]]
+ConfigLoader = Callable[[dict[str, Any]], dict[str, Any]]
 ResultCollector = Callable[[str, Path, dict[str, Any]], dict[str, Any]]
 
 
@@ -306,7 +306,9 @@ class TaskManager:
         if not record or record.get("status") != "pending":
             return
         try:
-            snapshot = self.config_loader()
+            # 任务记录携带创建时规划的非敏感 selector；配置加载器据此在执行
+            # 起点重新校验 Runtime Context 并物化一次，运行中只使用内存快照。
+            snapshot = self.config_loader(record)
             normal = snapshot.get("normal", {}) or {}
             self._retention_limits = {
                 "summary_days": int(normal.get("TASK_SUMMARY_RETENTION_DAYS", 180)),

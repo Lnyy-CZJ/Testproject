@@ -18,12 +18,15 @@ ParserCallable = Callable[[str], Any]
 _HEADING = re.compile(r"(?m)^(#{1,6})\s+(.+)$")
 
 
-def split_sections(text: str) -> list[dict[str, str]]:
+def split_sections(text: str) -> list[dict[str, Any]]:
     """按 Markdown 标题切片；无标题文档作为单个稳定 Section。"""
 
     matches = list(_HEADING.finditer(text))
     if not matches:
-        return [{"section_id": "section-001", "title": "API 文档", "content": text}]
+        return [{
+            "section_id": "section-001", "title": "API 文档", "content": text,
+            "start_line": 1, "end_line": max(1, len(text.splitlines())),
+        }]
     sections = []
     for index, match in enumerate(matches):
         start = match.end()
@@ -32,6 +35,8 @@ def split_sections(text: str) -> list[dict[str, str]]:
             "section_id": f"section-{index + 1:03d}",
             "title": match.group(2).strip(),
             "content": text[start:end].strip(),
+            "start_line": text.count("\n", 0, start) + 1,
+            "end_line": text.count("\n", 0, end) + 1,
         })
     return sections
 
@@ -86,9 +91,20 @@ def parse_unstructured_document(
                 for field, value in (
                     ("name", parameter.name), ("location", location), ("required", parameter.required),
                 ):
+                    explicit = None
+                    if field == "location" and location == "header":
+                        explicit = bool(re.search(
+                            rf"(?im)(?:-H|请求头|header)[^\n]*{re.escape(parameter.name)}|{re.escape(parameter.name)}[^\n]*(?:请求头|header)",
+                            quote,
+                        ))
+                    elif field == "required" and parameter.required:
+                        explicit = bool(re.search(
+                            rf"(?im)^{re.escape(parameter.name)}[^\n]*(?:\t是\t|必填\s*[:：]?\s*是|required\s*[:=]?\s*true)",
+                            quote,
+                        ))
                     _ground(
                         f"parameters[{parameter_index}].{field}", value, quote,
-                        section, evidences, unresolved,
+                        section, evidences, unresolved, explicit_override=explicit,
                     )
         responses = []
         raw_responses = item.get("responses")
@@ -115,7 +131,9 @@ def parse_unstructured_document(
         contract = ApiContract(
             contract_id="contract_" + hashlib.sha256(f"{safe_method} {safe_path} {index}".encode()).hexdigest()[:20],
             name=str(item.get("name") or item.get("summary") or f"{safe_method} {safe_path}"),
-            summary=str(item.get("summary", "")), method=safe_method, path=safe_path,
+            summary=str(item.get("summary", "")), module=str(item.get("module", "")),
+            tags=[str(value) for value in item.get("tags", [])] if isinstance(item.get("tags"), list) else [],
+            method=safe_method, path=safe_path,
             parameters=parameters, responses=responses,
             source_trace=SourceTrace(source_id=source_id, section_id=section["section_id"], quote=quote[:2000]),
             field_evidence=evidences, unresolved=[*unresolved, *llm_unresolved],
@@ -164,7 +182,7 @@ def _parse_with_limited_retry(parser: ParserCallable, text: str) -> Any:
     raise ServiceError(422, "CONTRACT_PARSE_FAILED", "非结构化接口文档解析失败")
 
 
-def _best_section(item: dict[str, Any], sections: list[dict[str, str]]) -> dict[str, str]:
+def _best_section(item: dict[str, Any], sections: list[dict[str, Any]]) -> dict[str, Any]:
     """选择同时包含 method/path 最多的原文 Section。"""
 
     needles = [str(item.get("method", "")), str(item.get("path", ""))]
@@ -175,19 +193,30 @@ def _ground(
     field_path: str,
     value: Any,
     quote: str,
-    section: dict[str, str],
+    section: dict[str, Any],
     evidence: list[FieldEvidence],
     unresolved: list[ReviewIssue],
+    explicit_override: bool | None = None,
 ) -> None:
     """将能从原文直接找到的值绑定 Evidence，其余移动到未解决项。"""
 
     text = str(value)
-    explicit = bool(text) and text.lower() in quote.lower()
+    explicit = explicit_override if explicit_override is not None else bool(text) and text.lower() in quote.lower()
+    lines = quote.splitlines()
+    if explicit_override and field_path.endswith(".location") and text.lower() == "header":
+        matching_line = next((index for index, line in enumerate(lines, 1) if re.search(r"(?i)(?:-H|header|请求头)", line)), 1)
+    elif explicit_override and field_path.endswith(".required"):
+        matching_line = next((index for index, line in enumerate(lines, 1) if re.search(r"(?i)(?:必填|required)", line)), 1)
+    else:
+        matching_line = next((index for index, line in enumerate(lines, 1) if text and text.lower() in line.lower()), 1)
+    absolute_line = int(section.get("start_line", 1)) + matching_line - 1
+    evidence_quote = lines[matching_line - 1] if lines else quote[:1000]
     evidence.append(FieldEvidence(
         field_path=field_path, value=value, source_type="source_quote",
-        source_pointer=section["section_id"], quote=quote[:1000],
+        source_pointer=f"{section['section_id']}:L{absolute_line}", quote=evidence_quote[:1000],
         evidence_type="explicit" if explicit else "inferred",
         confidence=1.0 if explicit else 0.0,
+        start_line=absolute_line, end_line=absolute_line,
     ))
     if not explicit:
         unresolved.append(ReviewIssue(

@@ -15,6 +15,23 @@ from requests.exceptions import ReadTimeout
 from services.execution_controller.contracts import CreateRunRequest, RuntimeResult
 
 
+def plan_reference_matches(payload: object, request: CreateRunRequest) -> bool:
+    """确认挂载输入中的计划引用与 Controller 窄请求完全一致。
+
+    输入文件 SHA 只能证明文件未在传输中变化；本校验进一步防止调用方把一个
+    计划的审计 ID/SHA 与另一份计划正文组合后交给 Executor。
+    """
+
+    if not isinstance(payload, dict):
+        return False
+    plan = payload.get("plan") or payload.get("execution_plan")
+    return bool(
+        isinstance(plan, dict)
+        and str(plan.get("plan_id", "")) == request.plan_id
+        and str(plan.get("sha256", "")) == request.plan_sha256
+    )
+
+
 class DockerRuntimeAdapter:
     """以固定镜像 ID 创建一个短生命周期、受限且无 Docker Socket 的 Executor。"""
 
@@ -30,7 +47,15 @@ class DockerRuntimeAdapter:
             image = self.client.images.get(image_reference)
         except ImageNotFound as exc:
             raise RuntimeError("固定 Executor 镜像不存在") from exc
-        self.image_id = image.id
+        # 镜像引用可以是部署侧 tag，但 Docker 解析后的运行标识必须是不可变 sha256。
+        # 该门禁防止 Controller 将可漂移 tag 作为真正的 Executor 镜像执行。
+        raw_image_id = str(image.id)
+        digest = raw_image_id.removeprefix("sha256:")
+        if len(digest) != 64 or any(character not in "0123456789abcdef" for character in digest.lower()):
+            raise RuntimeError("EXECUTOR_IMAGE_DIGEST_INVALID")
+        self.image_id = f"sha256:{digest.lower()}"
+        self.image_digest = self.image_id
+        self.image_gate = "EXECUTOR_IMAGE_DIGEST_VERIFIED"
         self.executor_network = executor_network
         self.proxy_url = proxy_url
         self.resource_policy_id = resource_policy_id
@@ -60,6 +85,9 @@ class DockerRuntimeAdapter:
             raw = input_path.read_bytes()
             if hashlib.sha256(raw).hexdigest() != request.input_sha256:
                 return RuntimeResult(status="failed", error_code="EXECUTION_INPUT_SHA_MISMATCH")
+            payload = json.loads(raw)
+            if not plan_reference_matches(payload, request):
+                return RuntimeResult(status="failed", error_code="EXECUTION_PLAN_SHA_MISMATCH")
             output_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
             # Executor 仅绑定当前输入文件；临时开放只读位，Run 结束后立即恢复原权限。
             original_mode = input_path.stat().st_mode & 0o777
@@ -79,7 +107,14 @@ class DockerRuntimeAdapter:
                 tmpfs={"/tmp": "rw,noexec,nosuid,size=32m", "/run/output": "rw,noexec,nosuid,size=32m"},
                 volumes={str(input_path): {"bind": "/run/input/input.json", "mode": "ro"}},
                 environment={"HTTP_PROXY": self.proxy_url, "NO_PROXY": ""},
-                labels={"api-test-agent.run-id": request.run_id, "api-test-agent.managed": "true"},
+                # 仅记录计划引用和镜像门禁，不解释 DAG、用例、请求正文或 Credential。
+                labels={
+                    "api-test-agent.run-id": request.run_id,
+                    "api-test-agent.managed": "true",
+                    "api-test-agent.executor-image-digest": self.image_digest,
+                    "api-test-agent.image-gate": self.image_gate,
+                    **({"api-test-agent.plan-id": request.plan_id, "api-test-agent.plan-sha256": request.plan_sha256} if request.plan_id else {}),
+                },
             )
             wait_result = container.wait(timeout=request.timeout_seconds)
             status_code = int(wait_result.get("StatusCode", 1))

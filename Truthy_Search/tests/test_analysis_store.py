@@ -13,6 +13,60 @@ from analysis_store import AnalysisStore, UnsupportedSchemaError
 class AnalysisStoreTests(unittest.TestCase):
     """验证数据库初始化、约束、事务回滚和重新打开。"""
 
+    def test_run_scope_query_hides_other_tester_but_keeps_project_and_global(self):
+        """根 Run 的平台快照必须在存储层完成 own/project/global 过滤。
+
+        该用例刻意不通过 HTTP 传入 owner 或 project：两条 Run 的归属仅来自
+        创建时平台返回的快照。这样可防止页面伪造查询参数绕过对象级隔离。
+        """
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store = AnalysisStore(root / "scope.db")
+            store.initialize()
+            store.create_evaluation("eval-scope", "scope", "")
+            for run_id, owner in (("run_owner_a", "tester-a"), ("run_owner_b", "tester-b")):
+                # 只构造已由平台创建流程落盘的 root snapshot；读取测试不需要
+                # 调用实际执行服务或伪造浏览器提交字段。
+                with store.transaction() as connection:
+                    connection.execute(
+                        """
+                        INSERT INTO runs(
+                            run_id, evaluation_id, run_label, system_version,
+                            source_type, status, result_schema_version, created_at,
+                            owner_user_id, access_scope_snapshot,
+                            project_id_snapshot, authorization_source_snapshot
+                        ) VALUES (?, 'eval-scope', ?, 'test', 'JSONL_IMPORT',
+                                  'COMPLETED', '1.3', 'now', ?, 'project',
+                                  'project-a', 'project-member')
+                        """,
+                        (run_id, run_id, owner),
+                    )
+
+            own = store.list_runs_for_scope(
+                user_id="tester-b", data_scope="own", managed_project_ids=[]
+            )
+            project = store.list_runs_for_scope(
+                user_id="manager-a",
+                data_scope="project",
+                managed_project_ids=["project-a"],
+            )
+            extra_grant = store.list_runs_for_scope(
+                user_id="admin-extra", data_scope="own", managed_project_ids=[]
+            )
+            global_scope = store.list_runs_for_scope(
+                user_id="platform-admin", data_scope="global", managed_project_ids=[]
+            )
+
+            self.assertEqual(["run_owner_b"], [row["run_id"] for row in own])
+            self.assertEqual(
+                {"run_owner_a", "run_owner_b"}, {row["run_id"] for row in project}
+            )
+            self.assertEqual([], extra_grant)
+            self.assertEqual(
+                {"run_owner_a", "run_owner_b"},
+                {row["run_id"] for row in global_scope},
+            )
+
     @staticmethod
     def _create_legacy_v1_database(db_path: Path) -> None:
         """创建包含迁移边界数据的最小 Schema v1 数据库。

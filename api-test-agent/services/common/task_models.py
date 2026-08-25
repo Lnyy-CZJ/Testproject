@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 TaskStatus = Literal[
     "pending", "running", "waiting_review", "waiting_contract_review",
-    "waiting_case_review", "waiting_execution_confirmation", "partial_success",
+    "waiting_case_review", "waiting_executable_review", "waiting_execution_confirmation", "partial_success",
     "succeeded", "failed", "cancelled",
 ]
 TERMINAL_STATUSES = frozenset({"partial_success", "succeeded", "failed", "cancelled"})

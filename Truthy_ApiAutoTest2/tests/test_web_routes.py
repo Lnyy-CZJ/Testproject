@@ -12,8 +12,10 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
+import requests
 from flask.testing import FlaskClient
 
 from conftest import junit_xml, patch_command
@@ -126,7 +128,8 @@ class TestPagesAndHealth:
         assert response.status_code == 200
         assert response.get_json() == {
             "status": "ok", "service": "api-autotest", "version": "unknown",
-            "revision": "unknown", "dirty": True, "runtime_environment": "unknown",
+            "revision": "unknown", "dirty": True, "content_sha256": "unknown",
+            "runtime_environment": "unknown",
         }
 
     def test_index_and_catalog_pages_render(self, client):
@@ -164,6 +167,90 @@ class TestPagesAndHealth:
 
 class TestTaskRoutes:
     """任务提交、列表、详情、取消与结果接口。"""
+
+    def test_resource_context_hides_foreign_task_and_report_from_enumeration(
+        self, client, monkeypatch, tmp_path
+    ):
+        """tester-b 不能借由列表、详情或静态报告路径枚举 tester-a 的任务。
+
+        opaque context 的内容由平台验证，测试仅模拟平台的 ``allowed=false``
+        决策；应用不能从浏览器 Header 推断 owner/project。
+        """
+        test_client, manager = client
+        task_id = "20260101-000000-0001"
+        manager.store.save(
+            {
+                "id": task_id,
+                "status": "succeeded",
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "resource_snapshot": {
+                    "owner_user_id": "tester-a",
+                    "access_scope_snapshot": "project",
+                    "project_id_snapshot": "project-a",
+                    "authorization_source_snapshot": "project-member",
+                },
+            }
+        )
+        token_file = tmp_path / "platform-token"
+        token_file.write_text("test-tool-token", encoding="utf-8")
+        settings = test_client.application.config["AUTOTEST_SETTINGS"]
+        settings.update(
+            {
+                "platform_api_url": "http://platform.invalid/api/v1",
+                "platform_client_token_file": str(token_file),
+            }
+        )
+        report_dir = (
+            manager.project_root / "reports" / "task-reports" / task_id / "current"
+        )
+        report_dir.mkdir(parents=True)
+        (report_dir / "index.html").write_text("private report", encoding="utf-8")
+
+        denied = _FakePlatformErrorResponse(404, "RESOURCE_NOT_FOUND", "not found")
+
+        def access_response(_url, *, headers, **_kwargs):
+            """模拟平台核验后的 own/project/global 查询范围，不解码 opaque 值。"""
+            opaque_context = headers.get("X-Platform-Resource-Context")
+            if opaque_context == "opaque-manager":
+                return _FakeRuntimeConfigResponse(
+                    {
+                        "allowed": True,
+                        "user_id": "manager-a",
+                        "data_scope": "project",
+                        "managed_project_ids": ["project-a"],
+                    }
+                )
+            if opaque_context == "opaque-platform-admin":
+                return _FakeRuntimeConfigResponse(
+                    {"allowed": True, "user_id": "platform-admin", "data_scope": "global"}
+                )
+            if opaque_context == "opaque-extra-grant-admin":
+                return _FakeRuntimeConfigResponse(
+                    {"allowed": True, "user_id": "admin-extra", "data_scope": "own"}
+                )
+            return denied
+
+        monkeypatch.setattr("web.app.requests.post", access_response)
+        headers = {"X-Platform-Resource-Context": "opaque-tester-b"}
+
+        listing = test_client.get("/api/tasks", headers=headers)
+        detail = test_client.get(f"/api/tasks/{task_id}", headers=headers)
+        report = test_client.get(f"/api/report/meta?task_id={task_id}", headers=headers)
+        unknown = test_client.get(f"/api/tasks/{UNKNOWN_TASK_ID}", headers=headers)
+
+        assert listing.get_json()["items"] == []
+        assert detail.status_code == 404
+        assert report.status_code == 404
+        assert unknown.status_code == detail.status_code
+        assert test_client.get(
+            "/api/tasks", headers={"X-Platform-Resource-Context": "opaque-manager"}
+        ).get_json()["items"][0]["id"] == task_id
+        assert test_client.get(
+            "/api/tasks", headers={"X-Platform-Resource-Context": "opaque-extra-grant-admin"}
+        ).get_json()["items"] == []
+        assert test_client.get(
+            "/api/tasks", headers={"X-Platform-Resource-Context": "opaque-platform-admin"}
+        ).get_json()["items"][0]["id"] == task_id
 
     def test_submit_invalid_body(self, client):
         test_client, _ = client
@@ -403,43 +490,96 @@ class TestCatalogCredentialsReportRoutes:
             容器内残留句柄可能使 exists()/resolve() 抛 OSError(EINVAL)
             而非 ENOENT；只读展示端点必须优雅降级。
         """
-        test_client, _ = client
-        (fake_project / "reports" / "allure-current").mkdir(parents=True)
+        test_client, manager = client
+        task_id = "20260101-000000-0001"
+        manager.store.save({"id": task_id, "status": "succeeded"})
+        (fake_project / "reports" / "task-reports" / task_id / "current").mkdir(
+            parents=True
+        )
         real_exists = Path.exists
 
         def flaky_exists(self, *args, **kwargs):
             # 仅对报告指针目录注入异常，其余路径保持真实行为。
-            if self.name == "allure-current":
+            if self.name == "current":
                 raise OSError(22, "Invalid argument")
             return real_exists(self, *args, **kwargs)
 
         monkeypatch.setattr(Path, "exists", flaky_exists)
-        response = test_client.get("/api/report/meta")
+        response = test_client.get(f"/api/report/meta?task_id={task_id}")
         assert response.status_code == 200
         meta = response.get_json()
         assert meta["exists"] is False
         assert meta["report_url"] is None
 
     def test_report_published(self, client, fake_project):
-        test_client, _ = client
-        report_dir = fake_project / "reports" / "allure-current"
+        test_client, manager = client
+        task_id = "20260101-000000-0001"
+        manager.store.save(
+            {
+                "id": task_id,
+                "status": "succeeded",
+                "created_at": "2026-01-01T00:00:00+00:00",
+            }
+        )
+        report_dir = fake_project / "reports" / "task-reports" / task_id / "current"
         report_dir.mkdir(parents=True)
         (report_dir / "index.html").write_text(
             "<html>allure report</html>", encoding="utf-8"
         )
         (report_dir / "report-meta.json").write_text(
-            json.dumps({"synced_at": "2026-08-10T10:00:00+08:00", "source": "jenkins"}),
+            json.dumps(
+                {
+                    "task_id": task_id,
+                    "synced_at": "2026-08-10T10:00:00+08:00",
+                    "source": "jenkins",
+                }
+            ),
             encoding="utf-8",
         )
 
-        meta = test_client.get("/api/report/meta").get_json()
+        meta = test_client.get(f"/api/report/meta?task_id={task_id}").get_json()
         assert meta["exists"] is True
         assert meta["source"] == "jenkins"
-        assert meta["report_url"] == "/reports/index.html"
+        assert meta["report_url"] == f"/reports/{task_id}/index.html"
 
-        page = test_client.get("/reports/index.html")
+        page = test_client.get(f"/reports/{task_id}/index.html")
         assert page.status_code == 200
         assert "allure report" in page.get_data(as_text=True)
+
+    def test_report_binding_rejects_authorized_task_when_current_belongs_to_another_task(
+        self, client, fake_project
+    ):
+        """授权某个任务不能成为读取另一任务全局 current 报告的通行证。"""
+
+        test_client, manager = client
+        requested_task_id = "20260101-000000-0001"
+        foreign_task_id = "20260101-000000-0002"
+        manager.store.save(
+            {
+                "id": requested_task_id,
+                "status": "succeeded",
+                "created_at": "2026-01-01T00:00:00+00:00",
+            }
+        )
+        report_dir = (
+            fake_project / "reports" / "task-reports" / requested_task_id / "current"
+        )
+        report_dir.mkdir(parents=True)
+        (report_dir / "index.html").write_text("foreign report", encoding="utf-8")
+        (report_dir / "report-meta.json").write_text(
+            json.dumps({"task_id": foreign_task_id, "source": "jenkins"}),
+            encoding="utf-8",
+        )
+
+        meta = test_client.get(
+            f"/api/report/meta?task_id={requested_task_id}"
+        )
+        page = test_client.get(f"/reports/{requested_task_id}/index.html")
+
+        assert meta.status_code == 200
+        assert meta.get_json() == {"exists": False, "report_url": None}
+        assert page.status_code == 404
+        assert test_client.get("/reports/index.html").status_code == 404
 
 
 class _FakeRuntimeConfigResponse:
@@ -450,6 +590,22 @@ class _FakeRuntimeConfigResponse:
 
     def raise_for_status(self) -> None:
         return None
+
+    def json(self) -> dict:
+        return self._payload
+
+
+class _FakePlatformErrorResponse:
+    """模拟平台返回带稳定错误码的非 2xx JSON 响应。"""
+
+    def __init__(self, status_code: int, code: str, message: str):
+        self.status_code = status_code
+        self._payload = {"code": code, "message": message}
+
+    def raise_for_status(self) -> None:
+        """保持 requests.Response 的非成功状态行为。"""
+
+        raise requests.HTTPError(f"platform returned {self.status_code}")
 
     def json(self) -> dict:
         return self._payload
@@ -480,6 +636,17 @@ class TestPlatformCredentialStatus:
 
         calls: list[tuple[str, dict]] = []
 
+        def fake_post(url, **kwargs):
+            calls.append((url, kwargs))
+            if request_error is not None:
+                raise request_error
+            return _FakeRuntimeConfigResponse(
+                {
+                    "runtime_context_id": "rtx_status_user_1",
+                    "expires_at": "2026-08-24T12:00:00Z",
+                }
+            )
+
         def fake_get(url, **kwargs):
             calls.append((url, kwargs))
             if request_error is not None:
@@ -488,10 +655,12 @@ class TestPlatformCredentialStatus:
                 {
                     "tool_id": "api-autotest",
                     "release_id": "rel_test",
+                    "snapshot_selector": {"release_id": "rel_test"},
                     "configured_secret_keys": sorted(configured_keys or set()),
                 }
             )
 
+        monkeypatch.setattr("web.app.requests.post", fake_post)
         monkeypatch.setattr("web.app.requests.get", fake_get)
 
         app = create_app(
@@ -517,17 +686,24 @@ class TestPlatformCredentialStatus:
             },
         )
         body = client.get(
-            "/api/credentials/status?env=test&run_type=flow&flow=AdminFlow"
+            "/api/credentials/status?env=test&run_type=flow&flow=AdminFlow",
+            headers={"X-Platform-User-Context": "signed-status-user-1"},
         ).get_json()
         assert body["base_config"]["ready"] is True
         assert body["admin"]["required"] is True
         assert body["admin"]["ready"] is True
         assert body["admin"]["missing_fields"] == []
 
-        assert len(calls) == 1
-        url, kwargs = calls[0]
+        assert len(calls) == 2
+        context_url, context_kwargs = calls[0]
+        assert context_url.endswith("/internal/tools/api-autotest/runtime-contexts")
+        assert context_kwargs["headers"]["X-Platform-User-Context"] == "signed-status-user-1"
+        url, kwargs = calls[1]
         assert url.endswith("/internal/tools/api-autotest/runtime-config")
-        assert kwargs["params"] == {"include_secrets": "false"}
+        assert kwargs["params"] == {
+            "include_secrets": "false",
+            "runtime_context_id": "rtx_status_user_1",
+        }
         assert kwargs["headers"]["Authorization"] == "Bearer test-client-token"
 
     def test_admin_missing_fields_follow_platform_keys(
@@ -542,7 +718,8 @@ class TestPlatformCredentialStatus:
             configured_keys={"ADMIN_SESSION_TOKEN"},
         )
         body = client.get(
-            "/api/credentials/status?env=test&run_type=flow&flow=AdminFlow"
+            "/api/credentials/status?env=test&run_type=flow&flow=AdminFlow",
+            headers={"X-Platform-User-Context": "signed-status-user-1"},
         ).get_json()
         assert body["admin"]["ready"] is False
         assert body["admin"]["missing_fields"] == [
@@ -561,7 +738,8 @@ class TestPlatformCredentialStatus:
             request_error=ConnectionError("platform unreachable"),
         )
         response = client.get(
-            "/api/credentials/status?env=test&run_type=flow&flow=AdminFlow"
+            "/api/credentials/status?env=test&run_type=flow&flow=AdminFlow",
+            headers={"X-Platform-User-Context": "signed-status-user-1"},
         )
         assert response.status_code == 200
         body = response.get_json()
@@ -582,6 +760,56 @@ class TestPlatformCredentialStatus:
         ).get_json()
         assert body["admin"]["required"] is False
         assert calls == []
+
+    def test_task_submission_preserves_personal_credential_error(
+        self, fake_project, monkeypatch
+    ):
+        """个人凭证缺失必须原样返回 409，不能被折叠成通用平台 503。"""
+
+        settings = make_settings()
+        settings["config_source"] = "platform"
+        settings["platform_api_url"] = "http://platform-api.invalid/api/v1"
+        token_file = fake_project / "client-token"
+        token_file.write_text("test-client-token", encoding="utf-8")
+        settings["platform_client_token_file"] = str(token_file)
+
+        def fake_post(url, **kwargs):
+            return _FakeRuntimeConfigResponse(
+                {
+                    "runtime_context_id": "rtx_missing_credential_user",
+                    "expires_at": "2026-08-24T12:00:00Z",
+                }
+            )
+
+        def fake_get(url, **kwargs):
+            return _FakePlatformErrorResponse(
+                409,
+                "PERSONAL_CREDENTIAL_NOT_CONFIGURED",
+                "请先配置当前工具的个人凭证",
+            )
+
+        monkeypatch.setattr("web.app.requests.post", fake_post)
+        monkeypatch.setattr("web.app.requests.get", fake_get)
+        app = create_app(project_root=fake_project, settings=settings)
+        app.config["TESTING"] = True
+        test_client = app.test_client()
+        test_client.set_cookie("tp_csrf", "test-csrf")
+
+        response = test_client.post(
+            "/api/tasks",
+            headers={
+                "X-CSRF-Token": "test-csrf",
+                "X-Platform-User-Context": "signed-missing-credential-user",
+            },
+            json={"env": "test", "run_type": "single"},
+        )
+
+        assert response.status_code == 409
+        assert response.get_json() == {
+            "error": "请先配置当前工具的个人凭证",
+            "error_code": "PERSONAL_CREDENTIAL_NOT_CONFIGURED",
+        }
+        assert TaskStore(fake_project / "tasks", fake_project / "reports").list() == []
 
 
 class TestStartupRecovery:

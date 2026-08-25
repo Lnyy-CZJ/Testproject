@@ -1,17 +1,17 @@
 {
   "schema_version": 1,
   "product": {
-    "version": "1.1.0"
+    "version": "1.2.0"
   },
   "components": {
     "platform-gateway": {
-      "version": "1.1.2",
+      "version": "1.2.0",
       "compatible_product_major": 1,
-      "source_paths": ["test-platform/frontend/src/App.tsx", "test-platform/frontend/src/app.css", "test-platform/frontend/src/main.tsx", "test-platform/frontend/package.json", "test-platform/frontend/package-lock.json", "test-platform/frontend/index.html", "test-platform/web", "test-platform/nginx", "test-platform/Dockerfile"],
+      "source_paths": ["test-platform/frontend/src/App.tsx", "test-platform/frontend/src/app.css", "test-platform/frontend/src/main.tsx", "test-platform/frontend/src/api", "test-platform/frontend/src/components", "test-platform/frontend/src/context", "test-platform/frontend/src/data", "test-platform/frontend/src/types", "test-platform/frontend/package.json", "test-platform/frontend/package-lock.json", "test-platform/frontend/index.html", "test-platform/web", "test-platform/nginx", "test-platform/Dockerfile"],
       "image_envs": ["PLATFORM_GATEWAY_IMAGE"]
     },
     "platform-backend": {
-      "version": "1.1.2",
+      "version": "1.2.0",
       "compatible_product_major": 1,
       "source_paths": ["test-platform/backend/app", "test-platform/backend/alembic", "test-platform/backend/alembic.ini", "test-platform/backend/requirements.txt", "test-platform/backend/Dockerfile"],
       "image_envs": ["PLATFORM_BACKEND_IMAGE"]
@@ -23,35 +23,35 @@
       "image_envs": ["TRACKEVENTS_IMAGE"]
     },
     "log-filter-tool": {
-      "version": "1.0.1",
+      "version": "1.1.0",
       "compatible_product_major": 1,
       "source_paths": ["log_filter_tool/app.py", "log_filter_tool/people_search_ai.py", "log_filter_tool/people_search_analyzer.py", "log_filter_tool/people_search_rules.py", "log_filter_tool/templates", "log_filter_tool/skills", "log_filter_tool/requirements.txt", "log_filter_tool/log_default.log", "log_filter_tool/Dockerfile"],
       "image_envs": ["LOG_FILTER_IMAGE"],
       "config_scopes": ["llm_binding:llmb_log_people_search", "llm_profile:llmp_shared_default"]
     },
     "truthy-search": {
-      "version": "1.0.1",
+      "version": "1.1.0",
       "compatible_product_major": 1,
       "source_paths": ["Truthy_Search/analysis_service.py", "Truthy_Search/analysis_store.py", "Truthy_Search/search_tool.py", "Truthy_Search/web_app.py", "Truthy_Search/result_to_excel.py", "Truthy_Search/result_to_excel_builder.mjs", "Truthy_Search/templates", "Truthy_Search/static", "Truthy_Search/requirements.txt", "Truthy_Search/Dockerfile"],
       "image_envs": ["TRUTHY_SEARCH_IMAGE"],
       "config_scopes": ["tool:truthy-search"]
     },
     "api-autotest": {
-      "version": "1.0.1",
+      "version": "1.1.0",
       "compatible_product_major": 1,
       "source_paths": ["Truthy_ApiAutoTest2/api", "Truthy_ApiAutoTest2/config", "Truthy_ApiAutoTest2/scripts", "Truthy_ApiAutoTest2/test_cases", "Truthy_ApiAutoTest2/utils", "Truthy_ApiAutoTest2/web", "Truthy_ApiAutoTest2/runtest.py", "Truthy_ApiAutoTest2/Jenkinsfile", "Truthy_ApiAutoTest2/requirements.txt", "Truthy_ApiAutoTest2/requirements-web.txt", "Truthy_ApiAutoTest2/Dockerfile"],
       "image_envs": ["API_AUTOTEST_IMAGE"],
       "config_scopes": ["tool:api-autotest"]
     },
     "functional-test-agent": {
-      "version": "1.0.1",
+      "version": "1.1.0",
       "compatible_product_major": 1,
       "source_paths": ["functional-test-agent/agents", "functional-test-agent/prompts", "functional-test-agent/requirement_decomposition", "functional-test-agent/scripts", "functional-test-agent/services", "functional-test-agent/requirement_decomposition.yaml", "functional-test-agent/Dockerfile", "functional-test-agent/requirements.lock"],
       "image_envs": ["FUNCTIONAL_AGENT_IMAGE"],
       "config_scopes": ["tool:functional-test-agent", "llm_binding:llmb_functional_default", "llm_profile:llmp_shared_default"]
     },
     "api-test-agent": {
-      "version": "1.0.1",
+      "version": "1.1.0",
       "compatible_product_major": 1,
       "source_paths": ["api-test-agent/agents", "api-test-agent/executor", "api-test-agent/scripts", "api-test-agent/services", "api-test-agent/Dockerfile.agent", "api-test-agent/Dockerfile.controller", "api-test-agent/Dockerfile.egress", "api-test-agent/Dockerfile.executor", "api-test-agent/requirements-agent.lock", "api-test-agent/requirements-controller.lock"],
       "image_envs": ["API_AGENT_IMAGE", "API_EXECUTION_CONTROLLER_IMAGE", "API_EGRESS_PROXY_IMAGE", "API_EXECUTOR_IMAGE"],
@@ -60,6 +60,6 @@
   },
   "database": {
     "image": "postgres:17-alpine@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193",
-    "alembic_revision": "20260818_0016"
+    "alembic_revision": "20260824_0020"
   }
 }

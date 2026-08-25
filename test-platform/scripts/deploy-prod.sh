@@ -113,6 +113,21 @@ PY
   return "$result"
 }
 
+verify_deployed_service_images() {
+  # 组件健康接口只能证明主进程身份；API Suite 的可选 Controller/Egress
+  # 还必须核对容器实际 Image ID，避免“环境文件已更新、运行容器仍为旧镜像”。
+  local service container_id actual_id expected_ref expected_id
+  for service in "$@"; do
+    container_id=$("${compose[@]}" ps -q "$service")
+    [[ -n "$container_id" ]] || return 1
+    actual_id=$(docker inspect --format '{{.Image}}' "$container_id")
+    expected_ref=$("${compose[@]}" config --format json | python3 -c \
+      'import json,sys; print(json.load(sys.stdin)["services"][sys.argv[1]]["image"])' "$service")
+    expected_id=$(docker image inspect --format '{{.Id}}' "$expected_ref")
+    [[ "$actual_id" == "$expected_id" ]] || return 1
+  done
+}
+
 write_record() {
   local operation=$1 target=${2:-} image_env=$3 config_releases=${4:-} snapshot
   snapshot=$(mktemp)
@@ -201,6 +216,7 @@ if [[ -n "$component" ]]; then
     functional-test-agent)
       if [[ -n "$override" ]]; then printf 'FUNCTIONAL_AGENT_IMAGE=%s\n' "$override" > "$changes"; else grep '^FUNCTIONAL_AGENT_IMAGE=' "$release_images" > "$changes"; fi
       services=(functional-test-agent)
+      deployment_services=(functional-test-agent)
       ;;
     api-test-agent)
       if [[ -n "$override" ]]; then
@@ -211,6 +227,7 @@ if [[ -n "$component" ]]; then
       fi
       [[ $(wc -l < "$changes" | tr -d ' ') == 4 ]]
       services=(api-test-agent api-execution-controller api-egress-proxy api-test-executor-image)
+      deployment_services=(api-test-agent)
       ;;
     *) echo "不支持独立部署组件: $component" >&2; exit 1 ;;
   esac
@@ -219,6 +236,16 @@ if [[ -n "$component" ]]; then
   compose=(docker compose --env-file "$base_env" --env-file "$candidate_images" -p test-platform-prod -f "$release_dir/docker-compose.yml" -f "$release_dir/docker-compose.prod.yml")
   if ! "${compose[@]}" pull "${services[@]}"; then
     exit 1
+  fi
+  if [[ "$component" == "api-test-agent" ]]; then
+    # 默认生产环境不启用真实执行链；若 Controller/Egress 已由 profile 启动，
+    # 独立升级必须把这些正在运行的服务纳入同一次原子切换，但绝不能主动启用它们。
+    running_services=$("${compose[@]}" ps --services --status running)
+    for service in api-execution-controller api-egress-proxy; do
+      if grep -qx "$service" <<<"$running_services"; then
+        deployment_services+=("$service")
+      fi
+    done
   fi
   primary_key=FUNCTIONAL_AGENT_IMAGE
   [[ "$component" == "api-test-agent" ]] && primary_key=API_AGENT_IMAGE
@@ -234,9 +261,11 @@ if [[ -n "$component" ]]; then
       [[ $(docker image inspect --format '{{ index .Config.Labels "io.testplatform.source-content-sha256" }}' "$image") == "$expected_content" ]]
     done
   fi
-  if ! "${compose[@]}" up -d --no-deps "${services[0]}" || ! verify_runtime "$component" "$expected_version" "$expected_revision" "$expected_content"; then
+  if ! "${compose[@]}" up -d --no-deps "${deployment_services[@]}" \
+    || ! verify_deployed_service_images "${deployment_services[@]}" \
+    || ! verify_runtime "$component" "$expected_version" "$expected_revision" "$expected_content"; then
     rollback=(docker compose --env-file "$base_env" --env-file "$previous_images" -p test-platform-prod -f "$release_dir/docker-compose.yml" -f "$release_dir/docker-compose.prod.yml")
-    "${rollback[@]}" up -d --no-deps "${services[0]}"
+    "${rollback[@]}" up -d --no-deps "${deployment_services[@]}"
     echo "$component 部署失败，已恢复前一镜像组合" >&2
     exit 1
   fi
@@ -260,6 +289,20 @@ if "${compose[@]}" config | grep -qE '^[[:space:]]+build:'; then
   exit 1
 fi
 "${compose[@]}" pull
+alembic_target="$("${compose[@]}" config --format json | python3 -c 'import json,sys; print(json.load(sys.stdin)["services"]["platform-migrate"]["command"][-1])')"
+if [[ "$alembic_target" != "20260824_0019" ]]; then
+  project_access_manifest="${PROJECT_ACCESS_MANIFEST:-}"
+  if [[ -z "$project_access_manifest" || ! -f "$project_access_manifest" ]]; then
+    echo 'Contract 发布必须通过 PROJECT_ACCESS_MANIFEST 提供完整角色、工具、成员、源端计数和资源清单' >&2
+    exit 1
+  fi
+  manifest_path="$(cd "$(dirname "$project_access_manifest")" && pwd)/$(basename "$project_access_manifest")"
+  # 生产发布的目标环境由部署脚本固定传入，禁止 manifest 用自报 bogus 环境绕过
+  # 五个第一方工具的 prod 源清单核对。
+  manifest_command=(python -m app.migrate_project_access --manifest /run/project-access-manifest.json --required-environment prod)
+  "${compose[@]}" run --rm --no-deps -v "$manifest_path:/run/project-access-manifest.json:ro" platform-migrate "${manifest_command[@]}"
+  "${compose[@]}" run --rm --no-deps -v "$manifest_path:/run/project-access-manifest.json:ro" platform-migrate "${manifest_command[@]}" --apply
+fi
 "${compose[@]}" run --rm platform-migrate
 
 read -r prod_objects prod_activations < <("${compose[@]}" exec -T platform-db sh -c \

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Literal, Protocol
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class ControllerModel(BaseModel):
@@ -18,6 +18,8 @@ class CreateRunRequest(ControllerModel):
     """Controller 唯一接受的创建参数。"""
 
     run_id: str
+    plan_id: str
+    plan_sha256: str
     input_id: str
     output_id: str
     input_sha256: str
@@ -33,6 +35,30 @@ class CreateRunRequest(ControllerModel):
         if not value.startswith("run_"):
             raise ValueError("run_id 不合法")
         return value
+
+    @field_validator("plan_id")
+    @classmethod
+    def validate_plan_id(cls, value: str) -> str:
+        """V2.4 计划引用必须使用平台固定前缀且不可为空。"""
+
+        if not value.startswith("plan_") or "/" in value or ".." in value:
+            raise ValueError("plan_id 不合法")
+        return value
+
+    @field_validator("plan_sha256")
+    @classmethod
+    def validate_plan_sha256(cls, value: str) -> str:
+        """计划 SHA 只能是 64 位十六进制摘要，禁止把业务正文塞进窄接口。"""
+
+        if len(value) != 64 or any(character not in "0123456789abcdef" for character in value.lower()):
+            raise ValueError("plan_sha256 不合法")
+        return value.lower()
+
+    @model_validator(mode="after")
+    def validate_plan_reference_pair(self) -> "CreateRunRequest":
+        """计划审计引用必须完整；无计划请求在 Schema 层直接失败关闭。"""
+
+        return self
 
     @field_validator("input_id", "output_id")
     @classmethod

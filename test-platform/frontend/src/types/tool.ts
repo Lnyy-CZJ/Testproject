@@ -9,6 +9,11 @@ export interface Tool {
   category: string;
   features: string[];
   sort_order: number;
+  /** 目录返回的主要来源仅用于解释，不可由前端推导授权。 */
+  access_scope?: ToolAccessScope;
+  access_source?: ToolAccessSource;
+  project?: { id: string; code: string; name: string } | null;
+  can_manage?: boolean;
   fallback_health_path?: string;
 }
 
@@ -53,3 +58,4 @@ export interface PlatformToolHealthResponse {
   status: "healthy" | "unhealthy";
   checked_at: string;
 }
+import type { ToolAccessScope, ToolAccessSource } from "./access";

@@ -42,13 +42,31 @@ def _raw_result(duration=3500, status="passed", classification="none"):
     }
 
 
+def _confirmed_plan(store, task_id, *, confirmation_sha256="confirmed", document_sla_ms=None):
+    """构造绑定当前执行定义的最小已确认计划，禁止测试回退到旧 cases 输入。"""
+
+    return {
+        "plan_id": "plan_test", "version": 1, "sha256": "c" * 64,
+        "confirmation_sha256": confirmation_sha256, "status": "confirmed",
+        "source_executable_version": 1,
+        "source_executable_sha256": ApiV2Store(store).load_version(task_id, "executable-cases")["sha256"],
+        "target_id": "mock-target", "topological_order": ["exec_case_1"],
+        "nodes": [{
+            "node_id": "exec_case_1", "executable_case_id": "exec_case_1",
+            "request": {"method": "POST", "path": "/login"},
+            "document_sla_ms": document_sla_ms,
+            "assertions": [], "producers": [], "consumers": [],
+        }], "edges": [],
+    }
+
+
 def test_three_independent_slow_runs_and_storage_redaction(tmp_path):
     store, task_id = _setup(tmp_path)
     service = MockExecutionService(store, FakeRuntimeAdapter(), lambda _run, _cases: [_raw_result()])
 
     runs = [service.execute(
         task_id, confirmation_sha256="confirmed", expected_confirmation_sha256="confirmed",
-        actor_id="user_1", environment="test",
+        actor_id="user_1", environment="test", execution_plan=_confirmed_plan(store, task_id),
     ) for _ in range(3)]
 
     statuses = []
@@ -71,10 +89,79 @@ def test_stale_confirmation_does_not_create_run(tmp_path):
     with pytest.raises(ServiceError) as error:
         service.execute(
             task_id, confirmation_sha256="old", expected_confirmation_sha256="new",
-            actor_id="user_1", environment="test",
+            actor_id="user_1", environment="test", execution_plan=_confirmed_plan(store, task_id, confirmation_sha256="old"),
         )
     assert error.value.code == "EXECUTION_CONFIRMATION_STALE"
     assert not list((store.task_dir(task_id) / "runs").glob("run_*"))
+
+
+def test_v24_run_input_uses_confirmed_plan_instead_of_raw_case_array(tmp_path):
+    """阶段四 Run 必须绑定不可变计划，不能重新从当前 cases 数组取业务输入。"""
+
+    store, task_id = _setup(tmp_path)
+    plan = {
+        "plan_id": "plan_001", "version": 2, "sha256": "c" * 64,
+        "confirmation_sha256": "confirmed", "status": "confirmed",
+        "source_executable_version": 1,
+        "source_executable_sha256": ApiV2Store(store).load_version(task_id, "executable-cases")["sha256"],
+        "target_id": "mock-target", "topological_order": ["exec_case_1"],
+        "nodes": [{
+            "node_id": "exec_case_1", "executable_case_id": "exec_case_1",
+            "request": {"method": "POST", "path": "/login"},
+            "assertions": [], "producers": [], "consumers": [],
+        }], "edges": [],
+    }
+    service = MockExecutionService(store, FakeRuntimeAdapter(), lambda _run, _cases: [_raw_result()])
+    run = service.execute(
+        task_id, confirmation_sha256="confirmed", expected_confirmation_sha256="confirmed",
+        actor_id="user_1", environment="test", execution_plan=plan,
+    )
+
+    input_payload = json.loads(
+        (store.task_dir(task_id) / "runs" / run.run_id / "input.json").read_text()
+    )
+    assert "cases" not in input_payload
+    assert input_payload["plan"]["plan_id"] == "plan_001"
+    assert run.execution_plan_id == "plan_001"
+    assert run.execution_plan_sha256 == "c" * 64
+
+
+def test_v24_run_persists_redacted_step_results(tmp_path):
+    """阶段四必须保存逐节点结果，且 Cookie、Token 等敏感值不能进入步骤文件。"""
+
+    store, task_id = _setup(tmp_path)
+    plan = {
+        "plan_id": "plan_steps", "version": 1, "sha256": "d" * 64,
+        "confirmation_sha256": "confirmed", "status": "confirmed",
+        "source_executable_version": 1,
+        "source_executable_sha256": ApiV2Store(store).load_version(task_id, "executable-cases")["sha256"],
+        "target_id": "mock-target", "topological_order": ["exec_case_1"],
+        "nodes": [{
+            "node_id": "exec_case_1", "executable_case_id": "exec_case_1",
+            "request": {"method": "POST", "path": "/login"},
+            "assertions": [], "producers": [], "consumers": [],
+        }], "edges": [],
+    }
+    raw = {
+        **_raw_result(), "node_id": "exec_case_1",
+        "response_summary": {
+            "status_code": 200,
+            "headers": {"Set-Cookie": "session=secret-value", "X-Token": "secret-token"},
+        },
+    }
+    run = MockExecutionService(
+        store, FakeRuntimeAdapter(), lambda _run, _cases: [raw],
+    ).execute(
+        task_id, confirmation_sha256="confirmed", expected_confirmation_sha256="confirmed",
+        actor_id="user_1", environment="test", execution_plan=plan,
+    )
+
+    steps = json.loads(
+        (store.task_dir(task_id) / "runs" / run.run_id / "step-results.json").read_text()
+    )
+    assert steps[0]["node_id"] == "exec_case_1"
+    assert "secret-value" not in json.dumps(steps)
+    assert "secret-token" not in json.dumps(steps)
 
 
 def test_document_sla_has_priority_over_project_and_environment(tmp_path):
@@ -83,6 +170,7 @@ def test_document_sla_has_priority_over_project_and_environment(tmp_path):
     run = service.execute(
         task_id, confirmation_sha256="confirmed", expected_confirmation_sha256="confirmed",
         actor_id="user_1", environment="test", project_threshold_ms=5000, environment_threshold_ms=6000,
+        execution_plan=_confirmed_plan(store, task_id, document_sla_ms=1000),
     )
     result = json.loads((store.task_dir(task_id) / "runs" / run.run_id / "case-results.json").read_text())[0]
     assert result["performance_evaluation"]["threshold_ms"] == 1000
@@ -120,7 +208,7 @@ def test_fake_executor_can_use_loopback_mock_api_server(tmp_path):
 
         run = MockExecutionService(store, FakeRuntimeAdapter(), result_factory).execute(
             task_id, confirmation_sha256="confirmed", expected_confirmation_sha256="confirmed",
-            actor_id="user_1", environment="test",
+                actor_id="user_1", environment="test", execution_plan=_confirmed_plan(store, task_id),
         )
         report = json.loads((store.task_dir(task_id) / "runs" / run.run_id / "report.json").read_text())
         assert report["case_results"][0]["response_summary"]["status_code"] == 500
@@ -138,7 +226,7 @@ def test_local_defect_draft_versions_and_downloads(tmp_path):
     )
     run = execution.execute(
         task_id, confirmation_sha256="confirmed", expected_confirmation_sha256="confirmed",
-        actor_id="user_1", environment="test",
+        actor_id="user_1", environment="test", execution_plan=_confirmed_plan(store, task_id),
     )
     drafts = DefectDraftService(store)
     created = drafts.create(task_id, run.run_id, ["exec_case_1"], actor_id="user_1")
@@ -164,7 +252,7 @@ def test_environment_issue_requires_manual_reason(tmp_path):
     )
     run = execution.execute(
         task_id, confirmation_sha256="confirmed", expected_confirmation_sha256="confirmed",
-        actor_id="user_1", environment="test",
+        actor_id="user_1", environment="test", execution_plan=_confirmed_plan(store, task_id),
     )
     with pytest.raises(ServiceError) as error:
         DefectDraftService(store).create(task_id, run.run_id, ["exec_case_1"], actor_id="user_1")

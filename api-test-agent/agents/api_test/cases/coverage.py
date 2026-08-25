@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 from typing import Callable
 
-from services.api_agent.models import ApiContract, BaseTestCase, CoverageMatrix, CoverageMatrixItem
+from services.api_agent.models import ApiContract, BaseTestCase, CoverageMatrix, CoverageMatrixItem, CoverageRoundSummary
 
 
 Supplementer = Callable[[list[CoverageMatrixItem], list[BaseTestCase], int], list[BaseTestCase]]
@@ -73,6 +73,14 @@ def build_coverage(
                     f"boundary:{parameter.location}:{parameter.name}",
                     f"参数 {parameter.name} 边界", "验证长度或数值边界",
                 )
+        if contract.request_body:
+            content = next(iter(contract.request_body.content.values()), {})
+            schema = content.get("schema", content) if isinstance(content, dict) else {}
+            for name in schema.get("required", []) if isinstance(schema, dict) else []:
+                _append_case(
+                    cases, matrix_items, contract, f"required_missing:body:{name}",
+                    f"必填请求体字段 {name} 缺失", f"验证缺少 {name} 时接口按契约拒绝请求",
+                )
         if contract.security:
             _append_case(cases, matrix_items, contract, "auth_missing", "缺少鉴权", "验证未鉴权请求被拒绝")
         if contract.method in {"POST", "PUT", "PATCH", "DELETE"}:
@@ -87,6 +95,7 @@ def build_coverage(
                     f"文档错误响应 {response.status_code}", "验证文档声明的异常响应",
                 )
     rounds = 0
+    round_summaries: list[CoverageRoundSummary] = []
     previous_missing: tuple[str, ...] | None = None
     limit = min(3, max(0, max_rounds))
     while supplementer and rounds < limit:
@@ -95,6 +104,7 @@ def build_coverage(
             break
         previous_missing = missing
         rounds += 1
+        before = len(missing)
         generated = supplementer([item for item in matrix_items if not item.covered], cases, rounds) or []
         existing = {item.case_id for item in cases}
         for item in generated:
@@ -106,10 +116,16 @@ def build_coverage(
             if matched:
                 matrix.case_ids = matched
                 matrix.covered = True
+                matrix.generation_round = rounds if any(case.source == "llm" for case in cases if case.case_id in matched) else 0
+        after = sum(1 for item in matrix_items if not item.covered)
+        round_summaries.append(CoverageRoundSummary(
+            round_number=rounds, missing_before=before, generated_count=len(generated),
+            missing_after=after, stop_reason="没有新增用例" if not generated else "",
+        ))
     missing = [item for item in matrix_items if item.required and not item.covered]
     return cases, CoverageMatrix(
         contract_version=contract_version, round_count=rounds,
-        items=matrix_items, partial_success=bool(missing),
+        items=matrix_items, rounds=round_summaries, partial_success=bool(missing),
     )
 
 

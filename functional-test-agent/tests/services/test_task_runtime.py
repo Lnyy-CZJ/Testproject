@@ -44,7 +44,7 @@ def test_runner_environment_prefers_llm_snapshot_and_omits_empty_options(tmp_pat
     """新 LLM 快照优先于旧 flat 字段，可选空参数不覆盖 Provider 默认。"""
     store = TaskStore(tmp_path / "runtime")
     manager = TaskManager(
-        store=store, runner_module="unused", config_loader=lambda: {},
+        store=store, runner_module="unused", config_loader=lambda _record: {},
         result_collector=lambda *_: {}, project_root=tmp_path, prompt_paths=[],
         app_revision="test", autostart=False,
     )
@@ -110,7 +110,7 @@ def test_manager_runs_fifo_and_enforces_queue_limit(tmp_path: Path) -> None:
         }
 
     manager = TaskManager(
-        store=store, runner_module="tests.services.fake_runner", config_loader=lambda: config,
+        store=store, runner_module="tests.services.fake_runner", config_loader=lambda _record: config,
         result_collector=collect, project_root=Path(__file__).resolve().parents[2],
         prompt_paths=["agents/api_test/prompts"], app_revision="test", autostart=False,
     )
@@ -140,7 +140,7 @@ def test_waiting_review_resume_reenters_queue(tmp_path: Path) -> None:
     store.save(record(task_id, datetime.now(UTC).isoformat(), "waiting_review"))
     manager = TaskManager(
         store=store, runner_module="tests.services.fake_runner",
-        config_loader=lambda: {}, result_collector=lambda *_: {},
+        config_loader=lambda _record: {}, result_collector=lambda *_: {},
         project_root=Path(__file__).resolve().parents[2], prompt_paths=[], app_revision="test", autostart=False,
     )
     resumed = manager.resume(task_id, {"sha256": "abc"}, max_waiting=5)
@@ -160,7 +160,7 @@ def test_resume_uses_new_queued_at_and_ai_failure_recovery(tmp_path: Path) -> No
     first["queued_at"] = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
     store.save(first)
     store.save(record(review_id, "2026-01-01T00:00:00+00:00", "waiting_review"))
-    manager = TaskManager(store=store, runner_module="tests.services.fake_runner", config_loader=lambda: {}, result_collector=lambda *_: {}, project_root=Path(__file__).resolve().parents[2], prompt_paths=[], app_revision="test", autostart=False)
+    manager = TaskManager(store=store, runner_module="tests.services.fake_runner", config_loader=lambda _record: {}, result_collector=lambda *_: {}, project_root=Path(__file__).resolve().parents[2], prompt_paths=[], app_revision="test", autostart=False)
     manager.resume(review_id, {"version": 1}, max_waiting=5)
     assert [item["id"] for item in store.pending_fifo()] == [pending_id, review_id]
 
@@ -185,7 +185,7 @@ def test_review_ai_uses_shared_runner_and_returns_to_review(tmp_path: Path) -> N
     store.atomic_write_json(task_dir / "request.json", {"sleep": 0.01})
     store.save(record(task_id, datetime.now(UTC).isoformat(), "waiting_review"))
     config = {"normal": {"REVIEW_AI_TIMEOUT_SECONDS": 5, "LLM_MODEL": "test"}, "secrets": {"LLM_API_KEY": "sentinel"}}
-    manager = TaskManager(store=store, runner_module="tests.services.fake_runner", config_loader=lambda: config, result_collector=lambda *_: {}, project_root=Path(__file__).resolve().parents[2], prompt_paths=[], app_revision="test")
+    manager = TaskManager(store=store, runner_module="tests.services.fake_runner", config_loader=lambda _record: config, result_collector=lambda *_: {}, project_root=Path(__file__).resolve().parents[2], prompt_paths=[], app_revision="test")
     manager.enqueue_review_ai(task_id, {"status": "queued", "request_version": 1, "base_revision": 2, "base_sha256": "sha"}, max_waiting=5)
     completed = wait_status(store, task_id, "waiting_review")
     manager.stop()
@@ -203,7 +203,7 @@ def test_review_ai_timeout_returns_to_review_without_main_failure(tmp_path: Path
     store.atomic_write_json(task_dir / "request.json", {"sleep": 30})
     store.save(record(task_id, datetime.now(UTC).isoformat(), "waiting_review"))
     config = {"normal": {"REVIEW_AI_TIMEOUT_SECONDS": 0, "LLM_MODEL": "test"}, "secrets": {"LLM_API_KEY": "sentinel"}}
-    manager = TaskManager(store=store, runner_module="tests.services.fake_runner", config_loader=lambda: config, result_collector=lambda *_: {}, project_root=Path(__file__).resolve().parents[2], prompt_paths=[], app_revision="test")
+    manager = TaskManager(store=store, runner_module="tests.services.fake_runner", config_loader=lambda _record: config, result_collector=lambda *_: {}, project_root=Path(__file__).resolve().parents[2], prompt_paths=[], app_revision="test")
     manager.enqueue_review_ai(task_id, {"status": "queued", "request_version": 1}, max_waiting=5)
     completed = wait_status(store, task_id, "waiting_review")
     manager.stop()
@@ -220,7 +220,7 @@ def test_case_review_ai_uses_shared_fifo_and_recovers_to_case_review(tmp_path: P
     store.atomic_write_json(task_dir / "request.json", {"sleep": 0.01})
     store.save(record(task_id, datetime.now(UTC).isoformat(), "waiting_case_review"))
     config = {"normal": {"CASE_REVIEW_AI_TIMEOUT_SECONDS": 5, "LLM_MODEL": "test"}, "secrets": {"LLM_API_KEY": "sentinel"}}
-    manager = TaskManager(store=store, runner_module="tests.services.fake_runner", config_loader=lambda: config, result_collector=lambda *_: {}, project_root=Path(__file__).resolve().parents[2], prompt_paths=[], app_revision="test")
+    manager = TaskManager(store=store, runner_module="tests.services.fake_runner", config_loader=lambda _record: config, result_collector=lambda *_: {}, project_root=Path(__file__).resolve().parents[2], prompt_paths=[], app_revision="test")
     manager.enqueue_case_review_ai(task_id, {"status": "queued", "request_version": 1, "base_revision": 2, "base_sha256": "sha"}, max_waiting=5)
     completed = wait_status(store, task_id, "waiting_case_review")
     manager.stop()
@@ -245,7 +245,7 @@ def test_concurrent_submit_only_one_claims_last_queue_slot(tmp_path: Path) -> No
 
     store = TaskStore(tmp_path / "runtime")
     manager = TaskManager(
-        store=store, runner_module="tests.services.fake_runner", config_loader=lambda: {},
+        store=store, runner_module="tests.services.fake_runner", config_loader=lambda _record: {},
         result_collector=lambda *_: {}, project_root=Path(__file__).resolve().parents[2],
         prompt_paths=[], app_revision="test", autostart=False,
     )
@@ -279,7 +279,7 @@ def test_running_cancel_and_timeout_are_terminal(tmp_path: Path) -> None:
         "secrets": {"LLM_API_KEY": "sentinel"},
     }
     manager = TaskManager(
-        store=store, runner_module="tests.services.fake_runner", config_loader=lambda: config,
+        store=store, runner_module="tests.services.fake_runner", config_loader=lambda _record: config,
         result_collector=lambda *_args: {"status": "succeeded", "stage": "completed", "artifacts": []},
         project_root=Path(__file__).resolve().parents[2], prompt_paths=[], app_revision="test",
     )
@@ -294,7 +294,7 @@ def test_running_cancel_and_timeout_are_terminal(tmp_path: Path) -> None:
     timeout_store = TaskStore(tmp_path / "timeout-runtime")
     timeout_config = {"normal": {"TASK_TIMEOUT_SECONDS": 0}, "secrets": {"LLM_API_KEY": "sentinel"}}
     timeout_manager = TaskManager(
-        store=timeout_store, runner_module="tests.services.fake_runner", config_loader=lambda: timeout_config,
+        store=timeout_store, runner_module="tests.services.fake_runner", config_loader=lambda _record: timeout_config,
         result_collector=lambda *_args: {}, project_root=Path(__file__).resolve().parents[2],
         prompt_paths=[], app_revision="test",
     )

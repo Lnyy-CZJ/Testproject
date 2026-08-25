@@ -1,5 +1,6 @@
 """平台数据库模型。"""
 
+from app.models.access import BusinessResourceSnapshot, Project, ProjectAccessReadiness, ProjectMembership, PublicToolUsage, UserToolGrant
 from app.models.tool import Tool
 
 __all__ = ["Tool"]
@@ -14,6 +15,8 @@ from app.models.configuration import (
     Environment,
     Secret,
     SecretVersion,
+    UserCredential,
+    UserCredentialItem,
 )
 from app.models.identity import (
     LoginThrottle,
@@ -21,15 +24,19 @@ from app.models.identity import (
     PlatformSession,
     Role,
     RoleGrant,
+    RuntimeContext,
     ToolClient,
     User,
     UserRole,
 )
-from app.models.llm import LlmProfile, ToolLlmBinding
+from app.models.llm import LlmProfile, ToolLlmBinding, UserLlmBinding
 from app.models.tool import Tool
 
 __all__ = [
     "AuditLog",
+    "BusinessResourceSnapshot",
+    "PublicToolUsage",
+    "ProjectAccessReadiness",
     "ConfigActivation",
     "ConfigDefinition",
     "ConfigRelease",
@@ -41,13 +48,20 @@ __all__ = [
     "LlmProfile",
     "Permission",
     "PlatformSession",
+    "Project",
+    "ProjectMembership",
     "Role",
     "RoleGrant",
+    "RuntimeContext",
     "Secret",
     "SecretVersion",
     "Tool",
     "ToolClient",
     "ToolLlmBinding",
     "User",
+    "UserToolGrant",
+    "UserCredential",
+    "UserCredentialItem",
+    "UserLlmBinding",
     "UserRole",
 ]

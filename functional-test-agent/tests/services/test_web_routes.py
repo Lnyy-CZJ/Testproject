@@ -24,7 +24,52 @@ class FakePlatformClient:
         "secrets": {"LLM_API_KEY": "sentinel"}, "configured_secret_keys": ["LLM_API_KEY"],
     }
 
-    def runtime_config(self, *, include_secrets: bool):
+    def __init__(self) -> None:
+        self.planned: list[tuple[str, str, str]] = []
+
+    def runtime_config(self, *, include_secrets: bool, llm_capability=None):
+        return self.snapshot
+
+    def resource_access_check(self, resource_context: str, *, action: str, root_resource_id: str | None = None) -> dict:
+        """模拟平台对 opaque token 的核验；测试不从浏览器身份 Header 推导范围。"""
+
+        _prefix, user_id, data_scope, project_id, managed = resource_context.split("|", 4)
+        return {
+            "allowed": True, "user_id": user_id, "username": user_id,
+            "display_name": user_id, "data_scope": data_scope,
+            "managed_project_ids": [item for item in managed.split(",") if item],
+            "action": action, "root_resource_id": root_resource_id,
+            "access_scope_snapshot": "public" if project_id == "-" else "project",
+            "project_id_snapshot": None if project_id == "-" else project_id,
+            "authorization_source_snapshot": "project_member",
+        }
+
+    def plan_runtime_config(
+        self,
+        signed_user_context: str,
+        *,
+        resource_type: str,
+        resource_id: str,
+        llm_capability: str = "default",
+        resource_context: str | None = None,
+    ) -> dict:
+        """返回不含 Secret 的任务选择器，并记录签名仅被用于本次兑换。"""
+
+        self.planned.append((signed_user_context, resource_type, resource_id))
+        return {
+            "runtime_context_id": "rtx_test_user_1",
+            "runtime_context_expires_at": "2026-08-24T12:00:00Z",
+            "snapshot_selector": {
+                "release_id": "rel_test",
+                "credential_versions": {"ucred_test": 1},
+            },
+            "release_id": "rel_test",
+            "release_version": 1,
+        }
+
+    def materialize_runtime_config(self, runtime_metadata: dict) -> dict:
+        """调度器测试替身直接返回内存快照。"""
+
         return self.snapshot
 
     def audit(self, _event):
@@ -113,12 +158,21 @@ def settings(tmp_path: Path, agent_type: str) -> ServiceSettings:
     )
 
 
-def headers(user: str = "user_1", permissions: str = "tool.view,tool.execute,tool.result.view,task.cancel") -> dict[str, str]:
+def headers(
+    user: str = "user_1",
+    permissions: str = "tool.view,tool.execute,tool.result.view,task.cancel",
+    *,
+    scope: str = "own",
+    project_id: str = "project",
+    managed_projects: tuple[str, ...] = (),
+) -> dict[str, str]:
     return {
         "X-Platform-User-ID": user,
         "X-Platform-Username": user,
         "X-Platform-Display-Name": user,
         "X-Platform-Permissions": permissions,
+        "X-Platform-User-Context": f"signed-context-for-{user}",
+        "X-Platform-Resource-Context": f"resource|{user}|{scope}|{project_id}|{','.join(managed_projects)}",
         "X-CSRF-Token": "csrf",
     }
 
@@ -160,10 +214,82 @@ def test_create_list_owner_and_version_visibility(tmp_path: Path, agent_type: st
         (_app.extensions["task_store"].task_dir(task["id"]) / "request.json").read_text(encoding="utf-8")
     )
     assert request_payload["additional_info"]["context"] == "重点覆盖重复提交"
+    record = _app.extensions["task_store"].load(task["id"])
+    assert record["internal"]["runtime_context_id"] == "rtx_test_user_1"
+    assert record["internal"]["snapshot_selector"]["credential_versions"] == {
+        "ucred_test": 1
+    }
+    assert "signed-context-for-user_1" not in json.dumps(record, ensure_ascii=False)
+    assert _app.extensions["platform_client"].planned == [
+        ("signed-context-for-user_1", "task", task["id"])
+    ]
     base = "/functional-test-agent" if agent_type == "functional" else "/api-test-agent"
     assert client.get(f"{base}/api/v1/tasks/{task['id']}", headers=headers()).status_code == 200
     assert client.get(f"{base}/api/v1/tasks/{task['id']}", headers=headers("user_2")).status_code == 404
-    assert client.get(f"{base}/api/v1/tasks/{task['id']}", headers=headers("admin", "tool.result.view,task.view.all")).status_code == 200
+    assert client.get(f"{base}/api/v1/tasks/{task['id']}", headers=headers("admin", "tool.result.view,task.view.all", scope="global")).status_code == 200
+
+
+def test_browser_task_view_all_cannot_bypass_owner_isolation(tmp_path: Path) -> None:
+    """旧权限头即使伪称全局查看，也不得扩大另一位 tester 的任务范围。"""
+
+    client, _app = make_client(tmp_path, "functional")
+    base = "/functional-test-agent/api/v1/tasks"
+    created = client.post(
+        base,
+        headers=headers("tester_a"),
+        data={
+            "operation": "generate_test_points", "project_name": "项目 A", "module_name": "登录",
+            "environment": "dev", "document_file": (io.BytesIO(b"# login"), "login.md"),
+        },
+        content_type="multipart/form-data",
+    )
+    assert created.status_code == 202
+    task_id = created.get_json()["id"]
+    forged = headers("tester_b", "tool.result.view,task.cancel,task.view.all")
+    assert client.get(base, headers=forged).get_json()["items"] == []
+    missing = client.get(f"{base}/missing", headers=forged)
+    for suffix in ("", "/logs", "/artifacts"):
+        actual = client.get(f"{base}/{task_id}{suffix}", headers=forged)
+        assert actual.status_code == 404
+        assert actual.get_json()["error"]["code"] == missing.get_json()["error"]["code"]
+    assert client.post(f"{base}/{task_id}/cancel", headers=forged).status_code == 404
+
+
+def test_platform_scopes_keep_list_and_all_root_task_operations_consistent(tmp_path: Path) -> None:
+    """同项目 manager/global 可扩展范围，extra grant 仍只能操作本人根任务。"""
+
+    client, app = make_client(tmp_path, "functional")
+    base = "/functional-test-agent/api/v1/tasks"
+
+    def create(owner: str) -> str:
+        response = client.post(
+            base, headers=headers(owner),
+            data={
+                "operation": "generate_test_points", "project_name": "项目 A", "module_name": owner,
+                "environment": "dev", "document_file": (io.BytesIO(b"# login"), "login.md"),
+            }, content_type="multipart/form-data",
+        )
+        assert response.status_code == 202
+        return response.get_json()["id"]
+
+    task_a, task_b, task_extra = create("tester_a"), create("tester_b"), create("extra_admin")
+    manager = headers("manager", "tool.result.view", scope="project", managed_projects=("project",))
+    global_admin = headers("platform_admin", "tool.result.view", scope="global")
+    extra_grant = headers("extra_admin", "tool.result.view,tool.execute,task.cancel", scope="own")
+    assert {item["id"] for item in client.get(base, headers=manager).get_json()["items"]} == {task_a, task_b, task_extra}
+    assert {item["id"] for item in client.get(base, headers=global_admin).get_json()["items"]} == {task_a, task_b, task_extra}
+    assert [item["id"] for item in client.get(base, headers=extra_grant).get_json()["items"]] == [task_extra]
+    assert client.get(f"{base}/{task_a}", headers=manager).status_code == 200
+    assert client.get(f"{base}/{task_a}", headers=global_admin).status_code == 200
+
+    record = app.extensions["task_store"].load(task_a)
+    record.update({"status": "waiting_review", "stage": "review"})
+    app.extensions["task_store"].save(record)
+    # Review、重试和下载都先以 root task 过滤；extra grant 不能借同一工具看他人资源。
+    assert client.get(f"{base}/{task_a}/review", headers=extra_grant).status_code == 404
+    assert client.post(f"{base}/{task_a}/resume", headers=extra_grant).status_code == 404
+    assert client.get(f"{base}/{task_a}/review/download", headers=extra_grant).status_code == 404
+    assert client.get(f"{base}/{task_a}/artifacts/unknown", headers=extra_grant).status_code == 404
 
 
 def test_functional_workbench_v2_title_filters_and_capabilities(tmp_path: Path) -> None:
@@ -574,7 +700,7 @@ def test_admin_task_list_survives_schema_incompatible_records(tmp_path: Path) ->
         "stage": "execution_confirmation", "created_by_user_id": "s2_tester",
         "environment": "dev", "current_versions": {}, "completed_stages": [],
     })
-    admin_headers = headers("admin", "tool.view,tool.result.view,task.view.all")
+    admin_headers = headers("admin", "tool.view,tool.result.view,task.view.all", scope="global")
     # 首页 HTML 与列表 JSON 接口都不得被坏记录打挂。
     page = client.get("/functional-test-agent/", headers=admin_headers)
     assert page.status_code == 200

@@ -12,9 +12,21 @@ from app.core.config import Settings, get_settings
 from app.core.errors import PlatformError
 from app.core.security import hash_password, new_id, normalize_username, secure_equals, verify_password
 from app.db.session import get_db
-from app.models.identity import PlatformSession, RoleGrant, User, UserRole
+from app.models.access import Project, ProjectMembership, UserToolGrant
+from app.models.identity import PlatformSession, User, UserRole
 from app.models.tool import Tool
-from app.schemas.auth import ChangePasswordRequest, LoginRequest, MeResponse, MessageResponse, SessionResponse, SetupRequest, UserSummary
+from app.schemas.auth import (
+    ChangePasswordRequest,
+    LoginRequest,
+    MeResponse,
+    MessageResponse,
+    ProjectSummary,
+    RegisterRequest,
+    SessionResponse,
+    SetupRequest,
+    ToolGrantSummary,
+    UserSummary,
+)
 from app.services.audit import add_audit_event
 from app.services.auth import (
     authenticate,
@@ -25,7 +37,7 @@ from app.services.auth import (
     revoke_user_sessions,
     utc_now,
 )
-from app.services.authorization import user_grants
+from app.services.authorization import decide_tool_access, platform_permissions_for_role, user_grants
 
 
 router = APIRouter(tags=["auth"])
@@ -64,17 +76,68 @@ def _me_response(database: Session, context: AuthContext) -> MeResponse:
 
     grants = user_grants(database, context.user.id)
     roles = list(database.scalars(select(UserRole.role_id).where(UserRole.user_id == context.user.id)).all())
-    platform_permissions = sorted({grant.permission_code for grant in grants if grant.resource_type == "platform"})
+    platform_permissions = (
+        sorted(platform_permissions_for_role(context.user.platform_role))
+        if context.user.platform_role is not None
+        else sorted({grant.permission_code for grant in grants if grant.resource_type == "platform"})
+    )
     tools = list(database.scalars(select(Tool).where(Tool.is_enabled.is_(True))).all())
     tool_map: dict[str, list[str]] = {}
     for tool in tools:
-        permissions = sorted({
-            grant.permission_code
-            for grant in grants
-            if grant.resource_type == "tool" and grant.resource_id in {tool.id, "*"}
-        })
+        if context.user.platform_role is not None:
+            decision = decide_tool_access(database, context.user, tool)
+            permissions = ["tool.view", "tool.execute", "tool.result.view", "task.cancel"] if decision.allowed else []
+            if decision.can_manage:
+                permissions.extend(["tool.config.manage", "tool.secret.manage", "task.view.all"])
+            permissions = sorted(permissions)
+        else:
+            permissions = sorted({
+                grant.permission_code
+                for grant in grants
+                if grant.resource_type == "tool" and grant.resource_id in {tool.id, "*"}
+            })
         if permissions:
             tool_map[tool.id] = permissions
+    memberships = list(
+        database.scalars(select(ProjectMembership).where(ProjectMembership.user_id == context.user.id)).all()
+    )
+    project_rows = {row.id: row for row in database.scalars(select(Project)).all()}
+    projects = [
+        ProjectSummary(
+            id=project_rows[row.project_id].id,
+            code=project_rows[row.project_id].code,
+            name=project_rows[row.project_id].name,
+            status=project_rows[row.project_id].status,
+            relation=row.relation,
+        )
+        for row in memberships
+        if row.project_id in project_rows
+    ]
+    now = datetime.now(UTC)
+    extra_grants = []
+    for grant in database.scalars(
+        select(UserToolGrant).where(UserToolGrant.user_id == context.user.id).order_by(UserToolGrant.created_at.desc())
+    ).all():
+        tool = database.get(Tool, grant.tool_id)
+        project = project_rows.get(grant.project_id)
+        if tool is None or project is None:
+            continue
+        status = grant.status
+        expires_at = grant.expires_at if grant.expires_at.tzinfo else grant.expires_at.replace(tzinfo=UTC)
+        if status == "active" and expires_at <= now:
+            status = "expired"
+        extra_grants.append(
+            ToolGrantSummary(
+                id=grant.id,
+                tool_id=tool.id,
+                tool_name=tool.name,
+                project_id=project.id,
+                project_name=project.name,
+                status=status,
+                grant_reason=grant.grant_reason,
+                expires_at=expires_at,
+            )
+        )
     return MeResponse(
         user=UserSummary(
             id=context.user.id,
@@ -83,11 +146,57 @@ def _me_response(database: Session, context: AuthContext) -> MeResponse:
             status=context.user.status,
             must_change_password=context.user.must_change_password,
         ),
-        roles=sorted(roles),
+        role=context.user.platform_role,
+        roles=[context.user.platform_role] if context.user.platform_role else sorted(roles),
+        projects=projects,
+        extra_tool_grants=extra_grants,
         platform_permissions=platform_permissions,
         tool_permissions=tool_map,
+        permission_version=context.user.permission_version,
         session_expires_at=context.session.absolute_expires_at,
     )
+
+
+@router.post("/auth/register", response_model=MeResponse, status_code=201)
+def register(
+    payload: RegisterRequest,
+    response: Response,
+    request: Request,
+    database: Annotated[Session, Depends(get_db)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> MeResponse:
+    """注册 active tester 并创建登录会话，客户端不能选择角色或项目。"""
+
+    normalized = normalize_username(payload.username)
+    if database.scalar(select(User).where(User.username_normalized == normalized)):
+        raise PlatformError(409, "USERNAME_EXISTS", "用户名已存在")
+    user = User(
+        id=new_id("usr"),
+        username=payload.username.strip(),
+        username_normalized=normalized,
+        display_name=payload.display_name.strip(),
+        password_hash=hash_password(payload.password),
+        status="active",
+        platform_role="tester",
+    )
+    database.add(user)
+    database.flush()
+    session, session_token, csrf_token = create_session(
+        database, user, settings, _client_ip(request), request.headers.get("user-agent", "")
+    )
+    add_audit_event(
+        database,
+        action="auth.register",
+        resource_type="user",
+        resource_id=user.id,
+        outcome="success",
+        request=request,
+        actor=user,
+        after={"role": "tester", "status": "active"},
+    )
+    database.commit()
+    _set_auth_cookies(response, settings, session_token, csrf_token)
+    return _me_response(database, AuthContext(session, user))
 
 
 @router.post("/setup", response_model=MeResponse)
@@ -114,6 +223,7 @@ def setup(
         display_name=payload.display_name.strip(),
         password_hash=hash_password(payload.password),
         status="active",
+        platform_role="platform_admin",
     )
     database.add(user)
     database.flush()

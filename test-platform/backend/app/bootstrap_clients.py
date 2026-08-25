@@ -12,14 +12,21 @@ from app.models.identity import ToolClient
 
 CLIENT_CAPABILITIES = {
     "trackevents": ["audit.write", "config.ack"],
-    "log-filter": ["audit.write", "config.read", "config.ack"],
-    "truthy-search": ["config.read", "config.ack", "audit.write", "credential.status.write"],
+    "log-filter": ["audit.write", "config.read", "config.ack", "runtime.context.create"],
+    "truthy-search": [
+        "config.read", "config.ack", "audit.write",
+        "credential.status.write", "runtime.context.create",
+    ],
     "api-autotest": [
         "config.read", "config.ack", "audit.write",
-        "credential.status.write", "credential.session.write",
+        "credential.status.write", "credential.session.write", "runtime.context.create",
     ],
-    "functional-test-agent": ["config.read", "config.ack", "audit.write"],
-    "api-test-agent": ["config.read", "config.ack", "audit.write"],
+    "functional-test-agent": [
+        "config.read", "config.ack", "audit.write", "runtime.context.create",
+    ],
+    "api-test-agent": [
+        "config.read", "config.ack", "audit.write", "runtime.context.create",
+    ],
 }
 
 

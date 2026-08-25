@@ -1,6 +1,8 @@
 import logging
 import uuid
 from collections.abc import Awaitable, Callable
+from contextlib import asynccontextmanager
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -10,14 +12,86 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
-from app.api import admin, audit, auth, configuration, health, internal, llm, system, tools
+from app.api import access_admin, admin, audit, auth, configuration, health, internal, llm, projects, system, tools
 from app.core.config import get_settings
 from app.core.errors import PlatformError
+from app.core.security import load_user_context_signing_key
 
 
 settings = get_settings()
 logging.basicConfig(level=settings.log_level.upper())
 logger = logging.getLogger(__name__)
+
+
+_SENSITIVE_ACCESS_QUERY_KEYS = frozenset({
+    "access_token",
+    "api_key",
+    "auth_token",
+    "password",
+    "refresh_token",
+    "runtime_context_id",
+    "session_token",
+    "token",
+})
+
+
+def _redact_access_log_target(value: str) -> str:
+    """只脱敏访问日志中的敏感查询参数，保留路径与非敏感诊断字段。"""
+
+    parsed = urlsplit(value)
+    if not parsed.query:
+        return value
+    changed = False
+    redacted_pairs: list[tuple[str, str]] = []
+    for key, item_value in parse_qsl(parsed.query, keep_blank_values=True):
+        if key.casefold() in _SENSITIVE_ACCESS_QUERY_KEYS:
+            item_value = "[REDACTED]"
+            changed = True
+        redacted_pairs.append((key, item_value))
+    if not changed:
+        return value
+    return urlunsplit((
+        parsed.scheme,
+        parsed.netloc,
+        parsed.path,
+        urlencode(redacted_pairs, doseq=True),
+        parsed.fragment,
+    ))
+
+
+class SensitiveAccessLogFilter(logging.Filter):
+    """在 Uvicorn 格式化前清除 URL 中的运行上下文和凭证类参数。
+
+    Uvicorn 把请求目标作为 ``LogRecord.args`` 的一个字符串元素传给访问日志
+    Formatter。这里同时处理 tuple、dict 与已预格式化消息，避免不同 Uvicorn
+    版本或测试日志配置绕过脱敏。过滤器不记录被替换值，也不修改业务请求。
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        """原地脱敏日志参数并始终允许该条安全日志继续输出。"""
+
+        if isinstance(record.msg, str):
+            record.msg = _redact_access_log_target(record.msg)
+        if isinstance(record.args, tuple):
+            record.args = tuple(
+                _redact_access_log_target(value) if isinstance(value, str) else value
+                for value in record.args
+            )
+        elif isinstance(record.args, dict):
+            record.args = {
+                key: (
+                    _redact_access_log_target(value)
+                    if isinstance(value, str)
+                    else value
+                )
+                for key, value in record.args.items()
+            }
+        return True
+
+
+# Uvicorn 在导入 ASGI 应用前已经完成日志器配置，因此模块加载时安装过滤器
+# 即可覆盖容器启动与测试环境，无需改写全局日志格式或关闭其余访问诊断。
+logging.getLogger("uvicorn.access").addFilter(SensitiveAccessLogFilter())
 
 
 class RequestIdMiddleware(BaseHTTPMiddleware):
@@ -70,14 +144,49 @@ def error_response(request: Request, status_code: int, code: str, message: str) 
     )
 
 
-app = FastAPI(title="测试开发平台 API", version=settings.read_platform_version())
+def validate_runtime_security_configuration() -> None:
+    """个人配置功能启用时，在接收流量前验证独立签名密钥与 TTL。"""
+
+    current = get_settings()
+    if not (
+        current.personal_credentials_write_enabled
+        or current.personal_credentials_enabled
+    ):
+        return
+    if not 1 <= current.user_context_ttl_seconds <= 300:
+        raise RuntimeError("用户上下文 TTL 配置无效")
+    if not 1 <= current.runtime_context_ttl_seconds <= 86400:
+        raise RuntimeError("Runtime Context TTL 配置无效")
+    try:
+        load_user_context_signing_key(current.user_context_signing_key_file)
+    except (OSError, ValueError):
+        # 启动日志只指出安全配置不可用，不输出密钥路径、权限或文件内容。
+        raise RuntimeError("用户上下文签名安全配置不可用") from None
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """启动时执行安全门禁，关闭阶段当前没有额外资源需要释放。"""
+
+    validate_runtime_security_configuration()
+    yield
+
+
+app = FastAPI(
+    title="测试开发平台 API",
+    version=settings.read_platform_version(),
+    lifespan=lifespan,
+)
 app.add_middleware(RequestIdMiddleware)
 app.include_router(health.router, prefix="/api/v1")
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(tools.router, prefix="/api/v1")
+app.include_router(projects.router, prefix="/api/v1")
+app.include_router(access_admin.router, prefix="/api/v1")
 app.include_router(admin.router, prefix="/api/v1")
 app.include_router(configuration.router, prefix="/api/v1")
 app.include_router(llm.router, prefix="/api/v1")
+app.include_router(llm.personal_router, prefix="/api/v1")
 app.include_router(audit.router, prefix="/api/v1")
 app.include_router(internal.router, prefix="/api/v1")
 app.include_router(system.router, prefix="/api/v1")

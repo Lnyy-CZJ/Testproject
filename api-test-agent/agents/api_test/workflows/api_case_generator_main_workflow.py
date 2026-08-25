@@ -35,6 +35,9 @@ class MainState(TypedDict):
     interface_id: int  # 接口id
     persist_to_database: bool  # 是否写入数据库
     database_persist_statuses: Annotated[List, operator.add]
+    generation_kernel: str  # 可选 v2_fused 兼容桥
+    v2_contract: dict
+    contract_version: int
 
 ## 并发去生成可以执行的接口测试用例
 class ApiCaseGeneratoMainWorkFlow:
@@ -52,7 +55,10 @@ class ApiCaseGeneratoMainWorkFlow:
         basecase_state: StateNode = workflow.invoke({"api_doc": api_info, 
                                                     "preconditions": str(preconditions),
                                                     "interface_id": state.get("interface_id"),
-                                                    "persist_to_database": state.get("persist_to_database", bool(state.get("interface_id"))),
+                                                    "persist_to_database": state.get("persist_to_database", False),
+                                                    "generation_kernel": state.get("generation_kernel", "legacy"),
+                                                    "v2_contract": state.get("v2_contract"),
+                                                    "contract_version": state.get("contract_version", 1),
                                                     }
                                                     )
         # 数据库中查询该接口所有的基础用例
@@ -75,7 +81,9 @@ class ApiCaseGeneratoMainWorkFlow:
                                                     "api_info": state.get("api_info"),
                                                     "interface_id": state.get("interface_id"),
                                                     "base_case_id": state.get("base_case", {}).get("id"),
-                                                    "persist_to_database": state.get("persist_to_database", bool(state.get("interface_id"))),
+                                                    "persist_to_database": state.get("persist_to_database", False),
+                                                    "generation_kernel": state.get("generation_kernel", "legacy"),
+                                                    "v2_contract": state.get("v2_contract"),
                                                     })
         api_case = api_case_state.get("api_case")
         # 将数据库保存后生成的 case_id 注入到用例数据中，供执行阶段回写 real_response 使用
@@ -104,7 +112,9 @@ class ApiCaseGeneratoMainWorkFlow:
                     "preconditions": state.get("preconditions"),
                     "preconditions_api_doc": state.get("preconditions"),
                     "interface_id": state.get("interface_id")
-                    ,"persist_to_database": state.get("persist_to_database", bool(state.get("interface_id")))
+                    ,"persist_to_database": state.get("persist_to_database", False)
+                    ,"generation_kernel": state.get("generation_kernel", "legacy")
+                    ,"v2_contract": state.get("v2_contract")
                 })
             )
         return task_list

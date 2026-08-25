@@ -15,10 +15,23 @@ from services.common.artifacts import merge_registry
 from services.common.errors import ServiceError
 from services.common.prompt_version import prompt_bundle_sha256
 from services.common.task_models import TERMINAL_STATUSES, utc_now
+
+
+def _running_stage(execution_kind: str) -> str:
+    """把执行类型映射为可恢复的运行阶段；未知类型保留旧通用语义。"""
+
+    return {
+        "document_preflight": "document_preflight_running",
+        "base_case_generation": "base_case_generation_running",
+        "executable_generation": "executable_generation_running",
+        "case_review_ai": "case_review_ai_running",
+        "review_ai": "review_ai_running",
+        "generate_cases": "generating_test_cases",
+    }.get(execution_kind, "starting")
 from services.common.task_store import TaskStore
 
 
-ConfigLoader = Callable[[], dict[str, Any]]
+ConfigLoader = Callable[[dict[str, Any]], dict[str, Any]]
 ResultCollector = Callable[[str, Path, dict[str, Any]], dict[str, Any]]
 
 
@@ -208,7 +221,10 @@ class TaskManager:
             if not record or record.get("status") in TERMINAL_STATUSES:
                 raise ServiceError(409, "INVALID_TASK_STATE", "当前任务状态不允许取消")
             record["cancel_requested_at"] = utc_now()
-            if record.get("status") in {"pending", "waiting_review", "waiting_contract_review", "waiting_case_review", "waiting_execution_confirmation"}:
+            if record.get("status") in {
+                "pending", "waiting_review", "waiting_contract_review", "waiting_case_review",
+                "waiting_executable_review", "waiting_execution_confirmation",
+            }:
                 record.update({"status": "cancelled", "stage": "cancelled", "finished_at": utc_now()})
                 self.store.save(record)
                 self._condition.notify_all()
@@ -297,7 +313,9 @@ class TaskManager:
         if not record or record.get("status") != "pending":
             return
         try:
-            snapshot = self.config_loader()
+            # 必须把当前任务记录传给加载器，按创建时 selector 物化；禁止排队后
+            # 静默读取其他用户或最新版本的配置。
+            snapshot = self.config_loader(record)
             normal = snapshot.get("normal", {}) or {}
             self._retention_limits = {
                 "summary_days": int(normal.get("TASK_SUMMARY_RETENTION_DAYS", 180)),
@@ -322,7 +340,7 @@ class TaskManager:
             }
             record.setdefault("config_history", []).append(phase_config)
             kind = record.get("internal", {}).get("execution_kind", "initial")
-            running_stage = "case_review_ai_running" if kind == "case_review_ai" else ("review_ai_running" if kind == "review_ai" else ("generating_test_cases" if kind == "generate_cases" else "starting"))
+            running_stage = _running_stage(kind)
             record.update({
                 "status": "running", "stage": running_stage, "started_at": utc_now(),
                 "config_release_id": snapshot.get("release_id"),

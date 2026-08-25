@@ -194,10 +194,13 @@ def parse_openapi_document(document: dict[str, Any], *, source_id: str = "docume
             contract_id = "contract_" + hashlib.sha256(
                 f"{method.upper()} {raw_path}".encode("utf-8")
             ).hexdigest()[:20]
+            tags = [str(item) for item in operation.get("tags", [])] if isinstance(operation.get("tags"), list) else []
             contract = ApiContract(
                 contract_id=contract_id,
                 name=str(operation.get("operationId") or operation.get("summary") or f"{method.upper()} {raw_path}"),
                 summary=str(operation.get("description") or operation.get("summary") or ""),
+                module=tags[0] if tags else "",
+                tags=tags,
                 method=method,
                 path=str(raw_path),
                 sla_ms=sla_ms,

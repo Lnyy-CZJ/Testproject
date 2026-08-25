@@ -28,6 +28,79 @@ def run_alembic(database_url: str, *arguments: str) -> None:
     )
 
 
+def test_contract_requires_successful_manifest_readiness_marker(tmp_path: Path) -> None:
+    """0020 即使被精确指定，也必须拒绝绕过 manifest/shadow apply。"""
+
+    database_path = tmp_path / "contract-gate.db"
+    database_url = f"sqlite:///{database_path}"
+    run_alembic(database_url, "upgrade", "20260824_0019")
+    environment = os.environ.copy()
+    environment["DATABASE_URL"] = database_url
+    blocked = subprocess.run(
+        [sys.executable, "-m", "alembic", "upgrade", "20260824_0020"],
+        cwd=BACKEND_ROOT, env=environment, check=False, capture_output=True, text=True,
+    )
+    assert blocked.returncode != 0
+    assert "manifest" in blocked.stderr
+    connection = sqlite3.connect(database_path)
+    tool_ids = [row[0] for row in connection.execute("SELECT id FROM tools")]
+    manifest_path = tmp_path / "project-access-manifest.json"
+    manifest_path.write_text(json.dumps({
+        "user_roles": {},
+        "tool_projects": {tool_id: "project_legacy" for tool_id in tool_ids},
+        "memberships": [],
+        "required_environments": ["prod"],
+        "source_counts": {
+            "prod:truthy-search": 0,
+            "prod:api-autotest": 0,
+            "prod:functional-test-agent": 0,
+            "prod:api-test-agent": 0,
+            "prod:log-filter": 0,
+        },
+        "resources": [],
+    }), encoding="utf-8")
+    connection.close()
+    subprocess.run(
+        [
+            sys.executable, "-m", "app.migrate_project_access",
+            "--manifest", str(manifest_path), "--required-environment", "prod", "--apply",
+        ],
+        cwd=BACKEND_ROOT, env=environment, check=True, capture_output=True, text=True,
+    )
+    # apply 与 contract 之间若发生任意授权写入，数据库状态摘要必须使旧 marker
+    # 失效；重新 apply 后才能继续收紧约束。
+    connection = sqlite3.connect(database_path)
+    connection.execute("UPDATE tools SET authorization_epoch=authorization_epoch+1 WHERE id=(SELECT id FROM tools ORDER BY id LIMIT 1)")
+    connection.commit()
+    connection.close()
+    drifted = subprocess.run(
+        [sys.executable, "-m", "alembic", "upgrade", "20260824_0020"],
+        cwd=BACKEND_ROOT, env=environment, check=False, capture_output=True, text=True,
+    )
+    assert drifted.returncode != 0
+    subprocess.run(
+        [
+            sys.executable, "-m", "app.migrate_project_access",
+            "--manifest", str(manifest_path), "--required-environment", "prod", "--apply",
+        ],
+        cwd=BACKEND_ROOT, env=environment, check=True, capture_output=True, text=True,
+    )
+    run_alembic(database_url, "upgrade", "20260824_0020")
+
+
+def test_contract_freezes_authorization_tables_before_digest_check() -> None:
+    """生产 Contract 必须先阻写，再读取 marker/摘要，防止并发 TOCTOU。"""
+
+    migration = (
+        BACKEND_ROOT / "alembic/versions/20260824_0020_contract_project_access_control.py"
+    ).read_text(encoding="utf-8")
+    lock_position = migration.index("LOCK TABLE users, projects, tools")
+    digest_position = migration.index("readiness = connection.execute")
+    assert lock_position < digest_position
+    assert "IN SHARE MODE" in migration
+    assert "lock_timeout" in migration
+
+
 def test_empty_database_upgrade_is_repeatable_and_downgrade_is_scoped(
     tmp_path: Path,
 ) -> None:
@@ -35,14 +108,28 @@ def test_empty_database_upgrade_is_repeatable_and_downgrade_is_scoped(
 
     database_path = tmp_path / "migration.db"
     database_url = f"sqlite:///{database_path}"
-    run_alembic(database_url, "upgrade", "head")
-    run_alembic(database_url, "upgrade", "head")
+    run_alembic(database_url, "upgrade", "20260824_0019")
+    run_alembic(database_url, "upgrade", "20260824_0019")
 
     connection = sqlite3.connect(database_path)
     connection.row_factory = sqlite3.Row
     rows = connection.execute(
         "SELECT * FROM tools ORDER BY sort_order, name"
     ).fetchall()
+    assert {
+        "projects",
+        "project_memberships",
+        "user_tool_grants",
+        "business_resource_snapshots",
+    }.issubset(
+        {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    )
+    assert "platform_role" in {
+        row[1] for row in connection.execute("PRAGMA table_info(users)")
+    }
+    assert {"access_scope", "project_id", "revision", "authorization_epoch"}.issubset(
+        {row[1] for row in connection.execute("PRAGMA table_info(tools)")}
+    )
     assert [row["id"] for row in rows] == [
         "trackevents",
         "log-filter",
@@ -82,7 +169,7 @@ def test_empty_database_upgrade_is_repeatable_and_downgrade_is_scoped(
     assert [row[0] for row in connection.execute(
         "SELECT id FROM environments ORDER BY sort_order"
     ).fetchall()] == ["dev", "prod"]
-    assert connection.execute("SELECT COUNT(*) FROM permissions").fetchone()[0] == 19
+    assert connection.execute("SELECT COUNT(*) FROM permissions").fetchone()[0] == 22
     assert connection.execute("SELECT COUNT(*) FROM roles WHERE is_builtin = 1").fetchone()[0] == 5
     assert connection.execute("SELECT COUNT(*) FROM config_definitions").fetchone()[0] == 131
     assert connection.execute("SELECT COUNT(*) FROM llm_profiles").fetchone()[0] == 1
@@ -91,6 +178,27 @@ def test_empty_database_upgrade_is_repeatable_and_downgrade_is_scoped(
         "SELECT permission_code FROM role_grants WHERE role_id='role_platform_admin' "
         "AND permission_code LIKE 'platform.llm.%' ORDER BY permission_code"
     ).fetchall()] == ["platform.llm.manage", "platform.llm.secret.manage"]
+    # V2.4 将执行定义生成和 Review 从基础用例 Review 中独立出来；只读角色不应获授权。
+    executable_permissions = ["api-test-agent.executable.generate", "api-test-agent.executable.review"]
+    for role_id, resource_id in (
+        ("role_platform_admin", "*"),
+        ("role_test_developer", "api-test-agent"),
+        ("role_test_executor", "api-test-agent"),
+    ):
+        assert [row[0] for row in connection.execute(
+            "SELECT permission_code FROM role_grants WHERE role_id=? "
+            "AND permission_code LIKE 'api-test-agent.executable.%' ORDER BY permission_code",
+            (role_id,),
+        ).fetchall()] == executable_permissions
+        assert connection.execute(
+            "SELECT COUNT(*) FROM role_grants WHERE role_id=? AND resource_type='tool' "
+            "AND resource_id=? AND permission_code='api-test-agent.executable.generate'",
+            (role_id, resource_id),
+        ).fetchone()[0] == 1
+    assert connection.execute(
+        "SELECT COUNT(*) FROM role_grants WHERE role_id='role_readonly' "
+        "AND permission_code LIKE 'api-test-agent.executable.%'"
+    ).fetchone()[0] == 0
     review_defaults = connection.execute(
         "SELECT key, default_value FROM config_definitions "
         "WHERE owner_id='functional-test-agent' AND key IN ('ONLINE_REVIEW_ENABLED','REVIEW_AI_ENABLED') ORDER BY key"
@@ -155,7 +263,7 @@ def test_empty_database_upgrade_is_repeatable_and_downgrade_is_scoped(
         "SELECT COUNT(*) FROM config_definitions WHERE key='FUNCTIONAL_WORKBENCH_V2_ENABLED'"
     ).fetchone()[0] == 1
     connection.close()
-    run_alembic(database_url, "upgrade", "head")
+    run_alembic(database_url, "upgrade", "20260824_0019")
     connection = sqlite3.connect(database_path)
     connection.row_factory = sqlite3.Row
 
@@ -171,7 +279,7 @@ def test_empty_database_upgrade_is_repeatable_and_downgrade_is_scoped(
         "SELECT COUNT(*) FROM config_definitions WHERE key='FUNCTIONAL_WORKBENCH_V2_ENABLED'"
     ).fetchone()[0] == 0
     connection.close()
-    run_alembic(database_url, "upgrade", "head")
+    run_alembic(database_url, "upgrade", "20260824_0019")
     connection = sqlite3.connect(database_path)
     connection.row_factory = sqlite3.Row
 
@@ -183,7 +291,7 @@ def test_empty_database_upgrade_is_repeatable_and_downgrade_is_scoped(
     assert connection.execute("SELECT COUNT(*) FROM config_definitions").fetchone()[0] == 87
     assert connection.execute("SELECT COUNT(*) FROM config_definitions WHERE key='ONLINE_REVIEW_ENABLED'").fetchone()[0] == 1
     connection.close()
-    run_alembic(database_url, "upgrade", "head")
+    run_alembic(database_url, "upgrade", "20260824_0019")
     connection = sqlite3.connect(database_path)
     connection.row_factory = sqlite3.Row
 
@@ -194,7 +302,7 @@ def test_empty_database_upgrade_is_repeatable_and_downgrade_is_scoped(
     connection.row_factory = sqlite3.Row
     assert connection.execute("SELECT COUNT(*) FROM config_definitions").fetchone()[0] == 82
     connection.close()
-    run_alembic(database_url, "upgrade", "head")
+    run_alembic(database_url, "upgrade", "20260824_0019")
     connection = sqlite3.connect(database_path)
     connection.row_factory = sqlite3.Row
     connection.execute("DELETE FROM config_activations WHERE environment_id='dev' AND owner_id='functional-test-agent'")
@@ -240,7 +348,7 @@ def test_empty_database_upgrade_is_repeatable_and_downgrade_is_scoped(
     assert [row[0] for row in connection.execute(
         "SELECT id FROM tools ORDER BY sort_order"
     ).fetchall()] == ["trackevents", "log-filter", "truthy-search", "api-autotest"]
-    run_alembic(database_url, "upgrade", "head")
+    run_alembic(database_url, "upgrade", "20260824_0019")
 
     # 第二阶段降级不得触碰 0003 已接入的接口自动化工具。
     run_alembic(database_url, "downgrade", "20260807_0003")
@@ -258,3 +366,144 @@ def test_empty_database_upgrade_is_repeatable_and_downgrade_is_scoped(
     ]
     connection.close()
     assert remaining_ids == ["trackevents", "log-filter", "truthy-search"]
+
+
+def _unique_index_columns(connection: sqlite3.Connection, table_name: str) -> set[tuple[str, ...]]:
+    """返回 SQLite 表上的全部唯一索引列，用于验证迁移的真实数据库约束。"""
+
+    unique_columns: set[tuple[str, ...]] = set()
+    for index_row in connection.execute(f'PRAGMA index_list("{table_name}")').fetchall():
+        if not index_row[2]:
+            continue
+        index_name = index_row[1]
+        columns = tuple(
+            row[2]
+            for row in connection.execute(f'PRAGMA index_info("{index_name}")').fetchall()
+        )
+        unique_columns.add(columns)
+    return unique_columns
+
+
+def test_user_scope_migration_builds_isolated_tables_and_constraints(tmp_path: Path) -> None:
+    """0018 必须创建用户私有表、所有权列和不可跨用户复用的唯一约束。"""
+
+    database_path = tmp_path / "user-scope.db"
+    database_url = f"sqlite:///{database_path}"
+    run_alembic(database_url, "upgrade", "20260824_0019")
+
+    connection = sqlite3.connect(database_path)
+    connection.row_factory = sqlite3.Row
+    tables = {
+        row[0]
+        for row in connection.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()
+    }
+    assert {
+        "user_credentials",
+        "user_credential_items",
+        "user_llm_bindings",
+        "runtime_contexts",
+    }.issubset(tables)
+
+    definition_columns = {
+        row[1] for row in connection.execute("PRAGMA table_info(config_definitions)")
+    }
+    assert {"value_scope", "credential_provider_type"}.issubset(definition_columns)
+    profile_columns = {
+        row[1] for row in connection.execute("PRAGMA table_info(llm_profiles)")
+    }
+    assert "owner_user_id" in profile_columns
+
+    assert (
+        "user_id", "tool_id", "environment_id", "provider_type"
+    ) in _unique_index_columns(connection, "user_credentials")
+    assert (
+        "credential_id", "credential_version", "key"
+    ) in _unique_index_columns(connection, "user_credential_items")
+    assert ("user_id", "binding_id") in _unique_index_columns(
+        connection, "user_llm_bindings"
+    )
+    assert ("owner_user_id", "name_normalized") in _unique_index_columns(
+        connection, "llm_profiles"
+    )
+
+    readiness_grant = connection.execute(
+        "SELECT COUNT(*) FROM role_grants "
+        "WHERE role_id='role_platform_admin' "
+        "AND permission_code='platform.credential.readiness.view'"
+    ).fetchone()[0]
+    assert readiness_grant == 1
+
+    classifications = connection.execute(
+        "SELECT owner_id, key, value_scope, credential_provider_type "
+        "FROM config_definitions WHERE credential_provider_type IS NOT NULL "
+        "ORDER BY owner_id, key"
+    ).fetchall()
+    assert classifications
+    assert all(row["value_scope"] == "user" for row in classifications)
+    connection.close()
+
+
+def test_user_scope_migration_downgrade_is_scoped(tmp_path: Path) -> None:
+    """回退 0018 只删除个人隔离结构，必须保留全部 legacy 回滚材料。"""
+
+    database_path = tmp_path / "user-scope-downgrade.db"
+    database_url = f"sqlite:///{database_path}"
+    run_alembic(database_url, "upgrade", "20260824_0019")
+    connection = sqlite3.connect(database_path)
+    assert connection.execute(
+        "SELECT COUNT(*) FROM sqlite_master "
+        "WHERE type='table' AND name='user_credentials'"
+    ).fetchone()[0] == 1
+    connection.close()
+
+    run_alembic(database_url, "downgrade", "20260821_0017")
+    connection = sqlite3.connect(database_path)
+    tables = {
+        row[0]
+        for row in connection.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()
+    }
+    assert not {
+        "user_credentials", "user_credential_items", "user_llm_bindings", "runtime_contexts"
+    } & tables
+    assert {"credentials", "credential_items", "config_releases", "secrets"}.issubset(tables)
+    assert "owner_user_id" not in {
+        row[1] for row in connection.execute("PRAGMA table_info(llm_profiles)")
+    }
+    assert {"value_scope", "credential_provider_type"}.isdisjoint({
+        row[1] for row in connection.execute("PRAGMA table_info(config_definitions)")
+    })
+    assert connection.execute(
+        "SELECT COUNT(*) FROM permissions "
+        "WHERE code='platform.credential.readiness.view'"
+    ).fetchone()[0] == 0
+    connection.close()
+
+
+def test_user_scope_downgrade_rejects_duplicate_profile_names_with_guidance(
+    tmp_path: Path,
+) -> None:
+    """0018 降级遇到跨所有者同名 Profile 时必须在改表前给出可操作提示。"""
+
+    database_path = tmp_path / "user-scope-duplicate-profile.db"
+    database_url = f"sqlite:///{database_path}"
+    run_alembic(database_url, "upgrade", "20260824_0019")
+    connection = sqlite3.connect(database_path)
+    connection.execute(
+        "INSERT INTO llm_profiles "
+        "(id, name, name_normalized, description, protocol, is_archived, created_by) "
+        "SELECT 'llmp_duplicate_for_downgrade', name, name_normalized, description, "
+        "protocol, is_archived, created_by FROM llm_profiles LIMIT 1"
+    )
+    connection.commit()
+    connection.close()
+
+    try:
+        run_alembic(database_url, "downgrade", "20260821_0017")
+    except subprocess.CalledProcessError as exc:
+        assert "先重命名或合并同名 LLM Profile" in exc.stderr
+    else:
+        raise AssertionError("存在同名 LLM Profile 时 0018 降级必须被拒绝")

@@ -101,7 +101,7 @@ class TestListAndRetention:
     def test_delete_removes_related_artifacts(
         self, store: TaskStore, tmp_path: Path
     ) -> None:
-        """删除任务同步清理 console 目录与任务 JUnit。"""
+        """删除任务同步清理 console、JUnit 与任务专属报告。"""
         task_id = "20260807-163012-a1b2"
         store.save(_record(task_id))
         console_directory = store.console_dir(task_id)
@@ -110,11 +110,15 @@ class TestListAndRetention:
         junit = tmp_path / "reports" / f"junit-task-{task_id}.xml"
         junit.parent.mkdir(parents=True, exist_ok=True)
         junit.write_text("<xml/>", encoding="utf-8")
+        task_report = tmp_path / "reports" / "task-reports" / task_id / "current"
+        task_report.mkdir(parents=True)
+        (task_report / "index.html").write_text("report", encoding="utf-8")
 
         assert store.delete(task_id) is True
         assert store.load(task_id) is None
         assert not console_directory.exists()
         assert not junit.exists()
+        assert not (tmp_path / "reports" / "task-reports" / task_id).exists()
 
     def test_delete_missing_returns_false(self, store: TaskStore) -> None:
         """删除不存在的任务返回 False。"""

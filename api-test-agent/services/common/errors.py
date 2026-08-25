@@ -3,7 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
+import json
+import logging
 from typing import Any
+
+from services.common.redaction import redact_structure
 
 
 @dataclass(slots=True)
@@ -20,15 +25,34 @@ class ServiceError(Exception):
     code: str
     message: str
     details: dict[str, Any] | None = None
+    retryable: bool = False
+    suggested_action: str = ""
 
 
 def error_payload(error: ServiceError, request_id: str) -> dict:
     """构造不包含内部异常信息的统一错误响应。"""
 
-    payload: dict[str, Any] = {"code": error.code, "message": error.message, "request_id": request_id}
+    payload: dict[str, Any] = {
+        "code": error.code, "message": error.message, "request_id": request_id,
+        "retryable": error.retryable or error.status_code >= 500,
+        "suggested_action": error.suggested_action or (
+            "请稍后重试或携带请求 ID 联系管理员" if error.status_code >= 500 else "请检查输入或刷新后重试"
+        ),
+    }
     if error.details:
         payload["details"] = error.details
     return {"error": payload}
+
+
+def structured_log(logger: logging.Logger, level: str = "info", **fields: Any) -> None:
+    """使用标准库输出单行脱敏 JSON，供 request_id 和任务 ID 关联排障。"""
+
+    payload = redact_structure({
+        "timestamp": datetime.now(UTC).isoformat(), "level": level, **fields,
+    })
+    getattr(logger, level if level in {"debug", "info", "warning", "error"} else "info")(
+        json.dumps(payload, ensure_ascii=False, default=str)
+    )
 
 
 INVALID_INPUT = "INVALID_INPUT"

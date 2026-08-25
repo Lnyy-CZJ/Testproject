@@ -2,12 +2,17 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
+import type { AuthState } from "./types/platform";
 
-const auth = {
+const auth: AuthState = {
   user: { id: "usr_1", username: "admin", display_name: "平台管理员", status: "active", must_change_password: false },
-  roles: ["role_platform_admin"],
-  platform_permissions: ["platform.user.manage", "platform.role.manage", "platform.audit.view", "platform.config.manage", "platform.secret.manage", "platform.llm.manage", "platform.llm.secret.manage"],
+  role: "platform_admin",
+  roles: ["platform_admin"],
+  projects: [],
+  extra_tool_grants: [],
+  platform_permissions: ["platform.user.manage", "platform.role.manage", "platform.audit.view", "platform.config.manage", "platform.secret.manage", "platform.llm.manage", "platform.llm.secret.manage", "platform.credential.readiness.view"],
   tool_permissions: { trackevents: ["tool.view", "tool.execute", "tool.result.view"] },
+  permission_version: 1,
   session_expires_at: "2026-08-11T00:00:00Z",
 };
 
@@ -33,6 +38,7 @@ function jsonResponse(payload: unknown, status = 200) {
 beforeEach(() => {
   window.history.replaceState({}, "", "/");
   sessionStorage.clear();
+  localStorage.clear();
 });
 
 afterEach(() => {
@@ -40,7 +46,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function mockAuthenticatedCatalog(items = allTools, currentAuth = auth) {
+function mockAuthenticatedCatalog(items = allTools, currentAuth: AuthState = auth) {
   return vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
     const url = String(input);
     if (url.endsWith("/auth/me")) return jsonResponse(currentAuth);
@@ -52,6 +58,77 @@ function mockAuthenticatedCatalog(items = allTools, currentAuth = auth) {
 }
 
 describe("第三阶段 AI 测试工作台", () => {
+  it("恢复原主页，并把权限与项目放在专项评测之后", async () => {
+    mockAuthenticatedCatalog();
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "AI 测试与质量工程工作台" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "工具工作台" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: "权限与项目" })).not.toBeInTheDocument();
+
+    const primaryLinks = screen.getByRole("navigation", { name: "主导航" }).querySelectorAll("a");
+    const labels = Array.from(primaryLinks, (link) => link.textContent);
+    expect(labels.indexOf("权限与项目")).toBeGreaterThan(labels.indexOf("专项评测"));
+    expect(screen.getByRole("link", { name: "权限与项目" })).toHaveAttribute("href", "/access");
+  });
+
+  it("权限与项目汇总当前平台的项目、权限、个人和配置入口", async () => {
+    window.history.replaceState({}, "", "/access");
+    mockAuthenticatedCatalog([]);
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "权限与项目" })).toBeInTheDocument();
+    const expectedLinks = [
+      ["我的项目", "/projects?scope=mine"], ["项目管理", "/projects"], ["用户管理", "/admin/users"],
+      ["工具管理", "/admin/tool-access"], ["额外授权", "/admin/tool-grants"], ["固定角色", "/admin/roles"],
+      ["账号与会话", "/account"], ["修改密码", "/account/password"], ["我的凭证", "/account/credentials"],
+      ["我的 LLM", "/account/llm"], ["平台 LLM 配置", "/settings/platform-llm"],
+      ["普通配置", "/settings/config"], ["Secret", "/settings/secrets"],
+      ["凭证代理", "/settings/credential-agents"], ["凭证就绪度", "/settings/credentials"],
+      ["审计日志", "/audit"], ["版本状态", "/system/versions"],
+    ];
+    for (const [name, href] of expectedLinks) {
+      expect(screen.getAllByRole("link", { name }).some((link) => link.getAttribute("href") === href)).toBe(true);
+    }
+  });
+
+  it("创建项目使用独立页面而不是通用弹窗", async () => {
+    window.history.replaceState({}, "", "/projects/new");
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const url = String(input);
+      if (url.endsWith("/auth/me")) return jsonResponse(auth);
+      if (url.endsWith("/tools")) return jsonResponse({ items: [] });
+      if (url.endsWith("/projects")) return jsonResponse([]);
+      return jsonResponse({ runtime_environment: "dev" });
+    });
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "创建项目" })).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByText("基础信息")).toBeInTheDocument();
+    expect(screen.getByLabelText("Active（默认）")).toBeChecked();
+    expect(screen.getByText("分配负责人 → 加入测试成员 → 关联项目工具")).toBeInTheDocument();
+  });
+
+  it("工具详情按新版范围与归属页面展示影响预览入口", async () => {
+    window.history.replaceState({}, "", "/admin/tool-access/functional-test-agent");
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const url = String(input);
+      if (url.endsWith("/auth/me")) return jsonResponse(auth);
+      if (url.endsWith("/tools")) return jsonResponse({ items: [] });
+      if (url.endsWith("/projects")) return jsonResponse([{ id: "project_a", code: "PAY-QA", name: "支付测试", status: "active", relation: null }]);
+      if (url.endsWith("/admin/tool-access")) return jsonResponse([{ id: "functional-test-agent", name: "功能测试智能体", description: "", access_scope: "project", project_id: "project_a", project_name: "支付测试", is_enabled: true, revision: 4, updated_at: "2026-08-24T00:00:00Z", public_eligible: true, public_policy_complete: true }]);
+      if (url.endsWith("/admin/tool-grants")) return jsonResponse([]);
+      return jsonResponse({ runtime_environment: "dev" });
+    });
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "工具详情 · 范围与归属" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: /项目工具/ })).toBeChecked();
+    expect(screen.getByRole("button", { name: "预览变更影响" })).toBeInTheDocument();
+    expect(screen.getByText("历史资源")).toBeInTheDocument();
+  });
+
   it("未登录时强制进入登录页，不显示匿名工具入口", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation((input) => String(input).endsWith("/version.json")
       ? jsonResponse({ runtime_environment: "prod" })
@@ -77,9 +154,9 @@ describe("第三阶段 AI 测试工作台", () => {
     expect(screen.getByRole("link", { name: "自动化" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "质量分析" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "专项评测" })).toBeInTheDocument();
-    expect(screen.getByText("1.1.0")).toBeInTheDocument();
+    expect(screen.getByText(/1\.2\.0/)).toBeInTheDocument();
     expect(screen.getByRole("complementary", { name: "平台状态" })).toHaveTextContent("运行环境DEV");
-    expect(screen.getByRole("link", { name: "查看版本详情" })).toHaveAttribute("href", "/system/versions");
+    expect(screen.queryByRole("link", { name: "查看版本详情" })).not.toBeInTheDocument();
   });
 
   it("只渲染服务端返回的能力，不由 Catalog 补回其余工具", async () => {
@@ -119,15 +196,27 @@ describe("第三阶段 AI 测试工作台", () => {
   });
 
   it("平台管理入口继续受平台权限控制", async () => {
+    window.history.replaceState({}, "", "/access");
     mockAuthenticatedCatalog([]);
     render(<App />);
-    expect(await screen.findByRole("link", { name: "平台管理" })).toHaveAttribute("href", "/admin/users");
+    expect((await screen.findAllByRole("link", { name: "用户管理" })).some((link) => link.getAttribute("href") === "/admin/users")).toBe(true);
+    expect(screen.getAllByRole("link", { name: "工具管理" }).some((link) => link.getAttribute("href") === "/admin/tool-access")).toBe(true);
     cleanup();
-    const readonly = { ...auth, platform_permissions: [] };
+    const readonly: AuthState = { ...auth, role: "tester", roles: ["tester"], platform_permissions: [] };
     mockAuthenticatedCatalog([], readonly);
     render(<App />);
-    await screen.findByText("平台管理员");
-    expect(screen.queryByRole("link", { name: "平台管理" })).not.toBeInTheDocument();
+    await screen.findByRole("heading", { name: "权限与项目" });
+    expect(screen.queryByRole("link", { name: "用户管理" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "工具管理" })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: "我的凭证" }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("link", { name: "我的 LLM" }).length).toBeGreaterThan(0);
+    cleanup();
+    const noRole: AuthState = { ...auth, role: null, roles: [], platform_permissions: [] };
+    mockAuthenticatedCatalog([], noRole);
+    render(<App />);
+    await screen.findByRole("heading", { name: "权限与项目" });
+    expect(screen.queryByRole("link", { name: "项目管理" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "用户管理" })).not.toBeInTheDocument();
   });
 
   it("配置环境切换不改变状态卡的真实运行环境", async () => {
@@ -175,7 +264,7 @@ describe("第三阶段 AI 测试工作台", () => {
     render(<App />);
     expect(await screen.findByRole("heading", { name: "埋点分析" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "自定义工具" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /打开工具/ })).toHaveAttribute("href", "/custom-tool/");
+    expect(screen.getAllByRole("link", { name: /打开工具/ }).some((link) => link.getAttribute("href") === "/custom-tool/")).toBe(true);
   });
 
   it("单个健康请求失败只标记对应工具异常", async () => {
@@ -205,7 +294,7 @@ describe("第三阶段 AI 测试工作台", () => {
     vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
       const url = String(input);
       if (url.endsWith("/auth/me")) return jsonResponse(auth);
-      if (url.includes("/config/definitions")) return jsonResponse([{ id: "truthy-search.AUTH_TOKEN", key: "AUTH_TOKEN", display_name: "Access Token", description: "", owner_type: "tool", owner_id: "truthy-search", group_key: "credentials", value_type: "secret", sensitivity: "secret", required: true, default_value: null, apply_mode: "next_task", editable: true }]);
+      if (url.includes("/config/definitions")) return jsonResponse([{ id: "truthy-search.AUTH_TOKEN", key: "AUTH_TOKEN", display_name: "Access Token", description: "", owner_type: "tool", owner_id: "truthy-search", group_key: "credentials", value_type: "secret", sensitivity: "secret", required: true, default_value: null, validation_schema: {}, apply_mode: "next_task", editable: true, sort_order: 10, value_scope: "system", credential_provider_type: null }]);
       if (url.includes("/secrets?")) return jsonResponse([]);
       return jsonResponse({});
     });
@@ -215,24 +304,262 @@ describe("第三阶段 AI 测试工作台", () => {
     expect(screen.queryByText(/fake|token-value/i)).not.toBeInTheDocument();
   });
 
-  it("LLM 配置页分开展示公共 Profile 与预登记工具绑定且不回显 Key", async () => {
+  it("普通执行用户可从全局导航进入个人凭证与个人 LLM", async () => {
+    const executorAuth = {
+      ...auth,
+      role: "tester" as const,
+      roles: ["tester"],
+      platform_permissions: [],
+      tool_permissions: { "truthy-search": ["tool.view", "tool.execute"] },
+    };
+    mockAuthenticatedCatalog([allTools[5]], executorAuth);
+    render(<App />);
+    expect(await screen.findByRole("link", { name: "我的凭证" })).toHaveAttribute("href", "/account/credentials");
+    expect(screen.getByRole("link", { name: "我的 LLM" })).toHaveAttribute("href", "/account/llm");
+    expect(screen.queryByRole("link", { name: "平台管理" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Secret" })).not.toBeInTheDocument();
+  });
+
+  it("个人凭证页不回填 Secret，保存成功后清空输入", async () => {
+    window.history.replaceState({}, "", "/account/credentials");
+    let savedBody: Record<string, unknown> | null = null;
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url = String(input);
+      if (url.endsWith("/auth/me")) return jsonResponse(auth);
+      if (url.endsWith("/tools")) return jsonResponse({ items: [allTools[5]] });
+      if (url.includes("/config/definitions")) return jsonResponse([
+        { id: "truthy-search.AUTH_TOKEN", key: "AUTH_TOKEN", display_name: "Access Token", description: "", owner_type: "tool", owner_id: "truthy-search", group_key: "credentials", value_type: "secret", sensitivity: "secret", required: true, default_value: null, validation_schema: {}, apply_mode: "next_task", editable: true, sort_order: 10, value_scope: "user", credential_provider_type: "gateway_session" },
+        { id: "truthy-search.DEVICE_ID", key: "DEVICE_ID", display_name: "设备 ID", description: "", owner_type: "tool", owner_id: "truthy-search", group_key: "credentials", value_type: "string", sensitivity: "normal", required: false, default_value: null, validation_schema: {}, apply_mode: "next_task", editable: true, sort_order: 20, value_scope: "user", credential_provider_type: "gateway_session" },
+      ]);
+      if (url.includes("/me/credentials?")) return jsonResponse([{ id: "ucred_1", tool_id: "truthy-search", environment_id: "dev", provider_type: "gateway_session", status: "healthy", current_version: savedBody ? 4 : 3, expires_at: null, refresh_expires_at: null, last_checked_at: "2026-08-24T00:00:00Z", last_error_code: null, fields: [{ key: "AUTH_TOKEN", display_name: "Access Token", required: true, configured: true }, { key: "DEVICE_ID", display_name: "设备 ID", required: false, configured: true }] }]);
+      if (url.includes("/me/credentials/truthy-search/gateway_session") && init?.method === "PUT") {
+        savedBody = JSON.parse(String(init.body));
+        return jsonResponse({ id: "ucred_1", tool_id: "truthy-search", environment_id: "dev", provider_type: "gateway_session", status: "pending_validation", current_version: 4, expires_at: null, refresh_expires_at: null, last_checked_at: null, last_error_code: null, fields: [{ key: "AUTH_TOKEN", display_name: "Access Token", required: true, configured: true }, { key: "DEVICE_ID", display_name: "设备 ID", required: false, configured: true }] });
+      }
+      return jsonResponse({ tool_id: "truthy-search", status: "healthy" });
+    });
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: "我的凭证" })).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: "配置 truthy-search Gateway Session" }));
+    const secretInput = screen.getByLabelText("Access Token");
+    expect(secretInput).toHaveAttribute("type", "password");
+    expect(secretInput).toHaveAttribute("autocomplete", "new-password");
+    expect(secretInput).toHaveValue("");
+    fireEvent.change(secretInput, { target: { value: "frontend-secret-sentinel" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存凭证" }));
+    await waitFor(() => expect(savedBody).toEqual({
+      environment_id: "dev",
+      expected_version: 3,
+      values: { AUTH_TOKEN: "frontend-secret-sentinel" },
+    }));
+    expect(await screen.findByText("凭证已保存，新任务将使用新版本。")).toBeInTheDocument();
+    expect(screen.queryByText("frontend-secret-sentinel")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "配置 truthy-search Gateway Session" }));
+    expect(screen.getByLabelText("Access Token")).toHaveValue("");
+    expect(localStorage.length).toBe(0);
+    expect(fetchMock).toHaveBeenCalled();
+  });
+
+  it("个人凭证版本冲突保留未提交输入并展示稳定错误码", async () => {
+    window.history.replaceState({}, "", "/account/credentials");
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url = String(input);
+      if (url.endsWith("/auth/me")) return jsonResponse(auth);
+      if (url.endsWith("/tools")) return jsonResponse({ items: [allTools[5]] });
+      if (url.includes("/config/definitions")) return jsonResponse([{ id: "truthy-search.AUTH_TOKEN", key: "AUTH_TOKEN", display_name: "Access Token", description: "", owner_type: "tool", owner_id: "truthy-search", group_key: "credentials", value_type: "secret", sensitivity: "secret", required: true, default_value: null, validation_schema: {}, apply_mode: "next_task", editable: true, sort_order: 10, value_scope: "user", credential_provider_type: "gateway_session" }]);
+      if (url.includes("/me/credentials?")) return jsonResponse([{ id: "ucred_1", tool_id: "truthy-search", environment_id: "dev", provider_type: "gateway_session", status: "healthy", current_version: 3, expires_at: null, refresh_expires_at: null, last_checked_at: null, last_error_code: null, fields: [{ key: "AUTH_TOKEN", display_name: "Access Token", required: true, configured: true }] }]);
+      if (url.includes("/me/credentials/truthy-search/gateway_session") && init?.method === "PUT") return jsonResponse({ code: "VERSION_CONFLICT", message: "配置已更新，请刷新后重试" }, 409);
+      return jsonResponse({ tool_id: "truthy-search", status: "healthy" });
+    });
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "配置 truthy-search Gateway Session" }));
+    fireEvent.change(screen.getByLabelText("Access Token"), { target: { value: "keep-on-conflict" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存凭证" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("VERSION_CONFLICT");
+    expect(screen.getByLabelText("Access Token")).toHaveValue("keep-on-conflict");
+  });
+
+  it("个人 LLM 只展示本人 Profile，API Key 保存后不回填", async () => {
+    window.history.replaceState({}, "", "/account/llm");
+    let updateBody: Record<string, unknown> | null = null;
+    const profilePayload = () => ({ id: "llmp_personal", name: "Personal DeepSeek", description: "仅供本人任务", provider: "openai_compatible", is_archived: false, environment_id: "dev", active_release_id: "rel_profile", active_release_version: updateBody ? 3 : 2, base_url: "https://llm.example.com/v1", model: "deepseek-v3", temperature: 0.2, max_tokens: 2048, timeout_seconds: 30, enabled: true, api_key_configured: true, binding_count: 1, created_at: "2026-08-24T00:00:00Z", updated_at: "2026-08-24T00:00:00Z" });
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url = String(input);
+      if (url.endsWith("/auth/me")) return jsonResponse(auth);
+      if (url.endsWith("/tools")) return jsonResponse({ items: [allTools[0]] });
+      if (url.includes("/me/llm/profiles?")) return jsonResponse([profilePayload()]);
+      if (url.includes("/me/llm/bindings?")) return jsonResponse([{ id: "ullmb_1", binding_id: "llmb_functional_default", tool_id: "functional-test-agent", capability_key: "default", display_name: "功能测试智能体默认模型", description: "", environment_id: "dev", active_release_id: "rel_binding", current_version: 1, profile_id: "llmp_personal", enabled: true, model_override: null, temperature_override: null, max_tokens_override: null, timeout_seconds_override: null, api_key_override_configured: false }]);
+      if (url.endsWith("/me/llm/profiles/llmp_personal") && init?.method === "PATCH") {
+        updateBody = JSON.parse(String(init.body));
+        return jsonResponse(profilePayload());
+      }
+      return jsonResponse({ tool_id: "functional-test-agent", status: "healthy" });
+    });
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: "我的 LLM" })).toBeInTheDocument();
+    expect((await screen.findAllByText("Personal DeepSeek")).length).toBeGreaterThan(0);
+    expect(await screen.findByText("功能测试智能体默认模型")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "编辑连接" }));
+    const apiKey = screen.getByLabelText("API Key（留空沿用现有值）");
+    expect(apiKey).toHaveAttribute("type", "password");
+    expect(apiKey).toHaveAttribute("autocomplete", "new-password");
+    expect(apiKey).toHaveValue("");
+    fireEvent.change(apiKey, { target: { value: "personal-llm-secret-sentinel" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存连接" }));
+    await waitFor(() => expect(updateBody).toMatchObject({
+      environment_id: "dev",
+      api_key: "personal-llm-secret-sentinel",
+    }));
+    expect(await screen.findByText("个人 LLM 连接已更新，新任务将使用新版本。")).toBeInTheDocument();
+    expect(screen.queryByText("personal-llm-secret-sentinel")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "编辑连接" }));
+    expect(screen.getByLabelText("API Key（留空沿用现有值）")).toHaveValue("");
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    fireEvent.click(screen.getByRole("button", { name: /功能测试智能体默认模型/ }));
+    fireEvent.click(screen.getByRole("button", { name: "配置能力绑定" }));
+    expect(screen.getByRole("option", { name: "Personal DeepSeek" })).toBeInTheDocument();
+  });
+
+  it("管理员就绪度页只读展示凭证与 LLM 状态", async () => {
+    window.history.replaceState({}, "", "/settings/credentials");
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const url = String(input);
+      if (url.endsWith("/auth/me")) return jsonResponse(auth);
+      if (url.endsWith("/tools")) return jsonResponse({ items: [] });
+      if (url.includes("/admin/credential-readiness?")) return jsonResponse([
+        { resource_type: "credential", user_id: "usr_1", username: "admin", user_status: "active", environment_id: "dev", tool_id: "truthy-search", provider_type: "gateway_session", capability_key: null, readiness_status: "expiring", credential_status: "healthy", current_version: 4, configured_field_count: 3, required_field_count: 3, expires_at: "2026-08-25T00:00:00Z", refresh_expires_at: null, last_checked_at: "2026-08-24T00:00:00Z", last_error_code: null },
+        { resource_type: "llm_binding", user_id: "usr_1", username: "admin", user_status: "active", environment_id: "dev", tool_id: "functional-test-agent", provider_type: "llm", capability_key: "default", readiness_status: "configured", credential_status: null, current_version: 2, configured_field_count: 1, required_field_count: 1, expires_at: null, refresh_expires_at: null, last_checked_at: null, last_error_code: null },
+      ]);
+      return jsonResponse({});
+    });
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: "凭证就绪度" })).toBeInTheDocument();
+    expect(await screen.findAllByText("admin")).toHaveLength(2);
+    expect(screen.getByText("3 / 3")).toBeInTheDocument();
+    expect(screen.getByText("default")).toBeInTheDocument();
+    expect(screen.getByLabelText("筛选状态")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /替换|编辑|代改/ })).not.toBeInTheDocument();
+  });
+
+  it("旧 LLM 设置地址重定向到个人 LLM", async () => {
     window.history.replaceState({}, "", "/settings/llm");
     vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
       const url = String(input);
       if (url.endsWith("/auth/me")) return jsonResponse(auth);
       if (url.endsWith("/tools")) return jsonResponse({ items: [] });
-      if (url.includes("/llm/profiles?")) return jsonResponse([{ id: "llmp_shared_default", name: "DeepSeek Shared", description: "共享模型", protocol: "openai_compatible", is_archived: false, environment_id: "dev", active_release_id: "rel_profile", active_release_version: 1, api_key_configured: true, binding_count: 2 }]);
-      if (url.includes("/llm/bindings?")) return jsonResponse([{ id: "llmb_functional_default", tool_id: "functional-test-agent", capability_key: "default", display_name: "功能测试智能体默认模型", description: "", environment_id: "dev", active_release_id: "rel_binding", active_release_version: 1, profile_id: "llmp_shared_default", enabled: true, api_key_override_configured: false }]);
-      if (url.includes("/config/definitions?")) return jsonResponse([{ id: "llmp_shared_default.MODEL", key: "MODEL", display_name: "模型名称", description: "", owner_type: "llm_profile", owner_id: "llmp_shared_default", group_key: "model", value_type: "string", sensitivity: "normal", required: true, default_value: null, apply_mode: "next_task", editable: true }]);
-      if (url.includes("/config/releases?")) return jsonResponse([{ id: "rel_profile", environment_id: "dev", owner_type: "llm_profile", owner_id: "llmp_shared_default", version: 1, revision: 1, status: "active", created_by: "admin", published_by: "admin", created_at: "2026-08-17T00:00:00Z", published_at: "2026-08-17T00:00:00Z", items: [{ definition_id: "llmp_shared_default.MODEL", value: "deepseek-v4-flash" }] }]);
-      if (url.includes("/secrets?")) return jsonResponse([]);
+      if (url.includes("/me/llm/profiles?") || url.includes("/me/llm/bindings?")) return jsonResponse([]);
       return jsonResponse({});
     });
     render(<App />);
-    expect(await screen.findByRole("heading", { name: "LLM 统一配置" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "用户管理" })).toHaveAttribute("href", "/admin/users");
-    expect((await screen.findAllByText("DeepSeek Shared")).length).toBeGreaterThan(0);
-    expect(await screen.findByText("功能测试智能体默认模型")).toBeInTheDocument();
-    expect(screen.queryByText(/sentinel-api-key/)).not.toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "我的 LLM" })).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/account/llm");
+  });
+
+  it("AC-01：注册页固定创建测试人员且不暴露角色字段", async () => {
+    window.history.replaceState({}, "", "/register");
+    const registeredAuth = {
+      ...auth,
+      user: { ...auth.user, id: "usr_new", username: "new-tester", display_name: "新测试人员" },
+      role: "tester",
+      roles: ["tester"],
+      projects: [],
+      extra_tool_grants: [],
+      permission_version: 1,
+      platform_permissions: [],
+      tool_permissions: {},
+    };
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const url = String(input);
+      if (url.endsWith("/auth/me")) return jsonResponse({ code: "AUTH_REQUIRED", message: "请先登录" }, 401);
+      if (url.endsWith("/auth/register")) return jsonResponse(registeredAuth);
+      if (url.endsWith("/tools")) return jsonResponse({ items: [] });
+      if (url.endsWith("/health/live")) return jsonResponse({ runtime_environment: "dev" });
+      return jsonResponse({ tool_id: "", status: "healthy" });
+    });
+
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: "创建测试人员账号" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("角色")).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("用户名"), { target: { value: "new-tester" } });
+    fireEvent.change(screen.getByLabelText("显示名称"), { target: { value: "新测试人员" } });
+    fireEvent.change(screen.getByLabelText("密码"), { target: { value: "correct-horse-battery" } });
+    fireEvent.click(screen.getByRole("button", { name: "创建账号" }));
+    expect(await screen.findByRole("heading", { name: "AI 测试与质量工程工作台" })).toBeInTheDocument();
+  });
+
+  it("AC-09：管理员有我的项目导航但没有全局用户和工具权限入口", async () => {
+    window.history.replaceState({}, "", "/access");
+    const projectAdmin: AuthState = {
+      ...auth,
+      role: "admin",
+      roles: ["admin"],
+      projects: [{ id: "project_a", code: "alpha", name: "Alpha 项目", status: "active", relation: "manager" }],
+      extra_tool_grants: [],
+      permission_version: 2,
+      platform_permissions: [],
+    };
+    mockAuthenticatedCatalog([], projectAdmin);
+    render(<App />);
+    expect((await screen.findAllByRole("link", { name: "我的项目" })).some((link) => link.getAttribute("href") === "/projects?scope=mine")).toBe(true);
+    expect(screen.queryByRole("link", { name: "项目管理" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "用户管理" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "工具管理" })).not.toBeInTheDocument();
+  });
+
+  it("兼容期部分平台权限不会展示角色守卫下的平台 LLM 与凭证代理入口", async () => {
+    window.history.replaceState({}, "", "/access");
+    const partialAdmin: AuthState = {
+      ...auth,
+      role: "admin",
+      roles: ["admin"],
+      platform_permissions: ["platform.llm.manage", "platform.llm.secret.manage", "platform.secret.manage"],
+    };
+    mockAuthenticatedCatalog([], partialAdmin);
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "权限与项目" })).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: "Secret" }).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("link", { name: "平台 LLM 配置" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "凭证代理" })).not.toBeInTheDocument();
+  });
+
+  it("403 页面不再出现已删除的工具工作台名称", async () => {
+    window.history.replaceState({}, "", "/403");
+    mockAuthenticatedCatalog([]);
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "状态与异常" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "没有管理权限" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "返回工作台" })).toHaveAttribute("href", "/");
+    expect(screen.queryByText("工具工作台")).not.toBeInTheDocument();
+  });
+
+  it("AC-48：项目停用确认携带影响令牌，过期时关闭确认并要求重新预览", async () => {
+    window.history.replaceState({}, "", "/projects/project_a");
+    const platformAdmin: AuthState = {
+      ...auth,
+      role: "platform_admin",
+      roles: ["platform_admin"],
+      projects: [{ id: "project_a", code: "alpha", name: "Alpha 项目", status: "active", relation: null }],
+      extra_tool_grants: [],
+      permission_version: 2,
+    };
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url = String(input);
+      if (url.endsWith("/auth/me")) return jsonResponse(platformAdmin);
+      if (url.endsWith("/tools")) return jsonResponse({ items: [] });
+      if (url.endsWith("/projects/project_a")) return jsonResponse({ id: "project_a", code: "alpha", name: "Alpha 项目", description: "", status: "active", revision: 4, manager_count: 1, member_count: 2, tool_count: 3, active_grant_count: 1, updated_at: "2026-08-24T00:00:00Z" });
+      if (url.endsWith("/projects/project_a/deactivation-impact")) return jsonResponse({ expected_revision: 4, impact_token: "a".repeat(32), manager_count: 1, member_count: 2, tool_count: 3, active_grant_count: 1, running_task_count: 0 });
+      if (url.endsWith("/projects/project_a/deactivate") && init?.method === "POST") return jsonResponse({ code: "STALE_IMPACT", message: "资源状态已变化，请重新确认影响范围" }, 409);
+      if (url.endsWith("/health/live")) return jsonResponse({ runtime_environment: "dev" });
+      return jsonResponse([]);
+    });
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: "项目详情 · 概览" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "预览停用影响" }));
+    expect(await screen.findByRole("dialog", { name: "停用 Alpha 项目" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "确认停用" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("重新确认影响范围");
+    expect(screen.queryByRole("dialog", { name: "停用 Alpha 项目" })).not.toBeInTheDocument();
   });
 });

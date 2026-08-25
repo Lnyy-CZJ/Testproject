@@ -178,6 +178,11 @@ if (heading) {
       document.querySelector("#model-name").textContent = task.model_name || "等待任务启动";
       document.querySelector("#prompt-version").textContent = task.prompt_bundle_sha256?.slice(0, 12) || "等待任务启动";
       document.querySelector("#release-version").textContent = task.config_release_version || "未发布";
+      // API V2 的 Workflow 运行中同时增量刷新技术日志；页面隐藏时 refreshTask
+      // 本身会暂停高频轮询，避免后台标签持续请求。日志失败不影响任务状态展示。
+      if (body.classList.contains("api-v2-page") && ["pending", "running"].includes(task.status) && !document.hidden) {
+        await refreshLog();
+      }
       if (!["succeeded", "failed", "cancelled", "partial_success", "waiting_review", "waiting_contract_review", "waiting_case_review", "waiting_execution_confirmation"].includes(task.status) && !document.hidden) {
         setTimeout(refreshTask, 5000);
       }
@@ -192,6 +197,7 @@ if (heading) {
       const log = document.querySelector("#task-log");
       if (cursor === 0) log.textContent = "";
       log.textContent += result.content;
+      if (!log.textContent) log.textContent = result.complete ? "本次 Runner 未产生技术日志。" : "Runner 正在启动，暂未输出技术日志。";
       cursor = result.next_cursor;
       log.scrollTop = log.scrollHeight;
     } catch (error) {

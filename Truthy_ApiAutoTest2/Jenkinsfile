@@ -24,6 +24,11 @@ pipeline {
             defaultValue: '',
             description: '可选 Flow 文件名，不含 .yaml；留空执行全部 Flow'
         )
+        string(
+            name: 'PLATFORM_TASK_ID',
+            defaultValue: '',
+            description: '平台派发的根任务 ID；报告归属校验必填，不允许人工改绑'
+        )
     }
 
     // 自动定时触发已暂停；恢复时再按原规则增加 triggers/cron 配置。
@@ -39,6 +44,19 @@ pipeline {
     }
 
     stages {
+        stage('校验平台任务身份') {
+            steps {
+                sh '''
+                    set -eu
+                    printf '%s' "${PLATFORM_TASK_ID:-}" | \
+                        LC_ALL=C grep -Eq '^[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$' || {
+                            echo "PLATFORM_TASK_ID 缺失或格式非法"
+                            exit 2
+                        }
+                '''
+            }
+        }
+
         stage('准备 Python 环境') {
             steps {
                 dir("${PROJECT_DIR}") {
@@ -223,6 +241,22 @@ pipeline {
                                 # 清理上次构建遗留的报告目录，避免旧文件混入本次报告。
                                 rm -rf allure-report-publish
                                 allure awesome allure-results --output allure-report-publish
+                                # 该文件由 Jenkins 参数和内建构建变量生成，拉取端会
+                                # 同时核验 Jenkins API 参数与此归档元数据，禁止调用者
+                                # 把任意构建重新贴到其他平台任务名下。
+                                python3 - <<'PYEOF'
+import json
+import os
+
+metadata = {
+    "task_id": os.environ["PLATFORM_TASK_ID"],
+    "build_number": int(os.environ["BUILD_NUMBER"]),
+    "job_name": os.environ["JOB_NAME"],
+}
+with open("allure-report-publish/platform-task-meta.json", "w", encoding="utf-8") as file:
+    json.dump(metadata, file, ensure_ascii=False, indent=2)
+    file.write("\\n")
+PYEOF
                             '''
                         }
                     }

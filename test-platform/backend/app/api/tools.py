@@ -8,10 +8,11 @@ from app.api.deps import AuthContext, current_auth_context
 from app.core.config import Settings, get_settings
 from app.core.errors import PlatformError
 from app.db.session import get_db
+from app.models.access import Project
 from app.models.tool import Tool
-from app.schemas.tool import ToolHealthResponse, ToolListResponse
+from app.schemas.tool import ToolHealthResponse, ToolListResponse, ToolResponse
 from app.services.tool_health import probe_tool_health
-from app.services.authorization import has_tool_permission
+from app.services.authorization import decide_tool_access_batch, has_tool_permission
 
 
 router = APIRouter(prefix="/tools", tags=["tools"])
@@ -36,10 +37,34 @@ def list_tools(
         .where(Tool.is_enabled.is_(True))
         .order_by(Tool.sort_order.asc(), Tool.name.asc())
     )
-    rows = [
-        tool for tool in database.scalars(statement).all()
-        if has_tool_permission(database, context.user.id, "tool.view", tool.id)
-    ]
+    tools = list(database.scalars(statement).all())
+    decisions = (
+        decide_tool_access_batch(database, context.user, tools)
+        if context.user.platform_role
+        else {}
+    )
+    project_ids = {tool.project_id for tool in tools if tool.project_id}
+    projects = {
+        project.id: project
+        for project in database.scalars(select(Project).where(Project.id.in_(project_ids))).all()
+    } if project_ids else {}
+    rows: list[ToolResponse] = []
+    for tool in tools:
+        decision = decisions.get(tool.id) if context.user.platform_role else None
+        if decision is not None and not decision.allowed:
+            continue
+        if decision is None and not has_tool_permission(database, context.user.id, "tool.view", tool.id):
+            continue
+        project = projects.get(tool.project_id or "")
+        rows.append(
+            ToolResponse.model_validate(tool).model_copy(
+                update={
+                    "project_name": project.name if project else None,
+                    "access_source": decision.source if decision else "legacy_rbac",
+                    "can_manage": decision.can_manage if decision else False,
+                }
+            )
+        )
     return ToolListResponse(items=rows)
 
 
@@ -67,7 +92,7 @@ def tool_health(
     if tool is None or not tool.is_enabled:
         raise PlatformError(404, "NOT_FOUND", "工具不存在")
     if not has_tool_permission(database, context.user.id, "tool.view", tool_id):
-        raise PlatformError(403, "PERMISSION_DENIED", "无权访问该工具")
+        raise PlatformError(404, "NOT_FOUND", "工具不存在")
 
     health = probe_tool_health(tool.health_url, settings.tool_health_timeout_seconds)
     return ToolHealthResponse(

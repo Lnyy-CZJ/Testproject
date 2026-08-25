@@ -17,9 +17,11 @@ import {
   Routes,
   useLocation,
   useNavigate,
+  useParams,
 } from "react-router-dom";
 
-import { ApiError, apiJson, fetchTools, request } from "./api/client";
+import { ApiError, apiJson, describeApiError, fetchTools, request } from "./api/client";
+import { accessApi } from "./api/access";
 import versionsManifest from "../../versions.json";
 import { AppShell } from "./components/AppShell";
 import { CapabilityCard } from "./components/CapabilityCard";
@@ -32,17 +34,22 @@ import type {
   AuthState,
   ConfigDefinition,
   ConfigRelease,
+  CredentialReadiness,
   CredentialMetadata,
   PermissionDefinition,
   LlmBinding,
   LlmEffectiveConfig,
   LlmProfile,
+  PersonalCredential,
+  PersonalLlmBinding,
+  PersonalLlmProfile,
   Role,
   RoleGrant,
   SecretMetadata,
   UserSession,
 } from "./types/platform";
 import type { Tool } from "./types/tool";
+import type { ImpactPreview, PlatformRole, ProjectMember, ProjectRecord, ProjectSummary, ToolAccessRecord, ToolGrantSummary } from "./types/access";
 
 const PLATFORM_VERSION = versionsManifest.product.version;
 
@@ -204,8 +211,38 @@ function LoginPage() {
         {error && <div id="login-error"><InlineMessage kind="error">{error}</InlineMessage></div>}
         <button className="primary-button" disabled={submitting}>{submitting ? "正在验证…" : "登录"}</button>
       </form>
+      <p className="login-register-link"><NavLink to="/register">创建测试人员账号</NavLink></p>
     </LoginLayout>
   );
+}
+
+/** 自助注册永远只提交身份基础字段，角色与项目范围只能由服务端决定。 */
+function RegisterPage() {
+  const { auth, setAuth } = useAuth();
+  const navigate = useNavigate();
+  const [values, setValues] = useState({ username: "", display_name: "", password: "" });
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  if (auth) return <Navigate to="/" replace />;
+  async function submit(event: FormEvent) {
+    event.preventDefault(); setError(""); setSubmitting(true);
+    try {
+      const result = await apiJson<AuthState>("/auth/register", { method: "POST", body: JSON.stringify(values) });
+      setAuth(result); navigate("/", { replace: true });
+    } catch (requestError) {
+      const apiError = requestError instanceof ApiError ? requestError : null;
+      setError(apiError?.status === 422 || apiError?.code === "REGISTRATION_UNAVAILABLE"
+        ? "暂时无法创建账号，请检查信息或稍后重试。"
+        : "注册失败，请稍后重试。");
+    } finally { setSubmitting(false); }
+  }
+  return <LoginLayout><div className="login-panel-heading"><h1>创建测试人员账号</h1><p>账号创建后可立即使用已开放的公共工具。</p></div><form className="auth-form login-form" onSubmit={submit}>
+    <label>用户名<input autoFocus autoComplete="username" minLength={3} value={values.username} onChange={(event) => setValues({ ...values, username: event.target.value })} required /></label>
+    <label>显示名称<input autoComplete="name" value={values.display_name} onChange={(event) => setValues({ ...values, display_name: event.target.value })} required /></label>
+    <label>密码<input type="password" autoComplete="new-password" minLength={12} value={values.password} onChange={(event) => setValues({ ...values, password: event.target.value })} required /></label>
+    {error && <InlineMessage kind="error">{error}</InlineMessage>}
+    <button className="primary-button" disabled={submitting}>{submitting ? "正在创建…" : "创建账号"}</button>
+  </form><p className="login-register-link"><NavLink to="/login">返回登录</NavLink></p></LoginLayout>;
 }
 
 function LoginLayout({ children }: PropsWithChildren) {
@@ -279,13 +316,14 @@ function AuthLayout({ eyebrow, title, copy, children }: PropsWithChildren<{ eyeb
   return <main className="auth-page"><section className="auth-intro"><span className="brand-mark">T</span><p className="section-label">{eyebrow}</p><h1>{title}</h1><p>{copy}</p></section><section className="auth-panel">{children}</section></main>;
 }
 
-function Protected({ children, permission }: PropsWithChildren<{ permission?: string }>) {
+function Protected({ children, permission, roles }: PropsWithChildren<{ permission?: string; roles?: PlatformRole[] }>) {
   const { auth, loading } = useAuth();
   const location = useLocation();
   if (loading) return <LoadingPage />;
   if (!auth) return <Navigate to={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} replace />;
   if (auth.user.must_change_password && location.pathname !== "/account/password") return <Navigate to="/account/password" replace />;
   if (permission && !auth.platform_permissions.includes(permission)) return <Navigate to="/403" replace />;
+  if (roles && (!auth.role || !roles.includes(auth.role))) return <Navigate to="/403" replace />;
   return children;
 }
 
@@ -336,10 +374,7 @@ function WorkspaceShell({ children }: PropsWithChildren) {
 }
 
 function HomePage() {
-  const { auth } = useAuth();
-  const environment = useEnvironment();
   const { tools, groups, unknownTools, healthStates, loading, refreshing, error, refreshHealth, reloadCatalog } = useToolCatalog();
-  const [credentialIssueCount, setCredentialIssueCount] = useState<number | null>(null);
   const [runtimeEnvironment, setRuntimeEnvironment] = useState("…");
   const aiCapabilities = groups["ai-testing"];
   const professionalCapabilities = [
@@ -351,20 +386,6 @@ function HomePage() {
     counts[healthStates[tool.id] ?? "checking"] += 1;
     return counts;
   }, { checking: 0, healthy: 0, unhealthy: 0 });
-
-  useEffect(() => {
-    if (!auth?.platform_permissions.includes("platform.secret.manage")) {
-      setCredentialIssueCount(null);
-      return;
-    }
-    let active = true;
-    void apiJson<CredentialMetadata[]>(`/credentials?environment_id=${environment}`).then((items) => {
-      if (!active || !Array.isArray(items)) return;
-      const soon = Date.now() + 24 * 60 * 60 * 1000;
-      setCredentialIssueCount(items.filter((item) => item.status !== "active" || (item.expires_at && new Date(item.expires_at).getTime() <= soon)).length);
-    }).catch(() => { if (active) setCredentialIssueCount(null); });
-    return () => { active = false; };
-  }, [auth, environment]);
 
   const refreshStatus = useCallback(async () => {
     const [, identity] = await Promise.all([
@@ -380,9 +401,72 @@ function HomePage() {
       .catch(() => setRuntimeEnvironment("未知"));
   }, []);
 
-  return <WorkspaceShell><section className="workbench-home" aria-labelledby="workbench-title"><div className="workbench-intro"><div><p className="section-label">AI TESTING WORKSPACE</p><h1 id="workbench-title">AI 测试与质量工程工作台</h1><p>使用 AI 设计测试，通过自动化持续验证，并借助专业工具分析质量问题。</p></div><aside className="platform-status" aria-label="平台状态"><div className="status-panel-heading"><span>平台状态</span><button className="link-button" type="button" disabled={refreshing || loading} onClick={() => void refreshStatus()}>{refreshing ? "刷新中…" : "刷新状态"}</button></div><dl><div><dt>版本</dt><dd>{PLATFORM_VERSION}</dd></div><div><dt>运行环境</dt><dd>{runtimeEnvironment}</dd></div><div><dt>已授权</dt><dd>{tools.length}</dd></div><div><dt>异常</dt><dd>{healthCounts.unhealthy}</dd></div></dl><p>{healthCounts.healthy} 项正常 · {healthCounts.checking} 项检测中</p>{auth?.platform_permissions.includes("platform.audit.view") && <NavLink to="/system/versions">查看版本详情</NavLink>}{credentialIssueCount !== null && <NavLink to="/settings/credentials">凭证异常或临期 {credentialIssueCount} 项</NavLink>}</aside></div>
-  {error && <div className="catalog-state catalog-state-error" role="alert"><div><strong>平台身份或数据服务暂时不可用</strong><p>已停止工具导航，不会恢复匿名入口。{error}</p></div><button className="secondary-button" type="button" onClick={() => void reloadCatalog()}>重新加载目录</button></div>}
-  {loading ? <div className="catalog-state" role="status"><span className="loading-indicator" />正在读取权限与能力目录…</div> : !error && <><section className="mission-section" aria-labelledby="mission-title"><div className="section-heading"><div><p className="section-label">我现在想做什么</p><h2 id="mission-title">从测试目标进入能力</h2></div></div>{aiCapabilities.length > 0 ? <div className="primary-capability-grid">{aiCapabilities.map((capability) => <CapabilityCard key={capability.toolId} capability={capability} />)}</div> : <EmptyState title="当前没有 AI 测试能力" copy="平台只展示服务端已授权的能力。" />}</section><section className="professional-section" aria-labelledby="professional-title"><div className="section-heading"><div><p className="section-label">持续验证与专业工具</p><h2 id="professional-title">让每项能力完成自己的使命</h2></div><span className="section-count">{professionalCapabilities.length} 项能力</span></div>{professionalCapabilities.length > 0 && <div className="professional-capability-grid">{professionalCapabilities.map((capability) => <CapabilityCard key={capability.toolId} capability={capability} compact />)}</div>}</section>{unknownTools.length > 0 && <section className="unknown-tools" aria-labelledby="unknown-tools-title"><h2 id="unknown-tools-title">其他已授权工具</h2><ToolGrid tools={unknownTools} healthStates={healthStates} /></section>}</>}</section></WorkspaceShell>;
+  return <WorkspaceShell><section className="workbench-home" aria-labelledby="workbench-title"><div className="workbench-intro"><div><p className="section-label">AI TESTING WORKSPACE</p><h1 id="workbench-title">AI 测试与质量工程工作台</h1><p>使用 AI 设计测试，通过自动化持续验证，并借助专业工具分析质量问题。</p></div><aside className="platform-status" aria-label="平台状态"><div className="status-panel-heading"><span>平台状态</span><button className="link-button" type="button" disabled={refreshing || loading} onClick={() => void refreshStatus()}>{refreshing ? "刷新中…" : "刷新状态"}</button></div><dl><div><dt>版本</dt><dd>{PLATFORM_VERSION}</dd></div><div><dt>运行环境</dt><dd>{runtimeEnvironment}</dd></div><div><dt>已授权</dt><dd>{tools.length}</dd></div><div><dt>异常</dt><dd>{healthCounts.unhealthy}</dd></div></dl><p>{healthCounts.healthy} 项正常 · {healthCounts.checking} 项检测中</p></aside></div>
+    {error && <div className="catalog-state catalog-state-error" role="alert"><div><strong>平台身份或数据服务暂时不可用</strong><p>已停止工具导航，不会恢复匿名入口。{error}</p></div><button className="secondary-button" type="button" onClick={() => void reloadCatalog()}>重新加载目录</button></div>}
+    {loading ? <div className="catalog-state" role="status"><span className="loading-indicator" />正在读取权限与能力目录…</div> : !error && <><section className="mission-section" aria-labelledby="mission-title"><div className="section-heading"><div><p className="section-label">我现在想做什么</p><h2 id="mission-title">从测试目标进入能力</h2></div></div>{aiCapabilities.length > 0 ? <div className="primary-capability-grid">{aiCapabilities.map((capability) => <CapabilityCard key={capability.toolId} capability={capability} />)}</div> : <EmptyState title="当前没有 AI 测试能力" copy="平台只展示服务端已授权的能力。" />}</section><section className="professional-section" aria-labelledby="professional-title"><div className="section-heading"><div><p className="section-label">持续验证与专业工具</p><h2 id="professional-title">让每项能力完成自己的使命</h2></div><span className="section-count">{professionalCapabilities.length} 项能力</span></div>{professionalCapabilities.length > 0 && <div className="professional-capability-grid">{professionalCapabilities.map((capability) => <CapabilityCard key={capability.toolId} capability={capability} compact />)}</div>}</section>{unknownTools.length > 0 && <section className="unknown-tools" aria-labelledby="unknown-tools-title"><h2 id="unknown-tools-title">其他已授权工具</h2><ToolGrid tools={unknownTools} healthStates={healthStates} /></section>}</>}
+  </section></WorkspaceShell>;
+}
+
+/**
+ * 权限与项目的功能总览。
+ *
+ * 这里仅聚合平台既有入口，不复制工具目录。可见性沿用固定角色和显式平台权限，
+ * 因而前端导航不会把测试人员误导到只有平台管理员才能访问的控制面页面。
+ */
+function AccessHubPage() {
+  const { auth } = useAuth();
+  const has = (permission: string) => Boolean(auth?.platform_permissions.includes(permission));
+  const isPlatformAdmin = auth?.role === "platform_admin";
+  const groups = [
+    {
+      title: "项目与权限",
+      copy: "查看所属项目；具备管理职责时可继续管理成员、工具范围与额外授权。",
+      items: [
+        { label: "我的项目", to: "/projects?scope=mine", description: "查看我参与或负责的项目" },
+        ...(isPlatformAdmin ? [{ label: "项目管理", to: "/projects", description: "管理项目、人员及项目工具" }] : []),
+        ...(isPlatformAdmin ? [
+          { label: "用户管理", to: "/admin/users", description: "查看账号角色与权限全景" },
+          { label: "工具管理", to: "/admin/tool-access", description: "设置公共或项目工具及归属" },
+          { label: "额外授权", to: "/admin/tool-grants", description: "管理临时单工具访问" },
+          { label: "固定角色", to: "/admin/roles", description: "查看三种固定角色权限矩阵" },
+        ] : []),
+      ],
+    },
+    {
+      title: "个人设置",
+      copy: "管理当前账号、个人凭证与个人模型配置。",
+      items: [
+        { label: "账号与会话", to: "/account", description: "查看账号信息和登录会话" },
+        { label: "修改密码", to: "/account/password", description: "更新当前账号密码" },
+        { label: "我的凭证", to: "/account/credentials", description: "维护个人工具凭证" },
+        { label: "我的 LLM", to: "/account/llm", description: "维护个人模型与密钥" },
+      ],
+    },
+    {
+      title: "平台配置与运行",
+      copy: "这些入口继续使用现有服务端权限校验，只向具备对应权限的账号展示。",
+      items: [
+        ...(isPlatformAdmin ? [{ label: "平台 LLM 配置", to: "/settings/platform-llm", description: "管理公共 Profile 与工具绑定" }] : []),
+        ...(has("platform.config.manage") ? [{ label: "普通配置", to: "/settings/config", description: "管理非敏感平台配置" }] : []),
+        ...(has("platform.secret.manage") ? [{ label: "Secret", to: "/settings/secrets", description: "管理共享 Secret 与版本" }] : []),
+        ...(isPlatformAdmin ? [{ label: "凭证代理", to: "/settings/credential-agents", description: "管理平台凭证代理" }] : []),
+        ...(has("platform.credential.readiness.view") ? [{ label: "凭证就绪度", to: "/settings/credentials", description: "检查工具凭证缺失与临期状态" }] : []),
+        ...(has("platform.audit.view") ? [
+          { label: "审计日志", to: "/audit", description: "追溯权限、配置与高风险操作" },
+          { label: "版本状态", to: "/system/versions", description: "核对组件、配置和数据库版本" },
+        ] : []),
+      ],
+    },
+  ].filter((group) => group.items.length > 0);
+
+  return <WorkspaceShell><section className="workspace-page access-page access-hub"><PageHeader eyebrow="ACCESS & PROJECTS" title="权限与项目" copy="集中查看项目、授权、个人设置及平台配置入口；工具仍从原工作台进入。" />
+    <div className="access-hub-groups">{groups.map((group) => <section className="access-card access-hub-section" key={group.title}><div className="card-heading"><h2>{group.title}</h2><p>{group.copy}</p></div><div className="access-hub-grid">{group.items.map((item) => <NavLink className="access-hub-link" key={item.to} to={item.to}><strong>{item.label}</strong><span>{item.description}</span><span aria-hidden="true">→</span></NavLink>)}</div></section>)}</div>
+  </section></WorkspaceShell>;
+}
+
+/** 权限控制台统一指标卡，避免每个列表页复制视觉结构。 */
+function MetricCard({ label, value, note }: { label: string; value: ReactNode; note: string }) {
+  return <article className="metric-card"><span>{label}</span><strong>{value}</strong><small>{note}</small></article>;
 }
 
 function PageHeader({ eyebrow, title, copy, actions }: { eyebrow: string; title: string; copy: string; actions?: ReactNode }) {
@@ -390,17 +474,8 @@ function PageHeader({ eyebrow, title, copy, actions }: { eyebrow: string; title:
 }
 
 function ManagementNav() {
-  const { auth } = useAuth();
-  const has = (permission: string) => Boolean(auth?.platform_permissions.includes(permission));
-  return <nav className="subnav" aria-label="平台管理">
-    {has("platform.user.manage") && <NavLink to="/admin/users">用户管理</NavLink>}
-    {has("platform.role.manage") && <NavLink to="/admin/roles">角色与权限</NavLink>}
-    {(has("platform.llm.manage") || has("platform.llm.secret.manage")) && <NavLink to="/settings/llm">LLM 配置</NavLink>}
-    {has("platform.config.manage") && <NavLink to="/settings/config">普通配置</NavLink>}
-    {has("platform.secret.manage") && <><NavLink to="/settings/secrets">Secret</NavLink><NavLink to="/settings/credentials">凭证状态</NavLink></>}
-    {has("platform.audit.view") && <NavLink to="/audit">审计日志</NavLink>}
-    {has("platform.audit.view") && <NavLink to="/system/versions">版本状态</NavLink>}
-  </nav>;
+  // 平台管理入口已统一进入 AppShell 左侧导航，页面内部不再重复一套横向菜单。
+  return null;
 }
 
 function useEnvironment(): string {
@@ -411,6 +486,205 @@ function useEnvironment(): string {
     return () => window.removeEventListener("platform-environment-change", listener);
   }, []);
   return environment;
+}
+
+function PersonalNav() {
+  // 个人入口已统一进入“权限与项目”左侧导航，页面内部不再重复横向菜单。
+  return null;
+}
+
+function providerDisplayName(providerType: string): string {
+  if (providerType === "gateway_session") return "Gateway Session";
+  if (providerType === "admin_login") return "Admin Login";
+  return providerType;
+}
+
+interface PersonalCredentialGroup {
+  key: string;
+  toolId: string;
+  providerType: string;
+  definitions: ConfigDefinition[];
+  credential: PersonalCredential | null;
+}
+
+/**
+ * 当前用户的个人凭证工作台。
+ *
+ * 首次配置所需字段来自服务端 user-scope 白名单；已保存值永不进入响应，所以
+ * 所有输入每次打开都为空。留空代表沿用当前个人版本，成功后立即销毁输入状态。
+ */
+function PersonalCredentialsPage() {
+  const environment = useEnvironment();
+  const [definitions, setDefinitions] = useState<ConfigDefinition[]>([]);
+  const [credentials, setCredentials] = useState<PersonalCredential[]>([]);
+  const [editing, setEditing] = useState<PersonalCredentialGroup | null>(null);
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const [definitionRows, credentialRows] = await Promise.all([
+      apiJson<ConfigDefinition[]>("/config/definitions"),
+      apiJson<PersonalCredential[]>(`/me/credentials?environment_id=${encodeURIComponent(environment)}`),
+    ]);
+    setDefinitions(definitionRows.filter((row) => (
+      row.owner_type === "tool"
+      && row.value_scope === "user"
+      && Boolean(row.credential_provider_type)
+    )));
+    setCredentials(credentialRows);
+    setLoading(false);
+  }, [environment]);
+
+  useEffect(() => {
+    let active = true;
+    setError("");
+    void load().catch((requestError) => {
+      if (!active) return;
+      setLoading(false);
+      setError(describeApiError(requestError, "个人凭证加载失败"));
+    });
+    return () => { active = false; };
+  }, [load]);
+  useEffect(() => {
+    setEditing(null);
+    setValues({});
+  }, [environment]);
+  useModal(Boolean(editing), () => {
+    setEditing(null);
+    setValues({});
+  });
+
+  const groupMap = new Map<string, Omit<PersonalCredentialGroup, "credential">>();
+  for (const definition of definitions) {
+    if (!definition.credential_provider_type) continue;
+    const key = `${definition.owner_id}:${definition.credential_provider_type}`;
+    const current = groupMap.get(key) ?? {
+      key,
+      toolId: definition.owner_id,
+      providerType: definition.credential_provider_type,
+      definitions: [],
+    };
+    current.definitions.push(definition);
+    groupMap.set(key, current);
+  }
+  const groups: PersonalCredentialGroup[] = [...groupMap.values()]
+    .map((group) => ({
+      ...group,
+      definitions: [...group.definitions].sort((left, right) => left.sort_order - right.sort_order),
+      credential: credentials.find((row) => (
+        row.tool_id === group.toolId && row.provider_type === group.providerType
+      )) ?? null,
+    }))
+    .sort((left, right) => left.key.localeCompare(right.key));
+
+  function openEditor(group: PersonalCredentialGroup) {
+    setMessage("");
+    setError("");
+    setValues({});
+    setEditing(group);
+  }
+
+  async function saveCredential(event: FormEvent) {
+    event.preventDefault();
+    if (!editing) return;
+    setBusy(true);
+    setError("");
+    const submittedValues: Record<string, unknown> = {};
+    for (const definition of editing.definitions) {
+      const raw = values[definition.key] ?? "";
+      if (raw === "") continue;
+      if (definition.value_type === "int" || definition.value_type === "float") {
+        submittedValues[definition.key] = Number(raw);
+      } else if (definition.value_type === "bool") {
+        submittedValues[definition.key] = raw === "true";
+      } else {
+        submittedValues[definition.key] = raw;
+      }
+    }
+    try {
+      await apiJson(`/me/credentials/${encodeURIComponent(editing.toolId)}/${encodeURIComponent(editing.providerType)}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          environment_id: environment,
+          expected_version: editing.credential?.current_version ?? 0,
+          values: submittedValues,
+        }),
+      });
+      // 成功后先销毁明文状态，再触发任何后续请求或 UI 更新。
+      setValues({});
+      setEditing(null);
+      setMessage("凭证已保存，新任务将使用新版本。");
+      await load();
+    } catch (requestError) {
+      // VERSION_CONFLICT 必须保留输入，便于用户刷新确认后决定是否重试。
+      setError(describeApiError(requestError, "个人凭证保存失败"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function validateCredential(group: PersonalCredentialGroup) {
+    if (!group.credential) return;
+    setBusy(true);
+    setMessage("");
+    setError("");
+    try {
+      const result = await apiJson<{ validation_state: string }>(
+        `/me/credentials/${encodeURIComponent(group.credential.id)}/validate`,
+        { method: "POST" },
+      );
+      setMessage(result.validation_state === "unsupported"
+        ? "当前 Provider 暂不支持独立验证，刷新 Agent 会继续维护状态。"
+        : "凭证验证已完成。");
+      await load();
+    } catch (requestError) {
+      setError(describeApiError(requestError, "凭证验证失败"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return <WorkspaceShell><section className="workspace-page personal-settings-page">
+    <PageHeader eyebrow={`${environment.toUpperCase()} / PERSONAL CREDENTIALS`} title="我的凭证" copy="每项配置仅供你自己的任务使用。保存后平台只显示状态，不会再次回显账号、密码或 Token。" />
+    <PersonalNav />
+    {message && <InlineMessage kind="success">{message}</InlineMessage>}
+    {error && <InlineMessage kind="error">{error}</InlineMessage>}
+    {loading ? <div className="panel-loading" role="status">正在加载个人凭证…</div> : groups.length === 0
+      ? <EmptyState title="没有可配置的个人凭证" copy="当前账号没有可执行工具，或工具尚未登记个人凭证字段。" />
+      : <div className="personal-credential-grid">{groups.map((group) => {
+        const configuredFields = new Map(
+          (group.credential?.fields ?? []).map((field) => [field.key, field.configured]),
+        );
+        return <article className="personal-credential-card" key={group.key}>
+          <header><div><h2>{group.toolId}</h2><p>{providerDisplayName(group.providerType)}</p></div><StatusBadge value={group.credential?.status ?? "missing"} /></header>
+          <dl className="credential-summary"><div><dt>版本</dt><dd>v{group.credential?.current_version ?? 0}</dd></div><div><dt>过期时间</dt><dd>{group.credential?.expires_at ? new Date(group.credential.expires_at).toLocaleString() : "未提供"}</dd></div></dl>
+          <ul className="credential-field-list">{group.definitions.map((definition) => <li key={definition.id}><span>{definition.display_name}<small>{definition.required ? "必填" : "可选"}</small></span><StatusBadge value={configuredFields.get(definition.key) ? "已配置" : "缺失"} /></li>)}</ul>
+          {group.credential?.last_error_code && <p className="credential-error-code">最近错误：{group.credential.last_error_code}</p>}
+          <div className="row-actions">
+            <button className="primary-button" type="button" aria-label={`配置 ${group.toolId} ${providerDisplayName(group.providerType)}`} onClick={() => openEditor(group)}>配置</button>
+            {group.credential && <button className="secondary-button" type="button" disabled={busy} onClick={() => void validateCredential(group)}>验证</button>}
+          </div>
+        </article>;
+      })}</div>}
+    {editing && <div className="modal-backdrop" role="presentation"><section className="dialog dialog-wide credential-dialog" role="dialog" aria-modal="true" aria-labelledby="personal-credential-dialog-title">
+      <p className="section-label">{environment.toUpperCase()} / {editing.toolId}</p>
+      <h2 id="personal-credential-dialog-title">配置 {providerDisplayName(editing.providerType)}</h2>
+      <p>已配置字段可留空以沿用当前版本。Secret 保存成功后会立即从页面内存清除。</p>
+      <form className="credential-form" onSubmit={saveCredential}>{editing.definitions.map((definition) => {
+        const configured = editing.credential?.fields.some((field) => field.key === definition.key && field.configured) ?? false;
+        const inputId = `personal-credential-${definition.id.replaceAll(".", "-")}`;
+        return <div className="credential-input" key={definition.id}>
+          <label htmlFor={inputId}>{definition.display_name}</label>
+          <small>{definition.required ? "必填" : "可选"}，{configured ? "已配置，留空保留原值" : "尚未配置"}</small>
+          {definition.value_type === "bool" ? <select id={inputId} value={values[definition.key] ?? ""} onChange={(event) => setValues((current) => ({ ...current, [definition.key]: event.target.value }))} required={definition.required && !configured}><option value="">请选择</option><option value="true">启用</option><option value="false">停用</option></select> : <input id={inputId} type={definition.sensitivity === "secret" ? "password" : definition.value_type === "int" || definition.value_type === "float" ? "number" : "text"} autoComplete={definition.sensitivity === "secret" ? "new-password" : "off"} value={values[definition.key] ?? ""} onChange={(event) => setValues((current) => ({ ...current, [definition.key]: event.target.value }))} required={definition.required && !configured} />}
+        </div>;
+      })}<div className="dialog-actions"><button type="button" className="secondary-button" onClick={() => { setEditing(null); setValues({}); }}>取消</button><button className="primary-button" disabled={busy}>保存凭证</button></div></form>
+    </section></div>}
+  </section></WorkspaceShell>;
 }
 
 function LlmSettingsPage() {
@@ -579,6 +853,248 @@ function LlmSettingsPage() {
   return <WorkspaceShell><section className="workspace-page llm-settings"><PageHeader eyebrow={`${environment.toUpperCase()} / LLM CONTROL PLANE`} title="LLM 统一配置" copy="公共 Profile 保存连接与模型；工具绑定只覆盖真实需要不同的参数。每次任务固定使用已发布快照。" actions={canManageProfiles ? <button className="primary-button" onClick={() => setCreatingProfile(true)}>创建 Profile</button> : undefined} /><ManagementNav />{message && <InlineMessage kind="success">{message}</InlineMessage>}{error && <InlineMessage kind="error">{error}</InlineMessage>}<div className="llm-layout"><aside className="llm-sidebar" aria-label="LLM 配置范围">{canManageProfiles && <section><h2>公共配置</h2>{profiles.map((profile) => <button key={profile.id} className={selection?.id === profile.id ? "selected" : ""} onClick={() => setSelection({ type: "llm_profile", id: profile.id })}><strong>{profile.name}</strong><span>{profile.active_release_version ? `v${profile.active_release_version}` : "未发布"} · {profile.api_key_configured ? "Key 已配置" : "缺少 Key"}</span></button>)}</section>}<section><h2>工具绑定</h2>{bindings.map((binding) => <button key={binding.id} className={selection?.id === binding.id ? "selected" : ""} onClick={() => setSelection({ type: "llm_binding", id: binding.id })}><strong>{binding.display_name}</strong><span>{binding.tool_id} / {binding.capability_key}</span></button>)}</section></aside><div className="llm-editor">{!selection ? <EmptyState title="没有可见的 LLM 配置" copy="当前账号没有 Profile 管理或工具查看权限。" /> : <><div className="config-toolbar"><div><strong>{selection.type === "llm_profile" ? selectedProfile?.name : selectedBinding?.display_name}</strong><span>{draft ? `v${draft.version} 草稿 · revision ${draft.revision}` : "当前没有草稿"}</span></div><div className="dialog-actions">{selectedProfile && <button className="secondary-button" disabled={busy} onClick={() => void toggleProfileArchive()}>{selectedProfile.is_archived ? "恢复" : "归档"}</button>}{selectedBinding?.active_release_id && <button className="secondary-button" disabled={busy} onClick={() => void testConnection()}>测试连接</button>}{!draft ? <button className="primary-button" disabled={busy} onClick={() => void createDraft()}>创建草稿</button> : <><button className="secondary-button" disabled={busy} onClick={() => void saveDraft()}>保存</button><button className="secondary-button" disabled={busy} onClick={() => void releaseAction("validate")}>校验</button><button className="primary-button" disabled={busy} onClick={() => void releaseAction("publish")}>发布</button></>}</div></div>{effective && <dl className="llm-effective"><div><dt>当前模型</dt><dd>{effective.model}</dd></div><div><dt>公共配置</dt><dd>{effective.profile_name}</dd></div><div><dt>快照</dt><dd>{effective.snapshot_id.slice(0, 18)}…</dd></div><div><dt>Secret</dt><dd>{effective.api_key_configured ? "已配置" : "缺失"}</dd></div></dl>}<div className="config-grid">{normalDefinitions.map((definition) => <label className="config-field" key={definition.id}><span>{definition.display_name}<small>{definition.key} · {definition.required ? "必填" : "留空沿用 Provider 默认"}</small></span>{definition.key === "PROFILE_ID" && profiles.length > 0 ? <select disabled={!draft} value={valueFor(definition)} onChange={(event) => updateValue(definition, event.target.value)}>{profiles.filter((item) => !item.is_archived).map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select> : definition.value_type === "bool" ? <select disabled={!draft} value={valueFor(definition)} onChange={(event) => updateValue(definition, event.target.value)}><option value="true">启用</option><option value="false">停用</option></select> : <input disabled={!draft} type={["int", "float"].includes(definition.value_type) ? "number" : "text"} step={definition.value_type === "float" ? "any" : undefined} value={valueFor(definition)} onChange={(event) => updateValue(definition, event.target.value)} />}</label>)}</div>{secretDefinitions.length > 0 && <section className="llm-secret-panel" aria-labelledby="llm-secret-title"><div><h2 id="llm-secret-title">API Key</h2><p>Secret 保存后不回显；发布时固定当前版本。</p></div>{secretDefinitions.map((definition) => <div key={definition.id}><span>{definition.display_name}</span><StatusBadge value={secretMetadata[definition.id]?.configured ? `v${secretMetadata[definition.id].version}` : "missing"} /><button className="secondary-button" disabled={selection.type === "llm_profile" ? !canManageProfileSecrets : false} onClick={() => setSecretDefinition(definition)}>替换</button></div>)}</section>}<section className="release-history"><h2>版本历史</h2>{releases.length === 0 ? <EmptyState title="尚无版本" copy="创建草稿后在这里完成校验、发布和回滚。" /> : releases.map((release) => <div className="release-row" key={release.id}><div><strong>v{release.version}</strong><span>{new Date(release.created_at).toLocaleString()}</span></div><StatusBadge value={release.status} /><div className="row-actions">{["active", "superseded"].includes(release.status) && <button className="secondary-button" onClick={() => void releaseAction("rollback", release)}>回滚到此版本</button>}</div></div>)}</section></>}</div></div>{creatingProfile && <div className="modal-backdrop" role="presentation"><section className="dialog" role="dialog" aria-modal="true" aria-labelledby="profile-dialog-title"><p className="section-label">{environment.toUpperCase()} / PROFILE</p><h2 id="profile-dialog-title">创建公共 LLM Profile</h2><form className="auth-form" onSubmit={createProfile}><label>名称<input autoFocus value={profileForm.name} onChange={(event) => setProfileForm({ ...profileForm, name: event.target.value })} required /></label><label>说明<textarea value={profileForm.description} onChange={(event) => setProfileForm({ ...profileForm, description: event.target.value })} /></label><div className="dialog-actions"><button type="button" className="secondary-button" onClick={() => setCreatingProfile(false)}>取消</button><button className="primary-button" disabled={busy}>创建</button></div></form></section></div>}{secretDefinition && <div className="modal-backdrop" role="presentation"><section className="dialog" role="dialog" aria-modal="true" aria-labelledby="llm-secret-dialog-title"><p className="section-label">{environment.toUpperCase()} / SECRET</p><h2 id="llm-secret-dialog-title">替换 {secretDefinition.display_name}</h2><p>明文只停留在当前输入组件内存，保存后立即清空。</p><form className="auth-form" onSubmit={saveSecret}><label>API Key<input autoFocus type="password" autoComplete="off" value={secretValue} onChange={(event) => setSecretValue(event.target.value)} required /></label><div className="dialog-actions"><button type="button" className="secondary-button" onClick={() => { setSecretDefinition(null); setSecretValue(""); }}>取消</button><button className="primary-button" disabled={busy}>加密保存</button></div></form></section></div>}</section></WorkspaceShell>;
 }
 
+interface PersonalProfileForm {
+  name: string;
+  description: string;
+  base_url: string;
+  model: string;
+  api_key: string;
+  temperature: string;
+  max_tokens: string;
+  timeout_seconds: string;
+  enabled: boolean;
+}
+
+const emptyPersonalProfileForm = (): PersonalProfileForm => ({
+  name: "",
+  description: "",
+  base_url: "",
+  model: "",
+  api_key: "",
+  temperature: "",
+  max_tokens: "",
+  timeout_seconds: "",
+  enabled: true,
+});
+
+/** 个人 LLM Profile 与能力 Binding 编辑器，不调用 legacy 公共 LLM 接口。 */
+function PersonalLlmPage() {
+  const environment = useEnvironment();
+  const [profiles, setProfiles] = useState<PersonalLlmProfile[]>([]);
+  const [bindings, setBindings] = useState<PersonalLlmBinding[]>([]);
+  const [selection, setSelection] = useState<{ kind: "profile" | "binding"; id: string } | null>(null);
+  const [profileDialog, setProfileDialog] = useState<"create" | "edit" | null>(null);
+  const [profileForm, setProfileForm] = useState<PersonalProfileForm>(emptyPersonalProfileForm);
+  const [bindingDialog, setBindingDialog] = useState<PersonalLlmBinding | null>(null);
+  const [bindingForm, setBindingForm] = useState({ profile_id: "", enabled: true, model_override: "", temperature_override: "", max_tokens_override: "", timeout_seconds_override: "", api_key_override: "" });
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  const clearDialogs = useCallback(() => {
+    setProfileDialog(null);
+    setProfileForm(emptyPersonalProfileForm());
+    setBindingDialog(null);
+    setBindingForm({ profile_id: "", enabled: true, model_override: "", temperature_override: "", max_tokens_override: "", timeout_seconds_override: "", api_key_override: "" });
+  }, []);
+  useModal(Boolean(profileDialog || bindingDialog), clearDialogs);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const [profileRows, bindingRows] = await Promise.all([
+      apiJson<PersonalLlmProfile[]>(`/me/llm/profiles?environment_id=${encodeURIComponent(environment)}`),
+      apiJson<PersonalLlmBinding[]>(`/me/llm/bindings?environment_id=${encodeURIComponent(environment)}`),
+    ]);
+    setProfiles(profileRows);
+    setBindings(bindingRows);
+    setSelection((current) => {
+      if (current?.kind === "profile" && profileRows.some((row) => row.id === current.id)) return current;
+      if (current?.kind === "binding" && bindingRows.some((row) => row.binding_id === current.id)) return current;
+      if (profileRows[0]) return { kind: "profile", id: profileRows[0].id };
+      if (bindingRows[0]) return { kind: "binding", id: bindingRows[0].binding_id };
+      return null;
+    });
+    setLoading(false);
+  }, [environment]);
+
+  useEffect(() => {
+    let active = true;
+    setError("");
+    clearDialogs();
+    void load().catch((requestError) => {
+      if (!active) return;
+      setLoading(false);
+      setError(describeApiError(requestError, "个人 LLM 加载失败"));
+    });
+    return () => { active = false; };
+  }, [clearDialogs, load]);
+
+  const selectedProfile = selection?.kind === "profile"
+    ? profiles.find((row) => row.id === selection.id) ?? null
+    : null;
+  const selectedBinding = selection?.kind === "binding"
+    ? bindings.find((row) => row.binding_id === selection.id) ?? null
+    : null;
+
+  function optionalNumber(value: string): number | null {
+    return value.trim() ? Number(value) : null;
+  }
+
+  function openCreateProfile() {
+    setError("");
+    setMessage("");
+    setProfileForm(emptyPersonalProfileForm());
+    setProfileDialog("create");
+  }
+
+  function openEditProfile(profile: PersonalLlmProfile) {
+    setError("");
+    setMessage("");
+    setProfileForm({
+      name: profile.name,
+      description: profile.description,
+      base_url: profile.base_url ?? "",
+      model: profile.model ?? "",
+      // API 只返回 configured 状态，编辑表单永远不能从响应回填 Key。
+      api_key: "",
+      temperature: profile.temperature?.toString() ?? "",
+      max_tokens: profile.max_tokens?.toString() ?? "",
+      timeout_seconds: profile.timeout_seconds?.toString() ?? "",
+      enabled: profile.enabled ?? true,
+    });
+    setProfileDialog("edit");
+  }
+
+  async function saveProfile(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    const payload: Record<string, unknown> = {
+      name: profileForm.name,
+      description: profileForm.description,
+      environment_id: environment,
+      provider: "openai_compatible",
+      base_url: profileForm.base_url,
+      model: profileForm.model,
+      temperature: optionalNumber(profileForm.temperature),
+      max_tokens: optionalNumber(profileForm.max_tokens),
+      timeout_seconds: optionalNumber(profileForm.timeout_seconds),
+      enabled: profileForm.enabled,
+    };
+    if (profileForm.api_key) payload.api_key = profileForm.api_key;
+    try {
+      const saved = profileDialog === "create"
+        ? await apiJson<PersonalLlmProfile>("/me/llm/profiles", { method: "POST", body: JSON.stringify(payload) })
+        : await apiJson<PersonalLlmProfile>(`/me/llm/profiles/${encodeURIComponent(selectedProfile?.id ?? "")}`, { method: "PATCH", body: JSON.stringify(payload) });
+      setProfileForm(emptyPersonalProfileForm());
+      setProfileDialog(null);
+      setSelection({ kind: "profile", id: saved.id });
+      setMessage(profileDialog === "create" ? "个人 LLM 连接已创建并发布。" : "个人 LLM 连接已更新，新任务将使用新版本。");
+      await load();
+    } catch (requestError) {
+      setError(describeApiError(requestError, "个人 LLM 保存失败"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function openBinding(binding: PersonalLlmBinding) {
+    setError("");
+    setMessage("");
+    setBindingForm({
+      profile_id: binding.profile_id ?? "",
+      enabled: binding.enabled ?? true,
+      model_override: binding.model_override ?? "",
+      temperature_override: binding.temperature_override?.toString() ?? "",
+      max_tokens_override: binding.max_tokens_override?.toString() ?? "",
+      timeout_seconds_override: binding.timeout_seconds_override?.toString() ?? "",
+      api_key_override: "",
+    });
+    setBindingDialog(binding);
+  }
+
+  async function saveBinding(event: FormEvent) {
+    event.preventDefault();
+    if (!bindingDialog) return;
+    setBusy(true);
+    setError("");
+    const payload: Record<string, unknown> = {
+      environment_id: environment,
+      expected_version: bindingDialog.current_version,
+      profile_id: bindingForm.profile_id || null,
+      enabled: bindingForm.enabled,
+      model_override: bindingForm.model_override || null,
+      temperature_override: optionalNumber(bindingForm.temperature_override),
+      max_tokens_override: optionalNumber(bindingForm.max_tokens_override),
+      timeout_seconds_override: optionalNumber(bindingForm.timeout_seconds_override),
+      clear_api_key_override: false,
+    };
+    if (bindingForm.api_key_override) payload.api_key_override = bindingForm.api_key_override;
+    try {
+      await apiJson(`/me/llm/bindings/${encodeURIComponent(bindingDialog.binding_id)}`, { method: "PUT", body: JSON.stringify(payload) });
+      setBindingForm((current) => ({ ...current, api_key_override: "" }));
+      setBindingDialog(null);
+      setMessage("个人能力绑定已发布，新任务将使用固定快照。");
+      await load();
+    } catch (requestError) {
+      setError(describeApiError(requestError, "能力绑定保存失败"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function toggleArchive(profile: PersonalLlmProfile) {
+    if (!profile.is_archived && !window.confirm("该连接归档后不能用于新绑定，确认继续？")) return;
+    setBusy(true);
+    setError("");
+    const action = profile.is_archived ? "restore" : "archive";
+    try {
+      await apiJson(`/me/llm/profiles/${encodeURIComponent(profile.id)}/${action}?environment_id=${encodeURIComponent(environment)}`, { method: "POST" });
+      setMessage(profile.is_archived ? "个人 LLM 连接已恢复。" : "个人 LLM 连接已归档。");
+      await load();
+    } catch (requestError) {
+      setError(describeApiError(requestError, "连接状态更新失败"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function testBinding(binding: PersonalLlmBinding) {
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const result = await apiJson<{ checked_at: string; model: string }>("/me/llm/test-connection", { method: "POST", body: JSON.stringify({ environment_id: environment, binding_id: binding.binding_id }) });
+      setMessage(`连接验证成功，模型 ${result.model}，检查时间 ${new Date(result.checked_at).toLocaleString()}。`);
+    } catch (requestError) {
+      setError(describeApiError(requestError, "连接验证失败"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return <WorkspaceShell><section className="workspace-page llm-settings personal-settings-page">
+    <PageHeader eyebrow={`${environment.toUpperCase()} / PERSONAL LLM`} title="我的 LLM" copy="连接、API Key 和工具能力绑定仅供你自己的任务使用。每次保存都会发布不可变新版本。" actions={<button className="primary-button" onClick={openCreateProfile}>创建连接</button>} />
+    <PersonalNav />
+    {message && <InlineMessage kind="success">{message}</InlineMessage>}
+    {error && <InlineMessage kind="error">{error}</InlineMessage>}
+    {loading ? <div className="panel-loading" role="status">正在加载个人 LLM…</div> : <div className="llm-layout"><aside className="llm-sidebar" aria-label="个人 LLM 配置范围">
+      <section><h2>我的连接</h2>{profiles.map((profile) => <button key={profile.id} className={selection?.kind === "profile" && selection.id === profile.id ? "selected" : ""} onClick={() => setSelection({ kind: "profile", id: profile.id })}><strong>{profile.name}</strong><span>v{profile.active_release_version ?? 0} / {profile.api_key_configured ? "Key 已配置" : "缺少 Key"}</span></button>)}</section>
+      <section><h2>能力绑定</h2>{bindings.map((binding) => <button key={binding.binding_id} className={selection?.kind === "binding" && selection.id === binding.binding_id ? "selected" : ""} onClick={() => setSelection({ kind: "binding", id: binding.binding_id })}><strong>{binding.display_name}</strong><span>{binding.tool_id} / {binding.capability_key}</span></button>)}</section>
+    </aside><div className="llm-editor">{!selection ? <EmptyState title="尚未配置个人 LLM" copy="创建一个连接后，再把它绑定到你有执行权限的工具能力。" /> : selectedProfile ? <>
+      <div className="config-toolbar"><div><strong>{selectedProfile.name}</strong><span>仅你的任务使用 / v{selectedProfile.active_release_version ?? 0}</span></div><div className="dialog-actions"><button className="secondary-button" disabled={busy} onClick={() => void toggleArchive(selectedProfile)}>{selectedProfile.is_archived ? "恢复" : "归档"}</button><button className="primary-button" onClick={() => openEditProfile(selectedProfile)}>编辑连接</button></div></div>
+      <dl className="llm-effective"><div><dt>模型</dt><dd>{selectedProfile.model ?? "未配置"}</dd></div><div><dt>Provider</dt><dd>{selectedProfile.provider}</dd></div><div><dt>API Key</dt><dd>{selectedProfile.api_key_configured ? "已配置" : "缺失"}</dd></div><div><dt>绑定数</dt><dd>{selectedProfile.binding_count}</dd></div></dl>
+      <section className="personal-llm-details"><h2>连接参数</h2><dl><div><dt>Base URL</dt><dd>{selectedProfile.base_url ?? "未配置"}</dd></div><div><dt>Temperature</dt><dd>{selectedProfile.temperature ?? "Provider 默认"}</dd></div><div><dt>Max Tokens</dt><dd>{selectedProfile.max_tokens ?? "Provider 默认"}</dd></div><div><dt>超时</dt><dd>{selectedProfile.timeout_seconds ? `${selectedProfile.timeout_seconds} 秒` : "Provider 默认"}</dd></div></dl></section>
+    </> : selectedBinding ? <>
+      <div className="config-toolbar"><div><strong>{selectedBinding.display_name}</strong><span>{selectedBinding.tool_id} / {selectedBinding.capability_key} / v{selectedBinding.current_version}</span></div><div className="dialog-actions">{selectedBinding.current_version > 0 && <button className="secondary-button" disabled={busy} onClick={() => void testBinding(selectedBinding)}>测试连接</button>}<button className="primary-button" onClick={() => openBinding(selectedBinding)}>配置能力绑定</button></div></div>
+      <dl className="llm-effective"><div><dt>状态</dt><dd>{selectedBinding.enabled ? "启用" : "停用"}</dd></div><div><dt>个人连接</dt><dd>{profiles.find((profile) => profile.id === selectedBinding.profile_id)?.name ?? "未绑定"}</dd></div><div><dt>模型覆盖</dt><dd>{selectedBinding.model_override ?? "无"}</dd></div><div><dt>独立 Key</dt><dd>{selectedBinding.api_key_override_configured ? "已配置" : "沿用连接"}</dd></div></dl>
+    </> : <EmptyState title="配置已不可用" copy="请刷新页面后重新选择。" />}</div></div>}
+    {profileDialog && <div className="modal-backdrop" role="presentation"><section className="dialog dialog-wide" role="dialog" aria-modal="true" aria-labelledby="personal-profile-dialog-title"><p className="section-label">{environment.toUpperCase()} / PERSONAL PROFILE</p><h2 id="personal-profile-dialog-title">{profileDialog === "create" ? "创建个人 LLM 连接" : `编辑 ${selectedProfile?.name ?? "个人连接"}`}</h2><p>API Key 不会回填。编辑时留空即可沿用已发布版本。</p><form className="profile-form" onSubmit={saveProfile}><div className="profile-form-grid"><label>名称<input autoFocus value={profileForm.name} onChange={(event) => setProfileForm({ ...profileForm, name: event.target.value })} required /></label><label>模型<input value={profileForm.model} onChange={(event) => setProfileForm({ ...profileForm, model: event.target.value })} required /></label><label className="profile-form-wide">Base URL<input type="url" value={profileForm.base_url} onChange={(event) => setProfileForm({ ...profileForm, base_url: event.target.value })} required /></label><label className="profile-form-wide">{profileDialog === "create" ? "API Key" : "API Key（留空沿用现有值）"}<input type="password" autoComplete="new-password" value={profileForm.api_key} onChange={(event) => setProfileForm({ ...profileForm, api_key: event.target.value })} required={profileDialog === "create"} /></label><label>Temperature<input type="number" step="any" value={profileForm.temperature} onChange={(event) => setProfileForm({ ...profileForm, temperature: event.target.value })} /></label><label>Max Tokens<input type="number" value={profileForm.max_tokens} onChange={(event) => setProfileForm({ ...profileForm, max_tokens: event.target.value })} /></label><label>超时秒数<input type="number" value={profileForm.timeout_seconds} onChange={(event) => setProfileForm({ ...profileForm, timeout_seconds: event.target.value })} /></label><label className="checkbox-row"><input type="checkbox" checked={profileForm.enabled} onChange={(event) => setProfileForm({ ...profileForm, enabled: event.target.checked })} />启用连接</label><label className="profile-form-wide">说明<textarea value={profileForm.description} onChange={(event) => setProfileForm({ ...profileForm, description: event.target.value })} /></label></div><div className="dialog-actions"><button type="button" className="secondary-button" onClick={clearDialogs}>取消</button><button className="primary-button" disabled={busy}>保存连接</button></div></form></section></div>}
+    {bindingDialog && <div className="modal-backdrop" role="presentation"><section className="dialog dialog-wide" role="dialog" aria-modal="true" aria-labelledby="personal-binding-dialog-title"><p className="section-label">{environment.toUpperCase()} / PERSONAL BINDING</p><h2 id="personal-binding-dialog-title">配置 {bindingDialog.display_name}</h2><p>发布后只影响你在该工具上的新任务，不会改变其他用户配置。</p><form className="profile-form" onSubmit={saveBinding}><div className="profile-form-grid"><label className="profile-form-wide">个人 Profile<select value={bindingForm.profile_id} onChange={(event) => setBindingForm({ ...bindingForm, profile_id: event.target.value })} required={bindingForm.enabled}><option value="">不绑定</option>{profiles.filter((profile) => !profile.is_archived).map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></label><label>模型覆盖<input value={bindingForm.model_override} onChange={(event) => setBindingForm({ ...bindingForm, model_override: event.target.value })} /></label><label>Temperature 覆盖<input type="number" step="any" value={bindingForm.temperature_override} onChange={(event) => setBindingForm({ ...bindingForm, temperature_override: event.target.value })} /></label><label>Max Tokens 覆盖<input type="number" value={bindingForm.max_tokens_override} onChange={(event) => setBindingForm({ ...bindingForm, max_tokens_override: event.target.value })} /></label><label>超时秒数覆盖<input type="number" value={bindingForm.timeout_seconds_override} onChange={(event) => setBindingForm({ ...bindingForm, timeout_seconds_override: event.target.value })} /></label><label className="profile-form-wide">独立 API Key（留空沿用当前设置）<input type="password" autoComplete="new-password" value={bindingForm.api_key_override} onChange={(event) => setBindingForm({ ...bindingForm, api_key_override: event.target.value })} /></label><label className="checkbox-row"><input type="checkbox" checked={bindingForm.enabled} onChange={(event) => setBindingForm({ ...bindingForm, enabled: event.target.checked })} />启用该能力</label></div><div className="dialog-actions"><button type="button" className="secondary-button" onClick={clearDialogs}>取消</button><button className="primary-button" disabled={busy}>保存能力绑定</button></div></form></section></div>}
+  </section></WorkspaceShell>;
+}
+
 function ConfigPage() {
   const environment = useEnvironment();
   const [items, setItems] = useState<ConfigDefinition[]>([]);
@@ -685,7 +1201,7 @@ function SecretsPage() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   useModal(Boolean(selected), () => { setSelected(null); setSecretValue(""); });
-  useEffect(() => { void apiJson<ConfigDefinition[]>("/config/definitions").then((rows) => setDefinitions(rows.filter((row) => row.sensitivity === "secret"))).catch((e) => setError(e.message)); }, []);
+  useEffect(() => { void apiJson<ConfigDefinition[]>("/config/definitions").then((rows) => setDefinitions(rows.filter((row) => row.sensitivity === "secret" && row.value_scope === "system"))).catch((e) => setError(e.message)); }, []);
   useEffect(() => {
     const owners = [...new Set(definitions.map((item) => item.owner_id))];
     void Promise.all(owners.map((owner) => apiJson<SecretMetadata[]>(`/secrets?environment_id=${environment}&owner_type=tool&owner_id=${encodeURIComponent(owner)}`).catch(() => []))).then((groups) => setMetadata(Object.fromEntries(groups.flat().map((item) => [item.definition_id, item]))));
@@ -720,6 +1236,254 @@ function CredentialsPage() {
   return <WorkspaceShell><section className="workspace-page"><PageHeader eyebrow={`${environment.toUpperCase()} / CREDENTIALS`} title="凭证健康" copy="平台只展示状态、版本和过期时间，不显示 Token 或密码。" actions={<button className="primary-button" onClick={() => setCreating(true)}>创建 Credential</button>} /><ManagementNav />{message && <InlineMessage kind="success">{message}</InlineMessage>}{error && <InlineMessage kind="error">{error}</InlineMessage>}<div className="data-panel">{items.length === 0 ? <EmptyState title="尚未创建 Credential" copy="完成 Secret 导入后创建 Credential，刷新 Agent 会负责登录和续期。" /> : items.map((item) => <div className="table-row" key={item.id}><strong>{item.tool_id}<small>{item.provider_type}</small></strong><span>{item.environment_id}</span><StatusBadge value={item.status} /><span>{item.expires_at ? new Date(item.expires_at).toLocaleString() : "无过期时间"}</span></div>)}</div>{creating && <div className="modal-backdrop" role="presentation"><section className="dialog" role="dialog" aria-modal="true" aria-labelledby="credential-dialog-title"><p className="section-label">{environment.toUpperCase()} / CREDENTIAL</p><h2 id="credential-dialog-title">创建自动维护凭证</h2><p>先在 Secret 页面导入该 Provider 需要的账号或 Token。创建后 Agent 才会尝试验证、登录和续期。</p><form className="auth-form" onSubmit={createCredential}><label>工具<select autoFocus value={form.tool_id} onChange={(event) => setForm({ ...form, tool_id: event.target.value })}><option value="truthy-search">truthy-search</option><option value="api-autotest">api-autotest</option></select></label><label>Provider<select value={form.provider_type} onChange={(event) => setForm({ ...form, provider_type: event.target.value })}><option value="gateway_session">Gateway Session</option><option value="admin_login">Admin Login</option></select></label><div className="dialog-actions"><button type="button" className="secondary-button" onClick={() => setCreating(false)}>取消</button><button className="primary-button">创建并等待验证</button></div></form></section></div>}</section></WorkspaceShell>;
 }
 
+/** 管理员只读就绪度视图，所有筛选均只传元数据且页面不提供代改入口。 */
+function CredentialReadinessPage() {
+  const environment = useEnvironment();
+  const [items, setItems] = useState<CredentialReadiness[]>([]);
+  const [filters, setFilters] = useState({ user_id: "", tool_id: "", provider_type: "", status: "" });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const query = new URLSearchParams({ environment_id: environment });
+    for (const [key, value] of Object.entries(filters)) {
+      if (value) query.set(key, value);
+    }
+    const rows = await apiJson<CredentialReadiness[]>(`/admin/credential-readiness?${query.toString()}`);
+    setItems(rows);
+    setLoading(false);
+  }, [environment, filters]);
+
+  useEffect(() => {
+    let active = true;
+    setError("");
+    void load().catch((requestError) => {
+      if (!active) return;
+      setLoading(false);
+      setError(describeApiError(requestError, "凭证就绪度加载失败"));
+    });
+    return () => { active = false; };
+  }, [load]);
+
+  return <WorkspaceShell><section className="workspace-page readiness-page">
+    <PageHeader eyebrow={`${environment.toUpperCase()} / READINESS`} title="凭证就绪度" copy="只读查看全员个人凭证与 LLM 能力是否可用。平台不会解密、导出或代替用户修改 Secret。" />
+    <ManagementNav />
+    {error && <InlineMessage kind="error">{error}</InlineMessage>}
+    <div className="readiness-filters" aria-label="就绪度筛选">
+      <label>用户 ID<input aria-label="筛选用户" value={filters.user_id} onChange={(event) => setFilters((current) => ({ ...current, user_id: event.target.value }))} /></label>
+      <label>工具<input aria-label="筛选工具" value={filters.tool_id} onChange={(event) => setFilters((current) => ({ ...current, tool_id: event.target.value }))} /></label>
+      <label>Provider<input aria-label="筛选 Provider" value={filters.provider_type} onChange={(event) => setFilters((current) => ({ ...current, provider_type: event.target.value }))} /></label>
+      <label>状态<select aria-label="筛选状态" value={filters.status} onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value }))}><option value="">全部</option><option value="configured">已配置</option><option value="missing">缺失</option><option value="invalid">异常</option><option value="expiring">临期</option></select></label>
+    </div>
+    {loading ? <div className="panel-loading" role="status">正在汇总就绪度…</div> : items.length === 0 ? <EmptyState title="没有匹配结果" copy="调整用户、工具、Provider 或状态筛选后重试。" /> : <div className="readiness-table-wrap"><table className="readiness-table"><thead><tr><th>用户</th><th>范围</th><th>环境</th><th>工具 / Provider</th><th>状态</th><th>字段</th><th>版本</th><th>检查与错误</th></tr></thead><tbody>{items.map((item) => <tr key={`${item.resource_type}:${item.user_id}:${item.environment_id}:${item.tool_id}:${item.provider_type}:${item.capability_key ?? ""}`}><td><strong>{item.username}</strong><small>{item.user_status}</small></td><td>{item.resource_type === "credential" ? "Credential" : <>LLM<small>{item.capability_key}</small></>}</td><td>{item.environment_id.toUpperCase()}</td><td><strong>{item.tool_id}</strong><small>{item.provider_type}{item.capability_key ? ` / ${item.capability_key}` : ""}</small></td><td><StatusBadge value={item.readiness_status} /></td><td>{item.configured_field_count} / {item.required_field_count}</td><td>v{item.current_version}</td><td><span>{item.last_checked_at ? new Date(item.last_checked_at).toLocaleString() : "尚未检查"}</span>{item.last_error_code && <small>{item.last_error_code}</small>}{item.expires_at && <small>过期：{new Date(item.expires_at).toLocaleString()}</small>}</td></tr>)}</tbody></table></div>}
+  </section></WorkspaceShell>;
+}
+
+
+const roleLabel: Record<PlatformRole, string> = { platform_admin: "平台管理员", admin: "管理员", tester: "测试人员" };
+
+/** 项目范围页面共用的日期输入值，默认额外授权 7 天且不超过产品上限。 */
+function grantExpiry(days = 7): string {
+  const value = new Date(Date.now() + days * 86400000);
+  return value.toISOString().slice(0, 16);
+}
+
+function ProjectsPage() {
+  const { auth } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [items, setItems] = useState<ProjectRecord[]>([]);
+  const [form, setForm] = useState({ code: "", name: "", description: "" });
+  const [error, setError] = useState("");
+  const load = useCallback(() => accessApi.listProjects().then(setItems), []);
+  useEffect(() => { void load().catch((reason) => setError(reason.message)); }, [load]);
+  async function create(event: FormEvent) {
+    event.preventDefault(); setError("");
+    try { const project = await accessApi.createProject(form); setForm({ code: "", name: "", description: "" }); navigate(`/projects/${encodeURIComponent(project.id)}/overview`); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : "创建项目失败"); }
+  }
+  const canCreate = auth?.role === "platform_admin";
+  const creating = location.pathname.endsWith("/new");
+  const mine = new URLSearchParams(location.search).get("scope") === "mine" || auth?.role !== "platform_admin";
+  if (creating) return <WorkspaceShell><section className="workspace-page access-page"><PageHeader eyebrow="03 / ACCESS CONTROL" title="创建项目" copy="项目编码创建后不可修改；新项目可以暂时没有负责人、成员或工具。" />
+    {error && <InlineMessage kind="error">{error}</InlineMessage>}
+    <section className="access-card project-create-card"><div className="card-heading"><h2>基础信息</h2><p>创建授权边界，后续成员将自动继承项目中的全部工具。</p></div><form className="project-create-form" onSubmit={create}>
+      <div className="form-grid"><label>项目编码<input autoFocus value={form.code} pattern="[A-Za-z0-9_-]{2,64}" placeholder="PAY-QA" onChange={(event) => setForm({ ...form, code: event.target.value })} required /><small>用于接口、审计和迁移引用，创建后不可修改。</small></label><label>项目名称<input value={form.name} placeholder="支付测试" onChange={(event) => setForm({ ...form, name: event.target.value })} required /><small>名称可在项目详情中修改。</small></label></div>
+      <label>项目描述<textarea rows={5} value={form.description} placeholder="描述项目覆盖的业务范围、工具与成员。" onChange={(event) => setForm({ ...form, description: event.target.value })} /></label>
+      <fieldset className="project-status-options"><legend>初始状态</legend><label><input type="radio" name="project-status" checked readOnly aria-label="Active（默认）" /><span>Active（默认）</span></label><label className="disabled"><input type="radio" name="project-status" disabled aria-label="Inactive" /><span>Inactive</span></label></fieldset>
+      <div className="next-step-note"><strong>创建后下一步</strong><span>分配负责人 → 加入测试成员 → 关联项目工具</span></div>
+      <div className="dialog-actions"><button type="button" className="secondary-button" onClick={() => navigate("/projects")}>取消</button><button className="primary-button">创建项目</button></div>
+    </form></section>
+  </section></WorkspaceShell>;
+
+  const activeCount = items.filter((item) => item.status === "active").length;
+  const managerCount = items.reduce((total, item) => total + item.manager_count, 0);
+  const memberCount = items.reduce((total, item) => total + item.member_count, 0);
+  const toolCount = items.reduce((total, item) => total + item.tool_count, 0);
+  return <WorkspaceShell><section className="workspace-page access-page"><PageHeader eyebrow={`${mine ? "01" : "02"} / ACCESS CONTROL`} title={mine ? "我的项目" : "项目管理"} copy={mine ? "查看你已加入或负责的项目；项目工具会随成员关系自动获得。" : "统一查看项目状态、人员、工具和临时授权影响。"} actions={!mine && canCreate ? <NavLink className="primary-button button-link" to="/projects/new">创建项目</NavLink> : mine ? <NavLink className="secondary-button button-link" to="/">了解访问规则</NavLink> : undefined} />
+    {error && <InlineMessage kind="error">{error}</InlineMessage>}
+    <div className={`metric-grid ${mine ? "metric-grid-three" : "metric-grid-four"}`}><MetricCard label={mine ? "负责的项目" : "全部项目"} value={mine ? items.filter((item) => item.relation === "manager").length : items.length} note={`${activeCount} 个处于 Active`} /><MetricCard label={mine ? "可见项目工具" : "项目负责人"} value={mine ? toolCount : managerCount} note={mine ? "自动继承访问" : `覆盖 ${items.length} 个项目`} /><MetricCard label={mine ? "临时授权" : "测试成员"} value={items.reduce((total, item) => total + item.active_grant_count, 0)} note={mine ? "仅本人业务资源" : `${memberCount} 人次项目关系`} />{!mine && <MetricCard label="项目工具" value={toolCount} note="公共工具不计入" />}</div>
+    {items.length === 0 ? <EmptyState title="暂无项目" copy="你尚未负责或加入项目，仍可使用公共工具。" /> : mine ? <div className="project-card-grid">{items.map((item) => <article className="project-card" key={item.id}><div><span className="project-avatar">{item.name.slice(0, 1)}</span><div><h2>{item.name}</h2><p>{item.code}</p></div><StatusBadge value={item.status} /></div><dl><div><dt>负责人</dt><dd>{item.manager_count}</dd></div><div><dt>测试成员</dt><dd>{item.member_count}</dd></div><div><dt>项目工具</dt><dd>{item.tool_count}</dd></div></dl><small>最近更新 · {new Date(item.updated_at).toLocaleString()}</small><NavLink to={`/projects/${encodeURIComponent(item.id)}/overview`}>查看项目</NavLink></article>)}</div> : <><div className="access-toolbar"><input type="search" placeholder="搜索项目名称或编码" /><select aria-label="全部状态"><option>全部状态</option><option>Active</option><option>Inactive</option></select></div><AccessTable headers={["项目", "状态", "负责人", "成员", "工具", "额外授权", "操作"]}>{items.map((item) => <tr key={item.id}><td><strong>{item.name}</strong><small>{item.code}</small></td><td><StatusBadge value={item.status} /></td><td>{item.manager_count}</td><td>{item.member_count}</td><td>{item.tool_count}</td><td>{item.active_grant_count}</td><td><NavLink to={`/projects/${encodeURIComponent(item.id)}/overview`}>查看 · {item.status === "active" ? "编辑" : "恢复"}</NavLink></td></tr>)}</AccessTable></>}
+  </section></WorkspaceShell>;
+}
+
+function AccessTable({ headers, children }: PropsWithChildren<{ headers: string[] }>) {
+  return <div className="access-table-wrap"><table className="access-table"><thead><tr>{headers.map((header) => <th key={header}>{header}</th>)}</tr></thead><tbody>{children}</tbody></table></div>;
+}
+
+function ProjectDetailPage() {
+  const { projectId = "" } = useParams(); const { auth } = useAuth(); const location = useLocation();
+  const [project, setProject] = useState<ProjectRecord | null>(null); const [members, setMembers] = useState<ProjectMember[]>([]); const [managers, setManagers] = useState<ProjectMember[]>([]); const [tools, setTools] = useState<ToolAccessRecord[]>([]); const [impact, setImpact] = useState<ImpactPreview | null>(null); const [error, setError] = useState("");
+  const [personDialog, setPersonDialog] = useState<"members" | "managers" | null>(null); const [personUsername, setPersonUsername] = useState("");
+  const [forceUnknownImpact, setForceUnknownImpact] = useState(false);
+  const canManageMembers = auth?.role === "platform_admin" || auth?.role === "admin";
+  const canManageProject = auth?.role === "platform_admin";
+  const load = useCallback(async () => { const [detail, toolRows, memberRows, managerRows] = await Promise.all([accessApi.getProject(projectId), accessApi.listProjectTools(projectId), (auth?.role === "admin" || auth?.role === "platform_admin") ? accessApi.listProjectMembers(projectId, "members") : Promise.resolve([]), auth?.role === "platform_admin" ? accessApi.listProjectMembers(projectId, "managers") : Promise.resolve([])]); setProject(detail); setTools(toolRows); setMembers(memberRows); setManagers(managerRows); }, [auth?.role, projectId]);
+  useEffect(() => { void load().catch((reason) => setError(reason.message)); }, [load]);
+  useModal(Boolean(impact), () => setImpact(null));
+  useModal(Boolean(personDialog), () => setPersonDialog(null));
+  async function previewDeactivate() { try { setForceUnknownImpact(false); setImpact(await accessApi.projectImpact(projectId)); } catch (reason) { setError(reason instanceof Error ? reason.message : "无法读取影响范围"); } }
+  async function confirmDeactivate() { if (!impact) return; try { await accessApi.setProjectStatus(projectId, { status: "inactive", reason: "项目停用", expected_revision: impact.expected_revision, impact_token: impact.impact_token, force_unknown_impact: forceUnknownImpact }); setImpact(null); await load(); } catch (reason) { const stale = reason instanceof ApiError && reason.code === "STALE_IMPACT"; setImpact(null); setError(stale ? "资源状态已变化，请重新确认影响范围" : reason instanceof Error ? reason.message : "项目停用失败"); } }
+  async function removePerson(member: ProjectMember, relation: "members" | "managers") { try { await accessApi.removeProjectMember(projectId, relation, member.id, relation === "members" ? "移出项目成员" : "移除项目负责人"); await load(); } catch (reason) { setError(reason instanceof Error ? reason.message : "移除人员失败"); } }
+  async function addPerson(event: FormEvent) { event.preventDefault(); if (!personDialog) return; try { await accessApi.addProjectMember(projectId, personDialog, personUsername.trim()); setPersonDialog(null); setPersonUsername(""); await load(); } catch (reason) { setError(reason instanceof Error ? reason.message : "添加人员失败"); } }
+  if (!project && !error) return <LoadingPage label="正在加载项目…" />;
+  if (!project) return <WorkspaceShell><section className="workspace-page"><InlineMessage kind="error">{error}</InlineMessage></section></WorkspaceShell>;
+  const unknownRunning = impact?.running_task_count == null || impact.running_task_count === "unknown";
+  const isMembersPage = location.pathname.endsWith("/members");
+  const isToolsPage = location.pathname.endsWith("/tools");
+  const pageNumber = isMembersPage ? "05" : isToolsPage ? "06" : "04";
+  const pageTitle = isMembersPage ? "项目详情 · 人员" : isToolsPage ? "项目详情 · 工具与授权" : "项目详情 · 概览";
+  return <WorkspaceShell><section className="workspace-page access-page"><PageHeader eyebrow={`${pageNumber} / ACCESS CONTROL`} title={pageTitle} copy={`${project.name} · ${project.code}`} actions={!isMembersPage && !isToolsPage && canManageProject ? <button className="secondary-button" disabled title="项目资料编辑接口尚未开放">编辑项目</button> : undefined} />
+    <nav className="project-tabs" aria-label="项目详情"><NavLink to={`/projects/${encodeURIComponent(projectId)}/overview`}>概览</NavLink>{auth?.role === "platform_admin" && <NavLink to={`/projects/${encodeURIComponent(projectId)}/members?view=managers`}>负责人</NavLink>}{(auth?.role === "admin" || auth?.role === "platform_admin") && <NavLink to={`/projects/${encodeURIComponent(projectId)}/members`}>测试成员</NavLink>}<NavLink to={`/projects/${encodeURIComponent(projectId)}/tools`}>项目工具</NavLink><NavLink to={`/projects/${encodeURIComponent(projectId)}/tools?view=grants`}>额外授权</NavLink><a href="#audit">审计</a></nav>{error && <InlineMessage kind="error">{error}</InlineMessage>}
+    {!isMembersPage && !isToolsPage && <><div className="metric-grid metric-grid-four"><MetricCard label="负责人" value={project.manager_count} note={managers.map((item) => item.display_name).join(" · ") || "尚未分配"} /><MetricCard label="测试成员" value={project.member_count} note="成员仅操作本人资源" /><MetricCard label="项目工具" value={project.tool_count} note="全部项目关系自动继承" /><MetricCard label="额外授权" value={project.active_grant_count} note="临时单工具访问" /></div><div className="project-overview-grid"><section className="access-card"><h2>项目资料</h2><dl className="detail-list"><div><dt>项目编码</dt><dd>{project.code}（不可修改）</dd></div><div><dt>项目名称</dt><dd>{project.name}</dd></div><div><dt>创建时间</dt><dd>—</dd></div><div><dt>最近更新</dt><dd>{new Date(project.updated_at).toLocaleString()}</dd></div></dl></section><section className="access-card"><h2>访问规则</h2><span className="scope-badge project">项目范围</span><dl className="detail-list"><div><dt>负责人</dt><dd>使用并管理项目工具</dd></div><div><dt>测试成员</dt><dd>使用工具，仅操作本人资源</dd></div><div><dt>临时授权</dt><dd>单工具使用，不获得项目数据</dd></div></dl></section></div>{project.status === "active" && canManageProject && <section className="deactivate-banner"><div><strong>停用项目将立即收敛工具访问</strong><p>{project.tool_count} 个项目工具将从普通用户目录隐藏，{project.active_grant_count} 条额外授权暂时失效；运行中任务不会自动取消。</p></div><button className="secondary-button" onClick={() => void previewDeactivate()}>预览停用影响</button></section>}</>}
+    {isMembersPage && <><section className="access-card member-section"><div className="section-heading"><div><h2>项目负责人</h2><p>仅平台管理员可以分配 active 管理员。</p></div>{auth?.role === "platform_admin" && <button className="secondary-button" onClick={() => { setPersonUsername(""); setPersonDialog("managers"); }}>分配负责人</button>}</div>{managers.length ? <MemberList members={managers} canRemove={auth?.role === "platform_admin"} onRemove={(member) => void removePerson(member, "managers")} /> : <EmptyState title="尚未分配负责人" copy="平台管理员可为项目分配管理员负责人。" />}</section><section className="access-card member-section"><div className="section-heading"><div><h2>测试成员</h2><p>普通管理员只能通过精确用户名查找并加入 active 测试人员。</p></div>{canManageMembers && <div className="row-actions"><NavLink className="secondary-button button-link" to={`/admin/users?project_id=${encodeURIComponent(projectId)}`}>创建测试人员</NavLink><button className="primary-button" onClick={() => { setPersonUsername(""); setPersonDialog("members"); }}>添加成员</button></div>}</div>{members.length ? <MemberList members={members} canRemove={canManageMembers} onRemove={(member) => void removePerson(member, "members")} /> : <EmptyState title="暂无测试成员" copy="成员加入后会自动获得该项目的启用工具。" />}</section></>}
+    {isToolsPage && <><div className="section-heading project-tools-heading"><div><h2>项目工具</h2><p>项目工具自动授予负责人和成员；额外授权只提供单工具业务使用权。</p></div>{canManageProject && <button className="secondary-button" disabled title="工具归属只能由平台管理员在工具管理中修改">关联项目工具</button>}</div>{tools.length ? <AccessTable headers={["工具", "状态", "分类", "成员覆盖", "临时授权", "操作"]}>{tools.map((tool) => <tr key={tool.id}><td><strong>{tool.name}</strong><small>{tool.description}</small></td><td><StatusBadge value={tool.is_enabled ? "enabled" : "disabled"} /></td><td>工具</td><td>{project.manager_count + project.member_count} 人</td><td>0</td><td>{canManageProject ? <NavLink to={`/admin/tool-access/${encodeURIComponent(tool.id)}`}>进入控制面</NavLink> : "查看"}</td></tr>)}</AccessTable> : <EmptyState title="项目暂无工具" copy="启用并归属本项目的工具会在这里显示。" />}<section className="access-card grant-readonly"><div><h2>额外授权只读汇总</h2><p>授权由平台管理员在“额外授权”模块统一管理。</p></div>{project.active_grant_count ? <span className="status-badge status-badge-warning">{project.active_grant_count} 条有效授权</span> : <span>暂无临时授权</span>}<span>仅本人资源</span></section></>}
+    {personDialog && <div className="modal-backdrop" role="presentation"><section className="dialog" role="dialog" aria-modal="true" aria-labelledby="add-project-person-title"><h2 id="add-project-person-title">{personDialog === "managers" ? "添加项目负责人" : "添加测试人员"}</h2><p>请输入完整用户名。平台不会提供全局用户候选列表。</p><form className="auth-form" onSubmit={addPerson}><label>完整用户名<input autoFocus value={personUsername} onChange={(event) => setPersonUsername(event.target.value)} minLength={3} required /></label><div className="dialog-actions"><button type="button" className="secondary-button" onClick={() => setPersonDialog(null)}>取消</button><button className="primary-button">确认添加</button></div></form></section></div>}
+    {impact && <div className="modal-backdrop" role="presentation"><section className="dialog" role="dialog" aria-modal="true" aria-labelledby="deactivate-project-title"><p className="section-label">HIGH-RISK ACTION</p><h2 id="deactivate-project-title">停用 {project.name}</h2><p>将影响 {impact.manager_count ?? 0} 位负责人、{impact.member_count ?? 0} 位成员、{impact.tool_count ?? 0} 个工具及 {impact.active_grant_count ?? 0} 条额外授权。</p><p>{unknownRunning ? "运行中任务状态未知，默认阻止停用。" : `当前运行中任务：${impact.running_task_count}`}</p>{unknownRunning && <label className="checkbox-row"><input type="checkbox" checked={forceUnknownImpact} onChange={(event) => setForceUnknownImpact(event.target.checked)} />我已核对外部运行状态并承担继续停用的影响</label>}<div className="dialog-actions"><button className="secondary-button" onClick={() => setImpact(null)}>取消</button><button className="primary-button" disabled={unknownRunning && !forceUnknownImpact} onClick={() => void confirmDeactivate()}>确认停用</button></div></section></div>}
+  </section></WorkspaceShell>;
+}
+
+/** 项目根路由只负责稳定跳转，避免概览、人员和工具页共享易变的查询参数。 */
+function ProjectOverviewRedirect() {
+  const { projectId = "" } = useParams();
+  return <Navigate to={`/projects/${encodeURIComponent(projectId)}/overview`} replace />;
+}
+
+function MemberList({ members, canRemove = false, onRemove }: { members: ProjectMember[]; canRemove?: boolean; onRemove?: (member: ProjectMember) => void }) { return <div className="data-panel">{members.map((member) => <div className="table-row" key={member.id}><strong>{member.display_name}<small>{member.username}</small></strong><span>{roleLabel[member.role]}</span><StatusBadge value={member.status} />{canRemove ? <button className="link-button" onClick={() => onRemove?.(member)}>移除成员</button> : <span />}</div>)}</div>; }
+
+function ToolAccessAdminPage() {
+  const { toolId } = useParams(); const location = useLocation(); const [tools, setTools] = useState<ToolAccessRecord[]>([]); const [projects, setProjects] = useState<ProjectSummary[]>([]); const [grants, setGrants] = useState<ToolGrantSummary[]>([]); const [loaded, setLoaded] = useState(false); const [editing, setEditing] = useState<ToolAccessRecord | null>(null); const [impact, setImpact] = useState<ImpactPreview | null>(null); const [confirmingImpact, setConfirmingImpact] = useState(false); const [grantDialog, setGrantDialog] = useState<ToolGrantSummary | "new" | null>(null); const [error, setError] = useState("");
+  const [accessForm, setAccessForm] = useState({ access_scope: "project" as "public" | "project", project_id: "", is_enabled: true, reason: "", force_unknown_impact: false }); const [grantForm, setGrantForm] = useState({ user_id: "", tool_id: "", reason: "", expires_at: grantExpiry() });
+  const load = useCallback(async () => {
+    const [toolRows, projectRows, grantRows] = await Promise.all([
+      accessApi.listToolAccess(),
+      accessApi.projectChoices(),
+      accessApi.listGrants(),
+    ]);
+    // 三个权限集合并行加载；若旧网关或测试桩返回异常结构，则失败关闭为空集合，
+    // 避免错误载荷进入 filter/map 后让整个管理页白屏。
+    setTools(Array.isArray(toolRows) ? toolRows : []);
+    setProjects(Array.isArray(projectRows) ? projectRows : []);
+    setGrants(Array.isArray(grantRows) ? grantRows : []);
+    setLoaded(true);
+  }, []);
+  useEffect(() => { void load().catch((reason) => { setLoaded(true); setError(reason.message); }); }, [load]);
+  useEffect(() => {
+    if (!toolId) { setEditing(null); return; }
+    if (!loaded) return;
+    const item = tools.find((row) => row.id === toolId) ?? null;
+    setEditing(item);
+    if (item) void openTool(item);
+  }, [loaded, toolId, tools]);
+  useModal(Boolean(confirmingImpact || grantDialog), () => { setConfirmingImpact(false); setGrantDialog(null); });
+  async function refreshToolImpact(tool: ToolAccessRecord, scope: "public" | "project", projectId: string) { setImpact(null); try { setImpact(await accessApi.toolImpact(tool.id, scope, scope === "public" ? null : projectId || null)); } catch (reason) { setError(reason instanceof Error ? reason.message : "无法读取工具影响范围"); } }
+  async function openTool(tool: ToolAccessRecord) { setEditing(tool); setAccessForm({ access_scope: tool.access_scope, project_id: tool.project_id ?? "", is_enabled: tool.is_enabled, reason: "", force_unknown_impact: false }); setImpact(null); }
+  async function previewToolImpact() { if (!editing) return; await refreshToolImpact(editing, accessForm.access_scope, accessForm.project_id); setConfirmingImpact(true); }
+  async function saveTool(event: FormEvent) { event.preventDefault(); if (!editing || !impact) return; try { await accessApi.updateToolAccess(editing.id, { ...accessForm, project_id: accessForm.access_scope === "public" ? null : accessForm.project_id, revision: impact.expected_revision, impact_token: impact.impact_token }); setConfirmingImpact(false); setImpact(null); await load(); } catch (reason) { const stale = reason instanceof ApiError && reason.code === "STALE_IMPACT"; setConfirmingImpact(false); setImpact(null); setError(stale ? "影响预览已过期，请重新计算影响" : reason instanceof Error ? reason.message : "保存工具范围失败"); } }
+  async function saveGrant(event: FormEvent) { event.preventDefault(); try { const expires = new Date(grantForm.expires_at); const days = Math.ceil((expires.getTime() - Date.now()) / 86400000); if (days < 1 || days > 90) throw new Error("额外授权期限必须在未来 1 至 90 天内"); if (grantDialog === "new") await accessApi.createGrant({ user_id: grantForm.user_id, tool_id: grantForm.tool_id, reason: grantForm.reason, days, idempotency_key: crypto.randomUUID() }); else if (grantDialog) await accessApi.renewGrant(grantDialog.id, { reason: grantForm.reason, expires_at: expires.toISOString() }); setGrantDialog(null); await load(); } catch (reason) { setError(reason instanceof Error ? reason.message : "保存额外授权失败"); } }
+  const isGrantPage = location.pathname.startsWith("/admin/tool-grants");
+  const selectedTool = toolId ? tools.find((tool) => tool.id === toolId) ?? null : null;
+  const grantCounts = { active: grants.filter((grant) => grant.status === "active").length, expired: grants.filter((grant) => grant.status === "expired").length, revoked: grants.filter((grant) => grant.status === "revoked").length, expiring: grants.filter((grant) => grant.status === "active" && new Date(grant.expires_at).getTime() - Date.now() <= 7 * 86400000).length };
+
+  if (toolId && !loaded) return <WorkspaceShell><LoadingPage label="正在读取工具权限…" /></WorkspaceShell>;
+  if (toolId && !selectedTool) return <WorkspaceShell><section className="workspace-page access-page"><EmptyState title="工具不可见或不存在" copy="请返回工具管理后重新选择。" /></section></WorkspaceShell>;
+  return <WorkspaceShell><section className="workspace-page access-page">{selectedTool ? <>
+    <PageHeader eyebrow="10 / ACCESS CONTROL" title="工具详情 · 范围与归属" copy={`${selectedTool.name} · tool.${selectedTool.id}`} />
+    {error && <InlineMessage kind="error">{error}</InlineMessage>}
+    <section className="access-card tool-identity"><span className="project-avatar">AI</span><div><h2>{selectedTool.name}</h2><p>{selectedTool.description || "健康正常 · 最近发布版本可用"}</p></div><StatusBadge value={selectedTool.is_enabled ? "enabled" : "disabled"} /><button className="danger-button" type="button" disabled title="工具启停接口尚未开放">{selectedTool.is_enabled ? "停用工具" : "启用工具"}</button></section>
+    <div className="tool-scope-layout"><section className="access-card"><div className="card-heading"><h2>访问范围</h2><p>每个工具必须且只能选择一种范围。</p></div><div className="scope-options"><label className={accessForm.access_scope === "project" ? "selected" : ""}><input type="radio" name="scope" value="project" checked={accessForm.access_scope === "project"} onChange={() => setAccessForm({ ...accessForm, access_scope: "project", force_unknown_impact: false })} /><span><strong>项目工具</strong><small>项目关系自动授予访问；可创建临时单工具授权</small></span></label><label className={accessForm.access_scope === "public" ? "selected" : ""}><input type="radio" name="scope" value="public" checked={accessForm.access_scope === "public"} disabled={!selectedTool.public_eligible} onChange={() => setAccessForm({ ...accessForm, access_scope: "public", project_id: "", force_unknown_impact: false })} /><span><strong>公共工具</strong><small>全部 active 用户可用；不允许个别关闭</small></span></label></div>{accessForm.access_scope === "project" && <label className="stacked-field">所属项目<select value={accessForm.project_id} onChange={(event) => setAccessForm({ ...accessForm, project_id: event.target.value, force_unknown_impact: false })} required><option value="">选择项目</option>{projects.filter((project) => project.status === "active").map((project) => <option key={project.id} value={project.id}>{project.name} · {project.code}</option>)}</select></label>}<p className="warning-copy">范围或归属变更前必须预览影响。</p></section>
+      <aside className="access-card impact-summary"><h2>当前影响</h2><dl><div><dt>项目负责人</dt><dd>{impact?.manager_count ?? "未知"}</dd></div><div><dt>测试成员</dt><dd>{impact?.member_count ?? "未知"}</dd></div><div><dt>额外授权</dt><dd>{grants.filter((grant) => grant.tool_id === selectedTool.id && grant.status === "active").length}</dd></div><div><dt>运行中任务</dt><dd>{impact?.running_task_count ?? "—"}</dd></div><div><dt>历史资源</dt><dd>保留快照</dd></div></dl><button className="primary-button" type="button" onClick={() => void previewToolImpact()}>预览变更影响</button></aside></div>
+  </> : isGrantPage ? <>
+    <PageHeader eyebrow="12 / ACCESS CONTROL" title="额外工具授权" copy="只处理少量跨项目例外，不替代项目成员关系。" actions={<button className="primary-button" onClick={() => { setGrantForm({ user_id: "", tool_id: tools.find((tool) => tool.access_scope === "project")?.id ?? "", reason: "", expires_at: grantExpiry() }); setGrantDialog("new"); }}>创建额外授权</button>} />
+    {error && <InlineMessage kind="error">{error}</InlineMessage>}
+    <div className="metric-grid metric-grid-four"><MetricCard label="有效授权" value={grantCounts.active} note="默认 7 天" /><MetricCard label="即将到期" value={grantCounts.expiring} note="未来 7 天" /><MetricCard label="已过期" value={grantCounts.expired} note="不自动恢复" /><MetricCard label="已撤销" value={grantCounts.revoked} note="保留审计" /></div>
+    <div className="access-toolbar"><input type="search" placeholder="搜索用户或工具" /><select aria-label="全部状态"><option>全部状态</option></select></div>
+    {grants.length ? <AccessTable headers={["用户", "项目工具", "所属项目", "状态", "到期时间", "原因", "操作"]}>{grants.map((grant) => <tr key={grant.id}><td><strong>{grant.username ?? grant.user_id ?? "—"}</strong></td><td>{grant.tool_name}</td><td>{grant.project_name}</td><td><StatusBadge value={grant.status} /></td><td>{new Date(grant.expires_at).toLocaleString()}</td><td>{grant.grant_reason}</td><td><button className="link-button" onClick={() => { setGrantForm({ user_id: grant.user_id ?? "", tool_id: grant.tool_id, reason: "", expires_at: grantExpiry() }); setGrantDialog(grant); }}>续期</button>{grant.status === "active" && <button className="link-button" onClick={() => void accessApi.revokeGrant(grant.id, "撤销额外授权").then(load).catch((reason) => setError(reason.message))}>撤销</button>}</td></tr>)}</AccessTable> : <EmptyState title="没有额外授权" copy="项目成员会自动继承项目工具，无需逐工具授权。" />}
+  </> : <>
+    <PageHeader eyebrow="09 / ACCESS CONTROL" title="工具管理" copy="平台管理员管理范围与归属；项目负责人只看到本项目普通控制面。" actions={<button className="primary-button" disabled title="工具接入流程尚未开放">接入工具</button>} />
+    {error && <InlineMessage kind="error">{error}</InlineMessage>}
+    <div className="metric-grid metric-grid-four"><MetricCard label="全部工具" value={tools.length} note={`Enabled ${tools.filter((tool) => tool.is_enabled).length}`} /><MetricCard label="公共工具" value={tools.filter((tool) => tool.access_scope === "public").length} note="全部 active 用户" /><MetricCard label="项目工具" value={tools.filter((tool) => tool.access_scope === "project").length} note={`归属 ${new Set(tools.map((tool) => tool.project_id).filter(Boolean)).size} 个项目`} /><MetricCard label="未分类" value={tools.filter((tool) => tool.access_scope === "project" && !tool.project_id).length} note="不允许启用" /></div>
+    <div className="access-toolbar"><input type="search" placeholder="搜索工具名称" /><select aria-label="全部访问范围"><option>全部访问范围</option></select></div>
+    <AccessTable headers={["工具", "状态", "访问范围", "所属项目", "临时授权", "健康", "操作"]}>{tools.map((tool) => <tr key={tool.id}><td><strong>{tool.name}</strong><small>{tool.id}</small></td><td><StatusBadge value={tool.is_enabled ? "enabled" : "disabled"} /></td><td><span className={`scope-badge ${tool.access_scope}`}>{tool.access_scope === "public" ? "公共工具" : "项目工具"}</span></td><td>{tool.project_name ?? "—"}</td><td>{grants.filter((grant) => grant.tool_id === tool.id && grant.status === "active").length}</td><td>{tool.is_enabled ? "正常" : "未知"}</td><td><NavLink to={`/admin/tool-access/${encodeURIComponent(tool.id)}`}>管理</NavLink></td></tr>)}</AccessTable>
+  </>}
+    {confirmingImpact && editing && impact && <div className="modal-backdrop" role="presentation"><section className="dialog impact-dialog" role="dialog" aria-modal="true" aria-labelledby="tool-access-title"><span className="risk-badge">高风险操作</span><h2 id="tool-access-title">将 {editing.name} 改为{accessForm.access_scope === "public" ? "公共工具" : "项目工具"}？</h2><p>高风险变更会在提交前重新校验 revision 与 impact token。</p><form onSubmit={saveTool}><div className="impact-change"><span>范围变化</span><strong>{editing.access_scope === "public" ? "公共工具" : `项目工具 · ${editing.project_name ?? "未归属"}`} → {accessForm.access_scope === "public" ? "公共工具" : `项目工具 · ${projects.find((project) => project.id === accessForm.project_id)?.name ?? "未归属"}`}</strong></div><dl className="impact-list"><div><dt>新增可访问用户</dt><dd>{impact.affected_user_count ?? 0}</dd></div><div><dt>历史资源范围</dt><dd>保持原项目快照</dd></div><div><dt>运行中任务</dt><dd>{impact.running_task_count ?? "unknown"}</dd></div><div><dt>将撤销额外授权</dt><dd>{grants.filter((grant) => grant.tool_id === editing.id && grant.status === "active").length}</dd></div></dl><label className="stacked-field">操作原因<input value={accessForm.reason} onChange={(event) => setAccessForm({ ...accessForm, reason: event.target.value })} required /></label>{impact.running_task_count === "unknown" && <label className="checkbox-row"><input type="checkbox" checked={accessForm.force_unknown_impact} onChange={(event) => setAccessForm({ ...accessForm, force_unknown_impact: event.target.checked })} />我已核对外部运行状态并承担继续变更的影响</label>}<label className="checkbox-row"><input type="checkbox" required />我已确认对象、影响数量和历史资源不会迁移</label><div className="dialog-actions"><button type="button" className="secondary-button" onClick={() => setConfirmingImpact(false)}>取消</button><button className="danger-button" disabled={impact.running_task_count === "unknown" && !accessForm.force_unknown_impact}>确认变更</button></div></form></section></div>}
+    {grantDialog && <div className="modal-backdrop" role="presentation"><section className="dialog" role="dialog" aria-modal="true" aria-labelledby="grant-title"><h2 id="grant-title">{grantDialog === "new" ? "创建额外工具授权" : "续期额外工具授权"}</h2><form className="auth-form" onSubmit={saveGrant}>{grantDialog === "new" && <><label>用户 ID<input value={grantForm.user_id} onChange={(event) => setGrantForm({ ...grantForm, user_id: event.target.value })} required /></label><label>项目工具<select value={grantForm.tool_id} onChange={(event) => setGrantForm({ ...grantForm, tool_id: event.target.value })} required><option value="">选择项目工具</option>{tools.filter((tool) => tool.access_scope === "project" && tool.is_enabled).map((tool) => <option key={tool.id} value={tool.id}>{tool.name}</option>)}</select></label></>}<label>到期时间<input type="datetime-local" value={grantForm.expires_at} onChange={(event) => setGrantForm({ ...grantForm, expires_at: event.target.value })} required /></label><label>原因<textarea value={grantForm.reason} onChange={(event) => setGrantForm({ ...grantForm, reason: event.target.value })} required /></label><div className="dialog-actions"><button type="button" className="secondary-button" onClick={() => setGrantDialog(null)}>取消</button><button className="primary-button">{grantDialog === "new" ? "创建授权" : "确认续期"}</button></div></form></section></div>}
+  </section></WorkspaceShell>;
+}
+
+function FixedUsersPage() {
+  const { auth } = useAuth();
+  const { userId } = useParams(); const location = useLocation(); const navigate = useNavigate();
+  const projectIdToJoin = new URLSearchParams(location.search).get("project_id");
+  const [items, setItems] = useState<AdminUser[]>([]); const [selected, setSelected] = useState<AdminUser | null>(null); const [detailLoading, setDetailLoading] = useState(false); const [creating, setCreating] = useState(false); const [error, setError] = useState("");
+  const [form, setForm] = useState({ username: "", display_name: "", password: "", role: "tester" as PlatformRole });
+  const load = useCallback(() => apiJson<AdminUser[]>("/admin/users").then(setItems), []);
+  useEffect(() => { void load().catch((reason) => setError(reason.message)); }, [load]);
+  useEffect(() => { if (projectIdToJoin && !userId) setCreating(true); }, [projectIdToJoin, userId]);
+  useEffect(() => {
+    setSelected(null);
+    setError("");
+    if (!userId) { setDetailLoading(false); return; }
+    setDetailLoading(true);
+    void apiJson<AdminUser>(`/admin/users/${encodeURIComponent(userId)}`)
+      .then(setSelected)
+      .catch((reason) => setError(reason.message))
+      .finally(() => setDetailLoading(false));
+  }, [userId]);
+  useModal(creating, () => setCreating(false));
+  async function createFixedUser(event: FormEvent) { event.preventDefault(); try { await apiJson("/admin/users", { method: "POST", body: JSON.stringify({ ...form, must_change_password: true }) }); if (projectIdToJoin) await accessApi.addProjectMember(projectIdToJoin, "members", form.username); setCreating(false); setForm({ username: "", display_name: "", password: "", role: "tester" }); if (projectIdToJoin) navigate(`/projects/${encodeURIComponent(projectIdToJoin)}/members`); else await load(); } catch (reason) { setError(reason instanceof Error ? reason.message : "创建用户失败"); } }
+  if (userId && detailLoading) return <WorkspaceShell><LoadingPage label="正在读取用户权限…" /></WorkspaceShell>;
+  if (userId && !selected) return <WorkspaceShell><section className="workspace-page access-page"><EmptyState title="用户不可见或不存在" copy="请返回用户管理后重新选择。" /></section></WorkspaceShell>;
+  if (userId && selected) return <WorkspaceShell><section className="workspace-page access-page"><PageHeader eyebrow="08 / ACCESS CONTROL" title="用户详情 · 权限全景" copy={`${selected.display_name} · ${selected.username}`} />{error && <InlineMessage kind="error">{error}</InlineMessage>}
+    <section className="access-card user-identity"><span className="project-avatar">{selected.display_name.slice(0, 1)}</span><div><h2>{selected.display_name}</h2><p>{selected.username} · 最近登录 {selected.last_login_at ? new Date(selected.last_login_at).toLocaleString() : "尚未登录"}</p></div><span className="role-badge admin">{roleLabel[selected.role]}</span><StatusBadge value={selected.status} /><button className="secondary-button" disabled title="角色切换流程尚未开放">切换角色</button><button className="danger-button" disabled title="账号安全操作流程尚未开放">安全操作</button></section>
+    <div className="user-access-grid"><section className="access-card"><div className="card-heading"><h2>项目关系</h2><p>负责项目决定管理范围</p></div>{selected.projects.length ? <ul className="relationship-list">{selected.projects.map((project) => <li key={project.id}><strong>{project.name}</strong><span>{project.code} · {project.relation === "manager" ? "项目负责人" : "测试成员"}</span></li>)}</ul> : <p className="muted-copy">当前没有项目关系。</p>}</section><section className="access-card"><div className="card-heading"><h2>额外授权</h2><p>不增加项目或配置管理能力</p></div>{selected.extra_tool_grants.length ? selected.extra_tool_grants.map((grant) => <div className="grant-highlight" key={grant.id}><StatusBadge value={grant.status} /><strong>{grant.tool_name}</strong><span>仅本人资源 · {new Date(grant.expires_at).toLocaleDateString()} 到期</span></div>) : <p className="muted-copy">当前没有额外授权。</p>}</section></div>
+    <section className="access-card permission-explanation"><div className="card-heading"><h2>权限解释</h2><p>为什么可以访问工具？</p></div><div className="explanation-source"><span className="source-dot" /><div><strong>主要来源：{selected.projects.some((project) => project.relation === "manager") ? "项目负责人" : roleLabel[selected.role]}</strong><p>{selected.projects[0] ? `${selected.projects[0].name}（${selected.projects[0].code}）` : "公共工具"} · 业务资源严格按本人或项目快照过滤</p></div></div><div className="warning-note">额外授权访问其他项目工具时，能力始终降级为“仅本人业务资源”。</div></section>
+  </section></WorkspaceShell>;
+
+  const platformAdmins = items.filter((item) => item.role === "platform_admin").length;
+  const admins = items.filter((item) => item.role === "admin").length;
+  const testers = items.filter((item) => item.role === "tester").length;
+  return <WorkspaceShell><section className="workspace-page access-page"><PageHeader eyebrow="07 / ACCESS CONTROL" title="用户管理" copy="固定全局角色一人一个；项目关系和额外授权决定工具范围。" actions={<button className="primary-button" onClick={() => setCreating(true)}>创建用户</button>} />{error && <InlineMessage kind="error">{error}</InlineMessage>}
+    <div className="metric-grid metric-grid-four"><MetricCard label="全部用户" value={items.length} note={`Active ${items.filter((item) => item.status === "active").length}`} /><MetricCard label="平台管理员" value={platformAdmins} note="至少保留 1 位 active" /><MetricCard label="管理员" value={admins} note={`负责 ${items.reduce((sum, item) => sum + item.projects.filter((project) => project.relation === "manager").length, 0)} 个项目`} /><MetricCard label="测试人员" value={testers} note={`${items.filter((item) => item.role === "tester" && item.projects.length === 0).length} 人无项目`} /></div>
+    <div className="access-toolbar"><input type="search" placeholder="搜索用户名或显示名" /><select aria-label="全部角色"><option>全部角色</option></select><select aria-label="全部用户状态"><option>全部状态</option></select></div>
+    <AccessTable headers={["用户", "固定角色", "状态", "项目关系", "额外授权", "最近登录", "操作"]}>{items.map((item) => <tr key={item.id}><td><strong>{item.display_name} {item.username}</strong></td><td><span className={`role-badge ${item.role}`}>{roleLabel[item.role]}</span></td><td><StatusBadge value={item.status} /></td><td>{item.role === "platform_admin" ? "全平台" : `${item.projects.some((project) => project.relation === "manager") ? "负责" : "加入"} ${item.projects.length} 个项目`}</td><td>{item.extra_tool_grants.length}</td><td>{item.last_login_at ? new Date(item.last_login_at).toLocaleString() : "尚未登录"}</td><td><NavLink to={`/admin/users/${encodeURIComponent(item.id)}`}>查看</NavLink></td></tr>)}</AccessTable>
+    {creating && <div className="modal-backdrop" role="presentation"><section className="dialog" role="dialog" aria-modal="true" aria-labelledby="create-fixed-user-title"><h2 id="create-fixed-user-title">创建用户</h2><form className="auth-form" onSubmit={createFixedUser}><label>用户名<input autoFocus value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} minLength={3} required /></label><label>显示名称<input value={form.display_name} onChange={(event) => setForm({ ...form, display_name: event.target.value })} required /></label><label>初始密码<input type="password" autoComplete="new-password" minLength={12} value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} required /></label>{auth?.role === "platform_admin" && <label>固定角色<select value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value as PlatformRole })}><option value="tester">测试人员</option><option value="admin">管理员</option><option value="platform_admin">平台管理员</option></select></label>}<div className="dialog-actions"><button type="button" className="secondary-button" onClick={() => setCreating(false)}>取消</button><button className="primary-button">确认创建</button></div></form></section></div>}
+  </section></WorkspaceShell>;
+}
+
+function FixedRolesPage() {
+  const rows = [
+    ["使用公共工具", "✓", "✓", "✓"],
+    ["使用项目工具", "全平台", "负责项目", "所属项目"],
+    ["管理项目成员", "全部项目", "负责项目 tester", "—"],
+    ["管理工具配置", "全部工具", "负责项目普通配置", "—"],
+    ["额外单工具授权", "创建 / 撤销", "仅查看自身来源", "仅查看自身来源"],
+    ["查看业务资源", "全平台", "负责项目快照 + 本人", "仅本人"],
+    ["平台配置 / 审计", "✓", "—", "—"],
+  ];
+  return <WorkspaceShell><section className="workspace-page access-page"><PageHeader eyebrow="14 / ACCESS CONTROL" title="固定角色矩阵" copy="角色只表达管理级别，不允许新增、删除、重命名或任意绑定细粒度权限。" /><section className="access-card role-overview"><div><h2>三种固定全局角色</h2><p>每个用户恰好一个角色；项目和额外授权负责工具范围。</p></div><div><span className="role-badge platform_admin">平台管理员</span><span className="role-badge admin">管理员</span><span className="role-badge tester">测试人员</span></div></section><AccessTable headers={["能力", "平台管理员", "管理员", "测试人员"]}>{rows.map((row) => <tr key={row[0]}>{row.map((cell, index) => <td key={cell}><strong>{index === 0 ? cell : undefined}</strong>{index === 0 ? null : cell}</td>)}</tr>)}</AccessTable><p className="role-example">权限解释示例：管理员可以管理自己负责项目的工具，但额外授权始终只允许操作本人业务资源。</p></section></WorkspaceShell>;
+}
 
 function UsersPage() {
   const [items, setItems] = useState<AdminUser[]>([]);
@@ -861,13 +1625,23 @@ function VersionDetailsPage() {
 
 function StatusBadge({ value }: { value: string }) {
   const normalized = value.toLowerCase();
-  const tone = ["healthy", "active", "success", "ok", "一致"].includes(normalized) || normalized.startsWith("v") ? "success" : ["missing", "failed", "disabled", "unhealthy", "不可用", "不兼容", "环境漂移", "配置不一致", "内容不一致", "结构不一致", "迁移不一致"].includes(normalized) ? "danger" : "neutral";
+  const tone = ["healthy", "active", "enabled", "success", "ok", "configured", "已配置", "一致"].includes(normalized) || normalized.startsWith("v") ? "success" : ["missing", "invalid", "expiring", "failed", "disabled", "unhealthy", "不可用", "不兼容", "环境漂移", "配置不一致", "内容不一致", "结构不一致", "迁移不一致"].includes(normalized) ? "danger" : "neutral";
   return <span className={`status-badge status-badge-${tone}`}>{value}</span>;
 }
 
 function EmptyState({ title, copy }: { title: string; copy: string }) { return <div className="empty-state"><strong>{title}</strong><p>{copy}</p></div>; }
 
-function ForbiddenPage() { return <WorkspaceShell><section className="not-found"><p className="section-label">403 / PERMISSION DENIED</p><h1>没有访问权限</h1><p>当前账号没有访问此平台功能或工具资源的权限。</p><NavLink className="tool-link" to="/">返回工作台</NavLink></section></WorkspaceShell>; }
+function ForbiddenPage() {
+  return <WorkspaceShell><section className="workspace-page access-page access-state-page">
+    <PageHeader eyebrow="15 / ACCESS CONTROL" title="状态与异常" copy="权限拒绝、空状态和失效预览均使用清晰的下一步操作。" />
+    <section className="access-card permission-denied-card" aria-labelledby="permission-denied-title">
+      <span className="state-code">403 / PERMISSION DENIED</span>
+      <h2 id="permission-denied-title">没有管理权限</h2>
+      <p>当前账号没有访问此平台管理功能的权限。不可见资源与不存在资源仍统一返回 404，避免泄露对象是否存在。</p>
+      <NavLink className="secondary-button" to="/">返回工作台</NavLink>
+    </section>
+  </section></WorkspaceShell>;
+}
 function NotFoundPage() { return <WorkspaceShell><section className="not-found"><p className="section-label">404</p><h1>页面不存在</h1><NavLink className="tool-link" to="/">返回平台首页</NavLink></section></WorkspaceShell>; }
 
 function DomainRoute({ domainId }: { domainId: "ai-testing" | "automation" | "quality-analysis" | "domain-evaluation" }) {
@@ -875,7 +1649,44 @@ function DomainRoute({ domainId }: { domainId: "ai-testing" | "automation" | "qu
 }
 
 function AppRoutes() {
-  return <Routes><Route path="/login" element={<LoginPage />} /><Route path="/setup" element={<SetupPage />} /><Route path="/account" element={<Protected><AccountPage /></Protected>} /><Route path="/account/password" element={<Protected><ChangePasswordPage /></Protected>} /><Route path="/" element={<Protected><HomePage /></Protected>} /><Route path="/ai-testing" element={<Protected><DomainRoute domainId="ai-testing" /></Protected>} /><Route path="/automation" element={<Protected><DomainRoute domainId="automation" /></Protected>} /><Route path="/quality-analysis" element={<Protected><DomainRoute domainId="quality-analysis" /></Protected>} /><Route path="/domain-evaluation" element={<Protected><DomainRoute domainId="domain-evaluation" /></Protected>} /><Route path="/settings/llm" element={<Protected><LlmSettingsPage /></Protected>} /><Route path="/settings/config" element={<Protected><ConfigPage /></Protected>} /><Route path="/settings/secrets" element={<Protected><SecretsPage /></Protected>} /><Route path="/settings/credentials" element={<Protected><CredentialsPage /></Protected>} /><Route path="/admin/users" element={<Protected permission="platform.user.manage"><UsersPage /></Protected>} /><Route path="/admin/roles" element={<Protected permission="platform.role.manage"><RolesPage /></Protected>} /><Route path="/audit" element={<Protected permission="platform.audit.view"><AuditPage /></Protected>} /><Route path="/system/versions" element={<Protected permission="platform.audit.view"><VersionDetailsPage /></Protected>} /><Route path="/403" element={<Protected><ForbiddenPage /></Protected>} /><Route path="*" element={<Protected><NotFoundPage /></Protected>} /></Routes>;
+  return <Routes>
+    <Route path="/login" element={<LoginPage />} />
+    <Route path="/register" element={<RegisterPage />} />
+    <Route path="/setup" element={<SetupPage />} />
+    <Route path="/account" element={<Protected><AccountPage /></Protected>} />
+    <Route path="/account/password" element={<Protected><ChangePasswordPage /></Protected>} />
+    <Route path="/account/credentials" element={<Protected><PersonalCredentialsPage /></Protected>} />
+    <Route path="/account/llm" element={<Protected><PersonalLlmPage /></Protected>} />
+    <Route path="/" element={<Protected><HomePage /></Protected>} />
+    <Route path="/access" element={<Protected><AccessHubPage /></Protected>} />
+    <Route path="/ai-testing" element={<Protected><DomainRoute domainId="ai-testing" /></Protected>} />
+    <Route path="/automation" element={<Protected><DomainRoute domainId="automation" /></Protected>} />
+    <Route path="/quality-analysis" element={<Protected><DomainRoute domainId="quality-analysis" /></Protected>} />
+    <Route path="/domain-evaluation" element={<Protected><DomainRoute domainId="domain-evaluation" /></Protected>} />
+    {/* 旧书签只做安全重定向，不再挂载 legacy 公共 LLM 编辑器。 */}
+    <Route path="/settings/llm" element={<Protected><Navigate to="/account/llm" replace /></Protected>} />
+    <Route path="/settings/platform-llm" element={<Protected roles={["platform_admin"]}><LlmSettingsPage /></Protected>} />
+    <Route path="/settings/config" element={<Protected permission="platform.config.manage"><ConfigPage /></Protected>} />
+    <Route path="/settings/secrets" element={<Protected permission="platform.secret.manage"><SecretsPage /></Protected>} />
+    <Route path="/settings/credential-agents" element={<Protected roles={["platform_admin"]}><CredentialsPage /></Protected>} />
+    <Route path="/settings/credentials" element={<Protected permission="platform.credential.readiness.view"><CredentialReadinessPage /></Protected>} />
+    <Route path="/projects" element={<Protected><ProjectsPage /></Protected>} />
+    <Route path="/projects/new" element={<Protected roles={["platform_admin"]}><ProjectsPage /></Protected>} />
+    <Route path="/projects/:projectId" element={<Protected><ProjectOverviewRedirect /></Protected>} />
+    <Route path="/projects/:projectId/overview" element={<Protected><ProjectDetailPage /></Protected>} />
+    <Route path="/projects/:projectId/members" element={<Protected><ProjectDetailPage /></Protected>} />
+    <Route path="/projects/:projectId/tools" element={<Protected><ProjectDetailPage /></Protected>} />
+    <Route path="/admin/tool-access" element={<Protected roles={["platform_admin"]}><ToolAccessAdminPage /></Protected>} />
+    <Route path="/admin/tool-access/:toolId" element={<Protected roles={["platform_admin"]}><ToolAccessAdminPage /></Protected>} />
+    <Route path="/admin/tool-grants" element={<Protected roles={["platform_admin"]}><ToolAccessAdminPage /></Protected>} />
+    <Route path="/admin/users" element={<Protected roles={["platform_admin", "admin"]}><FixedUsersPage /></Protected>} />
+    <Route path="/admin/users/:userId" element={<Protected roles={["platform_admin", "admin"]}><FixedUsersPage /></Protected>} />
+    <Route path="/admin/roles" element={<Protected roles={["platform_admin"]}><FixedRolesPage /></Protected>} />
+    <Route path="/audit" element={<Protected permission="platform.audit.view"><AuditPage /></Protected>} />
+    <Route path="/system/versions" element={<Protected permission="platform.audit.view"><VersionDetailsPage /></Protected>} />
+    <Route path="/403" element={<Protected><ForbiddenPage /></Protected>} />
+    <Route path="*" element={<Protected><NotFoundPage /></Protected>} />
+  </Routes>;
 }
 
 function PlatformProviders() {

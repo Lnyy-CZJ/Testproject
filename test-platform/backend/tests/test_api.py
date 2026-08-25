@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 
 import httpx
@@ -9,7 +10,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import Settings
 from app.db.session import get_db
-from app.main import app
+from app.main import SensitiveAccessLogFilter, app
 from app.models.tool import Tool
 
 
@@ -53,7 +54,7 @@ def test_live_and_ready(client: TestClient) -> None:
     assert client.get("/api/v1/health/live").json() == {
         "service": "platform-api",
         "status": "ok",
-        "version": "1.1.0",
+        "version": "1.2.0",
         "component_version": "unknown",
         "revision": "unknown",
         "dirty": True,
@@ -65,7 +66,7 @@ def test_live_and_ready(client: TestClient) -> None:
     assert ready_response.json() == {
         "service": "platform-api",
         "status": "ready",
-        "version": "1.1.0",
+        "version": "1.2.0",
         "component_version": "unknown",
         "revision": "unknown",
         "dirty": True,
@@ -153,6 +154,36 @@ def test_unknown_tool_uses_uniform_error_structure(client: TestClient) -> None:
     assert unknown_route_response.json()["code"] == "NOT_FOUND"
     assert unknown_route_response.json()["message"] == "请求的资源不存在"
     assert unknown_route_response.json()["request_id"].startswith("req_")
+
+
+def test_access_log_redacts_runtime_context_identifier() -> None:
+    """访问日志不得记录完整 Runtime Context 或其他敏感查询参数。"""
+
+    context_id = "rtx_full_value_must_not_reach_logs"
+    record = logging.LogRecord(
+        name="uvicorn.access",
+        level=logging.INFO,
+        pathname=__file__,
+        lineno=1,
+        msg='%s - "%s %s HTTP/%s" %d',
+        args=(
+            "127.0.0.1:12345",
+            "GET",
+            (
+                "/api/v1/internal/tools/api-autotest/runtime-config"
+                f"?include_secrets=false&runtime_context_id={context_id}"
+            ),
+            "1.1",
+            409,
+        ),
+        exc_info=None,
+    )
+
+    assert SensitiveAccessLogFilter().filter(record) is True
+    rendered = record.getMessage()
+    assert context_id not in rendered
+    assert "runtime_context_id=%5BREDACTED%5D" in rendered
+    assert "include_secrets=false" in rendered
 
 
 def test_ready_returns_503_when_database_is_unavailable(

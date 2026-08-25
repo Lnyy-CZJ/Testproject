@@ -3,8 +3,9 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy import delete, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.deps import AuthContext, current_auth_context, require_csrf
@@ -21,13 +22,19 @@ from app.models.configuration import (
     Environment,
     Secret,
     SecretVersion,
+    UserCredential,
+    UserCredentialItem,
 )
-from app.models.llm import ToolLlmBinding
+from app.models.llm import LlmProfile, ToolLlmBinding
 from app.schemas.auth import MessageResponse
 from app.schemas.configuration import (
     ConfigDefinitionResponse,
     CredentialCreateRequest,
     CredentialResponse,
+    PersonalCredentialFieldResponse,
+    PersonalCredentialPutRequest,
+    PersonalCredentialResponse,
+    PersonalCredentialValidationResponse,
     ReleaseCreateRequest,
     ReleaseItemRequest,
     ReleaseResponse,
@@ -49,7 +56,14 @@ def _can_manage_config(database: Session, context: AuthContext, owner_type: str,
     if owner_type == "platform":
         return has_platform_permission(database, context.user.id, "platform.config.manage")
     if owner_type == "llm_profile":
-        return has_platform_permission(database, context.user.id, "platform.llm.manage")
+        # 通用配置 API 是 legacy 公共 LLM 管理面。个人 Profile 即使由平台
+        # 管理员本人创建，也只能通过 /me/llm 修改，避免绕开所有者校验。
+        profile = database.get(LlmProfile, owner_id)
+        return (
+            profile is not None
+            and profile.owner_user_id is None
+            and has_platform_permission(database, context.user.id, "platform.llm.manage")
+        )
     if owner_type == "llm_binding":
         binding = database.get(ToolLlmBinding, owner_id)
         return binding is not None and (
@@ -65,7 +79,16 @@ def _can_manage_secret(database: Session, context: AuthContext, owner_type: str,
     if owner_type == "platform":
         return has_platform_permission(database, context.user.id, "platform.secret.manage")
     if owner_type == "llm_profile":
-        return has_platform_permission(database, context.user.id, "platform.llm.secret.manage")
+        # 个人 API Key 不进入公共 Secret 管理路径；该限制同时覆盖枚举、替换
+        # 与 Release 操作，避免管理员权限意外扩大成跨用户 Secret 权限。
+        profile = database.get(LlmProfile, owner_id)
+        return (
+            profile is not None
+            and profile.owner_user_id is None
+            and has_platform_permission(
+                database, context.user.id, "platform.llm.secret.manage"
+            )
+        )
     if owner_type == "llm_binding":
         binding = database.get(ToolLlmBinding, owner_id)
         return binding is not None and (
@@ -84,7 +107,8 @@ def _definition_response(row: ConfigDefinition) -> ConfigDefinitionResponse:
         value_type=row.value_type, sensitivity=row.sensitivity, required=row.required,
         default_value=row.default_value if row.sensitivity == "normal" else None,
         validation_schema=row.validation_schema, apply_mode=row.apply_mode,
-        editable=row.editable, sort_order=row.sort_order,
+        editable=row.editable, sort_order=row.sort_order, value_scope=row.value_scope,
+        credential_provider_type=row.credential_provider_type,
     )
 
 
@@ -139,6 +163,360 @@ def _validate_value(definition: ConfigDefinition, value: Any) -> None:
             raise PlatformError(422, "CONFIG_VALIDATION_FAILED", f"{definition.display_name} 超过允许值")
 
 
+def _personal_credential_definitions(
+    database: Session,
+    tool_id: str,
+    provider_type: str,
+) -> list[ConfigDefinition]:
+    """返回某工具 Provider 明确声明为用户级的字段白名单。
+
+    Provider 归属来自服务端配置定义，而不是请求体。这样即使客户端提交了
+    legacy 系统 Secret 的键名，也不会被写入个人作用域或绕过字段分类。
+    """
+
+    return list(database.scalars(select(ConfigDefinition).where(
+        ConfigDefinition.owner_type == "tool",
+        ConfigDefinition.owner_id == tool_id,
+        ConfigDefinition.value_scope == "user",
+        ConfigDefinition.credential_provider_type == provider_type,
+    ).order_by(ConfigDefinition.sort_order, ConfigDefinition.key)).all())
+
+
+def _personal_credential_response(
+    database: Session,
+    row: UserCredential,
+    definitions: list[ConfigDefinition] | None = None,
+) -> PersonalCredentialResponse:
+    """构造只含元数据的个人凭证响应，绝不计算可反推 Secret 的摘要。"""
+
+    resolved_definitions = definitions or _personal_credential_definitions(
+        database, row.tool_id, row.provider_type
+    )
+    configured_keys = {
+        item.key
+        for item in database.scalars(select(UserCredentialItem).where(
+            UserCredentialItem.credential_id == row.id,
+            UserCredentialItem.credential_version == row.current_version,
+        )).all()
+    }
+    return PersonalCredentialResponse(
+        id=row.id,
+        tool_id=row.tool_id,
+        environment_id=row.environment_id,
+        provider_type=row.provider_type,
+        status=row.status,
+        current_version=row.current_version,
+        expires_at=row.expires_at,
+        refresh_expires_at=row.refresh_expires_at,
+        last_checked_at=row.last_checked_at,
+        last_error_code=row.last_error_code,
+        fields=[
+            PersonalCredentialFieldResponse(
+                key=definition.key,
+                display_name=definition.display_name,
+                required=definition.required,
+                configured=definition.key in configured_keys,
+            )
+            for definition in resolved_definitions
+        ],
+    )
+
+
+def _parse_personal_credential_expiry(value: Any) -> datetime:
+    """把用户提交的毫秒时间戳或 ISO 时间统一转换为 UTC。"""
+
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        try:
+            return datetime.fromtimestamp(float(value) / 1000, UTC)
+        except (ValueError, OverflowError, OSError):
+            pass
+    if isinstance(value, str) and value.strip():
+        normalized = value.strip()
+        try:
+            parsed = datetime.fromisoformat(normalized.replace("Z", "+00:00"))
+            return parsed.replace(tzinfo=UTC) if parsed.tzinfo is None else parsed.astimezone(UTC)
+        except ValueError:
+            try:
+                return datetime.fromtimestamp(float(normalized) / 1000, UTC)
+            except (ValueError, OverflowError, OSError):
+                pass
+    raise PlatformError(422, "CONFIG_VALIDATION_FAILED", "凭证过期时间格式不正确")
+
+
+def _require_personal_credential_write(settings: Settings) -> None:
+    """在分阶段发布期间关闭个人凭证的所有主动操作。"""
+
+    if not settings.personal_credentials_write_enabled:
+        raise PlatformError(
+            503,
+            "PERSONAL_CREDENTIAL_WRITE_DISABLED",
+            "个人凭证写入功能暂未开放",
+        )
+
+
+@router.get("/me/credentials", response_model=list[PersonalCredentialResponse])
+def list_personal_credentials(
+    context: Annotated[AuthContext, Depends(current_auth_context)],
+    database: Annotated[Session, Depends(get_db)],
+    response: Response,
+    environment_id: str | None = None,
+) -> list[PersonalCredentialResponse]:
+    """列出当前登录用户有执行权限的个人凭证元数据。
+
+    查询的第一个所有权条件固定为认证用户 ID；后续工具权限过滤用于处理角色
+    被收回的情况。返回值不包含 Secret、长度、掩码或跨用户资源标识。
+    """
+
+    statement = select(UserCredential).where(
+        UserCredential.user_id == context.user.id,
+    )
+    if environment_id:
+        statement = statement.where(UserCredential.environment_id == environment_id)
+    rows = list(database.scalars(statement.order_by(
+        UserCredential.environment_id,
+        UserCredential.tool_id,
+        UserCredential.provider_type,
+    )).all())
+    response.headers["Cache-Control"] = "no-store"
+    return [
+        _personal_credential_response(database, row)
+        for row in rows
+        if has_tool_permission(database, context.user.id, "tool.execute", row.tool_id)
+    ]
+
+
+@router.put(
+    "/me/credentials/{tool_id}/{provider_type}",
+    response_model=PersonalCredentialResponse,
+)
+def put_personal_credential(
+    tool_id: str,
+    provider_type: str,
+    payload: PersonalCredentialPutRequest,
+    request: Request,
+    response: Response,
+    context: Annotated[AuthContext, Depends(require_csrf)],
+    database: Annotated[Session, Depends(get_db)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> PersonalCredentialResponse:
+    """使用乐观锁原子保存当前用户的一版个人凭证。
+
+    未提交字段只从同一 Credential 的当前版本复制；Secret 明文只在本次请求
+    内存中进入信封加密函数。任一字段失败时整个事务回滚，不会激活半个版本。
+    """
+
+    _require_personal_credential_write(settings)
+    if not has_tool_permission(database, context.user.id, "tool.execute", tool_id):
+        raise PlatformError(403, "PERMISSION_DENIED", "无权配置该工具的个人凭证")
+    environment = database.get(Environment, payload.environment_id)
+    if environment is None or not environment.is_active:
+        raise PlatformError(422, "VALIDATION_ERROR", "配置环境不存在或不可用")
+
+    definitions = _personal_credential_definitions(database, tool_id, provider_type)
+    definitions_by_key = {definition.key: definition for definition in definitions}
+    if not definitions or set(payload.values) - set(definitions_by_key):
+        raise PlatformError(
+            403,
+            "CREDENTIAL_SCOPE_MISMATCH",
+            "凭证字段不属于当前用户、工具或 Provider",
+        )
+
+    # 所有权条件放在查询首位；即使攻击者知道另一用户的同作用域对象，也只会
+    # 在自己的范围内得到“尚未创建”，绝不会加载或复制对方的当前版本。
+    row = database.scalar(select(UserCredential).where(
+        UserCredential.user_id == context.user.id,
+        UserCredential.tool_id == tool_id,
+        UserCredential.environment_id == payload.environment_id,
+        UserCredential.provider_type == provider_type,
+    ).with_for_update())
+    old_version = row.current_version if row is not None else 0
+    if payload.expected_version != old_version:
+        raise PlatformError(409, "VERSION_CONFLICT", "配置已更新，请刷新后重试")
+
+    previous_items = {
+        item.key: item
+        for item in database.scalars(select(UserCredentialItem).where(
+            UserCredentialItem.credential_id == row.id,
+            UserCredentialItem.credential_version == old_version,
+        )).all()
+    } if row is not None and old_version > 0 else {}
+    desired_keys = set(previous_items) | set(payload.values)
+    missing_required = [
+        definition.key
+        for definition in definitions
+        if definition.required and definition.key not in desired_keys
+    ]
+    if missing_required:
+        raise PlatformError(422, "CONFIG_VALIDATION_FAILED", "个人凭证缺少必填字段")
+
+    created = row is None
+    if row is None:
+        row = UserCredential(
+            id=new_id("ucred"),
+            user_id=context.user.id,
+            tool_id=tool_id,
+            environment_id=payload.environment_id,
+            provider_type=provider_type,
+            status="missing",
+            current_version=0,
+        )
+        database.add(row)
+        try:
+            # 尽早触发唯一约束，避免两个首次写入请求都继续创建 Secret。
+            database.flush()
+        except IntegrityError:
+            database.rollback()
+            raise PlatformError(409, "VERSION_CONFLICT", "配置已更新，请刷新后重试") from None
+
+    new_version = old_version + 1
+    cipher = None
+    for definition in definitions:
+        if definition.key not in desired_keys:
+            continue
+        if definition.key not in payload.values:
+            previous = previous_items[definition.key]
+            database.add(UserCredentialItem(
+                credential_id=row.id,
+                credential_version=new_version,
+                key=definition.key,
+                secret_version_id=previous.secret_version_id,
+                value_json=previous.value_json,
+            ))
+            continue
+
+        value = payload.values[definition.key]
+        if definition.sensitivity == "secret":
+            if not isinstance(value, str) or not value or len(value) > 65536:
+                raise PlatformError(
+                    422,
+                    "CONFIG_VALIDATION_FAILED",
+                    "个人凭证 Secret 必须是非空字符串",
+                )
+            secret = database.scalar(select(Secret).where(
+                Secret.environment_id == row.environment_id,
+                Secret.owner_type == "user_credential",
+                Secret.owner_id == row.id,
+                Secret.definition_id == definition.id,
+            ))
+            if secret is None:
+                secret = Secret(
+                    id=new_id("sec"),
+                    environment_id=row.environment_id,
+                    owner_type="user_credential",
+                    owner_id=row.id,
+                    definition_id=definition.id,
+                    status="missing",
+                )
+                database.add(secret)
+                database.flush()
+            if cipher is None:
+                cipher = load_secret_cipher(settings)
+            secret_version = replace_secret(
+                database, cipher, secret, value, context.user.id
+            )
+            database.flush()
+            database.add(UserCredentialItem(
+                credential_id=row.id,
+                credential_version=new_version,
+                key=definition.key,
+                secret_version_id=secret_version.id,
+            ))
+        else:
+            _validate_value(definition, value)
+            database.add(UserCredentialItem(
+                credential_id=row.id,
+                credential_version=new_version,
+                key=definition.key,
+                value_json=value,
+            ))
+
+    if payload.values.get("EXPIRES_TIME") not in (None, ""):
+        row.expires_at = _parse_personal_credential_expiry(payload.values["EXPIRES_TIME"])
+    if payload.values.get("REFRESH_EXPIRES_TIME") not in (None, ""):
+        row.refresh_expires_at = _parse_personal_credential_expiry(
+            payload.values["REFRESH_EXPIRES_TIME"]
+        )
+    row.current_version = new_version
+    row.status = "pending_validation"
+    row.last_checked_at = None
+    row.last_error_code = None
+    add_audit_event(
+        database,
+        action="personal.credential.create" if created else "personal.credential.replace",
+        resource_type="user_credential",
+        resource_id=row.id,
+        tool_id=row.tool_id,
+        environment_id=row.environment_id,
+        outcome="success",
+        request=request,
+        actor=context.user,
+        after={
+            "provider_type": row.provider_type,
+            "credential_version": new_version,
+            "status": row.status,
+        },
+    )
+    database.commit()
+    response.headers["Cache-Control"] = "no-store"
+    return _personal_credential_response(database, row, definitions)
+
+
+@router.post(
+    "/me/credentials/{credential_id}/validate",
+    response_model=PersonalCredentialValidationResponse,
+)
+def validate_personal_credential(
+    credential_id: str,
+    request: Request,
+    response: Response,
+    context: Annotated[AuthContext, Depends(require_csrf)],
+    database: Annotated[Session, Depends(get_db)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> PersonalCredentialValidationResponse:
+    """请求验证当前用户自己的 Credential。
+
+    当前后端没有可复用且不轮换凭证的 Provider 校验器，因此明确返回
+    ``unsupported``。这比把“已接收请求”误报为连接成功更安全；后续接入专用
+    校验器时可保持响应契约不变。
+    """
+
+    _require_personal_credential_write(settings)
+    row = database.scalar(select(UserCredential).where(
+        UserCredential.user_id == context.user.id,
+        UserCredential.id == credential_id,
+    ))
+    if row is None:
+        raise PlatformError(404, "NOT_FOUND", "个人凭证不存在")
+    if not has_tool_permission(database, context.user.id, "tool.execute", row.tool_id):
+        raise PlatformError(403, "PERMISSION_DENIED", "无权验证该工具的个人凭证")
+    if row.current_version < 1:
+        raise PlatformError(
+            409,
+            "PERSONAL_CREDENTIAL_NOT_CONFIGURED",
+            "请先配置当前工具的个人凭证",
+        )
+    add_audit_event(
+        database,
+        action="personal.credential.validate",
+        resource_type="user_credential",
+        resource_id=row.id,
+        tool_id=row.tool_id,
+        environment_id=row.environment_id,
+        outcome="unknown",
+        request=request,
+        actor=context.user,
+        metadata={"provider_type": row.provider_type, "validation_state": "unsupported"},
+    )
+    database.commit()
+    response.headers["Cache-Control"] = "no-store"
+    return PersonalCredentialValidationResponse(
+        id=row.id,
+        validation_state="unsupported",
+        status=row.status,
+        current_version=row.current_version,
+    )
+
+
 @router.get("/config/definitions", response_model=list[ConfigDefinitionResponse])
 def list_definitions(
     context: Annotated[AuthContext, Depends(current_auth_context)],
@@ -159,6 +537,16 @@ def list_definitions(
         for row in rows
         if _can_manage_config(database, context, row.owner_type, row.owner_id)
         or _can_manage_secret(database, context, row.owner_type, row.owner_id)
+        # 普通执行用户需要字段白名单来渲染首次个人凭证表单。这里只开放已明确
+        # 标记为 user + Provider 的安全定义元数据，系统配置和系统 Secret 仍不可见。
+        or (
+            row.owner_type == "tool"
+            and row.value_scope == "user"
+            and row.credential_provider_type is not None
+            and has_tool_permission(
+                database, context.user.id, "tool.execute", row.owner_id
+            )
+        )
     ]
 
 
