@@ -75,6 +75,24 @@ def test_live_and_ready(client: TestClient) -> None:
     }
 
 
+def test_ready_returns_503_when_user_context_signing_key_is_invalid(
+    client: TestClient,
+    monkeypatch,
+    tmp_path,
+) -> None:
+    """签名密钥不是合规文件时必须判定未就绪，避免健康检查掩盖全工具故障。"""
+
+    from app.core.config import get_settings
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "user_context_signing_key_file", str(tmp_path))
+
+    response = client.get("/api/v1/health/ready")
+
+    assert response.status_code == 503
+    assert response.json()["code"] == "SERVICE_UNAVAILABLE"
+
+
 def test_platform_version_comes_from_manifest(tmp_path) -> None:
     """验证产品版本只从组件版本清单读取。"""
 
