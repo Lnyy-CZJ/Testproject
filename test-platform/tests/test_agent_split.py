@@ -106,6 +106,17 @@ class AgentSplitComposeTest(unittest.TestCase):
         self.assertIn('FUNCTIONAL_WORKBENCH_V3_ENABLED', script)
         self.assertIn('测试用例生成', script)
 
+    def test_prod_deploy_rejects_invalid_user_context_signing_key_before_compose(self) -> None:
+        """生产部署必须在任何 Compose 操作前拒绝缺失或目录型签名密钥。"""
+
+        script = (ROOT / "scripts/deploy-prod.sh").read_text(encoding="utf-8")
+        validation = script.index('user_context_signing_key=/srv/test-platform/secrets/prod/user-context-signing-key')
+        compose = script.index('compose=(')
+        self.assertLess(validation, compose)
+        self.assertIn('[[ ! -f "$user_context_signing_key" ]]', script)
+        self.assertIn('stat -c %s "$user_context_signing_key"', script)
+        self.assertIn('/api/v1/health/ready', script)
+
 
 if __name__ == "__main__":
     unittest.main()

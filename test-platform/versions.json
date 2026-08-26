@@ -11,7 +11,7 @@
       "image_envs": ["PLATFORM_GATEWAY_IMAGE"]
     },
     "platform-backend": {
-      "version": "1.2.0",
+      "version": "1.2.1",
       "compatible_product_major": 1,
       "source_paths": ["test-platform/backend/app", "test-platform/backend/alembic", "test-platform/backend/alembic.ini", "test-platform/backend/requirements.txt", "test-platform/backend/Dockerfile"],
       "image_envs": ["PLATFORM_BACKEND_IMAGE"]

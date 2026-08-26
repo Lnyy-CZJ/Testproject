@@ -10,6 +10,7 @@ current_images=/srv/test-platform/env/.env.images.current
 state_dir=/srv/test-platform/state
 deployments_dir="$state_dir/deployments"
 backup_root=/srv/test-platform/backups
+user_context_signing_key=/srv/test-platform/secrets/prod/user-context-signing-key
 previous_release=$(readlink -f /srv/test-platform/current 2>/dev/null || true)
 deployment_id="$(date -u +%Y%m%dT%H%M%SZ)-${component:-full}"
 
@@ -17,6 +18,23 @@ test -f "$base_env"
 test -f "$release_images"
 test -f "$release_dir/versions.json"
 test -f "$release_dir/release-manifest.json"
+# 可信用户上下文是所有工具入口的共同鉴权依赖。Docker 遇到不存在的 bind
+# 源路径会静默创建目录，因此必须在任何 Compose 操作前验证真实文件形态，
+# 否则容器健康但所有 auth_request 都会返回 503。
+if [[ ! -f "$user_context_signing_key" ]]; then
+  echo "生产用户上下文签名密钥缺失或不是普通文件: $user_context_signing_key" >&2
+  exit 1
+fi
+signing_key_size=$(stat -c %s "$user_context_signing_key")
+signing_key_mode=$(stat -c %a "$user_context_signing_key")
+if (( signing_key_size < 32 )); then
+  echo '生产用户上下文签名密钥不足 32 字节' >&2
+  exit 1
+fi
+if (( (8#$signing_key_mode & 077) != 0 )); then
+  echo "生产用户上下文签名密钥权限过宽: $signing_key_mode" >&2
+  exit 1
+fi
 mkdir -p "$backup_root" "$deployments_dir"
 [[ -f "$state_dir/current.json" ]] || printf '{}\n' > "$state_dir/current.json"
 
@@ -317,7 +335,7 @@ elif [[ "$prod_activations" == "0" ]]; then
 fi
 
 "${compose[@]}" up -d --remove-orphans
-for path in / /api/v1/health/live; do
+for path in / /api/v1/health/ready; do
   curl --fail --silent --show-error --retry 12 --retry-delay 5 --retry-all-errors "http://127.0.0.1:41873$path" >/dev/null
 done
 # V3 是功能智能体的生产界面契约。发布验收使用工具自己的最小权限
