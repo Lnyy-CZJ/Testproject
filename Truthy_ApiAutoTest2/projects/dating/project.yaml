@@ -1,0 +1,22 @@
+schema_version: 1
+project_id: dating
+display_name: Dating AI Assistant
+
+capabilities:
+  - gateway
+  - signed_binary_upload
+
+config_contract:
+  required_keys:
+    - gateway.base_url
+    - gateway.path
+    - gateway.comm
+    - flow.analysis.poll_interval_seconds
+    - flow.analysis.timeout_seconds
+  credential_profiles:
+    - anonymous_session
+
+redaction:
+  extra_keys:
+    - required_headers
+    - upload_url

@@ -1,0 +1,8 @@
+# Gateway 固定传输层配置。
+method: POST
+path: /gateway/invoke
+headers:
+  Content-Type: application/json
+  Accept: '*/*'
+  Host: 'gateway.spark-jam.top'
+  Connection: 'keep-alive'

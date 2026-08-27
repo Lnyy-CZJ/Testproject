@@ -1,0 +1,10 @@
+# Gateway 固定传输层配置。
+method: POST
+# Dating 的客户端 Gateway 使用独立入口；平台模式仍以当前 Scope 的 Release
+# 快照覆盖该值，本地模式只把这里作为协议级默认值，避免误请求通用入口。
+path: /dating/gateway/invoke
+headers:
+  Content-Type: application/json
+  Accept: '*/*'
+  Host: 'gateway.spark-jam.top'
+  Connection: 'keep-alive'

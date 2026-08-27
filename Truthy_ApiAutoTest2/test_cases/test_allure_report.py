@@ -93,6 +93,53 @@ def test_flow_metadata_uses_fixed_title_priority(
     ]
 
 
+def test_runtime_metadata_contains_only_safe_scope_and_release_fields(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """JUnit/Allure 只记录可追溯身份，不得把 settings/Secret 值写进报告。"""
+    from utils.third_party import allure_reporter
+
+    calls: list[tuple[str, str]] = []
+    dynamic = SimpleNamespace(
+        parameter=lambda name, value: calls.append((name, value)),
+    )
+    monkeypatch.setattr(allure_reporter.allure, "dynamic", dynamic)
+
+    metadata = allure_reporter.build_runtime_report_metadata(
+        project_id="dating",
+        target_env="test",
+        config_source="platform",
+        settings={
+            "gateway_base_url": "https://must-not-appear.example",
+            "runtime_variables": {"AUTH_TOKEN": "must-not-appear"},
+            "runtime_metadata": {
+                "task_id": "20260827-120000-a1b2",
+                "platform_environment": "dev",
+                "runtime_scope_id": "scope-dating-test",
+                "config_release_id": "release-dating-v3",
+                "config_release_version": 3,
+                "credential_profiles": [
+                    {"id": "anonymous_session", "secret": "must-not-appear"}
+                ],
+            },
+        },
+    )
+    allure_reporter.set_runtime_report_metadata(metadata)
+
+    assert metadata == {
+        "project_id": "dating",
+        "target_env": "test",
+        "config_source": "platform",
+        "task_id": "20260827-120000-a1b2",
+        "platform_environment": "dev",
+        "runtime_scope_id": "scope-dating-test",
+        "config_release_id": "release-dating-v3",
+        "config_release_version": "3",
+    }
+    assert calls == list(metadata.items())
+    assert "must-not-appear" not in json.dumps(metadata)
+
+
 def test_attachments_use_declared_types_and_json_format(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -213,7 +260,7 @@ def test_single_entry_wraps_gateway_call_and_preserves_exception(
     }
 
     with pytest.raises(RuntimeError) as caught:
-        test_single_api.test_single_gateway_api(single_case, Gateway())
+        test_single_api.test_single_gateway_api(single_case, Gateway(), {})
 
     assert caught.value is expected
     assert events == ["metadata", "enter:执行接口：GetMe", "execute"]
@@ -543,8 +590,11 @@ def test_jenkinsfile_preserves_existing_execution_contract() -> None:
     """暂停自动触发后仍必须保留参数和原有测试入口。"""
     content = _read_jenkinsfile()
 
-    for parameter in ("ENVIRONMENT", "RUN_TYPE", "FLOW"):
+    for parameter in ("RUN_TYPE", "FLOW"):
         assert f"name: '{parameter}'" in content
+    # 目标环境不是工具/Jenkins 的用户选择项；只由部署平台固定映射。
+    assert "name: 'ENVIRONMENT'" not in content
+    assert "name: 'TARGET_ENV'" not in content
     assert "disableConcurrentBuilds()" in content
     # 暂停期间 Jenkinsfile 不能声明 cron，否则手动构建后会重新注册定时器。
     assert "triggers {" not in content
@@ -553,7 +603,9 @@ def test_jenkinsfile_preserves_existing_execution_contract() -> None:
     assert "test_cases/test_gateway_flow.py" in content
     assert ".venv/bin/python runtest.py" in content
     # Jenkins 首次加载参数定义时尚无参数环境变量，必须使用声明值作为安全默认值。
-    assert 'ENVIRONMENT="${ENVIRONMENT:-test}"' in content
+    assert 'PLATFORM_ENVIRONMENT="${PLATFORM_ENVIRONMENT:-dev}"' in content
+    assert 'dev) TARGET_ENV="test"' in content
+    assert 'prod) TARGET_ENV="prod"' in content
     assert 'RUN_TYPE="${RUN_TYPE:-all}"' in content
     assert 'FLOW="${FLOW:-}"' in content
 
@@ -563,22 +615,24 @@ def test_jenkinsfile_generates_and_publishes_allure3() -> None:
     content = _read_jenkinsfile()
 
     assert "ALLURE_VERSION = '3.14.3'" in content
-    assert (
-        "ALLURE_PYTEST_ARGS = "
-        "'--alluredir=allure-results --clean-alluredir --allure-no-capture'"
-        in content
-    )
-    assert content.count("$ALLURE_PYTEST_ARGS") == 5
+    # Allure 原始结果按项目和任务隔离，五条 pytest 分支必须使用同一动态目录。
+    assert content.count('--alluredir="$ALLURE_RESULTS"') == 5
+    assert content.count("--clean-alluredir") == 5
+    assert content.count("--allure-no-capture") == 5
     assert "allureVersion: '3'" in content
     assert "includeProperties: false" in content
     assert "resultPolicy: 'LEAVE_AS_IS'" in content
-    assert "results: [[path: 'Truthy_ApiAutoTest2/allure-results']]" in content
+    assert (
+        'results: [[path: "Truthy_ApiAutoTest2/reports/task-reports/'
+        "${params.PROJECT_ID ?: 'truthy'}/${params.PLATFORM_TASK_ID}/allure-results\"]]"
+        in content
+    )
     assert "catchError(" in content
     assert "buildResult: 'UNSTABLE'" in content
     assert "stageResult: 'UNSTABLE'" in content
     # 平台报告同步链路依赖 post 阶段在项目目录内生成可归档的 HTML 报告。
     assert (
-        "allure awesome allure-results --output allure-report-publish"
+        'allure awesome "$ALLURE_RESULTS" --output allure-report-publish'
         in content
     )
 
@@ -611,11 +665,12 @@ def test_jenkinsfile_isolates_cli_and_archives_only_required_outputs() -> None:
     )
     assert ".jenkins-tools/allure/bin" in content
     # 归档统一在 dir(PROJECT_DIR) 作用域内调用，pattern 不带项目目录前缀；
-    # 新增 allure-report-publish HTML 报告供平台拉取脚本同步（设计 12.1）。
+    # 项目级任务报告与 JUnit 必须一并归档；allure-report-publish 供平台拉取。
     assert (
         "artifacts: "
         "'logs/**/*,"
-        "allure-results/**/*,"
+        "reports/junit/**/*,"
+        "reports/task-reports/**/*,"
         "allure-report-publish/**/*'"
         in content
     )

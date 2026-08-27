@@ -12,6 +12,7 @@ import json
 import hmac
 import os
 import uuid
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
@@ -33,6 +34,7 @@ from web import credentials
 from web.junit_report import parse_junit_file
 from web.task_manager import SubmissionError, TaskManager
 from web.task_store import TaskStore, is_valid_task_id
+from utils.custom.project_registry import ProjectRegistry, ProjectRegistryError
 
 # 壳服务默认定位的框架项目根目录（web/ 的上一级）。
 DEFAULT_PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -44,6 +46,104 @@ MAX_PAGE_SIZE = 100
 # 日志 tail 默认行数与上限。
 DEFAULT_LOG_TAIL = 500
 MAX_LOG_TAIL = 2000
+
+# 浏览器永远不能覆盖由平台实例、Runtime Scope 或 Release 决定的字段。
+FORBIDDEN_TASK_OVERRIDE_KEYS = {
+    "target_env",
+    "gateway",
+    "gateway_url",
+    "gateway_base_url",
+    "release",
+    "release_id",
+    "release_version",
+    "timeout",
+    "timeout_seconds",
+    "poll_interval",
+    "poll_interval_seconds",
+    "secret",
+    "secrets",
+    "credential_profiles",
+    "runtime_scope_id",
+    "platform_environment",
+    "platform_project_id",
+}
+
+# 项目资产使用稳定的“逻辑 Profile”，平台凭证中心继续使用现有 provider_type。
+# 映射只发生在工具边界，避免把平台实现名写进 API/Flow 资产，后续平台迁移也不
+# 需要批量修改项目 YAML。
+_PROFILE_PROVIDER_ALIASES = {
+    "anonymous_session": "gateway_session",
+    "admin_session": "admin_login",
+}
+_READY_PROFILE_STATUSES = {"ready", "active", "healthy"}
+
+
+def _credential_profiles(
+    payload: Mapping[str, Any],
+    required_profile_ids: list[str] | tuple[str, ...] | None = None,
+) -> list[dict[str, Any]]:
+    """从平台 Credential 元数据提取并规范化逻辑 Profile 摘要。
+
+    ``required_profile_ids`` 由当前选中的 API/Flow 资产推导。传入后只返回这些
+    Profile，并把平台 ``gateway_session``/``admin_login`` provider 映射为项目
+    Manifest 中的逻辑名。这样 Dating 的匿名会话任务不会被未使用的 Truthy
+    Admin Profile 阻断，同时缺失的实际依赖仍会显式返回 ``missing``。
+    """
+
+    metadata = payload.get("credential_metadata")
+    if not isinstance(metadata, dict):
+        metadata = {}
+    raw_profiles: list[dict[str, Any]] = []
+    profiles = metadata.get("profiles")
+    if isinstance(profiles, list):
+        raw_profiles.extend(dict(item) for item in profiles if isinstance(item, dict))
+    else:
+        providers = metadata.get("providers")
+        if isinstance(providers, dict):
+            for profile_id, item in sorted(providers.items()):
+                if not isinstance(item, dict):
+                    continue
+                raw_profiles.append(
+                    {
+                        "id": profile_id,
+                        "status": item.get("status", "ready"),
+                        "version": item.get("credential_version"),
+                    }
+                )
+
+    if required_profile_ids is None:
+        return raw_profiles
+
+    by_id = {
+        str(item.get("id")): item
+        for item in raw_profiles
+        if isinstance(item.get("id"), str) and item.get("id")
+    }
+    result: list[dict[str, Any]] = []
+    for logical_profile_id in dict.fromkeys(required_profile_ids):
+        if logical_profile_id == "public":
+            continue
+        provider_id = _PROFILE_PROVIDER_ALIASES.get(
+            logical_profile_id, logical_profile_id
+        )
+        item = by_id.get(logical_profile_id) or by_id.get(provider_id)
+        if item is None:
+            result.append(
+                {"id": logical_profile_id, "status": "missing", "version": None}
+            )
+            continue
+        raw_status = str(item.get("status") or "missing").lower()
+        result.append(
+            {
+                "id": logical_profile_id,
+                "status": (
+                    "ready" if raw_status in _READY_PROFILE_STATUSES else raw_status
+                ),
+                "version": item.get("version")
+                or item.get("credential_version"),
+            }
+        )
+    return result
 
 
 def _platform_json_response(response: Any) -> dict[str, Any]:
@@ -106,7 +206,7 @@ def load_web_settings(env: Mapping[str, str] | None = None) -> dict[str, Any]:
         ValueError: 基础路径或数值型变量非法时抛出（启动即失败）。
     """
     env = env if env is not None else os.environ
-    return {
+    settings = {
         "host": env.get("API_AUTOTEST_HOST", "127.0.0.1"),
         "port": int(env.get("API_AUTOTEST_PORT", "5003")),
         "base_path": validate_base_path(env.get("API_AUTOTEST_BASE_PATH", "")),
@@ -114,10 +214,16 @@ def load_web_settings(env: Mapping[str, str] | None = None) -> dict[str, Any]:
         "timeout_seconds": int(env.get("API_AUTOTEST_TASK_TIMEOUT_SECONDS", "1800")),
         "tasks_retain": int(env.get("API_AUTOTEST_TASKS_RETAIN", "50")),
         "report_dir": env.get("API_AUTOTEST_REPORT_DIR", "reports/allure-current"),
-        "config_source": env.get("API_AUTOTEST_CONFIG_SOURCE", "env"),
+        "config_source": env.get("API_AUTOTEST_CONFIG_SOURCE", "local"),
+        "platform_environment": env.get("PLATFORM_RUNTIME_ENV", "dev"),
         "platform_api_url": env.get("PLATFORM_API_URL", "").rstrip("/"),
         "platform_client_token_file": env.get("PLATFORM_CLIENT_TOKEN_FILE", ""),
     }
+    if settings["platform_environment"] not in {"dev", "prod"}:
+        raise ValueError("PLATFORM_RUNTIME_ENV 必须为 dev 或 prod")
+    if settings["config_source"] not in {"local", "platform"}:
+        raise ValueError("API_AUTOTEST_CONFIG_SOURCE 必须为 local 或 platform")
+    return settings
 
 
 def create_app(
@@ -138,6 +244,7 @@ def create_app(
     root = Path(project_root) if project_root else DEFAULT_PROJECT_ROOT
     settings = settings or load_web_settings()
     store = TaskStore(root / "tasks", root / "reports")
+    registry = ProjectRegistry(root / "projects")
 
     def platform_identity() -> tuple[str, Path, str]:
         """按调用读取平台地址和工具 Client Token。"""
@@ -149,9 +256,37 @@ def create_app(
         token = token_path.read_text(encoding="utf-8").strip()
         return platform_api_url, token_path, token
 
+    def platform_runtime_scopes(signed_user_context: str) -> list[dict[str, Any]]:
+        """读取当前签名用户可使用的 Scope 元数据，不读取配置值或 Secret。"""
+
+        if not signed_user_context:
+            raise SubmissionError(403, "RUNTIME_CONTEXT_REQUIRED", "当前请求缺少可信用户上下文")
+        platform_api_url, _token_path, token = platform_identity()
+        try:
+            response = requests.get(
+                f"{platform_api_url}/internal/tools/api-autotest/runtime-scopes",
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "X-Platform-User-Context": signed_user_context,
+                },
+                timeout=5,
+            )
+            payload = _platform_json_response(response)
+        except SubmissionError:
+            raise
+        except (requests.RequestException, ValueError) as exc:
+            raise SubmissionError(
+                503, "PLATFORM_CONFIG_UNAVAILABLE", "平台 Runtime Scope 暂时不可用"
+            ) from exc
+        items = payload.get("items")
+        if not isinstance(items, list):
+            raise SubmissionError(503, "PLATFORM_CONFIG_UNAVAILABLE", "平台 Scope 响应无效")
+        return [dict(item) for item in items if isinstance(item, dict)]
+
     def exchange_and_plan(
         signed_user_context: str,
         *,
+        project_id: str,
         resource_type: str,
         resource_id: str,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -171,7 +306,11 @@ def create_app(
             context_response = requests.post(
                 f"{platform_api_url}/internal/tools/api-autotest/runtime-contexts",
                 headers=context_headers,
-                json={"resource_type": resource_type, "resource_id": resource_id},
+                json={
+                    "project_id": project_id,
+                    "resource_type": resource_type,
+                    "resource_id": resource_id,
+                },
                 timeout=5,
             )
             context_payload = _platform_json_response(context_response)
@@ -198,27 +337,107 @@ def create_app(
             raise SubmissionError(503, "PLATFORM_CONFIG_UNAVAILABLE", "平台未发布可用的接口自动化配置")
         return context_payload, payload
 
-    def platform_runtime_plan(task_id: str, signed_user_context: str) -> dict[str, Any]:
+    def platform_runtime_plan(
+        task_id: str,
+        signed_user_context: str,
+        selection: dict[str, Any],
+    ) -> dict[str, Any]:
         """为新任务返回可安全持久化的 Context 与 selector。"""
 
+        project_id = str(selection.get("project_id") or "")
         context_payload, payload = exchange_and_plan(
             signed_user_context,
+            project_id=project_id,
             resource_type="task",
             resource_id=task_id,
         )
-        selector = payload.get("snapshot_selector")
+        selector = context_payload.get("snapshot_selector") or payload.get(
+            "snapshot_selector"
+        )
         if selector is not None and not isinstance(selector, dict):
             raise SubmissionError(503, "PLATFORM_CONFIG_UNAVAILABLE", "平台配置选择器无效")
+        scope = context_payload.get("runtime_scope")
+        scope = scope if isinstance(scope, dict) else {}
+        runtime_scope_id = (
+            scope.get("scope_id")
+            or context_payload.get("runtime_scope_id")
+            or payload.get("runtime_scope_id")
+        )
+        platform_environment = (
+            scope.get("platform_environment")
+            or context_payload.get("platform_environment")
+            or payload.get("platform_environment")
+            or payload.get("environment")
+        )
+        target_env = (
+            scope.get("target_env")
+            or context_payload.get("target_env")
+            or payload.get("target_env")
+        )
+        required_profiles = _required_credential_profiles(project_id, selection)
+        credential_profiles = _credential_profiles(payload, required_profiles)
+        missing_profiles = [
+            item
+            for item in credential_profiles
+            if str(item.get("status") or "").lower()
+            not in _READY_PROFILE_STATUSES
+        ]
+        if missing_profiles:
+            raise SubmissionError(
+                409,
+                "PROJECT_CREDENTIAL_MISSING",
+                "当前资产所需凭证未就绪: "
+                + ", ".join(str(item.get("id")) for item in missing_profiles),
+            )
+        package = _get_registry().get(project_id)
+        missing_config_keys = _missing_project_config_keys(
+            payload,
+            package.manifest.config_contract.required_keys,
+        )
+        if missing_config_keys:
+            raise SubmissionError(
+                409,
+                "PROJECT_CONFIG_MISSING",
+                "当前 Release 缺少项目运行所需配置: "
+                + ", ".join(missing_config_keys),
+            )
         return {
             "runtime_context_id": context_payload["runtime_context_id"],
             "runtime_context_expires_at": context_payload.get("expires_at"),
+            "runtime_scope_id": runtime_scope_id,
+            "platform_project_id": (
+                scope.get("platform_project_id")
+                or context_payload.get("platform_project_id")
+                or payload.get("platform_project_id")
+            ),
+            "platform_environment": platform_environment,
+            "target_env": target_env,
+            "config_source": "platform",
+            "release_id": payload.get("release_id"),
+            "release_version": payload.get("release_version"),
+            "credential_profiles": credential_profiles,
             "snapshot_selector": selector,
             # 仅保存平台 runtime-contexts 已确认的快照，不接受创建 API 的任何
             # owner/project 字段。缺失时平台模式的读取过滤会保持失败关闭。
             "resource_snapshot": context_payload.get("resource_snapshot"),
         }
 
-    def platform_runtime_environment(record: dict[str, Any]) -> tuple[dict[str, str], dict[str, Any]]:
+    def platform_preflight(
+        project_id: str,
+        signed_user_context: str,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """为页面预检创建短期 request Context，并读取不含 Secret 的配置摘要。"""
+
+        return exchange_and_plan(
+            signed_user_context,
+            project_id=project_id,
+            resource_type="request",
+            resource_id=f"preflight-{uuid.uuid4().hex}",
+        )
+
+    def platform_runtime_snapshot(
+        record: dict[str, Any],
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
         """在 pytest 子进程启动前按任务 selector 物化精确历史版本。"""
 
         runtime = record.get("runtime_context")
@@ -258,30 +477,61 @@ def create_app(
             raise SubmissionError(503, "PLATFORM_CONFIG_UNAVAILABLE", "平台运行配置暂时不可用") from exc
         if not isinstance(payload, dict) or payload.get("tool_id") != "api-autotest":
             raise SubmissionError(503, "PLATFORM_CONFIG_UNAVAILABLE", "平台运行配置作用域不匹配")
-        normal = payload.get("normal") if isinstance(payload.get("normal"), dict) else {}
-        secrets = payload.get("secrets") if isinstance(payload.get("secrets"), dict) else {}
-        credential = payload.get("credential_metadata") if isinstance(payload.get("credential_metadata"), dict) else {}
-        providers = credential.get("providers") if isinstance(credential.get("providers"), dict) else {}
-        gateway = providers.get("gateway_session") if isinstance(providers.get("gateway_session"), dict) else credential
-        admin = providers.get("admin_login") if isinstance(providers.get("admin_login"), dict) else {}
-        environment = {
-            str(key): str(value) for key, value in {**normal, **secrets}.items()
-            if value is not None
-        }
-        environment.update({
-            "API_AUTOTEST_SESSION_PROVIDER": "platform",
+        project = record.get("project")
+        project = project if isinstance(project, dict) else {}
+        selection = record.get("selection")
+        selection = selection if isinstance(selection, dict) else {}
+        project_id = str(project.get("project_id") or selection.get("project_id") or "")
+        required_profiles = _required_credential_profiles(project_id, selection)
+        credential_profiles = _credential_profiles(payload, required_profiles)
+        missing_profiles = [
+            item
+            for item in credential_profiles
+            if str(item.get("status") or "").lower()
+            not in _READY_PROFILE_STATUSES
+        ]
+        if missing_profiles:
+            raise SubmissionError(
+                409,
+                "PROJECT_CREDENTIAL_MISSING",
+                "任务快照所需凭证不可用，请重新提交任务",
+            )
+        process_environment = {
             "PLATFORM_API_URL": platform_api_url,
             "PLATFORM_CLIENT_TOKEN_FILE": str(token_path),
             "PLATFORM_RUNTIME_CONTEXT_ID": runtime_context_id,
-            "PLATFORM_CREDENTIAL_ID": str(gateway.get("credential_id") or ""),
-            "PLATFORM_CREDENTIAL_VERSION": str(gateway.get("credential_version") or 0),
-            "PLATFORM_ADMIN_CREDENTIAL_ID": str(admin.get("credential_id") or ""),
-            "PLATFORM_ADMIN_CREDENTIAL_VERSION": str(admin.get("credential_version") or 0),
-        })
-        return environment, {
+        }
+        metadata = payload.get("credential_metadata")
+        metadata = metadata if isinstance(metadata, dict) else {}
+        providers = metadata.get("providers")
+        providers = providers if isinstance(providers, dict) else {}
+        gateway_provider = providers.get("gateway_session")
+        if isinstance(gateway_provider, dict):
+            credential_id = gateway_provider.get("credential_id")
+            credential_version = gateway_provider.get("credential_version")
+            if credential_id and isinstance(credential_version, int):
+                process_environment.update(
+                    {
+                        "API_AUTOTEST_SESSION_PROVIDER": "platform",
+                        "PLATFORM_CREDENTIAL_ID": str(credential_id),
+                        "PLATFORM_CREDENTIAL_VERSION": str(credential_version),
+                    }
+                )
+        if "anonymous_session" in required_profiles and (
+            "PLATFORM_CREDENTIAL_ID" not in process_environment
+        ):
+            raise SubmissionError(
+                409,
+                "RUNTIME_SNAPSHOT_INVALID",
+                "任务快照缺少可写回的匿名会话 Credential",
+            )
+        return payload, {
+            "runtime_scope_id": payload.get("runtime_scope_id")
+            or record.get("runtime", {}).get("runtime_scope_id"),
             "release_id": payload.get("release_id"),
             "release_version": payload.get("release_version"),
-            "credential_version": gateway.get("credential_version"),
+            "credential_profiles": credential_profiles,
+            "process_environment": process_environment,
         }
 
     def platform_configured_secret_keys(signed_user_context: str) -> set[str] | None:
@@ -298,6 +548,7 @@ def create_app(
         try:
             _context, payload = exchange_and_plan(
                 signed_user_context,
+                project_id="truthy",
                 resource_type="request",
                 resource_id=f"credential-status-{uuid.uuid4().hex}",
             )
@@ -316,13 +567,12 @@ def create_app(
         store,
         timeout_seconds=settings["timeout_seconds"],
         retain=settings["tasks_retain"],
-        runtime_environment_provider=(
-            platform_runtime_environment if platform_mode else None
-        ),
+        runtime_snapshot_provider=(platform_runtime_snapshot if platform_mode else None),
         runtime_plan_provider=(platform_runtime_plan if platform_mode else None),
         platform_secret_keys_provider=(
             platform_configured_secret_keys if platform_mode else None
         ),
+        platform_environment=str(settings.get("platform_environment") or "dev"),
     )
     if task_manager is None:
         manager.recover_on_startup()
@@ -331,8 +581,15 @@ def create_app(
     app.config["AUTOTEST_ROOT"] = root
     app.config["AUTOTEST_SETTINGS"] = settings
     app.config["AUTOTEST_MANAGER"] = manager
+    app.config["AUTOTEST_REGISTRY"] = registry
     app.config["AUTOTEST_SECRET_KEYS_PROVIDER"] = (
         platform_configured_secret_keys if platform_mode else None
+    )
+    app.config["AUTOTEST_SCOPE_PROVIDER"] = (
+        platform_runtime_scopes if platform_mode else None
+    )
+    app.config["AUTOTEST_PREFLIGHT_PROVIDER"] = (
+        platform_preflight if platform_mode else None
     )
     app.config["JSON_AS_ASCII"] = False
 
@@ -386,6 +643,8 @@ const platformFetch=window.fetch.bind(window);window.fetch=function(resource,opt
         "apiautotest",
         __name__,
         template_folder="templates",
+        static_folder="static",
+        static_url_path="/static",
     )
     _register_routes(blueprint)
     app.register_blueprint(blueprint, url_prefix=settings["base_path"] or None)
@@ -420,6 +679,32 @@ def _get_settings() -> dict[str, Any]:
     from flask import current_app
 
     return current_app.config["AUTOTEST_SETTINGS"]
+
+
+def _get_registry() -> ProjectRegistry:
+    """取当前部署版本的项目包注册表。"""
+
+    from flask import current_app
+
+    return current_app.config["AUTOTEST_REGISTRY"]
+
+
+def _get_scope_provider() -> Callable[[str], list[dict[str, Any]]] | None:
+    """取平台授权 Scope 提供器；local 兼容模式为 None。"""
+
+    from flask import current_app
+
+    return current_app.config.get("AUTOTEST_SCOPE_PROVIDER")
+
+
+def _get_preflight_provider() -> (
+    Callable[[str, str], tuple[dict[str, Any], dict[str, Any]]] | None
+):
+    """取平台预检提供器。"""
+
+    from flask import current_app
+
+    return current_app.config.get("AUTOTEST_PREFLIGHT_PROVIDER")
 
 
 def _resource_access(action: str, root_resource_id: str | None = None) -> dict[str, Any] | None:
@@ -528,7 +813,12 @@ def _resolve_report_dir(task_id: str) -> Path | None:
     # ``report_dir`` 的父目录继续作为可配置报告根，实际读取始终进入任务
     # 专属目录，不能退回历史的全局 allure-current 单槽。
     configured = _get_root() / _get_settings()["report_dir"]
-    report_dir = configured.parent / "task-reports" / task_id / "current"
+    record = _get_manager().store.load(task_id) or {}
+    normalized = _normalize_task_record(record)
+    report_dir = configured.parent / "task-reports"
+    if record.get("schema_version") == 2:
+        report_dir = report_dir / normalized["project"]["project_id"]
+    report_dir = report_dir / task_id / "current"
     try:
         if not report_dir.exists():
             return None
@@ -540,7 +830,7 @@ def _resolve_report_dir(task_id: str) -> Path | None:
 def _resolve_task_report_dir(task_id: str) -> tuple[Path, dict[str, Any]] | None:
     """解析并校验与根任务绑定的 Allure 报告目录。
 
-    报告发布目录通过 ``task-reports/<task_id>/current`` 独立切换，目录中的
+    报告发布目录通过 ``task-reports/<project_id>/<task_id>/current`` 独立切换，目录中的
     ``report-meta.json`` 必须显式记录同一个 ``task_id``。仅仅拥有某个任务
     的读取权，不能借此读取当前指针中属于另一任务的报告。元数据缺失、损坏
     或绑定不一致时统一视为报告不存在，避免旧的全局报告产生跨账号泄露。
@@ -560,9 +850,395 @@ def _resolve_task_report_dir(task_id: str) -> tuple[Path, dict[str, Any]] | None
         meta = json.loads(meta_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
-    if not isinstance(meta, dict) or meta.get("task_id") != task_id:
+    record = _normalize_task_record(_get_manager().store.load(task_id) or {})
+    project_id = record.get("project", {}).get("project_id")
+    if (
+        not isinstance(meta, dict)
+        or meta.get("task_id") != task_id
+        or (
+            record.get("schema_version") == 2
+            and meta.get("project_id") != project_id
+        )
+    ):
         return None
     return report_dir, meta
+
+
+def _project_items() -> list[dict[str, Any]]:
+    """返回平台授权 Scope 与当前部署项目包的交集。"""
+
+    try:
+        packages = {item.project_id: item for item in _get_registry().list_projects()}
+    except ProjectRegistryError as exc:
+        raise SubmissionError(503, "PROJECT_PACKAGE_INVALID", "当前工具项目包无效") from exc
+    provider = _get_scope_provider()
+    if provider is None:
+        target_env = {"dev": "test", "prod": "prod"}[
+            str(_get_settings().get("platform_environment") or "dev")
+        ]
+        scopes = [
+            {
+                "project_id": package.project_id,
+                "display_name": package.display_name,
+                "platform_environment": _get_settings().get("platform_environment", "dev"),
+                "target_env": target_env,
+                "status": "local",
+                "scope_id": None,
+                "active_release": None,
+                "management_url": None,
+            }
+            for package in packages.values()
+        ]
+    else:
+        scopes = provider(request.headers.get("X-Platform-User-Context", ""))
+
+    items: list[dict[str, Any]] = []
+    for scope in scopes:
+        project_id = str(scope.get("project_id") or "")
+        package = packages.get(project_id)
+        if package is None:
+            # 平台有 Scope 但部署版本没有项目包时不能作为可执行项目暴露；
+            # 平台配置中心仍可看到 Scope，本页只展示交集。
+            continue
+        catalog = catalog_module.build_catalog(_get_root(), project_id)
+        release = scope.get("active_release") or scope.get("release")
+        items.append(
+            {
+                "project_id": project_id,
+                "display_name": package.display_name,
+                "platform_project_id": scope.get("platform_project_id"),
+                "platform_environment": scope.get("platform_environment")
+                or _get_settings().get("platform_environment"),
+                "target_env": scope.get("target_env"),
+                "scope_id": scope.get("scope_id") or scope.get("runtime_scope_id") or scope.get("id"),
+                "scope_status": scope.get("status"),
+                "release": release if isinstance(release, dict) else None,
+                "credential_profiles": scope.get("credential_profiles") or [],
+                "management_url": scope.get("management_url"),
+                "package_status": "valid" if not catalog["errors"] else "invalid",
+                "counts": {
+                    "apis": len(catalog["apis"]),
+                    "cases": len(catalog["cases"]),
+                    "flows": len(catalog["flows"]),
+                },
+            }
+        )
+    return sorted(items, key=lambda item: item["project_id"])
+
+
+def _validate_selection_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """复用 TaskManager 的资产归属校验，但不创建任务或启动子进程。"""
+
+    return _get_manager()._validate_input(  # noqa: SLF001 - 同一服务内的预检入口
+        None,
+        str(payload.get("run_type") or ""),
+        None,
+        payload.get("tag"),
+        project_id=str(payload.get("project_id") or ""),
+        api_id=payload.get("api_id"),
+        case_id=payload.get("case_id"),
+        flow_id=payload.get("flow_id"),
+    )
+
+
+def _required_credential_profiles(
+    project_id: str,
+    selection: Mapping[str, Any],
+) -> list[str]:
+    """根据当前选中的真实资产计算需要校验的逻辑 Profile。
+
+    单接口只检查该 API；Flow 检查其步骤引用 API 的并集；``all`` 用于概览，
+    表示执行项目全部资产，因此检查项目中所有非 public Profile。返回顺序优先
+    遵循 Manifest 声明，确保页面、任务快照与日志稳定可比较。
+    """
+
+    catalog = catalog_module.build_catalog(_get_root(), project_id)
+    run_type = str(selection.get("run_type") or "")
+    required: set[str] = set()
+    if run_type == "single":
+        api_id = str(selection.get("api_id") or "")
+        api = next(
+            (item for item in catalog["apis"] if item.get("id") == api_id),
+            None,
+        )
+        if api and api.get("credential_profile") not in {None, "public"}:
+            required.add(str(api["credential_profile"]))
+    elif run_type == "flow":
+        flow_id = str(selection.get("flow_id") or "")
+        flow = next(
+            (item for item in catalog["flows"] if item.get("id") == flow_id),
+            None,
+        )
+        if flow:
+            required.update(
+                str(item)
+                for item in flow.get("credential_profiles", [])
+                if item not in {None, "public"}
+            )
+    elif run_type == "all":
+        required.update(
+            str(item.get("credential_profile"))
+            for item in catalog["apis"]
+            if item.get("credential_profile") not in {None, "public"}
+        )
+
+    package = _get_registry().get(project_id)
+    declared = list(package.manifest.config_contract.credential_profiles)
+    return [profile_id for profile_id in declared if profile_id in required]
+
+
+def _missing_project_config_keys(
+    config: Mapping[str, Any],
+    required_keys: tuple[str, ...],
+) -> list[str]:
+    """返回平台 Release 未提供的项目 Manifest 逻辑配置键。
+
+    平台可返回新版 ``settings`` 或旧兼容形态 ``normal``。这里只读取普通配置，
+    不展开 Secret；旧 ``GATEWAY_API_URL`` 仅用于平滑读取迁移前已冻结的历史
+    Release，新建 Scope 的 Definition 已统一为 ``gateway.base_url``。
+    """
+
+    direct = config.get("settings")
+    values = direct if isinstance(direct, dict) else config.get("normal")
+    values = values if isinstance(values, dict) else {}
+    missing: list[str] = []
+    for logical_key in required_keys:
+        if logical_key in values:
+            value: Any = values[logical_key]
+        elif logical_key == "gateway.base_url" and "GATEWAY_API_URL" in values:
+            value = values["GATEWAY_API_URL"]
+        else:
+            value = values
+            for token in logical_key.split("."):
+                if not isinstance(value, dict) or token not in value:
+                    value = None
+                    break
+                value = value[token]
+        if value is None or value == "":
+            missing.append(logical_key)
+    return missing
+
+
+def _preflight_response(
+    payload: dict[str, Any],
+    *,
+    enforce_profiles: bool = True,
+) -> dict[str, Any]:
+    """生成概览、项目上下文和提交区共用的唯一预检状态模型。
+
+    项目切换没有选中执行资产，因此只展示 Profile 总体状态而不作为切换门禁；
+    概览“全部资产”、单接口和 Flow 预检均保持严格校验。
+    """
+
+    selection = _validate_selection_payload(payload)
+    project_id = selection["project_id"]
+    package = _get_registry().get(project_id)
+    catalog = catalog_module.build_catalog(_get_root(), project_id)
+    project = {
+        "project_id": project_id,
+        "display_name": package.display_name,
+        "package_status": "valid" if not catalog["errors"] else "invalid",
+    }
+    provider = _get_preflight_provider()
+    if provider is None:
+        runtime = {
+            "platform_environment": _get_settings().get("platform_environment", "dev"),
+            "target_env": selection["target_env"],
+            "scope_id": None,
+            "scope_status": "missing",
+            "config_source": "local",
+            "release": None,
+        }
+        return {
+            "ready": False,
+            "project": project,
+            "runtime": runtime,
+            "profiles": [],
+            "errors": [
+                {
+                    "code": "PLATFORM_CONFIG_REQUIRED",
+                    "message": "Web 任务只能使用平台 Runtime Scope 与配置快照",
+                    "scope_id": None,
+                    "release_id": None,
+                    "logical_keys": [],
+                    "management_url": None,
+                }
+            ],
+        }
+
+    context, config = provider(
+        project_id,
+        request.headers.get("X-Platform-User-Context", ""),
+    )
+    context_scope = context.get("runtime_scope")
+    context_scope = context_scope if isinstance(context_scope, dict) else {}
+    scope_id = (
+        context_scope.get("scope_id")
+        or context.get("runtime_scope_id")
+        or config.get("runtime_scope_id")
+    )
+    release_id = config.get("release_id")
+    release = (
+        {
+            "id": release_id,
+            "version": config.get("release_version"),
+            "status": "active",
+        }
+        if release_id
+        else None
+    )
+    profiles = _credential_profiles(
+        config,
+        _required_credential_profiles(project_id, selection),
+    )
+    errors: list[dict[str, Any]] = []
+    management_url = config.get("management_url") or context_scope.get("management_url")
+    if project["package_status"] != "valid":
+        errors.append(
+            {
+                "code": "PROJECT_ASSET_INVALID",
+                "message": "当前项目测试资产校验未通过",
+                "scope_id": scope_id,
+                "release_id": release_id,
+                "logical_keys": [],
+                "management_url": management_url,
+            }
+        )
+    if not scope_id:
+        errors.append(
+            {
+                "code": "RUNTIME_SCOPE_NOT_FOUND",
+                "message": "当前项目未配置可用 Runtime Scope",
+                "scope_id": None,
+                "release_id": None,
+                "logical_keys": [],
+                "management_url": management_url,
+            }
+        )
+    if not release_id:
+        errors.append(
+            {
+                "code": "CONFIG_RELEASE_NOT_ACTIVE",
+                "message": "当前 Scope 未发布可用 Release",
+                "scope_id": scope_id,
+                "release_id": None,
+                "logical_keys": [],
+                "management_url": management_url,
+            }
+        )
+    missing_config_keys = _missing_project_config_keys(
+        config,
+        package.manifest.config_contract.required_keys,
+    )
+    if missing_config_keys:
+        errors.append(
+            {
+                "code": "PROJECT_CONFIG_MISSING",
+                "message": "当前 Release 缺少项目运行所需配置",
+                "scope_id": scope_id,
+                "release_id": release_id,
+                "logical_keys": missing_config_keys,
+                "management_url": management_url,
+            }
+        )
+    missing_profiles = [
+        profile
+        for profile in profiles
+        if str(profile.get("status") or "").lower()
+        not in _READY_PROFILE_STATUSES
+    ]
+    if enforce_profiles and missing_profiles:
+        errors.append(
+            {
+                "code": "PROJECT_CREDENTIAL_MISSING",
+                "message": "当前资产所需凭证未就绪",
+                "scope_id": scope_id,
+                "release_id": release_id,
+                "logical_keys": [str(item.get("id")) for item in missing_profiles],
+                "management_url": management_url,
+            }
+        )
+    platform_environment = (
+        context_scope.get("platform_environment")
+        or context.get("platform_environment")
+        or config.get("platform_environment")
+        or config.get("environment")
+    )
+    target_env = (
+        context_scope.get("target_env")
+        or context.get("target_env")
+        or config.get("target_env")
+    )
+    runtime = {
+        "platform_environment": platform_environment,
+        "target_env": target_env,
+        "scope_id": scope_id,
+        "scope_status": context_scope.get("status") or "active",
+        "config_source": "platform",
+        "release": release,
+        "management_url": management_url,
+    }
+    expected_target = {"dev": "test", "prod": "prod"}.get(str(platform_environment))
+    if expected_target != target_env:
+        errors.append(
+            {
+                "code": "RUNTIME_SCOPE_MISMATCH",
+                "message": "平台环境与接口环境固定映射不匹配",
+                "scope_id": scope_id,
+                "release_id": release_id,
+                "logical_keys": [],
+                "management_url": management_url,
+            }
+        )
+    return {
+        "ready": not errors,
+        "project": project,
+        "runtime": runtime,
+        "profiles": profiles,
+        "errors": errors,
+    }
+
+
+def _normalize_task_record(record: dict[str, Any]) -> dict[str, Any]:
+    """读取时把 V1 Truthy 历史任务映射为 V2 展示结构，不改写旧文件。"""
+
+    if record.get("schema_version") == 2:
+        return record
+    legacy_input = record.get("input") if isinstance(record.get("input"), dict) else {}
+    normalized = dict(record)
+    normalized["schema_version"] = 1
+    normalized.setdefault(
+        "project",
+        {
+            "platform_project_id": None,
+            "project_id": "truthy",
+            "display_name": "Truthy（历史任务）",
+        },
+    )
+    normalized.setdefault(
+        "runtime",
+        {
+            "platform_environment": None,
+            "target_env": legacy_input.get("env", "test"),
+            "runtime_scope_id": None,
+            "config_source": "legacy",
+            "release_id": record.get("config_release_id"),
+            "release_version": record.get("config_release_version"),
+            "credential_profiles": [],
+        },
+    )
+    normalized.setdefault(
+        "selection",
+        {
+            "run_type": legacy_input.get("run_type"),
+            "api_id": legacy_input.get("api_id"),
+            "case_id": legacy_input.get("case_id"),
+            "flow_id": legacy_input.get("flow") or legacy_input.get("flow_id"),
+            "tag": legacy_input.get("tag"),
+        },
+    )
+    normalized.setdefault("retry_of", None)
+    return normalized
 
 
 def _register_routes(blueprint: Blueprint) -> None:
@@ -572,14 +1248,58 @@ def _register_routes(blueprint: Blueprint) -> None:
 
     @blueprint.get("/")
     def index_page():
-        """首页：执行表单、凭证状态、报告入口与最近任务。"""
-        root = _get_root()
+        """概览页：运行上下文、快捷入口、统计与最近任务。"""
         return render_template(
             "index.html",
             base_path=_get_settings()["base_path"],
             platform_home_url=_get_settings()["platform_home_url"],
-            envs=credentials.list_envs(root),
-            flows=credentials.list_flows(root),
+            platform_environment=_get_settings().get("platform_environment", "dev"),
+        )
+
+    @blueprint.get("/projects")
+    def projects_page():
+        """项目切换页；仅展示授权 Scope 与有效项目包的交集。"""
+
+        return render_template(
+            "projects.html",
+            base_path=_get_settings()["base_path"],
+            platform_home_url=_get_settings()["platform_home_url"],
+            platform_environment=_get_settings().get("platform_environment", "dev"),
+        )
+
+    @blueprint.get("/tasks/new/single")
+    def new_single_task_page():
+        """创建单接口任务页。"""
+
+        return render_template(
+            "task_form.html",
+            base_path=_get_settings()["base_path"],
+            platform_home_url=_get_settings()["platform_home_url"],
+            platform_environment=_get_settings().get("platform_environment", "dev"),
+            task_mode="single",
+        )
+
+    @blueprint.get("/tasks/new/flow")
+    def new_flow_task_page():
+        """创建 Flow 任务页。"""
+
+        return render_template(
+            "task_form.html",
+            base_path=_get_settings()["base_path"],
+            platform_home_url=_get_settings()["platform_home_url"],
+            platform_environment=_get_settings().get("platform_environment", "dev"),
+            task_mode="flow",
+        )
+
+    @blueprint.get("/tasks")
+    def tasks_page():
+        """任务记录页。"""
+
+        return render_template(
+            "tasks.html",
+            base_path=_get_settings()["base_path"],
+            platform_home_url=_get_settings()["platform_home_url"],
+            platform_environment=_get_settings().get("platform_environment", "dev"),
         )
 
     @blueprint.get("/tasks/<task_id>")
@@ -590,6 +1310,7 @@ def _register_routes(blueprint: Blueprint) -> None:
             "task_detail.html",
             base_path=_get_settings()["base_path"],
             platform_home_url=_get_settings()["platform_home_url"],
+            platform_environment=_get_settings().get("platform_environment", "dev"),
             task_id=task_id,
         )
 
@@ -600,9 +1321,47 @@ def _register_routes(blueprint: Blueprint) -> None:
             "catalog.html",
             base_path=_get_settings()["base_path"],
             platform_home_url=_get_settings()["platform_home_url"],
+            platform_environment=_get_settings().get("platform_environment", "dev"),
         )
 
     # ---------------- 任务接口 ----------------
+
+    @blueprint.get("/api/projects")
+    def projects_api():
+        """返回授权 Scope 与本地项目包的可执行交集。"""
+
+        items = _project_items()
+        return jsonify({"items": items, "total": len(items)})
+
+    @blueprint.get("/api/projects/<project_id>/context")
+    def project_context_api(project_id: str):
+        """返回项目只读运行上下文；不包含配置值或 Secret。"""
+
+        items = {item["project_id"]: item for item in _project_items()}
+        item = items.get(project_id)
+        if item is None:
+            abort(404, description=f"项目不可用: {project_id}")
+        preflight = _preflight_response(
+            {"project_id": project_id, "run_type": "all"},
+            enforce_profiles=False,
+        )
+        return jsonify({**item, "preflight": preflight})
+
+    @blueprint.post("/api/preflight")
+    def preflight_api():
+        """执行服务端资产 + Scope/Release/Profile 预检，不创建任务。"""
+
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            raise SubmissionError(400, "INVALID_PARAMS", "请求体必须是 JSON 对象")
+        forbidden = sorted(FORBIDDEN_TASK_OVERRIDE_KEYS & set(payload))
+        if forbidden:
+            raise SubmissionError(
+                400,
+                "INVALID_PARAMS",
+                f"不得覆盖平台运行字段: {', '.join(forbidden)}",
+            )
+        return jsonify(_preflight_response(payload))
 
     @blueprint.post("/api/tasks")
     def submit_task():
@@ -610,13 +1369,37 @@ def _register_routes(blueprint: Blueprint) -> None:
         payload = request.get_json(silent=True)
         if not isinstance(payload, dict):
             raise SubmissionError(400, "INVALID_PARAMS", "请求体必须是 JSON 对象")
-        record = _get_manager().submit(
-            env=str(payload.get("env") or ""),
-            run_type=str(payload.get("run_type") or ""),
-            flow=payload.get("flow"),
-            tag=payload.get("tag"),
-            signed_user_context=request.headers.get("X-Platform-User-Context", ""),
-        )
+        forbidden = sorted(FORBIDDEN_TASK_OVERRIDE_KEYS & set(payload))
+        if forbidden:
+            raise SubmissionError(
+                400,
+                "INVALID_PARAMS",
+                f"不得覆盖平台运行字段: {', '.join(forbidden)}",
+            )
+        signed_context = request.headers.get("X-Platform-User-Context", "")
+        if payload.get("project_id"):
+            preflight = _preflight_response(payload)
+            if not preflight["ready"]:
+                first = preflight["errors"][0]
+                raise SubmissionError(409, first["code"], first["message"])
+            record = _get_manager().submit(
+                project_id=str(payload.get("project_id") or ""),
+                run_type=str(payload.get("run_type") or ""),
+                api_id=payload.get("api_id"),
+                case_id=payload.get("case_id"),
+                flow_id=payload.get("flow_id"),
+                tag=payload.get("tag"),
+                signed_user_context=signed_context,
+            )
+        else:
+            # 兼容旧调用方：env 只能映射 Truthy，不接受任何新运行覆盖字段。
+            record = _get_manager().submit(
+                env=str(payload.get("env") or ""),
+                run_type=str(payload.get("run_type") or ""),
+                flow=payload.get("flow"),
+                tag=payload.get("tag"),
+                signed_user_context=signed_context,
+            )
         return (
             jsonify(
                 {
@@ -638,7 +1421,43 @@ def _register_routes(blueprint: Blueprint) -> None:
             if getattr(exc, "code", None) == 404:
                 return jsonify({"items": [], "page": page, "page_size": page_size, "total": 0})
             raise
-        records = _visible_task_records(_get_manager().store.list(), decision)
+        records = [
+            _normalize_task_record(item)
+            for item in _visible_task_records(_get_manager().store.list(), decision)
+        ]
+        project_filter = request.args.get("project_id", "all").strip()
+        status_filter = request.args.get("status", "").strip()
+        run_type_filter = request.args.get("run_type", "").strip()
+        date_from = request.args.get("date_from", "").strip()
+        date_to = request.args.get("date_to", "").strip()
+
+        def matches(record: dict[str, Any]) -> bool:
+            """应用 P0 列表筛选；非法日期由请求边界直接返回 400。"""
+
+            if project_filter not in {"", "all"} and record["project"]["project_id"] != project_filter:
+                return False
+            if status_filter and record.get("status") != status_filter:
+                return False
+            if run_type_filter and record["selection"].get("run_type") != run_type_filter:
+                return False
+            created = str(record.get("created_at") or "")[:10]
+            if date_from and created < date_from:
+                return False
+            if date_to and created > date_to:
+                return False
+            return True
+
+        if date_from:
+            try:
+                datetime.fromisoformat(date_from)
+            except ValueError:
+                abort(400, description="date_from 必须为 ISO 日期")
+        if date_to:
+            try:
+                datetime.fromisoformat(date_to)
+            except ValueError:
+                abort(400, description="date_to 必须为 ISO 日期")
+        records = [record for record in records if matches(record)]
         total = len(records)
         start = (page - 1) * page_size
         items = records[start : start + page_size]
@@ -649,7 +1468,7 @@ def _register_routes(blueprint: Blueprint) -> None:
     @blueprint.get("/api/tasks/<task_id>")
     def task_detail_api(task_id: str):
         """任务详情：记录全量字段。"""
-        return jsonify(_require_task(task_id))
+        return jsonify(_normalize_task_record(_require_task(task_id)))
 
     @blueprint.post("/api/tasks/<task_id>/cancel")
     def cancel_task(task_id: str):
@@ -658,9 +1477,30 @@ def _register_routes(blueprint: Blueprint) -> None:
         record = _get_manager().cancel(task_id)
         return jsonify({"id": record["id"], "status": record["status"]})
 
+    @blueprint.post("/api/tasks/<task_id>/retry")
+    def retry_task(task_id: str):
+        """重试创建新任务，旧任务与旧快照保持不变。"""
+
+        _require_task(task_id, "retry")
+        record = _get_manager().retry(
+            task_id,
+            signed_user_context=request.headers.get("X-Platform-User-Context", ""),
+        )
+        return (
+            jsonify(
+                {
+                    "id": record["id"],
+                    "status": record["status"],
+                    "retry_of": task_id,
+                    "created_at": record["created_at"],
+                }
+            ),
+            201,
+        )
+
     @blueprint.get("/api/tasks/<task_id>/result")
     def task_result(task_id: str):
-        """任务结果摘要：统计 + 失败清单；无 JUnit 时给出原因码。"""
+        """任务结果摘要：统计 + 全量用例 + 失败清单；无 JUnit 时给出原因码。"""
         record = _require_task(task_id)
         root = _get_root()
         parsed = parse_junit_file(root / record["junit_file"], root)
@@ -670,6 +1510,7 @@ def _register_routes(blueprint: Blueprint) -> None:
                     "status": record["status"],
                     "result_available": False,
                     "summary": None,
+                    "cases": [],
                     "failed_cases": [],
                     "reason_code": "JUNIT_NOT_GENERATED",
                 }
@@ -679,6 +1520,7 @@ def _register_routes(blueprint: Blueprint) -> None:
                 "status": record["status"],
                 "result_available": True,
                 "summary": parsed["summary"],
+                "cases": parsed["cases"],
                 "failed_cases": parsed["failed_cases"],
             }
         )
@@ -705,7 +1547,15 @@ def _register_routes(blueprint: Blueprint) -> None:
                     {"log_file": log_file, "lines": lines[-tail:], "source": "framework_log"}
                 )
 
-        console_path = _get_manager().store.console_log_path(task_id)
+        normalized = _normalize_task_record(record)
+        project_id = normalized["project"]["project_id"]
+        legacy_mode = bool(record.get("input", {}).get("legacy_mode")) or record.get(
+            "schema_version"
+        ) != 2
+        console_path = _get_manager().store.console_log_path(
+            task_id,
+            None if legacy_mode else project_id,
+        )
         if console_path.is_file():
             from web.redaction import DEFAULT_MAX_LENGTH, redact_text
 
@@ -727,7 +1577,25 @@ def _register_routes(blueprint: Blueprint) -> None:
     @blueprint.get("/api/catalog")
     def catalog_api():
         """用例库清单；单文件解析失败进入 errors 数组。"""
-        return jsonify(catalog_module.build_catalog(_get_root()))
+        project_id = request.args.get("project_id", "").strip() or None
+        if project_id is not None and _get_scope_provider() is not None:
+            allowed = {item["project_id"] for item in _project_items()}
+            if project_id not in allowed:
+                abort(404, description=f"项目不可用: {project_id}")
+        snapshot = catalog_module.build_catalog(_get_root(), project_id)
+        if project_id is None:
+            # 兼容旧版无项目参数的只读调用方；新版页面始终显式传 project_id，
+            # 因此仍可获得并核对项目归属字段，不会影响多项目隔离。
+            snapshot.pop("project_id", None)
+        query = request.args.get("query", "").strip().lower()
+        selected_type = request.args.get("type", "").strip()
+        if query and selected_type in {"apis", "cases", "flows"}:
+            snapshot[selected_type] = [
+                item
+                for item in snapshot[selected_type]
+                if query in json.dumps(item, ensure_ascii=False).lower()
+            ]
+        return jsonify(snapshot)
 
     @blueprint.get("/api/credentials/status")
     def credentials_status():

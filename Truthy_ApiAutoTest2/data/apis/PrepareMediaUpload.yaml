@@ -1,5 +1,0 @@
-id: PrepareMediaUpload
-name: 准备媒体上传
-request:
-  service_name: tool.people_insight.MediaService
-  method_name: PrepareMediaUpload

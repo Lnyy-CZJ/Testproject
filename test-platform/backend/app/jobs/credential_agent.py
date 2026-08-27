@@ -203,7 +203,12 @@ def _envelope_data(body: dict[str, Any], request_id: str) -> dict[str, Any]:
 def _gateway_session(normal: dict[str, Any], secrets: dict[str, str]) -> dict[str, Any]:
     """优先 RefreshSession；Refresh 不可用时调用正式匿名建会话接口。"""
 
-    url = str(normal.get("SEARCH_API_URL") or normal.get("GATEWAY_API_URL") or "").strip()
+    url = str(
+        normal.get("SEARCH_API_URL")
+        or normal.get("gateway.base_url")
+        or normal.get("GATEWAY_API_URL")
+        or ""
+    ).strip()
     if not url:
         raise ValueError("缺少 Gateway 会话接口地址")
     now = datetime.now(UTC)

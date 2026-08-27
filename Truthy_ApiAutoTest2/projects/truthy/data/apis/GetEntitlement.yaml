@@ -1,0 +1,6 @@
+id: GetEntitlement
+name: 获取当前订阅权益
+credential_profile: anonymous_session
+request:
+  service_name: tool.subscription.SubscriptionService
+  method_name: GetEntitlement

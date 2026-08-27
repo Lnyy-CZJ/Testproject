@@ -11,6 +11,7 @@ class ConfigAckRequest(BaseModel):
     """工具确认已成功加载配置 Release。"""
 
     release_id: str
+    runtime_context_id: str | None = Field(default=None, min_length=8, max_length=64)
 
 
 class ToolAuditEventRequest(BaseModel):
@@ -40,6 +41,7 @@ class CredentialStatusRequest(BaseModel):
 class SessionWriteRequest(BaseModel):
     """工具原子写回动态会话。"""
 
+    runtime_context_id: str | None = Field(default=None, min_length=8, max_length=64)
     expected_version: int = Field(ge=0)
     values: dict[str, Any]
 
@@ -59,6 +61,9 @@ class RuntimeContextCreateRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    project_id: str | None = Field(
+        default=None, pattern=r"^[a-z][a-z0-9-]{1,31}$"
+    )
     resource_type: str = Field(pattern="^(task|run|request)$")
     resource_id: str = Field(
         min_length=1,
@@ -75,6 +80,8 @@ class RuntimeContextResponse(BaseModel):
     environment_id: str
     expires_at: datetime
     resource_snapshot: dict[str, str | None]
+    runtime_scope: "InternalRuntimeScope | None" = None
+    snapshot_selector: "RuntimeSnapshotSelector | None" = None
 
 
 class ResourceAccessCheckRequest(BaseModel):
@@ -119,6 +126,7 @@ class RuntimeSnapshotSelector(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    runtime_scope_id: str | None = None
     release_id: str | None = None
     system_secret_versions: dict[str, str] = Field(default_factory=dict)
     credential_versions: dict[str, int] = Field(default_factory=dict)
@@ -153,3 +161,43 @@ class RuntimeConfigResponse(BaseModel):
     subject_user_id: str | None = None
     runtime_context_expires_at: datetime | None = None
     snapshot_selector: RuntimeSnapshotSelector | None = None
+    runtime_scope_id: str | None = None
+    platform_environment: str | None = None
+    platform_project_id: str | None = None
+    project_id: str | None = None
+    target_env: str | None = None
+    config_source: str | None = None
+
+
+class InternalRuntimeScope(BaseModel):
+    """内部工具可见的 Scope 元数据，不包含配置值或 Secret 状态细节。"""
+
+    scope_id: str
+    platform_project_id: str
+    project_id: str
+    display_name: str | None = None
+    platform_environment: str
+    target_env: str
+    status: str | None = None
+    is_default: bool | None = None
+
+
+class ActiveReleaseMetadata(BaseModel):
+    """Scope 列表中的当前 Release 摘要。"""
+
+    id: str
+    version: int
+    status: str
+
+
+class InternalRuntimeScopeItem(InternalRuntimeScope):
+    """Scope 列表项，附带安全管理深链及可选 Release 摘要。"""
+
+    active_release: ActiveReleaseMetadata | None = None
+    management_url: str
+
+
+class InternalRuntimeScopeListResponse(BaseModel):
+    """当前签名身份有权使用的 Scope 列表。"""
+
+    items: list[InternalRuntimeScopeItem]

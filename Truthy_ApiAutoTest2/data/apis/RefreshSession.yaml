@@ -1,5 +1,0 @@
-id: RefreshSession
-name: 刷新匿名会话 Token
-request:
-  service_name: tool.identity.IdentityService
-  method_name: RefreshSession

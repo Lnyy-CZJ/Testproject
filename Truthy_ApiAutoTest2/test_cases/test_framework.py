@@ -405,7 +405,9 @@ def test_http_client_logs_masked_request_and_response(
 
     assert "请求数据" in caplog.text
     assert "响应数据" in caplog.text
-    assert "user_1" in caplog.text
+    # 项目隔离后用户标识也属于会话材料，日志只保留字段名而不保留明文值。
+    assert '"user_id": "***"' in caplog.text
+    assert "user_1" not in caplog.text
     assert '"code": 0' in caplog.text
     assert "very-secret-token" not in caplog.text
     assert "admin-session-secret" not in caplog.text
@@ -474,7 +476,9 @@ def test_build_pytest_args_supports_filters() -> None:
 
     assert args == [
         "test_cases",
-        "--env=test",
+        "--project=truthy",
+        "--target-env=test",
+        "--config-source=local",
         "-k",
         "single_api",
         "-m",

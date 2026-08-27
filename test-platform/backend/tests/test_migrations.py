@@ -507,3 +507,129 @@ def test_user_scope_downgrade_rejects_duplicate_profile_names_with_guidance(
         assert "先重命名或合并同名 LLM Profile" in exc.stderr
     else:
         raise AssertionError("存在同名 LLM Profile 时 0018 降级必须被拒绝")
+
+
+def test_runtime_scope_migration_adds_real_constraints_without_unsafe_activation(
+    tmp_path: Path,
+) -> None:
+    """0021 必须建立 Scope/凭证隔离结构，并保留无法确认归属的 legacy 激活。"""
+
+    database_path = tmp_path / "runtime-scope.db"
+    database_url = f"sqlite:///{database_path}"
+    run_alembic(database_url, "upgrade", "20260824_0019")
+
+    connection = sqlite3.connect(database_path)
+    tool_ids = [row[0] for row in connection.execute("SELECT id FROM tools")]
+    manifest_path = tmp_path / "runtime-scope-project-access-manifest.json"
+    manifest_path.write_text(json.dumps({
+        "user_roles": {},
+        "tool_projects": {tool_id: "project_legacy" for tool_id in tool_ids},
+        "memberships": [],
+        "required_environments": ["prod"],
+        "source_counts": {
+            "prod:truthy-search": 0,
+            "prod:api-autotest": 0,
+            "prod:functional-test-agent": 0,
+            "prod:api-test-agent": 0,
+            "prod:log-filter": 0,
+        },
+        "resources": [],
+    }), encoding="utf-8")
+    connection.close()
+    environment = os.environ.copy()
+    environment["DATABASE_URL"] = database_url
+    subprocess.run(
+        [
+            sys.executable, "-m", "app.migrate_project_access",
+            "--manifest", str(manifest_path), "--required-environment", "prod", "--apply",
+        ],
+        cwd=BACKEND_ROOT, env=environment, check=True, capture_output=True, text=True,
+    )
+    run_alembic(database_url, "upgrade", "20260824_0020")
+
+    connection = sqlite3.connect(database_path)
+    connection.execute(
+        "INSERT INTO config_releases "
+        "(id, environment_id, owner_type, owner_id, version, revision, status, created_by) "
+        "VALUES ('rel_legacy_unconfirmed', 'dev', 'tool', 'api-autotest', 99, 1, 'active', 'migration-test')"
+    )
+    connection.execute(
+        "INSERT INTO config_activations "
+        "(environment_id, owner_type, owner_id, active_release_id) "
+        "VALUES ('dev', 'tool', 'api-autotest', 'rel_legacy_unconfirmed')"
+    )
+    connection.commit()
+    connection.close()
+
+    run_alembic(database_url, "upgrade", "20260827_0021")
+    connection = sqlite3.connect(database_path)
+    connection.row_factory = sqlite3.Row
+    assert connection.execute(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='tool_project_scopes'"
+    ).fetchone()[0] == 1
+    assert {
+        "id", "environment_id", "tool_id", "platform_project_id", "project_id",
+        "target_env", "display_name", "status", "is_default", "revision",
+        "created_by", "updated_by", "created_at", "updated_at",
+    }.issubset({
+        row[1] for row in connection.execute("PRAGMA table_info(tool_project_scopes)")
+    })
+    assert {
+        "runtime_scope_id",
+    }.issubset({row[1] for row in connection.execute("PRAGMA table_info(credentials)")})
+    assert "runtime_scope_id" in {
+        row[1] for row in connection.execute("PRAGMA table_info(user_credentials)")
+    }
+    assert "runtime_scope_id" in {
+        row[1] for row in connection.execute("PRAGMA table_info(runtime_contexts)")
+    }
+    assert (
+        "environment_id", "tool_id", "platform_project_id", "project_id", "target_env"
+    ) in _unique_index_columns(connection, "tool_project_scopes")
+    seeded = connection.execute(
+        "SELECT status, is_default FROM tool_project_scopes "
+        "WHERE tool_id='api-autotest' AND environment_id='dev' AND project_id='truthy'"
+    ).fetchone()
+    assert seeded is not None
+    assert (seeded["status"], seeded["is_default"]) == ("disabled", 1)
+    assert connection.execute(
+        "SELECT COUNT(*) FROM config_activations "
+        "WHERE owner_type='tool_project_scope'"
+    ).fetchone()[0] == 0
+    assert connection.execute(
+        "SELECT active_release_id FROM config_activations "
+        "WHERE owner_type='tool' AND owner_id='api-autotest'"
+    ).fetchone()[0] == "rel_legacy_unconfirmed"
+    runtime_definitions = connection.execute(
+        "SELECT key, value_type, required FROM config_definitions "
+        "WHERE owner_type='tool' AND owner_id='api-autotest' "
+        "AND (key LIKE 'gateway.%' OR key LIKE 'flow.analysis.%') ORDER BY key"
+    ).fetchall()
+    assert [(row["key"], row["value_type"], row["required"]) for row in runtime_definitions] == [
+        ("flow.analysis.poll_interval_seconds", "float", 0),
+        ("flow.analysis.timeout_seconds", "float", 0),
+        ("gateway.base_url", "url", 1),
+        ("gateway.comm", "json", 1),
+        ("gateway.path", "logical_path", 1),
+    ]
+    connection.close()
+
+    run_alembic(database_url, "downgrade", "20260824_0020")
+    connection = sqlite3.connect(database_path)
+    assert connection.execute(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='tool_project_scopes'"
+    ).fetchone()[0] == 0
+    assert "runtime_scope_id" not in {
+        row[1] for row in connection.execute("PRAGMA table_info(credentials)")
+    }
+    assert connection.execute(
+        "SELECT COUNT(*) FROM config_releases WHERE id='rel_legacy_unconfirmed'"
+    ).fetchone()[0] == 1
+    assert connection.execute(
+        "SELECT key FROM config_definitions WHERE id='api-autotest.GATEWAY_API_URL'"
+    ).fetchone()[0] == "GATEWAY_API_URL"
+    assert connection.execute(
+        "SELECT COUNT(*) FROM config_definitions "
+        "WHERE id LIKE 'api-autotest.runtime.%'"
+    ).fetchone()[0] == 0
+    connection.close()

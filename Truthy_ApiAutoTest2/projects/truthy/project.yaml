@@ -1,0 +1,19 @@
+schema_version: 1
+project_id: truthy
+display_name: Truthy People Insight
+
+capabilities:
+  - gateway
+  - signed_binary_upload
+
+config_contract:
+  required_keys:
+    - gateway.base_url
+    - gateway.path
+    - gateway.comm
+  credential_profiles:
+    - anonymous_session
+    - admin_session
+
+redaction:
+  extra_keys: []

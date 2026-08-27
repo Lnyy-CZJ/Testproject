@@ -827,3 +827,416 @@ class TestStartupRecovery:
         )
         assert record["status"] == "failed"
         assert record["error_message"] == "服务重启，任务中断"
+
+
+class TestMultiProjectWebContract:
+    """最终七页与业务 API 契约，覆盖 Scope 交集、预检和任务 V2。"""
+
+    @staticmethod
+    def _platform_client(multi_project_root, monkeypatch, runtime_normal=None):
+        """构造平台模式应用；所有外部响应均为完整的 Scope 契约夹具。"""
+
+        settings = make_settings("/api-autotest")
+        settings.update(
+            {
+                "config_source": "platform",
+                "platform_api_url": "http://platform.invalid/api/v1",
+                "platform_environment": "dev",
+            }
+        )
+        token_file = multi_project_root / "platform-client-token"
+        token_file.write_text("tool-token", encoding="utf-8")
+        settings["platform_client_token_file"] = str(token_file)
+        calls: list[tuple[str, dict]] = []
+        if runtime_normal is None:
+            runtime_normal = {
+                "gateway.base_url": "https://gateway.test.invalid",
+                "gateway.path": "/gateway/invoke",
+                "gateway.comm": {"platform": "ios", "locale": "zh-Hans-CN"},
+                "flow.analysis.poll_interval_seconds": 1,
+                "flow.analysis.timeout_seconds": 120,
+            }
+
+        scopes = [
+            {
+                "id": "scope-truthy-dev-test",
+                "runtime_scope_id": "scope-truthy-dev-test",
+                "tool_id": "api-autotest",
+                "platform_project_id": "platform-truthy",
+                "project_id": "truthy",
+                "display_name": "Truthy Gateway",
+                "platform_environment": "dev",
+                "target_env": "test",
+                "status": "active",
+                "release": {"id": "release-truthy-v2", "version": 2, "status": "active"},
+                "credential_profiles": [
+                    {"id": "truthy_session", "status": "ready", "version": 2}
+                ],
+                "management_url": "/settings/config?scope_id=scope-truthy-dev-test",
+            },
+            {
+                "id": "scope-dating-dev-test",
+                "runtime_scope_id": "scope-dating-dev-test",
+                "tool_id": "api-autotest",
+                "platform_project_id": "platform-dating",
+                "project_id": "dating",
+                "display_name": "Dating AI Assistant",
+                "platform_environment": "dev",
+                "target_env": "test",
+                "status": "active",
+                "release": {"id": "release-dating-v3", "version": 3, "status": "active"},
+                "credential_profiles": [
+                    {"id": "anonymous_session", "status": "ready", "version": 4}
+                ],
+                "management_url": "/settings/config?scope_id=scope-dating-dev-test",
+            },
+            {
+                "id": "scope-not-deployed",
+                "runtime_scope_id": "scope-not-deployed",
+                "tool_id": "api-autotest",
+                "platform_project_id": "platform-ghost",
+                "project_id": "ghost",
+                "display_name": "Ghost",
+                "platform_environment": "dev",
+                "target_env": "test",
+                "status": "active",
+                "release": {"id": "release-ghost", "version": 1, "status": "active"},
+                "credential_profiles": [],
+            },
+        ]
+
+        def fake_get(url, **kwargs):
+            calls.append((url, kwargs))
+            if url.endswith("/internal/tools/api-autotest/runtime-scopes"):
+                return _FakeRuntimeConfigResponse({"items": scopes})
+            if url.endswith("/internal/tools/api-autotest/runtime-config"):
+                return _FakeRuntimeConfigResponse(
+                    {
+                        "tool_id": "api-autotest",
+                        "project_id": "dating",
+                        "runtime_scope_id": "scope-dating-dev-test",
+                        "platform_project_id": "platform-dating",
+                        "environment": "dev",
+                        "target_env": "test",
+                        "release_id": "release-dating-v3",
+                        "release_version": 3,
+                        "snapshot_selector": {
+                            "runtime_scope_id": "scope-dating-dev-test",
+                            "release_id": "release-dating-v3",
+                            "release_version": 3,
+                        },
+                        "configured_secret_keys": ["ACCESS_TOKEN"],
+                        "credential_metadata": {
+                            "providers": {
+                                "gateway_session": {
+                                    "status": "healthy", "credential_version": 4
+                                },
+                                "admin_login": {"status": "missing"},
+                            }
+                        },
+                        "normal": runtime_normal,
+                        "secrets": {},
+                        "management_url": "/settings/config?scope_id=scope-dating-dev-test",
+                    }
+                )
+            raise AssertionError(f"unexpected GET {url}")
+
+        def fake_post(url, **kwargs):
+            calls.append((url, kwargs))
+            if url.endswith("/internal/tools/api-autotest/runtime-contexts"):
+                project_id = kwargs["json"]["project_id"]
+                assert project_id in {"truthy", "dating"}
+                scope_id = f"scope-{project_id}-dev-test"
+                return _FakeRuntimeConfigResponse(
+                    {
+                        "runtime_context_id": f"rtx-{project_id}-user-1",
+                        "expires_at": "2026-08-27T18:00:00Z",
+                        "project_id": project_id,
+                        "runtime_scope_id": scope_id,
+                        "platform_project_id": f"platform-{project_id}",
+                        "platform_environment": "dev",
+                        "target_env": "test",
+                        "resource_snapshot": {
+                            "owner_user_id": "user-1",
+                            "access_scope_snapshot": "project",
+                            "project_id_snapshot": f"platform-{project_id}",
+                            "authorization_source_snapshot": "project-member",
+                        },
+                    }
+                )
+            if url.endswith("/internal/tools/api-autotest/runtime-config/materialize"):
+                return _FakeRuntimeConfigResponse(
+                    {
+                        "tool_id": "api-autotest",
+                        "project_id": "dating",
+                        "runtime_scope_id": "scope-dating-dev-test",
+                        "platform_project_id": "platform-dating",
+                        "environment": "dev",
+                        "target_env": "test",
+                        "release_id": "release-dating-v3",
+                        "release_version": 3,
+                        "normal": runtime_normal,
+                        "secrets": {"ACCESS_TOKEN": "runtime-only-secret"},
+                        "credential_metadata": {
+                            "providers": {
+                                "gateway_session": {
+                                    "status": "healthy",
+                                    "credential_id": "credential-dating-session",
+                                    "credential_version": 4,
+                                }
+                            }
+                        },
+                        "configured_secret_keys": ["ACCESS_TOKEN"],
+                    }
+                )
+            if url.endswith("/internal/tools/api-autotest/resource-access/check"):
+                return _FakeRuntimeConfigResponse(
+                    {
+                        "allowed": True,
+                        "user_id": "user-1",
+                        "data_scope": "global",
+                        "managed_project_ids": [],
+                    }
+                )
+            if url.endswith("/internal/tools/api-autotest/audit-events"):
+                return _FakeRuntimeConfigResponse({})
+            raise AssertionError(f"unexpected POST {url}")
+
+        monkeypatch.setattr("web.app.requests.get", fake_get)
+        monkeypatch.setattr("web.app.requests.post", fake_post)
+        app = create_app(project_root=multi_project_root, settings=settings)
+        app.config["TESTING"] = True
+        client = app.test_client()
+        client.set_cookie("tp_csrf", "csrf-token")
+        return client, app.config["AUTOTEST_MANAGER"], calls
+
+    def test_seven_pages_render_and_refresh_under_base_path(
+        self, multi_project_root, monkeypatch
+    ):
+        client, manager, _calls = self._platform_client(multi_project_root, monkeypatch)
+        task_id = "20260827-120000-a1b2"
+        manager.store.save(
+            {
+                "schema_version": 2,
+                "id": task_id,
+                "status": "succeeded",
+                "project": {"project_id": "dating", "display_name": "Dating AI Assistant"},
+                "runtime": {"target_env": "test"},
+                "selection": {"run_type": "single", "api_id": "GetMe"},
+                "created_at": "2026-08-27T12:00:00+08:00",
+                "resource_snapshot": {},
+            }
+        )
+        headers = {
+            "X-Platform-Resource-Context": "opaque-global",
+            "X-Platform-User-Context": "signed-user",
+        }
+        expected_pages = {
+            "/api-autotest/": "overview",
+            "/api-autotest/projects": "projects",
+            "/api-autotest/tasks/new/single": "task-single",
+            "/api-autotest/tasks/new/flow": "task-flow",
+            "/api-autotest/catalog": "catalog",
+            "/api-autotest/tasks": "tasks",
+            f"/api-autotest/tasks/{task_id}": "task-detail",
+        }
+        for path, page_name in expected_pages.items():
+            response = client.get(path, headers=headers)
+            assert response.status_code == 200, path
+            body = response.get_data(as_text=True)
+            assert f'data-page="{page_name}"' in body
+            assert 'href="/api-autotest/projects"' in body
+            assert "项目配置" not in body
+            assert "配置异常" not in body
+            assert "保存草稿" not in body
+
+    def test_projects_are_scope_package_intersection_and_catalog_is_project_scoped(
+        self, multi_project_root, monkeypatch
+    ):
+        client, _manager, _calls = self._platform_client(multi_project_root, monkeypatch)
+        headers = {"X-Platform-User-Context": "signed-user"}
+        projects = client.get("/api-autotest/api/projects", headers=headers).get_json()
+
+        assert projects["total"] == 2
+        assert [item["project_id"] for item in projects["items"]] == ["dating", "truthy"]
+        assert all(item["target_env"] == "test" for item in projects["items"])
+        assert projects["items"][0]["counts"] == {"apis": 1, "cases": 1, "flows": 1}
+
+        catalog = client.get(
+            "/api-autotest/api/catalog?project_id=dating&type=apis",
+            headers=headers,
+        ).get_json()
+        assert catalog["project_id"] == "dating"
+        assert [item["id"] for item in catalog["apis"]] == ["GetMe"]
+        assert catalog["cases"][0]["id"] == "get_me_success"
+        assert catalog["flows"][0]["id"] == "dating_demo_flow"
+        assert catalog["flows"][0]["steps"] == [
+            {
+                "id": "get_me",
+                "kind": "api",
+                "api_id": "GetMe",
+                "name": "Dating AI Assistant 当前用户",
+            }
+        ]
+        assert catalog["flows"][0]["credential_profiles"] == [
+            "anonymous_session"
+        ]
+
+        # 项目切换本身不执行 API，不能因为项目内某个可选 Profile 缺失而禁用；
+        # 真正提交单接口/Flow 时再按所选资产严格校验。
+        context = client.get(
+            "/api-autotest/api/projects/truthy/context",
+            headers=headers,
+        ).get_json()
+        assert context["preflight"]["ready"] is True
+        assert context["preflight"]["profiles"] == [
+            {"id": "truthy_session", "status": "missing", "version": None}
+        ]
+
+    def test_preflight_and_submit_share_scope_and_reject_runtime_overrides(
+        self, multi_project_root, monkeypatch
+    ):
+        client, manager, calls = self._platform_client(multi_project_root, monkeypatch)
+        patch_command(
+            monkeypatch,
+            manager,
+            "import os; "
+            "assert os.environ['PLATFORM_CREDENTIAL_ID'] == 'credential-dating-session'; "
+            "assert os.environ['PLATFORM_CREDENTIAL_VERSION'] == '4'; print('ok')",
+        )
+        headers = {
+            "X-CSRF-Token": "csrf-token",
+            "X-Platform-User-Context": "signed-user",
+        }
+        selection = {
+            "project_id": "dating",
+            "run_type": "single",
+            "api_id": "GetMe",
+            "case_id": "get_me_success",
+            "tag": "smoke",
+        }
+
+        preflight = client.post(
+            "/api-autotest/api/preflight", headers=headers, json=selection
+        )
+        assert preflight.status_code == 200
+        preflight_body = preflight.get_json()
+        assert preflight_body["ready"] is True
+        assert preflight_body["runtime"]["scope_id"] == "scope-dating-dev-test"
+        assert preflight_body["runtime"]["target_env"] == "test"
+        assert preflight_body["profiles"] == [
+            {"id": "anonymous_session", "status": "ready", "version": 4}
+        ]
+
+        for forbidden in (
+            "target_env",
+            "gateway_url",
+            "release_id",
+            "timeout",
+            "poll_interval_seconds",
+            "secrets",
+            "runtime_scope_id",
+        ):
+            response = client.post(
+                "/api-autotest/api/tasks",
+                headers=headers,
+                json={**selection, forbidden: "browser-override"},
+            )
+            assert response.status_code == 400, forbidden
+            assert response.get_json()["error_code"] == "INVALID_PARAMS"
+
+        submitted = client.post(
+            "/api-autotest/api/tasks", headers=headers, json=selection
+        )
+        assert submitted.status_code == 201
+        manager.wait_idle()
+        task_id = submitted.get_json()["id"]
+        record = manager.store.load(task_id)
+        assert record["schema_version"] == 2
+        assert record["status"] == "succeeded", record
+        assert record["project"]["project_id"] == "dating"
+        assert record["runtime"]["runtime_scope_id"] == "scope-dating-dev-test"
+        assert record["runtime"]["target_env"] == "test"
+        assert record["selection"]["api_id"] == "GetMe"
+        assert record["selection"]["case_id"] == "get_me_success"
+        assert not any(
+            call[1].get("json", {}).get("target_env") == "browser-override"
+            for call in calls
+        )
+
+    def test_preflight_reports_manifest_config_keys_missing_from_release(
+        self, multi_project_root, monkeypatch
+    ):
+        """Scope/Release 就绪也不能掩盖当前项目 Manifest 的缺失配置键。"""
+
+        client, _manager, _calls = self._platform_client(
+            multi_project_root,
+            monkeypatch,
+            runtime_normal={
+                "gateway.base_url": "https://gateway.test.invalid",
+                "gateway.path": "/gateway/invoke",
+                "gateway.comm": {"platform": "ios"},
+            },
+        )
+        response = client.post(
+            "/api-autotest/api/preflight",
+            headers={
+                "X-CSRF-Token": "csrf-token",
+                "X-Platform-User-Context": "signed-user",
+            },
+            json={
+                "project_id": "dating",
+                "run_type": "flow",
+                "flow_id": "dating_demo_flow",
+            },
+        )
+
+        assert response.status_code == 200
+        body = response.get_json()
+        assert body["ready"] is False
+        error = next(
+            item for item in body["errors"]
+            if item["code"] == "PROJECT_CONFIG_MISSING"
+        )
+        assert error["logical_keys"] == [
+            "flow.analysis.poll_interval_seconds",
+            "flow.analysis.timeout_seconds",
+        ]
+
+    def test_task_filters_and_retry_create_a_new_record(
+        self, multi_project_root, monkeypatch
+    ):
+        client, manager, _calls = self._platform_client(multi_project_root, monkeypatch)
+        patch_command(monkeypatch, manager, "print('ok')")
+        write_headers = {
+            "X-CSRF-Token": "csrf-token",
+            "X-Platform-User-Context": "signed-user",
+            "X-Platform-Resource-Context": "opaque-global",
+        }
+        submitted = client.post(
+            "/api-autotest/api/tasks",
+            headers=write_headers,
+            json={
+                "project_id": "dating",
+                "run_type": "flow",
+                "flow_id": "dating_demo_flow",
+                "tag": "regression",
+            },
+        ).get_json()
+        manager.wait_idle()
+        listing = client.get(
+            "/api-autotest/api/tasks?project_id=dating&status=succeeded&run_type=flow",
+            headers=write_headers,
+        ).get_json()
+        assert listing["total"] == 1
+        assert listing["items"][0]["id"] == submitted["id"]
+
+        retried = client.post(
+            f"/api-autotest/api/tasks/{submitted['id']}/retry",
+            headers=write_headers,
+        )
+        assert retried.status_code == 201
+        manager.wait_idle()
+        retry_record = manager.store.load(retried.get_json()["id"])
+        assert retry_record["retry_of"] == submitted["id"]
+        assert manager.store.load(submitted["id"])["retry_of"] is None

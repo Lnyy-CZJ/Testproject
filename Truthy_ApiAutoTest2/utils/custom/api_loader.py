@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from pathlib import Path
+import re
 from typing import Any
 
 from utils.custom.config_loader import ConfigError, load_yaml
@@ -13,9 +14,12 @@ class ApiConfigError(ValueError):
     """表示 API 定义缺失、重复或格式不合法。"""
 
 
-_ALLOWED_ROOT_FIELDS = {"id", "name", "request", "transport"}
+_ALLOWED_ROOT_FIELDS = {
+    "id", "name", "credential_profile", "request", "transport"
+}
 _ALLOWED_REQUEST_FIELDS = {"service_name", "method_name"}
 _ALLOWED_TRANSPORT_FIELDS = {"target", "comm", "requires_session"}
+_CREDENTIAL_PROFILE_PATTERN = re.compile(r"^[a-z][a-z0-9_-]{1,63}$")
 
 
 def _require_non_empty_string(
@@ -92,6 +96,13 @@ def _validate_api_content(
 
     api_id = _require_non_empty_string(content, "id", scope)
     name = _require_non_empty_string(content, "name", scope)
+    credential_profile = _require_non_empty_string(
+        content, "credential_profile", scope
+    )
+    if not _CREDENTIAL_PROFILE_PATTERN.fullmatch(credential_profile):
+        raise ApiConfigError(
+            f"{scope}.credential_profile 必须是合法逻辑 Profile ID"
+        )
     request = content.get("request")
     if not isinstance(request, dict):
         if "request" not in content:
@@ -113,6 +124,7 @@ def _validate_api_content(
     definition = {
         "id": api_id,
         "name": name,
+        "credential_profile": credential_profile,
         "request": {
             "service_name": service_name,
             "method_name": method_name,
@@ -148,6 +160,21 @@ def _relative_source(path: Path, project_root: Path) -> str:
         return path.as_posix()
 
 
+def _safe_api_paths(project_root: Path) -> list[Path]:
+    """枚举当前项目 API YAML，拒绝符号链接和 resolve 后越界的文件。"""
+    directory = project_root / "data" / "apis"
+    boundary = project_root.resolve()
+    paths = sorted(directory.glob("*.yaml"))
+    for path in paths:
+        if path.is_symlink():
+            raise ApiConfigError(f"API 定义禁止使用符号链接: {path.name}")
+        try:
+            path.resolve().relative_to(boundary)
+        except ValueError as exc:
+            raise ApiConfigError(f"API 定义路径越界: {path.name}") from exc
+    return paths
+
+
 def load_api_definitions(project_root: Path) -> dict[str, dict[str, Any]]:
     """加载并校验项目中的全部 V1.3 API 定义。
 
@@ -166,7 +193,7 @@ def load_api_definitions(project_root: Path) -> dict[str, dict[str, Any]]:
         与 ID 不一致时抛出。异常在任何网络请求发生前产生。
     """
     apis_directory = project_root / "data" / "apis"
-    api_paths = sorted(apis_directory.glob("*.yaml"))
+    api_paths = _safe_api_paths(project_root)
     if not api_paths:
         raise ApiConfigError(f"未找到 API 定义: {apis_directory}")
 

@@ -1,116 +1,22 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>用例库 - 接口自动化</title>
-<style>
-  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
-         margin: 0; background: #f5f6f8; color: #222; }
-  .container { max-width: 960px; margin: 0 auto; padding: 24px 16px 48px; }
-  header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-  h1 { font-size: 20px; margin: 0; }
-  h2 { font-size: 15px; margin: 0 0 12px; }
-  .card { background: #fff; border: 1px solid #e3e5e8; border-radius: 8px;
-          padding: 16px; margin-bottom: 16px; }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #eee;
-           vertical-align: top; word-break: break-all; }
-  a { color: #2f6fed; text-decoration: none; }
-  .muted { color: #888; font-size: 12px; }
-  .error-item { background: #fdecea; color: #c0392b; border-radius: 4px;
-                padding: 8px 12px; margin-bottom: 8px; font-size: 13px; }
-  code { background: #f0f1f3; padding: 1px 4px; border-radius: 3px; }
-  .tag { display: inline-block; background: #eef2ff; color: #3b5bdb; border-radius: 3px;
-         padding: 0 6px; margin-right: 4px; font-size: 12px; }
-</style>
-</head>
-<body>
-<div class="container">
-  <header>
-    <h1>用例库</h1>
-    <div>
-      <a href="{{ base_path }}/">&larr; 返回首页</a>
-      <span style="margin: 0 8px;">|</span>
-      <a href="{{ platform_home_url }}">返回平台</a>
-    </div>
-  </header>
+{% extends "base.html" %}
+{% block title %}用例库 · 接口自动化{% endblock %}
+{% block page_id %}catalog{% endblock %}
+{% block content %}
+<header class="page-header page-header-row">
+  <div><p class="eyebrow">API AUTOMATION</p><h1>用例库</h1><p>浏览项目包内真实的 API、Case 与 Flow；本页只读。</p></div>
+  <div class="header-field"><label for="catalog-project">当前项目</label><select id="catalog-project"><option value="">正在加载项目…</option></select></div>
+</header>
 
-  <div class="card" id="errors-card" style="display:none;">
-    <h2>解析错误</h2>
-    <div id="errors-list"></div>
+<section class="panel catalog-panel" aria-labelledby="catalog-heading">
+  <h2 class="sr-only" id="catalog-heading">项目资产目录</h2>
+  <div class="catalog-toolbar"><label class="search-field grow"><span class="sr-only">搜索用例库</span><input id="catalog-search" type="search" placeholder="搜索 ID、名称、Service 或标签"></label><button class="button tertiary compact" id="catalog-refresh" type="button">刷新</button></div>
+  <div class="tab-list" role="tablist" aria-label="用例类型">
+    <button class="tab active" type="button" role="tab" aria-selected="true" data-catalog-type="apis">APIs <span id="catalog-api-count">0</span></button>
+    <button class="tab" type="button" role="tab" aria-selected="false" data-catalog-type="cases">Cases <span id="catalog-case-count">0</span></button>
+    <button class="tab" type="button" role="tab" aria-selected="false" data-catalog-type="flows">Flows <span id="catalog-flow-count">0</span></button>
   </div>
-
-  <div class="card">
-    <h2>Flows</h2>
-    <table>
-      <thead><tr><th>名称</th><th>标签</th><th>步骤数</th><th>引用 API</th></tr></thead>
-      <tbody id="flow-rows"><tr><td colspan="4" class="muted">加载中…</td></tr></tbody>
-    </table>
-  </div>
-
-  <div class="card">
-    <h2>单接口 Cases</h2>
-    <table>
-      <thead><tr><th>API</th><th>Case ID</th><th>名称</th><th>标签</th></tr></thead>
-      <tbody id="case-rows"><tr><td colspan="4" class="muted">加载中…</td></tr></tbody>
-    </table>
-  </div>
-
-  <div class="card">
-    <h2>APIs</h2>
-    <table>
-      <thead><tr><th>ID</th><th>名称</th><th>Service</th><th>Method</th></tr></thead>
-      <tbody id="api-rows"><tr><td colspan="4" class="muted">加载中…</td></tr></tbody>
-    </table>
-  </div>
-</div>
-
-<script>
-  // 接口基址由服务端注入，禁止硬编码根路径。
-  const BASE = {{ base_path|tojson }};
-
-  function escapeHtml(text) {
-    const div = document.createElement("div");
-    div.textContent = text == null ? "" : String(text);
-    return div.innerHTML;
-  }
-
-  function tagHtml(tags) {
-    return (tags || []).map(t => '<span class="tag">' + escapeHtml(t) + "</span>").join("") || "-";
-  }
-
-  async function loadCatalog() {
-    const resp = await fetch(BASE + "/api/catalog");
-    const data = await resp.json();
-
-    if (data.errors && data.errors.length) {
-      document.getElementById("errors-card").style.display = "";
-      document.getElementById("errors-list").innerHTML = data.errors.map(e =>
-        '<div class="error-item"><code>' + escapeHtml(e.file) + "</code>：" +
-        escapeHtml(e.message) + "</div>").join("");
-    }
-
-    document.getElementById("flow-rows").innerHTML = data.flows.length
-      ? data.flows.map(f => "<tr><td><code>" + escapeHtml(f.name) + "</code></td><td>" +
-          tagHtml(f.tags) + "</td><td>" + f.step_count + "</td><td>" +
-          escapeHtml((f.apis || []).join(", ")) + "</td></tr>").join("")
-      : '<tr><td colspan="4" class="muted">无 Flow</td></tr>';
-
-    document.getElementById("case-rows").innerHTML = data.cases.length
-      ? data.cases.map(c => "<tr><td><code>" + escapeHtml(c.api) + "</code></td><td>" +
-          escapeHtml(c.id) + "</td><td>" + escapeHtml(c.name) + "</td><td>" +
-          tagHtml(c.tags) + "</td></tr>").join("")
-      : '<tr><td colspan="4" class="muted">无 Case</td></tr>';
-
-    document.getElementById("api-rows").innerHTML = data.apis.length
-      ? data.apis.map(a => "<tr><td><code>" + escapeHtml(a.id) + "</code></td><td>" +
-          escapeHtml(a.name) + "</td><td>" + escapeHtml(a.service_name) + "</td><td>" +
-          escapeHtml(a.method_name) + "</td></tr>").join("")
-      : '<tr><td colspan="4" class="muted">无 API</td></tr>';
-  }
-
-  loadCatalog();
-</script>
-</body>
-</html>
+  <div class="inline-status loading" id="catalog-status" aria-live="polite">正在读取项目资产…</div>
+  <div id="catalog-errors" class="stack" hidden></div>
+  <div class="table-scroll"><table><thead id="catalog-table-head"><tr><th>ID</th><th>名称</th><th>Service / Method</th><th>Profile</th><th>状态</th></tr></thead><tbody id="catalog-table-body"><tr><td colspan="5" class="table-state">加载中…</td></tr></tbody></table></div>
+</section>
+{% endblock %}

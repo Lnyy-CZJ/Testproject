@@ -1,0 +1,6 @@
+id: GetAnalysisTask
+name: 查询关系分析任务
+credential_profile: anonymous_session
+request:
+  service_name: tool.dating.DatingAssistantService
+  method_name: GetAnalysisTask

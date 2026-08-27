@@ -46,7 +46,7 @@ def parse_junit_file(
         project_root: 项目根目录，用于脱敏容器内绝对路径。
 
     返回值:
-        ``{"summary": {...}, "failed_cases": [...]}``；文件不存在或
+        ``{"summary": {...}, "cases": [...], "failed_cases": [...]}``；文件不存在或
         不是合法 XML 时返回 None（视为结果不可用）。
     """
     path = Path(path)
@@ -58,23 +58,44 @@ def parse_junit_file(
         return None
 
     total = failed = errors = skipped = 0
+    cases: list[dict[str, Any]] = []
     failed_cases: list[dict[str, str]] = []
     for case in root.iter("testcase"):
         total += 1
         failure = case.find("failure")
         error = case.find("error")
+        status = "passed"
+        message = ""
         if failure is not None:
             failed += 1
+            status = "failed"
+            message = _case_message(failure)
             failed_cases.append(
-                {"name": case.get("name", ""), "message": _case_message(failure)}
+                {"name": case.get("name", ""), "message": message}
             )
         elif error is not None:
             errors += 1
+            status = "error"
+            message = _case_message(error)
             failed_cases.append(
-                {"name": case.get("name", ""), "message": _case_message(error)}
+                {"name": case.get("name", ""), "message": message}
             )
-        elif case.find("skipped") is not None:
+        elif (skipped_element := case.find("skipped")) is not None:
             skipped += 1
+            status = "skipped"
+            message = redact_text(
+                str(skipped_element.get("message") or "已跳过"),
+                max_length=FAILED_MESSAGE_LIMIT,
+            )
+        cases.append(
+            {
+                "name": case.get("name", ""),
+                "classname": case.get("classname", ""),
+                "status": status,
+                "duration": case.get("time"),
+                "message": message,
+            }
+        )
 
     passed = max(total - failed - errors - skipped, 0)
     return {
@@ -85,5 +106,6 @@ def parse_junit_file(
             "errors": errors,
             "skipped": skipped,
         },
+        "cases": cases,
         "failed_cases": failed_cases,
     }

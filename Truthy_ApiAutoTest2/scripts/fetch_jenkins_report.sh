@@ -24,6 +24,7 @@
 #                  选择第一个包含 allure-report-publish/index.html 的
 #                  构建，不按 SUCCESS/FAILURE/UNSTABLE 过滤。
 #   PUBLISH_TASK_ID 必填的平台根任务 ID；拉取与发布全链路显式透传。
+#   PUBLISH_PROJECT_ID 工具项目 ID；旧 Jenkins 任务缺省为 truthy 并输出提示。
 #
 # 返回值（退出码）:
 #   0  拉取并发布成功；
@@ -52,6 +53,12 @@ ARTIFACT_ENTRY="$ARTIFACT_DIR/index.html"
 [ -n "${PUBLISH_TASK_ID:-}" ] || die 2 "缺少环境变量 PUBLISH_TASK_ID"
 printf '%s' "$PUBLISH_TASK_ID" | LC_ALL=C grep -Eq '^[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$' \
     || die 2 "PUBLISH_TASK_ID 格式非法: $PUBLISH_TASK_ID"
+if [ -z "${PUBLISH_PROJECT_ID:-}" ]; then
+    log "弃用提示：旧任务未提供 PUBLISH_PROJECT_ID，兼容期默认使用 truthy"
+fi
+PUBLISH_PROJECT_ID="${PUBLISH_PROJECT_ID:-truthy}"
+printf '%s' "$PUBLISH_PROJECT_ID" | LC_ALL=C grep -Eq '^[a-z][a-z0-9-]{1,31}$' \
+    || die 2 "PUBLISH_PROJECT_ID 格式非法: $PUBLISH_PROJECT_ID"
 
 # curl 统一参数：-s 静默、-g 关闭 URL 通配（Jenkins zip 路径含 *）、
 # -f HTTP 错误即失败、--retry 抗瞬时网络抖动。
@@ -69,7 +76,7 @@ build_has_report_artifact() {
         "$JENKINS_URL/job/$JOB_NAME/$build_number/api/json?tree=artifacts[relativePath],actions[parameters[name,value]]" \
         2>/dev/null)" || return 1
     printf '%s' "$body" | ARTIFACT_ENTRY="$ARTIFACT_ENTRY" \
-        EXPECTED_TASK_ID="$PUBLISH_TASK_ID" python3 -c '
+        EXPECTED_TASK_ID="$PUBLISH_TASK_ID" EXPECTED_PROJECT_ID="$PUBLISH_PROJECT_ID" python3 -c '
 import json, os, sys
 data = json.load(sys.stdin)
 paths = [a.get("relativePath", "") for a in data.get("artifacts", [])]
@@ -79,9 +86,15 @@ parameters = [
     for parameter in (action.get("parameters") or []) if isinstance(parameter, dict)
 ]
 task_ids = [p.get("value") for p in parameters if p.get("name") == "PLATFORM_TASK_ID"]
+project_ids = [p.get("value") for p in parameters if p.get("name") == "PROJECT_ID"]
+project_matches = project_ids == [os.environ["EXPECTED_PROJECT_ID"]]
+# 兼容项目参数上线前的 Truthy 构建；其他项目绝不允许缺省归属。
+if not project_ids and os.environ["EXPECTED_PROJECT_ID"] == "truthy":
+    project_matches = True
 valid = (
     os.environ["ARTIFACT_ENTRY"] in paths
     and task_ids == [os.environ["EXPECTED_TASK_ID"]]
+    and project_matches
 )
 sys.exit(0 if valid else 1)
 '
@@ -150,6 +163,7 @@ HTML_DIR="$WORK_DIR/$ARTIFACT_DIR"
 TASK_META="$HTML_DIR/platform-task-meta.json"
 [ -f "$TASK_META" ] || die 6 "归档中缺少受控任务元数据: platform-task-meta.json"
 EXPECTED_TASK_ID="$PUBLISH_TASK_ID" \
+EXPECTED_PROJECT_ID="$PUBLISH_PROJECT_ID" \
 EXPECTED_BUILD_NUMBER="$SELECTED_BUILD" \
 EXPECTED_JOB_NAME="$JOB_NAME" \
 python3 - "$TASK_META" <<'PYEOF' \
@@ -169,7 +183,11 @@ expected = {
     "build_number": int(os.environ["EXPECTED_BUILD_NUMBER"]),
     "job_name": os.environ["EXPECTED_JOB_NAME"],
 }
-raise SystemExit(0 if metadata == expected else 1)
+project_id = metadata.pop("project_id", None)
+project_matches = project_id == os.environ["EXPECTED_PROJECT_ID"]
+if project_id is None and os.environ["EXPECTED_PROJECT_ID"] == "truthy":
+    project_matches = True
+raise SystemExit(0 if project_matches and metadata == expected else 1)
 PYEOF
 
 # ---------------- 调用发布脚本 ----------------
@@ -180,4 +198,5 @@ PUBLISH_BUILD_NUMBER="$SELECTED_BUILD" \
 PUBLISH_BUILD_RESULT="$BUILD_RESULT" \
 PUBLISH_BUILD_URL="$BUILD_URL" \
 PUBLISH_TASK_ID="$PUBLISH_TASK_ID" \
+PUBLISH_PROJECT_ID="$PUBLISH_PROJECT_ID" \
     "$SCRIPT_DIR/publish_allure_report.sh" "$HTML_DIR" "$REPORT_ROOT" jenkins

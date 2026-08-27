@@ -84,7 +84,8 @@ services:
       API_AUTOTEST_CONFIG_SOURCE: platform
       API_AUTOTEST_SESSION_PROVIDER: platform
     volumes: !override
-      - /srv/test-platform/data/api-autotest/data:/app/data:ro
+      # 项目包随不可变镜像发布；这里只持久化任务运行与报告产物。
+      - /srv/test-platform/data/api-autotest/runtime:/app/runtime
       - /srv/test-platform/data/api-autotest/logs:/app/logs
       - /srv/test-platform/data/api-autotest/reports:/app/reports
       - /srv/test-platform/data/api-autotest/tasks:/app/tasks

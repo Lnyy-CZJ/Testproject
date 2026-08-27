@@ -18,6 +18,7 @@ import {
   useLocation,
   useNavigate,
   useParams,
+  useSearchParams,
 } from "react-router-dom";
 
 import { ApiError, apiJson, describeApiError, fetchTools, request } from "./api/client";
@@ -45,6 +46,7 @@ import type {
   PersonalLlmProfile,
   Role,
   RoleGrant,
+  RuntimeScope,
   SecretMetadata,
   UserSession,
 } from "./types/platform";
@@ -486,6 +488,88 @@ function useEnvironment(): string {
     return () => window.removeEventListener("platform-environment-change", listener);
   }, []);
   return environment;
+}
+
+const API_AUTOTEST_TOOL_ID = "api-autotest";
+
+/** 后端切换期间兼容列表数组与分页包装，未识别响应一律视为不可用而不猜测 Scope。 */
+function runtimeScopesFromPayload(payload: unknown): RuntimeScope[] {
+  if (Array.isArray(payload)) return payload as RuntimeScope[];
+  if (payload && typeof payload === "object" && Array.isArray((payload as { items?: unknown }).items)) {
+    return (payload as { items: RuntimeScope[] }).items;
+  }
+  return [];
+}
+
+/**
+ * 管理端 Scope 选择状态只持久化 scope_id。
+ *
+ * 平台项目、工具项目与 target_env 都重新从授权列表读取，避免深链携带或恢复
+ * 可伪造的环境、配置或敏感数据；后端仍会在每次资源请求中二次执行 RBAC。
+ */
+function useRuntimeScopeSelection() {
+  const environment = useEnvironment();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [scopes, setScopes] = useState<RuntimeScope[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const requestedScopeId = searchParams.get("scope_id");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const query = new URLSearchParams({ tool_id: API_AUTOTEST_TOOL_ID, environment_id: environment });
+      const payload = await apiJson<unknown>(`/runtime-scopes?${query.toString()}`);
+      setScopes(runtimeScopesFromPayload(payload));
+    } catch (requestError) {
+      const message = requestError instanceof ApiError && requestError.status === 403
+        ? "无权读取 Runtime Scope。平台不会显示未授权项目或配置。"
+        : describeApiError(requestError, "无法加载 Runtime Scope，请稍后重试。");
+      setScopes([]);
+      setError(message);
+    } finally {
+      setLoading(false);
+    }
+  }, [environment]);
+
+  useEffect(() => { void load(); }, [load]);
+  const selected = scopes.find((scope) => scope.id === requestedScopeId)
+    ?? scopes.find((scope) => scope.status === "active" && scope.is_default)
+    ?? scopes.find((scope) => scope.status === "active")
+    ?? scopes[0]
+    ?? null;
+
+  useEffect(() => {
+    if (!selected || selected.id === requestedScopeId) return;
+    setSearchParams({ scope_id: selected.id }, { replace: true });
+  }, [requestedScopeId, selected, setSearchParams]);
+
+  const select = useCallback((scopeId: string) => setSearchParams({ scope_id: scopeId }), [setSearchParams]);
+  return { environment, scopes, selected, loading, error, select, reload: load };
+}
+
+function scopeTargetEnvironment(scope: RuntimeScope): string {
+  return `${scope.target_env.toUpperCase()}（由 ${scope.environment_id.toUpperCase()} 平台固定）`;
+}
+
+/** Scope 摘要只展示非敏感身份与状态，既是切换器也是 URL 深链的可见锚点。 */
+function RuntimeScopeSelector({ selection, disabled = false }: {
+  selection: ReturnType<typeof useRuntimeScopeSelection>;
+  disabled?: boolean;
+}) {
+  const { scopes, selected, loading, error, select } = selection;
+  if (loading) return <div className="panel-loading scope-loading" role="status">正在加载授权 Runtime Scope…</div>;
+  if (error) return <InlineMessage kind="error">{error}</InlineMessage>;
+  if (!selected) return <EmptyState title="没有可管理的 Runtime Scope" copy="请在当前平台项目中创建并授权 Scope；平台不会回退到工具级配置。" />;
+  const platformProjects = [...new Map(scopes.map((scope) => [scope.platform_project_id, scope.platform_project_name ?? scope.platform_project_id])).entries()];
+  const projectScopes = scopes.filter((scope) => scope.platform_project_id === selected.platform_project_id);
+  return <section className="scope-selector" aria-label="Runtime Scope 选择">
+    <label className="compact-field">平台项目<select aria-label="平台项目" value={selected.platform_project_id} disabled={disabled} onChange={(event) => select(scopes.find((scope) => scope.platform_project_id === event.target.value)?.id ?? selected.id)}>{platformProjects.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label>
+    <label className="compact-field">工具项目<select aria-label="工具项目" value={selected.id} disabled={disabled} onChange={(event) => select(event.target.value)}>{projectScopes.map((scope) => <option key={scope.id} value={scope.id}>{scope.display_name || scope.project_id}</option>)}</select></label>
+    <label className="compact-field">接口环境<input aria-label="接口环境" value={scopeTargetEnvironment(selected)} readOnly disabled /></label>
+    <div className="scope-selector-meta"><strong>{selected.display_name || selected.project_id}</strong><span>Scope: <code>{selected.id}</code> · Release: {selected.active_release ? `v${selected.active_release.version} ${selected.active_release.status}` : "尚未发布"}</span><StatusBadge value={selected.status} /></div>
+  </section>;
 }
 
 function PersonalNav() {
@@ -1096,21 +1180,26 @@ function PersonalLlmPage() {
 }
 
 function ConfigPage() {
-  const environment = useEnvironment();
+  const scopeSelection = useRuntimeScopeSelection();
+  const { environment, selected: scope } = scopeSelection;
   const [items, setItems] = useState<ConfigDefinition[]>([]);
-  const [owner, setOwner] = useState("");
   const [releases, setReleases] = useState<ConfigRelease[]>([]);
   const [draft, setDraft] = useState<ConfigRelease | null>(null);
   const [values, setValues] = useState<Record<string, unknown>>({});
   const [confirmPublish, setConfirmPublish] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-  const owners = [...new Set(items.filter((item) => item.sensitivity === "normal").map((item) => item.owner_id))];
-  const ownerItems = items.filter((item) => item.owner_id === owner && item.sensitivity === "normal");
+  const [scopeEditor, setScopeEditor] = useState<"create" | "edit" | null>(null);
+  const [scopeForm, setScopeForm] = useState({ platform_project_id: "", project_id: "", display_name: "", status: "active", is_default: false });
+  const ownerItems = items.filter((item) => item.owner_id === API_AUTOTEST_TOOL_ID && item.sensitivity === "normal");
+  const scopeDisabled = !scope || scope.status !== "active";
 
-  const loadReleases = useCallback(async (selectedOwner: string) => {
-    if (!selectedOwner) return;
-    const rows = await apiJson<ConfigRelease[]>(`/config/releases?environment_id=${environment}&owner_type=tool&owner_id=${encodeURIComponent(selectedOwner)}`);
+  const loadReleases = useCallback(async (selectedScope: RuntimeScope | null) => {
+    if (!selectedScope || selectedScope.status !== "active") {
+      setReleases([]); setDraft(null); setValues({}); return;
+    }
+    const query = new URLSearchParams({ environment_id: environment, owner_type: "tool_project_scope", owner_id: selectedScope.id });
+    const rows = await apiJson<ConfigRelease[]>(`/config/releases?${query.toString()}`);
     setReleases(rows);
     const currentDraft = rows.find((row) => row.status === "draft") ?? null;
     setDraft(currentDraft);
@@ -1121,11 +1210,9 @@ function ConfigPage() {
   useEffect(() => {
     void apiJson<ConfigDefinition[]>("/config/definitions").then((rows) => {
       setItems(rows);
-      const firstOwner = rows.find((item) => item.sensitivity === "normal")?.owner_id ?? "";
-      setOwner((current) => current || firstOwner);
     }).catch((requestError) => setError(requestError.message));
   }, []);
-  useEffect(() => { void loadReleases(owner).catch((requestError) => setError(requestError.message)); }, [loadReleases, owner]);
+  useEffect(() => { void loadReleases(scope).catch((requestError) => setError(describeApiError(requestError, "无法读取当前 Scope 的 Release。"))); }, [loadReleases, scope]);
   useEffect(() => { setConfirmPublish(false); }, [environment]);
 
   function inputValue(definition: ConfigDefinition): string | number {
@@ -1145,24 +1232,52 @@ function ConfigPage() {
     try { return JSON.parse(value); }
     catch { throw new Error(`${definition.display_name} 必须是有效 JSON。`); }
   }
+  /** Scope 身份字段只在创建时提交；编辑始终带 revision，避免覆盖其他管理员的并发变更。 */
+  function openScopeEditor(mode: "create" | "edit") {
+    setError("");
+    setScopeEditor(mode);
+    setScopeForm(mode === "edit" && scope ? {
+      platform_project_id: scope.platform_project_id, project_id: scope.project_id, display_name: scope.display_name,
+      status: scope.status, is_default: scope.is_default,
+    } : { platform_project_id: "", project_id: "", display_name: "", status: "active", is_default: false });
+  }
+  async function saveScope(event: FormEvent) {
+    event.preventDefault();
+    setError("");
+    try {
+      if (scopeEditor === "edit" && scope) {
+        await apiJson(`/runtime-scopes/${encodeURIComponent(scope.id)}`, { method: "PATCH", body: JSON.stringify({ display_name: scopeForm.display_name, status: scopeForm.status, is_default: scopeForm.is_default, revision: scope.revision }) });
+        setMessage("Runtime Scope 已更新。Release、Secret 与 Credential 将继续按该 Scope 隔离。");
+      } else if (scopeEditor === "create") {
+        // target_env 为只读派生值，服务端仍会忽略客户端推导并强制校验 dev→test / prod→prod。
+        const targetEnv = environment === "prod" ? "prod" : "test";
+        const next = await apiJson<RuntimeScope>("/runtime-scopes", { method: "POST", body: JSON.stringify({ environment_id: environment, tool_id: API_AUTOTEST_TOOL_ID, platform_project_id: scopeForm.platform_project_id, project_id: scopeForm.project_id, target_env: targetEnv, display_name: scopeForm.display_name, is_default: scopeForm.is_default }) });
+        scopeSelection.select(next.id);
+        setMessage("Runtime Scope 已创建。请创建并发布首个 Release 后再提交新任务。");
+      }
+      setScopeEditor(null);
+      await scopeSelection.reload();
+    } catch (requestError) { setError(describeApiError(requestError, "Runtime Scope 保存失败。")); }
+  }
   async function createDraft() {
+    if (!scope || scopeDisabled) return;
     setError(""); setMessage("");
     try {
-      const next = await apiJson<ConfigRelease>("/config/releases", { method: "POST", body: JSON.stringify({ environment_id: environment, owner_type: "tool", owner_id: owner }) });
+      const next = await apiJson<ConfigRelease>("/config/releases", { method: "POST", body: JSON.stringify({ environment_id: environment, owner_type: "tool_project_scope", owner_id: scope.id }) });
       setDraft(next); setValues(Object.fromEntries(next.items.map((item) => [item.definition_id, item.value]))); setMessage(`已创建 v${next.version} 草稿。`);
-      await loadReleases(owner);
+      await loadReleases(scope);
     } catch (requestError) { setError(requestError instanceof Error ? requestError.message : "创建草稿失败"); }
   }
   async function saveDraft() {
-    if (!draft) return;
+    if (!draft || !scope || scopeDisabled) return;
     setError(""); setMessage("");
     try {
       const updated = await apiJson<ConfigRelease>(`/config/releases/${draft.id}/items`, { method: "PUT", body: JSON.stringify({ revision: draft.revision, items: ownerItems.map((item) => ({ definition_id: item.id, value: payloadValue(item) })) }) });
-      setDraft(updated); setMessage(`v${updated.version} 草稿已保存。`); await loadReleases(owner);
+      setDraft(updated); setMessage(`v${updated.version} 草稿已保存。`); await loadReleases(scope);
     } catch (requestError) { setError(requestError instanceof Error ? requestError.message : "保存失败"); }
   }
   async function releaseAction(action: "validate" | "publish", target = draft) {
-    if (!target) return;
+    if (!target || !scope || scopeDisabled) return;
     if (action === "publish" && environment === "prod" && !confirmPublish) {
       setConfirmPublish(true); setMessage("这是 PROD 发布。请复核差异后再次点击“确认发布 PROD”。"); return;
     }
@@ -1171,14 +1286,15 @@ function ConfigPage() {
       await apiJson(`/config/releases/${target.id}/${action}`, { method: "POST" });
       setMessage(action === "validate" ? "配置校验通过。" : `v${target.version} 已发布；新任务将使用该版本。`);
       setConfirmPublish(false);
-      await loadReleases(owner);
+      await loadReleases(scope);
     } catch (requestError) { setError(requestError instanceof Error ? requestError.message : "操作失败"); }
   }
   async function rollback(target: ConfigRelease) {
+    if (!scope || scopeDisabled) return;
     setError(""); setMessage("");
     try {
       const next = await apiJson<ConfigRelease>(`/config/releases/${target.id}/rollback`, { method: "POST" });
-      setMessage(`已基于 v${target.version} 创建回滚版本 v${next.version}。`); await loadReleases(owner);
+      setMessage(`已基于 v${target.version} 创建回滚版本 v${next.version}。`); await loadReleases(scope);
     } catch (requestError) { setError(requestError instanceof Error ? requestError.message : "回滚失败"); }
   }
   async function promote(target: ConfigRelease) {
@@ -1189,11 +1305,12 @@ function ConfigPage() {
     } catch (requestError) { setError(requestError instanceof Error ? requestError.message : "提升失败"); }
   }
 
-  return <WorkspaceShell><section className="workspace-page"><PageHeader eyebrow={`${environment.toUpperCase()} / CONFIGURATION`} title="配置控制面" copy="只有已登记的键可以在 Web 修改；发布与回滚始终保留可追溯版本。" actions={<label className="compact-field">工具<select value={owner} onChange={(event) => { setOwner(event.target.value); setConfirmPublish(false); }}>{owners.map((item) => <option key={item}>{item}</option>)}</select></label>} /><ManagementNav />{message && <InlineMessage kind="success">{message}</InlineMessage>}{error && <InlineMessage kind="error">{error}</InlineMessage>}{ownerItems.length === 0 ? <EmptyState title="没有可管理的配置" copy="请检查当前角色的工具配置权限。" /> : <><div className="config-toolbar"><div><strong>{owner}</strong><span>{draft ? `v${draft.version} 草稿 · revision ${draft.revision}` : "当前没有草稿"}</span></div><div className="dialog-actions">{!draft ? <button className="primary-button" onClick={() => void createDraft()}>创建草稿</button> : <><button className="secondary-button" onClick={() => void saveDraft()}>保存草稿</button><button className="secondary-button" onClick={() => void releaseAction("validate")}>校验</button><button className="primary-button" onClick={() => void releaseAction("publish")}>{environment === "prod" && confirmPublish ? "确认发布 PROD" : "发布"}</button></>}</div></div><div className="config-grid">{ownerItems.map((item) => <label className="config-field" key={item.id}><span>{item.display_name}<small>{item.key} · {item.apply_mode}</small></span>{["bool", "boolean"].includes(item.value_type) ? <select disabled={!draft} value={String(values[item.id] ?? item.default_value ?? false)} onChange={(event) => updateValue(item, event.target.value)}><option value="true">true</option><option value="false">false</option></select> : <input disabled={!draft} type={["int", "integer", "float"].includes(item.value_type) ? "number" : "text"} step={item.value_type === "float" ? "any" : undefined} value={inputValue(item)} onChange={(event) => updateValue(item, event.target.value)} required={item.required} />}</label>)}</div><section className="release-history" aria-labelledby="release-history-title"><h2 id="release-history-title">版本历史</h2>{releases.length === 0 ? <EmptyState title="尚无版本" copy="创建首个草稿后，版本记录会显示在这里。" /> : releases.map((release) => <div className="release-row" key={release.id}><div><strong>v{release.version}</strong><span>revision {release.revision} · {new Date(release.created_at).toLocaleString()}</span></div><StatusBadge value={release.status} /><div className="row-actions">{release.status === "active" || release.status === "superseded" ? <button className="secondary-button" onClick={() => void rollback(release)}>回滚到此版本</button> : null}{environment === "dev" && release.status === "active" ? <button className="secondary-button" onClick={() => void promote(release)}>提升为 PROD 草稿</button> : null}</div></div>)}</section></>}</section></WorkspaceShell>;
+  return <WorkspaceShell><section className="workspace-page"><PageHeader eyebrow={`${environment.toUpperCase()} / CONFIGURATION`} title="配置控制面" copy="Runtime Scope 是 Release、Secret 与 Credential 的唯一归属；发布与回滚始终保留可追溯版本。" actions={<div className="dialog-actions"><button className="secondary-button" disabled={!scope} onClick={() => openScopeEditor("edit")}>编辑 Scope</button><button className="primary-button" onClick={() => openScopeEditor("create")}>新建 Scope</button></div>} /><ManagementNav />{message && <InlineMessage kind="success">{message}</InlineMessage>}{error && <InlineMessage kind="error">{error}</InlineMessage>}<RuntimeScopeSelector selection={scopeSelection} />{scope?.status === "disabled" && <InlineMessage kind="error">该 Runtime Scope 已停用。为避免新任务误用历史配置，不能读取或修改它的 Release、Secret 或 Credential。</InlineMessage>}{scope && <><div className="config-toolbar"><div><strong>{scope.display_name || scope.project_id}</strong><span>{draft ? `v${draft.version} 草稿 · revision ${draft.revision}` : "当前没有草稿"}</span></div><div className="dialog-actions">{!draft ? <button className="primary-button" disabled={scopeDisabled} onClick={() => void createDraft()}>创建草稿</button> : <><button className="secondary-button" disabled={scopeDisabled} onClick={() => void saveDraft()}>保存草稿</button><button className="secondary-button" disabled={scopeDisabled} onClick={() => void releaseAction("validate")}>校验</button><button className="primary-button" disabled={scopeDisabled} onClick={() => void releaseAction("publish")}>{environment === "prod" && confirmPublish ? "确认发布 PROD" : "发布"}</button></>}</div></div>{ownerItems.length === 0 ? <EmptyState title="当前 Scope 没有可编辑的普通配置键" copy="请检查工具配置定义及当前角色的 Scope 权限。" /> : <><div className="config-grid">{ownerItems.map((item) => <label className="config-field" key={item.id}><span>{item.display_name}<small>{item.key} · {item.apply_mode}</small></span>{["bool", "boolean"].includes(item.value_type) ? <select disabled={!draft || scopeDisabled} value={String(values[item.id] ?? item.default_value ?? false)} onChange={(event) => updateValue(item, event.target.value)}><option value="true">true</option><option value="false">false</option></select> : <input disabled={!draft || scopeDisabled} type={["int", "integer", "float"].includes(item.value_type) ? "number" : "text"} step={item.value_type === "float" ? "any" : undefined} value={inputValue(item)} onChange={(event) => updateValue(item, event.target.value)} required={item.required} />}</label>)}</div><section className="release-history" aria-labelledby="release-history-title"><h2 id="release-history-title">版本历史</h2>{releases.length === 0 ? <EmptyState title="尚无版本" copy="创建首个草稿后，版本记录会显示在这里。" /> : releases.map((release) => <div className="release-row" key={release.id}><div><strong>v{release.version}</strong><span>revision {release.revision} · {new Date(release.created_at).toLocaleString()}</span></div><StatusBadge value={release.status} /><div className="row-actions">{release.status === "active" || release.status === "superseded" ? <button className="secondary-button" disabled={scopeDisabled} onClick={() => void rollback(release)}>回滚到此版本</button> : null}{environment === "dev" && release.status === "active" ? <button className="secondary-button" disabled={scopeDisabled} onClick={() => void promote(release)}>提升为 PROD 草稿</button> : null}</div></div>)}</section></>}</>}{scopeEditor && <div className="modal-backdrop" role="presentation"><section className="dialog" role="dialog" aria-modal="true" aria-labelledby="scope-dialog-title"><p className="section-label">{environment.toUpperCase()} / RUNTIME SCOPE</p><h2 id="scope-dialog-title">{scopeEditor === "create" ? "新建 Runtime Scope" : "编辑 Runtime Scope"}</h2><p>接口环境由平台固定，不能在此切换；所有 Release、Secret 与 Credential 都归属此 Scope。</p><form className="auth-form" onSubmit={saveScope}>{scopeEditor === "create" && <><label>平台项目 ID<input value={scopeForm.platform_project_id} onChange={(event) => setScopeForm({ ...scopeForm, platform_project_id: event.target.value })} required /></label><label>工具项目键<input value={scopeForm.project_id} onChange={(event) => setScopeForm({ ...scopeForm, project_id: event.target.value })} pattern="[a-z][a-z0-9-]{0,31}" required /></label></>}<label>Scope 显示名称<input autoFocus value={scopeForm.display_name} onChange={(event) => setScopeForm({ ...scopeForm, display_name: event.target.value })} required /></label><label>接口环境<input value={environment === "prod" ? "PROD（由 PROD 平台固定）" : "TEST（由 DEV 平台固定）"} readOnly disabled /></label>{scopeEditor === "edit" && <label>状态<select value={scopeForm.status} onChange={(event) => setScopeForm({ ...scopeForm, status: event.target.value })}><option value="active">启用</option><option value="disabled">停用</option></select></label>}<label className="checkbox-row"><input type="checkbox" checked={scopeForm.is_default} onChange={(event) => setScopeForm({ ...scopeForm, is_default: event.target.checked })} />作为当前平台项目默认 Scope</label><div className="dialog-actions"><button type="button" className="secondary-button" onClick={() => setScopeEditor(null)}>取消</button><button className="primary-button">保存 Scope</button></div></form></section></div>}</section></WorkspaceShell>;
 }
 
 function SecretsPage() {
-  const environment = useEnvironment();
+  const scopeSelection = useRuntimeScopeSelection();
+  const { environment, selected: scope } = scopeSelection;
   const [definitions, setDefinitions] = useState<ConfigDefinition[]>([]);
   const [metadata, setMetadata] = useState<Record<string, SecretMetadata>>({});
   const [selected, setSelected] = useState<ConfigDefinition | null>(null);
@@ -1203,37 +1320,46 @@ function SecretsPage() {
   useModal(Boolean(selected), () => { setSelected(null); setSecretValue(""); });
   useEffect(() => { void apiJson<ConfigDefinition[]>("/config/definitions").then((rows) => setDefinitions(rows.filter((row) => row.sensitivity === "secret" && row.value_scope === "system"))).catch((e) => setError(e.message)); }, []);
   useEffect(() => {
-    const owners = [...new Set(definitions.map((item) => item.owner_id))];
-    void Promise.all(owners.map((owner) => apiJson<SecretMetadata[]>(`/secrets?environment_id=${environment}&owner_type=tool&owner_id=${encodeURIComponent(owner)}`).catch(() => []))).then((groups) => setMetadata(Object.fromEntries(groups.flat().map((item) => [item.definition_id, item]))));
-  }, [definitions, environment, message]);
+    if (!scope || scope.status !== "active") { setMetadata({}); return; }
+    const query = new URLSearchParams({ environment_id: environment, owner_type: "tool_project_scope", owner_id: scope.id });
+    void apiJson<SecretMetadata[]>(`/secrets?${query.toString()}`).then((rows) => setMetadata(Object.fromEntries(rows.map((item) => [item.definition_id, item])))).catch((requestError) => setError(describeApiError(requestError, "无法读取当前 Scope 的 Secret 状态。")));
+  }, [definitions, environment, message, scope]);
   async function save(event: FormEvent) {
-    event.preventDefault(); if (!selected) return;
+    event.preventDefault(); if (!selected || !scope || scope.status !== "active") return;
     setError(""); setMessage("");
-    const secretId = `sec_${environment}_${selected.id.replaceAll(".", "_")}`;
+    const secretId = `sec_${scope.id}_${selected.id.replaceAll(".", "_")}`;
     try {
-      await apiJson(`/secrets/${encodeURIComponent(secretId)}`, { method: "PUT", body: JSON.stringify({ environment_id: environment, owner_type: selected.owner_type, owner_id: selected.owner_id, definition_id: selected.id, value: secretValue }) });
+      await apiJson(`/secrets/${encodeURIComponent(secretId)}`, { method: "PUT", body: JSON.stringify({ environment_id: environment, owner_type: "tool_project_scope", owner_id: scope.id, definition_id: selected.id, value: secretValue }) });
       setSecretValue(""); setSelected(null); setMessage("Secret 新版本已加密保存并激活。");
     } catch (e) { setError(e instanceof Error ? e.message : "保存失败"); }
   }
-  return <WorkspaceShell><section className="workspace-page"><PageHeader eyebrow={`${environment.toUpperCase()} / SECRETS`} title="Secret 管理" copy="明文只停留在当前输入组件内存；保存后平台不会再次回显。" /><ManagementNav />{message && <InlineMessage kind="success">{message}</InlineMessage>}{error && <InlineMessage kind="error">{error}</InlineMessage>}<div className="data-panel"><div className="table-header secret-columns"><span>Secret</span><span>工具</span><span>状态</span><span>操作</span></div>{definitions.map((item) => <div className="table-row secret-columns" key={item.id}><strong>{item.display_name}<small>{item.key}</small></strong><span>{item.owner_id}</span><StatusBadge value={metadata[item.id]?.configured ? `v${metadata[item.id].version}` : "missing"} /><button className="secondary-button" onClick={() => { setSelected(item); setSecretValue(""); setMessage(""); }}>替换</button></div>)}</div>{selected && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelected(null); }}><section className="dialog" role="dialog" aria-modal="true" aria-labelledby="secret-dialog-title"><p className="section-label">{environment.toUpperCase()} / {selected.owner_id}</p><h2 id="secret-dialog-title">替换 {selected.display_name}</h2><p>新版本保存成功后立即激活，旧版本只用于历史追溯。</p><form className="auth-form" onSubmit={save}><label>Secret 新值<textarea autoFocus value={secretValue} onChange={(event) => setSecretValue(event.target.value)} required /></label><div className="dialog-actions"><button type="button" className="secondary-button" onClick={() => setSelected(null)}>取消</button><button className="primary-button">加密保存</button></div></form></section></div>}</section></WorkspaceShell>;
+  const editable = scope?.status === "active";
+  return <WorkspaceShell><section className="workspace-page"><PageHeader eyebrow={`${environment.toUpperCase()} / SECRETS`} title="Secret 管理" copy="明文只停留在当前输入组件内存；保存后平台不会再次回显。" /><ManagementNav />{message && <InlineMessage kind="success">{message}</InlineMessage>}{error && <InlineMessage kind="error">{error}</InlineMessage>}<RuntimeScopeSelector selection={scopeSelection} />{scope?.status === "disabled" && <InlineMessage kind="error">该 Runtime Scope 已停用，Secret 仅保留历史审计，不可读取或替换。</InlineMessage>}{scope && <div className="data-panel"><div className="table-header secret-columns"><span>Secret</span><span>Scope</span><span>状态</span><span>操作</span></div>{definitions.map((item) => <div className="table-row secret-columns" key={item.id}><strong>{item.display_name}<small>{item.key}</small></strong><span>{scope.display_name || scope.project_id}</span><StatusBadge value={metadata[item.id]?.configured ? `v${metadata[item.id].version}` : "missing"} /><button className="secondary-button" disabled={!editable} onClick={() => { setSelected(item); setSecretValue(""); setMessage(""); }}>替换</button></div>)}</div>}{selected && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelected(null); }}><section className="dialog" role="dialog" aria-modal="true" aria-labelledby="secret-dialog-title"><p className="section-label">{environment.toUpperCase()} / {scope?.id}</p><h2 id="secret-dialog-title">替换 {selected.display_name}</h2><p>新版本保存成功后立即激活，旧版本只用于历史追溯；平台不会回显现有值。</p><form className="auth-form" onSubmit={save}><label>Secret 新值<textarea autoFocus value={secretValue} onChange={(event) => setSecretValue(event.target.value)} required /></label><div className="dialog-actions"><button type="button" className="secondary-button" onClick={() => setSelected(null)}>取消</button><button className="primary-button">加密保存</button></div></form></section></div>}</section></WorkspaceShell>;
 }
 
 function CredentialsPage() {
-  const environment = useEnvironment();
+  const scopeSelection = useRuntimeScopeSelection();
+  const { environment, selected: scope } = scopeSelection;
   const [items, setItems] = useState<CredentialMetadata[]>([]);
   const [creating, setCreating] = useState(false);
-  const [form, setForm] = useState({ tool_id: "truthy-search", provider_type: "gateway_session" });
+  const [form, setForm] = useState({ provider_type: "gateway_session" });
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   useModal(creating, () => setCreating(false));
-  const load = useCallback(() => apiJson<CredentialMetadata[]>(`/credentials?environment_id=${environment}`).then(setItems), [environment]);
+  const load = useCallback(() => {
+    if (!scope || scope.status !== "active") { setItems([]); return Promise.resolve(); }
+    const query = new URLSearchParams({ environment_id: environment, runtime_scope_id: scope.id });
+    return apiJson<CredentialMetadata[]>(`/credentials?${query.toString()}`).then(setItems);
+  }, [environment, scope]);
   useEffect(() => { void load().catch((requestError) => setError(requestError.message)); }, [load]);
   async function createCredential(event: FormEvent) {
     event.preventDefault(); setError(""); setMessage("");
-    try { await apiJson("/credentials", { method: "POST", body: JSON.stringify({ ...form, environment_id: environment }) }); setCreating(false); setMessage("Credential 已创建，Agent 将在下一轮执行首次验证。 "); await load(); }
+    if (!scope || scope.status !== "active") return;
+    try { await apiJson("/credentials", { method: "POST", body: JSON.stringify({ ...form, tool_id: scope.tool_id, environment_id: environment, runtime_scope_id: scope.id }) }); setCreating(false); setMessage("Credential 已创建，Agent 将在下一轮执行首次验证。 "); await load(); }
     catch (requestError) { setError(requestError instanceof Error ? requestError.message : "创建失败"); }
   }
-  return <WorkspaceShell><section className="workspace-page"><PageHeader eyebrow={`${environment.toUpperCase()} / CREDENTIALS`} title="凭证健康" copy="平台只展示状态、版本和过期时间，不显示 Token 或密码。" actions={<button className="primary-button" onClick={() => setCreating(true)}>创建 Credential</button>} /><ManagementNav />{message && <InlineMessage kind="success">{message}</InlineMessage>}{error && <InlineMessage kind="error">{error}</InlineMessage>}<div className="data-panel">{items.length === 0 ? <EmptyState title="尚未创建 Credential" copy="完成 Secret 导入后创建 Credential，刷新 Agent 会负责登录和续期。" /> : items.map((item) => <div className="table-row" key={item.id}><strong>{item.tool_id}<small>{item.provider_type}</small></strong><span>{item.environment_id}</span><StatusBadge value={item.status} /><span>{item.expires_at ? new Date(item.expires_at).toLocaleString() : "无过期时间"}</span></div>)}</div>{creating && <div className="modal-backdrop" role="presentation"><section className="dialog" role="dialog" aria-modal="true" aria-labelledby="credential-dialog-title"><p className="section-label">{environment.toUpperCase()} / CREDENTIAL</p><h2 id="credential-dialog-title">创建自动维护凭证</h2><p>先在 Secret 页面导入该 Provider 需要的账号或 Token。创建后 Agent 才会尝试验证、登录和续期。</p><form className="auth-form" onSubmit={createCredential}><label>工具<select autoFocus value={form.tool_id} onChange={(event) => setForm({ ...form, tool_id: event.target.value })}><option value="truthy-search">truthy-search</option><option value="api-autotest">api-autotest</option></select></label><label>Provider<select value={form.provider_type} onChange={(event) => setForm({ ...form, provider_type: event.target.value })}><option value="gateway_session">Gateway Session</option><option value="admin_login">Admin Login</option></select></label><div className="dialog-actions"><button type="button" className="secondary-button" onClick={() => setCreating(false)}>取消</button><button className="primary-button">创建并等待验证</button></div></form></section></div>}</section></WorkspaceShell>;
+  const editable = scope?.status === "active";
+  return <WorkspaceShell><section className="workspace-page"><PageHeader eyebrow={`${environment.toUpperCase()} / CREDENTIALS`} title="凭证健康" copy="平台只展示状态、版本和过期时间，不显示 Token 或密码。" actions={<button className="primary-button" disabled={!editable} onClick={() => setCreating(true)}>创建 Credential</button>} /><ManagementNav />{message && <InlineMessage kind="success">{message}</InlineMessage>}{error && <InlineMessage kind="error">{error}</InlineMessage>}<RuntimeScopeSelector selection={scopeSelection} />{scope?.status === "disabled" && <InlineMessage kind="error">该 Runtime Scope 已停用，Credential 状态不再对新任务可用。</InlineMessage>}{scope && <div className="data-panel">{items.length === 0 ? <EmptyState title="尚未创建 Credential" copy="完成当前 Scope 的 Secret 导入后创建 Credential，刷新 Agent 会负责登录和续期。" /> : items.map((item) => <div className="table-row" key={item.id}><strong>{scope.display_name || item.tool_id}<small>{item.provider_type}</small></strong><span>{scope.target_env.toUpperCase()}</span><StatusBadge value={item.status} /><span>{item.expires_at ? new Date(item.expires_at).toLocaleString() : "无过期时间"}</span></div>)}</div>}{creating && <div className="modal-backdrop" role="presentation"><section className="dialog" role="dialog" aria-modal="true" aria-labelledby="credential-dialog-title"><p className="section-label">{environment.toUpperCase()} / {scope?.id}</p><h2 id="credential-dialog-title">创建自动维护凭证</h2><p>先在 Secret 页面导入该 Scope 所需的账号或 Token。创建后 Agent 才会尝试验证、登录和续期。</p><form className="auth-form" onSubmit={createCredential}><label>工具<input autoFocus value={scope?.tool_id ?? ""} readOnly /></label><label>Provider<select value={form.provider_type} onChange={(event) => setForm({ ...form, provider_type: event.target.value })}><option value="gateway_session">Gateway Session</option><option value="admin_login">Admin Login</option></select></label><div className="dialog-actions"><button type="button" className="secondary-button" onClick={() => setCreating(false)}>取消</button><button className="primary-button">创建并等待验证</button></div></form></section></div>}</section></WorkspaceShell>;
 }
 
 /** 管理员只读就绪度视图，所有筛选均只传元数据且页面不提供代改入口。 */

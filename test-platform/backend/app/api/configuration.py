@@ -22,6 +22,7 @@ from app.models.configuration import (
     Environment,
     Secret,
     SecretVersion,
+    ToolProjectScope,
     UserCredential,
     UserCredentialItem,
 )
@@ -41,13 +42,112 @@ from app.schemas.configuration import (
     ReleaseUpdateRequest,
     SecretReplaceRequest,
     SecretResponse,
+    RuntimeScopeCreateRequest,
+    RuntimeScopePatchRequest,
+    RuntimeScopeResponse,
 )
+from app.models.access import Project, ProjectMembership
+from app.models.tool import Tool
 from app.services.audit import add_audit_event
-from app.services.authorization import has_platform_permission, has_tool_permission
+from app.services.authorization import decide_tool_access, has_platform_permission, has_tool_permission
 from app.services.secret_store import load_secret_cipher, replace_secret
 
 
 router = APIRouter(tags=["configuration"])
+
+
+def _scope_owner(database: Session, owner_type: str, owner_id: str) -> ToolProjectScope | None:
+    """解析 scoped owner；非 Scope owner 返回 None，缺失 Scope 由调用方失败关闭。"""
+
+    if owner_type != "tool_project_scope":
+        return None
+    return database.get(ToolProjectScope, owner_id)
+
+
+def _owner_tool_id(database: Session, owner_type: str, owner_id: str) -> str | None:
+    """返回配置 owner 对应的真实 Tool ID，供 Definition 和审计统一使用。"""
+
+    if owner_type == "tool":
+        return owner_id
+    scope = _scope_owner(database, owner_type, owner_id)
+    return scope.tool_id if scope is not None else None
+
+
+def _owner_definitions(database: Session, owner_type: str, owner_id: str) -> list[ConfigDefinition]:
+    """读取 owner 可用 Definition；Scope 始终复用其 Tool 级契约。"""
+
+    tool_id = _owner_tool_id(database, owner_type, owner_id)
+    if owner_type == "tool_project_scope":
+        if tool_id is None:
+            return []
+        owner_type, owner_id = "tool", tool_id
+    return list(database.scalars(select(ConfigDefinition).where(
+        ConfigDefinition.owner_type == owner_type,
+        ConfigDefinition.owner_id == owner_id,
+    )).all())
+
+
+def _assert_scope_environment(
+    database: Session, owner_type: str, owner_id: str, environment_id: str
+) -> ToolProjectScope | None:
+    """验证 scoped owner 与请求环境一致，阻断跨环境借用相同 Scope ID。"""
+
+    scope = _scope_owner(database, owner_type, owner_id)
+    if owner_type == "tool_project_scope" and (
+        scope is None or scope.environment_id != environment_id
+    ):
+        raise PlatformError(422, "CONFIG_SCOPE_MISMATCH", "配置作用域与环境不匹配")
+    return scope
+
+
+def _runtime_scope_response(row: ToolProjectScope) -> RuntimeScopeResponse:
+    """转换 Scope 元数据，同时显式暴露 platform_environment 外部契约。"""
+
+    return RuntimeScopeResponse(
+        id=row.id, environment_id=row.environment_id,
+        platform_environment=row.environment_id, tool_id=row.tool_id,
+        platform_project_id=row.platform_project_id, project_id=row.project_id,
+        target_env=row.target_env, display_name=row.display_name, status=row.status,
+        is_default=row.is_default, revision=row.revision,
+        created_by=row.created_by, updated_by=row.updated_by,
+        created_at=row.created_at, updated_at=row.updated_at,
+    )
+
+
+def _can_manage_runtime_scope(
+    database: Session,
+    context: AuthContext,
+    scope: ToolProjectScope,
+    *,
+    platform_permission: str,
+    tool_permission: str,
+) -> bool:
+    """叠加 Tool 权限与平台项目 manager 关系，阻断跨平台项目管理同一 Tool。"""
+
+    if has_platform_permission(database, context.user.id, platform_permission):
+        return True
+    if not has_tool_permission(database, context.user.id, tool_permission, scope.tool_id):
+        return False
+    membership = database.get(
+        ProjectMembership, (scope.platform_project_id, context.user.id)
+    )
+    return membership is not None and membership.relation == "manager"
+
+
+def _can_use_runtime_scope(
+    database: Session, context: AuthContext, scope: ToolProjectScope
+) -> bool:
+    """确认个人 Credential 的 Scope 属于当前用户访问决策中的平台项目。"""
+
+    tool = database.get(Tool, scope.tool_id)
+    if tool is None or not has_tool_permission(
+        database, context.user.id, "tool.execute", scope.tool_id
+    ):
+        return False
+    if context.user.platform_role is None:
+        return tool.project_id == scope.platform_project_id
+    decision = decide_tool_access(database, context.user, tool)
+    return decision.allowed and decision.project_id == scope.platform_project_id
 
 
 def _can_manage_config(database: Session, context: AuthContext, owner_type: str, owner_id: str) -> bool:
@@ -55,6 +155,13 @@ def _can_manage_config(database: Session, context: AuthContext, owner_type: str,
 
     if owner_type == "platform":
         return has_platform_permission(database, context.user.id, "platform.config.manage")
+    if owner_type == "tool_project_scope":
+        scope = database.get(ToolProjectScope, owner_id)
+        return scope is not None and _can_manage_runtime_scope(
+            database, context, scope,
+            platform_permission="platform.config.manage",
+            tool_permission="tool.config.manage",
+        )
     if owner_type == "llm_profile":
         # 通用配置 API 是 legacy 公共 LLM 管理面。个人 Profile 即使由平台
         # 管理员本人创建，也只能通过 /me/llm 修改，避免绕开所有者校验。
@@ -78,6 +185,13 @@ def _can_manage_secret(database: Session, context: AuthContext, owner_type: str,
 
     if owner_type == "platform":
         return has_platform_permission(database, context.user.id, "platform.secret.manage")
+    if owner_type == "tool_project_scope":
+        scope = database.get(ToolProjectScope, owner_id)
+        return scope is not None and _can_manage_runtime_scope(
+            database, context, scope,
+            platform_permission="platform.secret.manage",
+            tool_permission="tool.secret.manage",
+        )
     if owner_type == "llm_profile":
         # 个人 API Key 不进入公共 Secret 管理路径；该限制同时覆盖枚举、替换
         # 与 Release 操作，避免管理员权限意外扩大成跨用户 Secret 权限。
@@ -203,6 +317,7 @@ def _personal_credential_response(
         id=row.id,
         tool_id=row.tool_id,
         environment_id=row.environment_id,
+        runtime_scope_id=row.runtime_scope_id,
         provider_type=row.provider_type,
         status=row.status,
         current_version=row.current_version,
@@ -260,6 +375,7 @@ def list_personal_credentials(
     database: Annotated[Session, Depends(get_db)],
     response: Response,
     environment_id: str | None = None,
+    runtime_scope_id: str | None = None,
 ) -> list[PersonalCredentialResponse]:
     """列出当前登录用户有执行权限的个人凭证元数据。
 
@@ -272,6 +388,8 @@ def list_personal_credentials(
     )
     if environment_id:
         statement = statement.where(UserCredential.environment_id == environment_id)
+    if runtime_scope_id:
+        statement = statement.where(UserCredential.runtime_scope_id == runtime_scope_id)
     rows = list(database.scalars(statement.order_by(
         UserCredential.environment_id,
         UserCredential.tool_id,
@@ -282,6 +400,13 @@ def list_personal_credentials(
         _personal_credential_response(database, row)
         for row in rows
         if has_tool_permission(database, context.user.id, "tool.execute", row.tool_id)
+        and (
+            row.runtime_scope_id is None
+            or (
+                (scope := database.get(ToolProjectScope, row.runtime_scope_id)) is not None
+                and _can_use_runtime_scope(database, context, scope)
+            )
+        )
     ]
 
 
@@ -311,6 +436,20 @@ def put_personal_credential(
     environment = database.get(Environment, payload.environment_id)
     if environment is None or not environment.is_active:
         raise PlatformError(422, "VALIDATION_ERROR", "配置环境不存在或不可用")
+    runtime_scope = (
+        database.get(ToolProjectScope, payload.runtime_scope_id)
+        if payload.runtime_scope_id else None
+    )
+    if tool_id == "api-autotest" and runtime_scope is None:
+        raise PlatformError(422, "RUNTIME_SCOPE_REQUIRED", "api-autotest 凭证必须绑定 Runtime Scope")
+    if runtime_scope is not None and (
+        runtime_scope.tool_id, runtime_scope.environment_id
+    ) != (tool_id, payload.environment_id):
+        raise PlatformError(422, "CREDENTIAL_SCOPE_MISMATCH", "凭证与 Runtime Scope 不匹配")
+    if runtime_scope is not None and not _can_use_runtime_scope(
+        database, context, runtime_scope
+    ):
+        raise PlatformError(403, "PERMISSION_DENIED", "无权配置该 Runtime Scope 的个人凭证")
 
     definitions = _personal_credential_definitions(database, tool_id, provider_type)
     definitions_by_key = {definition.key: definition for definition in definitions}
@@ -327,6 +466,7 @@ def put_personal_credential(
         UserCredential.user_id == context.user.id,
         UserCredential.tool_id == tool_id,
         UserCredential.environment_id == payload.environment_id,
+        UserCredential.runtime_scope_id == payload.runtime_scope_id,
         UserCredential.provider_type == provider_type,
     ).with_for_update())
     old_version = row.current_version if row is not None else 0
@@ -356,6 +496,7 @@ def put_personal_credential(
             user_id=context.user.id,
             tool_id=tool_id,
             environment_id=payload.environment_id,
+            runtime_scope_id=payload.runtime_scope_id,
             provider_type=provider_type,
             status="missing",
             current_version=0,
@@ -517,6 +658,171 @@ def validate_personal_credential(
     )
 
 
+def _can_create_runtime_scope(
+    database: Session,
+    context: AuthContext,
+    tool_id: str,
+    platform_project_id: str,
+) -> bool:
+    """校验新 Scope 的管理边界，避免仅凭任意项目 ID 扩大工具管理权。"""
+
+    if has_platform_permission(database, context.user.id, "platform.config.manage"):
+        return True
+    if not has_tool_permission(database, context.user.id, "tool.config.manage", tool_id):
+        return False
+    membership = database.get(ProjectMembership, (platform_project_id, context.user.id))
+    return membership is not None and membership.relation == "manager"
+
+
+@router.get("/runtime-scopes", response_model=list[RuntimeScopeResponse])
+def list_runtime_scopes(
+    context: Annotated[AuthContext, Depends(current_auth_context)],
+    database: Annotated[Session, Depends(get_db)],
+    tool_id: str | None = None,
+    environment_id: str | None = None,
+    platform_project_id: str | None = None,
+    status: str | None = None,
+) -> list[RuntimeScopeResponse]:
+    """列出当前用户可管理的 Scope 元数据，所有过滤均在权限检查前后保持一致。"""
+
+    statement = select(ToolProjectScope).order_by(
+        ToolProjectScope.environment_id,
+        ToolProjectScope.platform_project_id,
+        ToolProjectScope.project_id,
+    )
+    if tool_id:
+        statement = statement.where(ToolProjectScope.tool_id == tool_id)
+    if environment_id:
+        statement = statement.where(ToolProjectScope.environment_id == environment_id)
+    if platform_project_id:
+        statement = statement.where(
+            ToolProjectScope.platform_project_id == platform_project_id
+        )
+    if status:
+        statement = statement.where(ToolProjectScope.status == status)
+    return [
+        _runtime_scope_response(row)
+        for row in database.scalars(statement).all()
+        if _can_manage_config(database, context, "tool_project_scope", row.id)
+    ]
+
+
+@router.get("/runtime-scopes/{scope_id}", response_model=RuntimeScopeResponse)
+def get_runtime_scope(
+    scope_id: str,
+    context: Annotated[AuthContext, Depends(current_auth_context)],
+    database: Annotated[Session, Depends(get_db)],
+) -> RuntimeScopeResponse:
+    """读取单一 Scope；不存在或不可管理时分别返回稳定 404/403。"""
+
+    row = database.get(ToolProjectScope, scope_id)
+    if row is None:
+        raise PlatformError(404, "NOT_FOUND", "Runtime Scope 不存在")
+    if not _can_manage_config(database, context, "tool_project_scope", row.id):
+        raise PlatformError(403, "PERMISSION_DENIED", "无权管理该 Runtime Scope")
+    return _runtime_scope_response(row)
+
+
+@router.post("/runtime-scopes", response_model=RuntimeScopeResponse, status_code=201)
+def create_runtime_scope(
+    payload: RuntimeScopeCreateRequest,
+    request: Request,
+    context: Annotated[AuthContext, Depends(require_csrf)],
+    database: Annotated[Session, Depends(get_db)],
+) -> RuntimeScopeResponse:
+    """创建 Scope，并在应用层提前返回可理解的固定环境映射错误。"""
+
+    expected_target = {"dev": "test", "prod": "prod"}.get(payload.environment_id)
+    if payload.target_env != expected_target:
+        raise PlatformError(422, "RUNTIME_SCOPE_MAPPING_INVALID", "平台环境与目标环境映射无效")
+    environment = database.get(Environment, payload.environment_id)
+    tool = database.get(Tool, payload.tool_id)
+    project = database.get(Project, payload.platform_project_id)
+    if environment is None or not environment.is_active or tool is None or project is None:
+        raise PlatformError(422, "VALIDATION_ERROR", "环境、工具或平台项目不存在")
+    if not _can_create_runtime_scope(
+        database, context, payload.tool_id, payload.platform_project_id
+    ):
+        raise PlatformError(403, "PERMISSION_DENIED", "无权创建该 Runtime Scope")
+    row = ToolProjectScope(
+        id=new_id("tps"), environment_id=payload.environment_id,
+        tool_id=payload.tool_id, platform_project_id=payload.platform_project_id,
+        project_id=payload.project_id, target_env=payload.target_env,
+        display_name=payload.display_name, status="active",
+        is_default=payload.is_default, revision=1,
+        created_by=context.user.id, updated_by=context.user.id,
+    )
+    database.add(row)
+    try:
+        database.flush()
+    except IntegrityError:
+        database.rollback()
+        raise PlatformError(409, "RUNTIME_SCOPE_CONFLICT", "Runtime Scope 已存在或默认项冲突") from None
+    add_audit_event(
+        database, action="runtime.scope.create", resource_type="tool_project_scope",
+        resource_id=row.id, tool_id=row.tool_id, environment_id=row.environment_id,
+        outcome="success", request=request, actor=context.user,
+        after={
+            "platform_project_id": row.platform_project_id,
+            "project_id": row.project_id, "target_env": row.target_env,
+            "status": row.status, "is_default": row.is_default,
+        },
+    )
+    database.commit()
+    database.refresh(row)
+    return _runtime_scope_response(row)
+
+
+@router.patch("/runtime-scopes/{scope_id}", response_model=RuntimeScopeResponse)
+def patch_runtime_scope(
+    scope_id: str,
+    payload: RuntimeScopePatchRequest,
+    request: Request,
+    context: Annotated[AuthContext, Depends(require_csrf)],
+    database: Annotated[Session, Depends(get_db)],
+) -> RuntimeScopeResponse:
+    """用乐观锁更新 Scope 可变元数据；五元组身份字段从契约中完全排除。"""
+
+    row = database.scalar(select(ToolProjectScope).where(
+        ToolProjectScope.id == scope_id
+    ).with_for_update())
+    if row is None:
+        raise PlatformError(404, "NOT_FOUND", "Runtime Scope 不存在")
+    if not _can_manage_config(database, context, "tool_project_scope", row.id):
+        raise PlatformError(403, "PERMISSION_DENIED", "无权管理该 Runtime Scope")
+    if row.revision != payload.revision:
+        raise PlatformError(409, "VERSION_CONFLICT", "Runtime Scope 已被其他操作更新")
+    before = {
+        "display_name": row.display_name, "status": row.status,
+        "is_default": row.is_default, "revision": row.revision,
+    }
+    if payload.display_name is not None:
+        row.display_name = payload.display_name
+    if payload.status is not None:
+        row.status = payload.status
+    if payload.is_default is not None:
+        row.is_default = payload.is_default
+    row.revision += 1
+    row.updated_by = context.user.id
+    try:
+        database.flush()
+    except IntegrityError:
+        database.rollback()
+        raise PlatformError(409, "RUNTIME_SCOPE_CONFLICT", "默认 Runtime Scope 已存在") from None
+    add_audit_event(
+        database, action="runtime.scope.update", resource_type="tool_project_scope",
+        resource_id=row.id, tool_id=row.tool_id, environment_id=row.environment_id,
+        outcome="success", request=request, actor=context.user, before=before,
+        after={
+            "display_name": row.display_name, "status": row.status,
+            "is_default": row.is_default, "revision": row.revision,
+        },
+    )
+    database.commit()
+    database.refresh(row)
+    return _runtime_scope_response(row)
+
+
 @router.get("/config/definitions", response_model=list[ConfigDefinitionResponse])
 def list_definitions(
     context: Annotated[AuthContext, Depends(current_auth_context)],
@@ -560,6 +866,7 @@ def list_releases(
 ) -> list[ReleaseResponse]:
     """返回指定作用域的 Release 历史。"""
 
+    _assert_scope_environment(database, owner_type, owner_id, environment_id)
     if not _can_manage_config(database, context, owner_type, owner_id):
         raise PlatformError(403, "PERMISSION_DENIED", "无权管理该配置")
     rows = list(database.scalars(select(ConfigRelease).where(
@@ -579,6 +886,9 @@ def create_release(
 ) -> ReleaseResponse:
     """从当前激活版本创建新配置草稿。"""
 
+    _assert_scope_environment(
+        database, payload.owner_type, payload.owner_id, payload.environment_id
+    )
     if not _can_manage_config(database, context, payload.owner_type, payload.owner_id):
         raise PlatformError(403, "PERMISSION_DENIED", "无权管理该配置")
     if database.get(Environment, payload.environment_id) is None:
@@ -612,7 +922,7 @@ def create_release(
     add_audit_event(
         database, action="config.release.create", resource_type="config_release",
         resource_id=row.id, environment_id=row.environment_id,
-        tool_id=row.owner_id if row.owner_type == "tool" else None,
+        tool_id=_owner_tool_id(database, row.owner_type, row.owner_id),
         outcome="success", request=request, actor=context.user,
     )
     database.commit()
@@ -632,6 +942,7 @@ def update_release(
     row = database.get(ConfigRelease, release_id)
     if row is None:
         raise PlatformError(404, "NOT_FOUND", "配置版本不存在")
+    _assert_scope_environment(database, row.owner_type, row.owner_id, row.environment_id)
     if row.status != "draft":
         raise PlatformError(409, "VERSION_CONFLICT", "只有草稿可以修改")
     if row.revision != payload.revision:
@@ -640,10 +951,7 @@ def update_release(
         raise PlatformError(403, "PERMISSION_DENIED", "无权管理该配置")
     definitions = {
         definition.id: definition
-        for definition in database.scalars(select(ConfigDefinition).where(
-            ConfigDefinition.owner_type == row.owner_type,
-            ConfigDefinition.owner_id == row.owner_id,
-        )).all()
+        for definition in _owner_definitions(database, row.owner_type, row.owner_id)
     }
     for item in payload.items:
         definition = definitions.get(item.definition_id)
@@ -657,7 +965,8 @@ def update_release(
     row.revision += 1
     add_audit_event(
         database, action="config.release.update", resource_type="config_release", resource_id=row.id,
-        environment_id=row.environment_id, tool_id=row.owner_id if row.owner_type == "tool" else None,
+        environment_id=row.environment_id,
+        tool_id=_owner_tool_id(database, row.owner_type, row.owner_id),
         outcome="success", request=request, actor=context.user, before=before,
         after={item.definition_id: item.value for item in payload.items},
     )
@@ -668,10 +977,8 @@ def update_release(
 def _validate_release(database: Session, row: ConfigRelease) -> None:
     """验证 Release 普通必填项及作用域内 Secret 是否已配置。"""
 
-    definitions = list(database.scalars(select(ConfigDefinition).where(
-        ConfigDefinition.owner_type == row.owner_type,
-        ConfigDefinition.owner_id == row.owner_id,
-    )).all())
+    _assert_scope_environment(database, row.owner_type, row.owner_id, row.environment_id)
+    definitions = _owner_definitions(database, row.owner_type, row.owner_id)
     items = {item.definition_id: item for item in database.scalars(select(ConfigReleaseItem).where(ConfigReleaseItem.release_id == row.id)).all()}
     secrets = {
         secret.definition_id: secret
@@ -754,6 +1061,13 @@ def publish_release(
         raise PlatformError(409, "VERSION_CONFLICT", "配置版本不是可发布草稿")
     if not _can_manage_config(database, context, row.owner_type, row.owner_id):
         raise PlatformError(403, "PERMISSION_DENIED", "无权管理该配置")
+    scope = _assert_scope_environment(
+        database, row.owner_type, row.owner_id, row.environment_id
+    )
+    if scope is not None and (scope.environment_id, scope.target_env) not in {
+        ("dev", "test"), ("prod", "prod")
+    }:
+        raise PlatformError(422, "RUNTIME_SCOPE_MAPPING_INVALID", "Runtime Scope 环境映射无效")
     _validate_release(database, row)
     _freeze_secret_versions(database, row)
     activation = database.scalar(select(ConfigActivation).where(
@@ -779,7 +1093,8 @@ def publish_release(
     row.published_at = datetime.now(UTC)
     add_audit_event(
         database, action="config.release.publish", resource_type="config_release", resource_id=row.id,
-        environment_id=row.environment_id, tool_id=row.owner_id if row.owner_type == "tool" else None,
+        environment_id=row.environment_id,
+        tool_id=_owner_tool_id(database, row.owner_type, row.owner_id),
         outcome="success", request=request, actor=context.user,
         before={"active_release_id": old_release_id}, after={"active_release_id": row.id},
     )
@@ -799,6 +1114,9 @@ def rollback_release(
     source = database.get(ConfigRelease, release_id)
     if source is None:
         raise PlatformError(404, "NOT_FOUND", "配置版本不存在")
+    _assert_scope_environment(
+        database, source.owner_type, source.owner_id, source.environment_id
+    )
     if not _can_manage_config(database, context, source.owner_type, source.owner_id):
         raise PlatformError(403, "PERMISSION_DENIED", "无权管理该配置")
     version = (database.scalar(select(func.max(ConfigRelease.version)).where(
@@ -842,7 +1160,8 @@ def rollback_release(
     row.published_at = datetime.now(UTC)
     add_audit_event(
         database, action="config.release.rollback", resource_type="config_release", resource_id=row.id,
-        environment_id=row.environment_id, tool_id=row.owner_id if row.owner_type == "tool" else None,
+        environment_id=row.environment_id,
+        tool_id=_owner_tool_id(database, row.owner_type, row.owner_id),
         outcome="success", request=request, actor=context.user,
         metadata={"source_release_id": source.id, "previous_active_release_id": old},
     )
@@ -863,20 +1182,41 @@ def promote_release(
     source = database.get(ConfigRelease, release_id)
     if source is None:
         raise PlatformError(404, "NOT_FOUND", "配置版本不存在")
+    _assert_scope_environment(
+        database, source.owner_type, source.owner_id, source.environment_id
+    )
     if target_environment == source.environment_id:
         raise PlatformError(422, "VALIDATION_ERROR", "目标环境必须与来源环境不同")
     if database.get(Environment, target_environment) is None:
         raise PlatformError(422, "VALIDATION_ERROR", "目标环境不存在")
     if not _can_manage_config(database, context, source.owner_type, source.owner_id):
         raise PlatformError(403, "PERMISSION_DENIED", "无权管理该配置")
+    target_owner_id = source.owner_id
+    source_scope = _scope_owner(database, source.owner_type, source.owner_id)
+    if source_scope is not None:
+        expected_target_env = {"dev": "test", "prod": "prod"}.get(target_environment)
+        target_scope = database.scalar(select(ToolProjectScope).where(
+            ToolProjectScope.environment_id == target_environment,
+            ToolProjectScope.tool_id == source_scope.tool_id,
+            ToolProjectScope.platform_project_id == source_scope.platform_project_id,
+            ToolProjectScope.project_id == source_scope.project_id,
+            ToolProjectScope.target_env == expected_target_env,
+        ))
+        if target_scope is None:
+            raise PlatformError(422, "RUNTIME_SCOPE_NOT_FOUND", "目标环境 Runtime Scope 不存在")
+        if not _can_manage_config(
+            database, context, "tool_project_scope", target_scope.id
+        ):
+            raise PlatformError(403, "PERMISSION_DENIED", "无权管理目标 Runtime Scope")
+        target_owner_id = target_scope.id
     version = (database.scalar(select(func.max(ConfigRelease.version)).where(
         ConfigRelease.environment_id == target_environment,
         ConfigRelease.owner_type == source.owner_type,
-        ConfigRelease.owner_id == source.owner_id,
+        ConfigRelease.owner_id == target_owner_id,
     )) or 0) + 1
     row = ConfigRelease(
         id=new_id("rel"), environment_id=target_environment,
-        owner_type=source.owner_type, owner_id=source.owner_id,
+        owner_type=source.owner_type, owner_id=target_owner_id,
         version=version, revision=1, status="draft",
         based_on_release_id=source.id, created_by=context.user.id,
     )
@@ -884,10 +1224,7 @@ def promote_release(
     database.flush()
     definitions = {
         definition.id: definition
-        for definition in database.scalars(select(ConfigDefinition).where(
-            ConfigDefinition.owner_type == source.owner_type,
-            ConfigDefinition.owner_id == source.owner_id,
-        )).all()
+        for definition in _owner_definitions(database, source.owner_type, source.owner_id)
     }
     for item in database.scalars(select(ConfigReleaseItem).where(
         ConfigReleaseItem.release_id == source.id,
@@ -902,7 +1239,7 @@ def promote_release(
     add_audit_event(
         database, action="config.release.promote", resource_type="config_release",
         resource_id=row.id, environment_id=target_environment,
-        tool_id=row.owner_id if row.owner_type == "tool" else None,
+        tool_id=_owner_tool_id(database, row.owner_type, row.owner_id),
         outcome="success", request=request, actor=context.user,
         metadata={"source_release_id": source.id, "source_environment": source.environment_id},
     )
@@ -933,6 +1270,7 @@ def list_secrets(
 ) -> list[SecretResponse]:
     """列出有权管理作用域的 Secret 元数据。"""
 
+    _assert_scope_environment(database, owner_type, owner_id, environment_id)
     if not _can_manage_secret(database, context, owner_type, owner_id):
         raise PlatformError(403, "PERMISSION_DENIED", "无权管理该 Secret")
     rows = list(database.scalars(select(Secret).where(
@@ -954,6 +1292,9 @@ def put_secret(
 ) -> SecretResponse:
     """加密保存并激活 Secret 新版本，响应永不回显明文。"""
 
+    scope = _assert_scope_environment(
+        database, payload.owner_type, payload.owner_id, payload.environment_id
+    )
     if not _can_manage_secret(database, context, payload.owner_type, payload.owner_id):
         raise PlatformError(403, "PERMISSION_DENIED", "无权管理该 Secret")
     if database.get(Environment, payload.environment_id) is None:
@@ -961,7 +1302,11 @@ def put_secret(
     definition = database.get(ConfigDefinition, payload.definition_id)
     if definition is None or definition.sensitivity != "secret":
         raise PlatformError(422, "CONFIG_VALIDATION_FAILED", "Secret 定义无效")
-    if (definition.owner_type, definition.owner_id) != (payload.owner_type, payload.owner_id):
+    expected_definition_owner = (
+        ("tool", scope.tool_id) if scope is not None
+        else (payload.owner_type, payload.owner_id)
+    )
+    if (definition.owner_type, definition.owner_id) != expected_definition_owner:
         raise PlatformError(422, "CONFIG_VALIDATION_FAILED", "Secret 作用域不匹配")
     row = database.get(Secret, secret_id)
     if row is None:
@@ -978,7 +1323,8 @@ def put_secret(
     version = replace_secret(database, load_secret_cipher(settings), row, payload.value, context.user.id, payload.expires_at)
     add_audit_event(
         database, action="secret.replace", resource_type="secret", resource_id=row.id,
-        environment_id=row.environment_id, tool_id=row.owner_id if row.owner_type == "tool" else None,
+        environment_id=row.environment_id,
+        tool_id=_owner_tool_id(database, row.owner_type, row.owner_id),
         outcome="success", request=request, actor=context.user,
         after={"version": version.version, "status": row.status},
     )
@@ -992,15 +1338,26 @@ def list_credentials(
     context: Annotated[AuthContext, Depends(current_auth_context)],
     database: Annotated[Session, Depends(get_db)],
     environment_id: str | None = None,
+    runtime_scope_id: str | None = None,
 ) -> list[CredentialResponse]:
     """返回当前用户有 Secret 管理权限的凭证状态。"""
 
     statement = select(Credential).order_by(Credential.environment_id, Credential.tool_id)
     if environment_id:
         statement = statement.where(Credential.environment_id == environment_id)
-    rows = [row for row in database.scalars(statement).all() if _can_manage_secret(database, context, "tool", row.tool_id)]
+    if runtime_scope_id:
+        statement = statement.where(Credential.runtime_scope_id == runtime_scope_id)
+    rows = [
+        row for row in database.scalars(statement).all()
+        if _can_manage_secret(
+            database, context,
+            "tool_project_scope" if row.runtime_scope_id else "tool",
+            row.runtime_scope_id or row.tool_id,
+        )
+    ]
     return [CredentialResponse(
         id=row.id, tool_id=row.tool_id, environment_id=row.environment_id,
+        runtime_scope_id=row.runtime_scope_id,
         provider_type=row.provider_type, status=row.status, current_version=row.current_version,
         expires_at=row.expires_at, refresh_expires_at=row.refresh_expires_at,
         last_error_code=row.last_error_code, last_checked_at=row.last_checked_at,
@@ -1016,7 +1373,19 @@ def create_credential(
 ) -> CredentialResponse:
     """创建凭证生命周期记录，不复制或回显任何 Secret 明文。"""
 
-    if not _can_manage_secret(database, context, "tool", payload.tool_id):
+    scope = (
+        database.get(ToolProjectScope, payload.runtime_scope_id)
+        if payload.runtime_scope_id else None
+    )
+    if payload.tool_id == "api-autotest" and scope is None:
+        raise PlatformError(422, "RUNTIME_SCOPE_REQUIRED", "api-autotest 凭证必须绑定 Runtime Scope")
+    if scope is not None and (
+        scope.tool_id, scope.environment_id
+    ) != (payload.tool_id, payload.environment_id):
+        raise PlatformError(422, "CREDENTIAL_SCOPE_MISMATCH", "凭证与 Runtime Scope 不匹配")
+    owner_type = "tool_project_scope" if scope is not None else "tool"
+    owner_id = scope.id if scope is not None else payload.tool_id
+    if not _can_manage_secret(database, context, owner_type, owner_id):
         raise PlatformError(403, "PERMISSION_DENIED", "无权管理该凭证")
     if database.get(Environment, payload.environment_id) is None:
         raise PlatformError(422, "VALIDATION_ERROR", "配置环境不存在")
@@ -1024,12 +1393,14 @@ def create_credential(
         Credential.tool_id == payload.tool_id,
         Credential.environment_id == payload.environment_id,
         Credential.provider_type == payload.provider_type,
+        Credential.runtime_scope_id == payload.runtime_scope_id,
     ))
     if existing is not None:
         raise PlatformError(409, "VERSION_CONFLICT", "该凭证已存在")
     row = Credential(
         id=new_id("cred"), tool_id=payload.tool_id,
         environment_id=payload.environment_id,
+        runtime_scope_id=payload.runtime_scope_id,
         provider_type=payload.provider_type, status="pending_validation",
     )
     database.add(row)
@@ -1042,6 +1413,7 @@ def create_credential(
     database.refresh(row)
     return CredentialResponse(
         id=row.id, tool_id=row.tool_id, environment_id=row.environment_id,
+        runtime_scope_id=row.runtime_scope_id,
         provider_type=row.provider_type, status=row.status,
         current_version=row.current_version, expires_at=row.expires_at,
         refresh_expires_at=row.refresh_expires_at, last_error_code=row.last_error_code,

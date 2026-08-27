@@ -301,11 +301,13 @@ services:
       PLATFORM_API_URL: http://platform-api:8000/api/v1
       PLATFORM_CLIENT_TOKEN_FILE: /run/secrets/platform-client-token
       PLATFORM_RUNTIME_ENV: "${PLATFORM_RUNTIME_ENV:-dev}"
-      # 普通配置与会话写回必须一起切换，避免同一 Token 出现双写。
-      API_AUTOTEST_CONFIG_SOURCE: "${API_AUTOTEST_CONFIG_SOURCE:-env}"
-      API_AUTOTEST_SESSION_PROVIDER: "${API_AUTOTEST_SESSION_PROVIDER:-dotenv}"
+      # 平台是运行配置和会话写回的唯一真源；dev 平台也禁止回退 .env。
+      API_AUTOTEST_CONFIG_SOURCE: platform
+      API_AUTOTEST_SESSION_PROVIDER: platform
     volumes:
-      - ../Truthy_ApiAutoTest2/data:/app/data:ro
+      # 开发部署直接挂载标准项目包，便于验证新增项目且不再扫描旧根 data/。
+      - ../Truthy_ApiAutoTest2/projects:/app/projects:ro
+      - ../Truthy_ApiAutoTest2/runtime:/app/runtime
       - ../Truthy_ApiAutoTest2/logs:/app/logs
       - ../Truthy_ApiAutoTest2/reports:/app/reports
       - ../Truthy_ApiAutoTest2/tasks:/app/tasks

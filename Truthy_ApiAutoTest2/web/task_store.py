@@ -52,6 +52,7 @@ class TaskStore:
     def __init__(self, tasks_dir: Path, reports_dir: Path) -> None:
         self._tasks_dir = Path(tasks_dir)
         self._reports_dir = Path(reports_dir)
+        self._runtime_dir = self._tasks_dir.parent / "runtime"
         self._tasks_dir.mkdir(parents=True, exist_ok=True)
 
     @property
@@ -65,15 +66,23 @@ class TaskStore:
             raise ValueError(f"非法任务 ID: {task_id!r}")
         return self._tasks_dir / f"{task_id}.json"
 
-    def console_dir(self, task_id: str) -> Path:
-        """返回任务 console 输出目录 ``tasks/<task_id>/``。"""
+    def console_dir(self, task_id: str, project_id: str | None = None) -> Path:
+        """返回 console 目录；V2 使用 ``runtime/<project>/<task>`` 隔离。"""
         if not is_valid_task_id(task_id):
             raise ValueError(f"非法任务 ID: {task_id!r}")
+        if project_id is not None:
+            if not re.fullmatch(r"[a-z][a-z0-9-]{1,31}", project_id):
+                raise ValueError(f"非法项目 ID: {project_id!r}")
+            return self._runtime_dir / project_id / task_id
         return self._tasks_dir / task_id
 
-    def console_log_path(self, task_id: str) -> Path:
+    def console_log_path(
+        self,
+        task_id: str,
+        project_id: str | None = None,
+    ) -> Path:
         """返回任务 console.log 路径。"""
-        return self.console_dir(task_id) / "console.log"
+        return self.console_dir(task_id, project_id) / "console.log"
 
     def save(self, record: dict[str, Any]) -> None:
         """原子写入一条任务记录。
@@ -135,16 +144,26 @@ class TaskStore:
         if record is None and not path.exists():
             return False
 
-        # 任务 JUnit 命名固定为 junit-task-<id>.xml，随记录同步清理。
-        junit_path = self._reports_dir / f"junit-task-{task_id}.xml"
+        project = record.get("project") if isinstance(record, dict) else None
+        project_id = project.get("project_id") if isinstance(project, dict) else None
+        junit_file = record.get("junit_file") if isinstance(record, dict) else None
+        # V2 使用记录内相对路径定位；历史记录继续识别旧文件名。
+        junit_path = (
+            self._reports_dir.parent / str(junit_file)
+            if junit_file
+            else self._reports_dir / f"junit-task-{task_id}.xml"
+        )
         if junit_path.is_file():
             junit_path.unlink()
         # 报告以根任务 ID 作为物理隔离边界；任务因保留策略或人工操作被
         # 删除后，同步移除不可再授权访问的报告，避免产生永久孤儿产物。
-        task_report_directory = self._reports_dir / "task-reports" / task_id
+        task_report_directory = self._reports_dir / "task-reports"
+        if project_id:
+            task_report_directory = task_report_directory / str(project_id)
+        task_report_directory = task_report_directory / task_id
         if task_report_directory.is_dir():
             shutil.rmtree(task_report_directory, ignore_errors=True)
-        console_directory = self.console_dir(task_id)
+        console_directory = self.console_dir(task_id, str(project_id) if project_id else None)
         if console_directory.is_dir():
             shutil.rmtree(console_directory, ignore_errors=True)
         if path.is_file():

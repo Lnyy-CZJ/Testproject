@@ -3,6 +3,7 @@
 logs/
 reports/
 tasks/
+runtime/
 allure-results/
 allure-report/
 

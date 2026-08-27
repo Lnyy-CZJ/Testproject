@@ -1,0 +1,6 @@
+id: CreateAnonymousSession
+name: 创建匿名会话
+credential_profile: public
+request:
+  service_name: tool.identity.IdentityService
+  method_name: CreateAnonymousSession

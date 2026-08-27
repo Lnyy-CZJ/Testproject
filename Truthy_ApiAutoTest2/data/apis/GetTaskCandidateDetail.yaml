@@ -1,5 +1,0 @@
-id: GetTaskCandidateDetail
-name: 获取单个候选详情
-request:
-  service_name: tool.people_insight.SearchService
-  method_name: GetTaskCandidateDetail

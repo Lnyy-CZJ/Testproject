@@ -18,6 +18,7 @@ import pytest
 from api.gateway_api import GatewayApi
 from utils.custom.flow_loader import FlowConfigError, load_flow_cases
 from utils.custom.flow_runner import FlowEnvironmentError, FlowRunner
+from utils.custom.project_registry import ProjectRegistry
 from utils.custom.runtime_context import RuntimeContext
 from utils.third_party.allure_reporter import set_flow_metadata
 
@@ -46,7 +47,10 @@ _ADMIN_RUNTIME_VARIABLES = {
 }
 
 
-def _load_selected_flow_cases(selected_flow: str | None) -> list[dict[str, Any]]:
+def _load_selected_flow_cases(
+    selected_flow: str | None,
+    project_id: str = "truthy",
+) -> list[dict[str, Any]]:
     """加载命令行或本地调试配置选中的 Flow。
 
     功能说明:
@@ -62,10 +66,15 @@ def _load_selected_flow_cases(selected_flow: str | None) -> list[dict[str, Any]]
     异常说明:
         FlowConfigError: 命令行或 ``RUN_FLOW_IDS`` 指向不存在的 Flow 时抛出。
     """
+    project_root = (
+        PROJECT_ROOT
+        if (PROJECT_ROOT / "data").is_dir()
+        else ProjectRegistry(PROJECT_ROOT / "projects").get(project_id).root
+    )
     if selected_flow:
-        return load_flow_cases(PROJECT_ROOT, selected_flow=selected_flow)
+        return load_flow_cases(project_root, selected_flow=selected_flow)
 
-    flow_cases = load_flow_cases(PROJECT_ROOT)
+    flow_cases = load_flow_cases(project_root)
     if not RUN_FLOW_IDS:
         return flow_cases
 
@@ -126,11 +135,12 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
     if "flow_case" not in metafunc.fixturenames:
         return
     selected_flow = metafunc.config.getoption("--flow")
-    flow_cases = _load_selected_flow_cases(selected_flow)
+    project_id = str(metafunc.config.getoption("--project"))
+    flow_cases = _load_selected_flow_cases(selected_flow, project_id)
     params = [
         pytest.param(
             flow_case,
-            id=flow_case["id"],
+            id=f"{project_id}::{flow_case['id']}",
             marks=[getattr(pytest.mark, tag) for tag in flow_case["tags"]],
         )
         for flow_case in flow_cases
@@ -138,8 +148,15 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
     metafunc.parametrize("flow_case", params)
 
 
-def test_gateway_flow(flow_case: dict[str, Any], gateway_api: GatewayApi) -> None:
+def test_gateway_flow(
+    flow_case: dict[str, Any],
+    gateway_api: GatewayApi,
+    project_package: Any,
+    runtime_report_metadata: dict[str, str],
+) -> None:
     """使用通用 FlowRunner 执行一条独立 Flow/Scenario 用例。"""
+    # fixture 的返回值无需在测试体消费；声明依赖即可保证报告身份先落盘。
+    del runtime_report_metadata
     set_flow_metadata(flow_case)
     flow_api_ids = {
         str(step.get("api") or "")
@@ -175,7 +192,23 @@ def test_gateway_flow(flow_case: dict[str, Any], gateway_api: GatewayApi) -> Non
         )
 
     try:
-        FlowRunner(PROJECT_ROOT, gateway_factory=gateway_factory).run(flow_case)
+        flow_runtime_variables = {
+            **(gateway_api.settings.get("runtime_variables") or {}),
+        }
+        analysis_config = (
+            (gateway_api.settings.get("flow") or {}).get("analysis") or {}
+        )
+        for source_key, variable_name in (
+            ("poll_interval_seconds", "analysis_poll_interval_seconds"),
+            ("timeout_seconds", "analysis_timeout_seconds"),
+        ):
+            if source_key in analysis_config:
+                flow_runtime_variables[variable_name] = analysis_config[source_key]
+        FlowRunner(
+            project_package.root,
+            gateway_factory=gateway_factory,
+            runtime_variables=flow_runtime_variables,
+        ).run(flow_case)
     except FlowEnvironmentError as exc:
         # 真实媒体文件属于本地运行条件，缺失时保持原有跳过策略。
         pytest.skip(f"真实 Flow 未执行: {exc}")

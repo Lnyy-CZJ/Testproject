@@ -39,6 +39,8 @@ from app.models.configuration import (
     UserCredential,
     UserCredentialItem,
 )
+from app.models import configuration as configuration_models
+from app.models.access import Project
 from app.models.audit import AuditLog
 from app.models.identity import (
     Permission,
@@ -235,6 +237,590 @@ def test_tool_client_cannot_cross_tool_scope(phase2_client) -> None:
     assert response.json()["code"] == "TOOL_CLIENT_FORBIDDEN"
 
 
+def test_runtime_scope_model_enforces_mapping_uniqueness_and_profile_isolation(
+    phase2_client,
+) -> None:
+    """Scope 必须在数据库层约束五元组、固定映射及同名 Profile 隔离。"""
+
+    _client, factory, _settings = phase2_client
+    scope_model = getattr(configuration_models, "ToolProjectScope", None)
+    assert scope_model is not None, "缺少 ToolProjectScope 模型"
+
+    with factory() as database:
+        database.add_all([
+            Environment(id="prod", name="生产环境", sort_order=20),
+            Project(id="project_gateway", code="gateway", name="Gateway", status="active"),
+            Tool(
+                id="api-autotest", name="接口自动化", description="",
+                entry_url="/api-autotest/", health_url="http://api-autotest/health",
+                short_code="API", icon_key="api", category="automation", features=[],
+                sort_order=30, is_enabled=True, access_scope="project",
+                project_id="project_gateway",
+            ),
+        ])
+        database.flush()
+        database.add_all([
+            scope_model(
+                id="tps_truthy_dev", environment_id="dev", tool_id="api-autotest",
+                platform_project_id="project_gateway", project_id="truthy",
+                target_env="test", display_name="Truthy", status="active",
+                is_default=True, revision=1, created_by="test", updated_by="test",
+            ),
+            scope_model(
+                id="tps_dating_dev", environment_id="dev", tool_id="api-autotest",
+                platform_project_id="project_gateway", project_id="dating",
+                target_env="test", display_name="Dating", status="active",
+                is_default=False, revision=1, created_by="test", updated_by="test",
+            ),
+            scope_model(
+                id="tps_truthy_prod", environment_id="prod", tool_id="api-autotest",
+                platform_project_id="project_gateway", project_id="truthy",
+                target_env="prod", display_name="Truthy Prod", status="disabled",
+                is_default=False, revision=1, created_by="test", updated_by="test",
+            ),
+        ])
+        database.commit()
+
+        database.add_all([
+            UserCredential(
+                id="ucred_truthy_same_profile", user_id="user_scope_test",
+                tool_id="api-autotest", environment_id="dev",
+                runtime_scope_id="tps_truthy_dev", provider_type="gateway_session",
+            ),
+            UserCredential(
+                id="ucred_dating_same_profile", user_id="user_scope_test",
+                tool_id="api-autotest", environment_id="dev",
+                runtime_scope_id="tps_dating_dev", provider_type="gateway_session",
+            ),
+        ])
+        # 外键在 SQLite 测试未强制，因此这里只关心 scoped 唯一索引是否允许同名 Profile。
+        database.commit()
+
+        database.add(scope_model(
+            id="tps_invalid_mapping", environment_id="dev", tool_id="api-autotest",
+            platform_project_id="project_gateway", project_id="invalid",
+            target_env="prod", display_name="Invalid", status="active",
+            is_default=False, revision=1, created_by="test", updated_by="test",
+        ))
+        with pytest.raises(IntegrityError):
+            database.commit()
+        database.rollback()
+
+        database.add(scope_model(
+            id="tps_invalid_project_key", environment_id="dev", tool_id="api-autotest",
+            platform_project_id="project_gateway", project_id="bad_name",
+            target_env="test", display_name="Invalid key", status="active",
+            is_default=False, revision=1, created_by="test", updated_by="test",
+        ))
+        with pytest.raises(IntegrityError):
+            database.commit()
+        database.rollback()
+
+        database.add(scope_model(
+            id="tps_second_default", environment_id="dev", tool_id="api-autotest",
+            platform_project_id="project_gateway", project_id="another",
+            target_env="test", display_name="Another", status="active",
+            is_default=True, revision=1, created_by="test", updated_by="test",
+        ))
+        with pytest.raises(IntegrityError):
+            database.commit()
+        database.rollback()
+
+        database.add(scope_model(
+            id="tps_duplicate_five_tuple", environment_id="dev", tool_id="api-autotest",
+            platform_project_id="project_gateway", project_id="truthy",
+            target_env="test", display_name="Duplicate", status="active",
+            is_default=False, revision=1, created_by="test", updated_by="test",
+        ))
+        with pytest.raises(IntegrityError):
+            database.commit()
+        database.rollback()
+
+
+def test_runtime_scope_management_api_validates_mapping_and_immutable_identity(
+    phase2_client,
+) -> None:
+    """管理 API 只允许管理员创建合法 Scope，并通过 revision 更新可变字段。"""
+
+    client, factory, _settings = phase2_client
+    _setup(client)
+    csrf = client.cookies.get("tp_csrf")
+    with factory() as database:
+        database.add(Project(
+            id="project_scope_api", code="scope-api", name="Scope API", status="active"
+        ))
+        database.add(Tool(
+            id="api-autotest", name="接口自动化", description="",
+            entry_url="/api-autotest/", health_url="http://api-autotest/health",
+            short_code="API", icon_key="api", category="automation", features=[],
+            sort_order=30, is_enabled=True, access_scope="project",
+            project_id="project_scope_api",
+        ))
+        database.commit()
+
+    invalid = client.post(
+        "/api/v1/runtime-scopes",
+        headers={"X-CSRF-Token": csrf},
+        json={
+            "environment_id": "dev", "tool_id": "api-autotest",
+            "platform_project_id": "project_scope_api", "project_id": "dating",
+            "target_env": "prod", "display_name": "Dating", "is_default": False,
+        },
+    )
+    assert invalid.status_code == 422
+
+    created = client.post(
+        "/api/v1/runtime-scopes",
+        headers={"X-CSRF-Token": csrf},
+        json={
+            "environment_id": "dev", "tool_id": "api-autotest",
+            "platform_project_id": "project_scope_api", "project_id": "dating",
+            "target_env": "test", "display_name": "Dating", "is_default": False,
+        },
+    )
+    assert created.status_code == 201
+    scope = created.json()
+    assert scope["platform_environment"] == "dev"
+    assert scope["target_env"] == "test"
+    assert scope["status"] == "active"
+
+    duplicate = client.post(
+        "/api/v1/runtime-scopes",
+        headers={"X-CSRF-Token": csrf},
+        json={
+            "environment_id": "dev", "tool_id": "api-autotest",
+            "platform_project_id": "project_scope_api", "project_id": "dating",
+            "target_env": "test", "display_name": "Duplicate", "is_default": False,
+        },
+    )
+    assert duplicate.status_code == 409
+
+    patched = client.patch(
+        f"/api/v1/runtime-scopes/{scope['id']}",
+        headers={"X-CSRF-Token": csrf},
+        json={"display_name": "Dating Disabled", "status": "disabled", "revision": 1},
+    )
+    assert patched.status_code == 200
+    assert patched.json()["status"] == "disabled"
+    assert patched.json()["revision"] == 2
+
+    listed = client.get(
+        "/api/v1/runtime-scopes",
+        params={"tool_id": "api-autotest", "environment_id": "dev"},
+    )
+    assert listed.status_code == 200
+    assert [item["id"] for item in listed.json()] == [scope["id"]]
+
+
+def test_scoped_release_and_secret_reuse_tool_definitions_without_cross_scope_leak(
+    phase2_client,
+) -> None:
+    """Scope owner 复用 Tool Definition，但 Release/Secret 的值必须按 Scope 隔离。"""
+
+    client, factory, _settings = phase2_client
+    _setup(client)
+    csrf = client.cookies.get("tp_csrf")
+    scope_model = getattr(configuration_models, "ToolProjectScope")
+    with factory() as database:
+        admin = database.scalar(select(User).where(User.username_normalized == "admin"))
+        database.add(Project(
+            id="project_scoped_config", code="scoped-config",
+            name="Scoped Config", status="active",
+        ))
+        database.add(Tool(
+            id="api-autotest", name="接口自动化", description="",
+            entry_url="/api-autotest/", health_url="http://api-autotest/health",
+            short_code="API", icon_key="api", category="automation", features=[],
+            sort_order=30, is_enabled=True, access_scope="project",
+            project_id="project_scoped_config",
+        ))
+        database.add_all([
+            scope_model(
+                id="tps_config_truthy", environment_id="dev", tool_id="api-autotest",
+                platform_project_id="project_scoped_config", project_id="truthy",
+                target_env="test", display_name="Truthy", status="active",
+                is_default=True, revision=1, created_by=admin.id, updated_by=admin.id,
+            ),
+            scope_model(
+                id="tps_config_dating", environment_id="dev", tool_id="api-autotest",
+                platform_project_id="project_scoped_config", project_id="dating",
+                target_env="test", display_name="Dating", status="active",
+                is_default=False, revision=1, created_by=admin.id, updated_by=admin.id,
+            ),
+            ConfigDefinition(
+                id="api-autotest.gateway.url", key="gateway.url",
+                display_name="Gateway URL", description="", owner_type="tool",
+                owner_id="api-autotest", group_key="gateway", value_type="string",
+                sensitivity="normal", required=True, validation_schema={},
+                apply_mode="next_task", editable=True, sort_order=10,
+            ),
+            ConfigDefinition(
+                id="api-autotest.gateway.token", key="gateway.token",
+                display_name="Gateway Token", description="", owner_type="tool",
+                owner_id="api-autotest", group_key="gateway", value_type="secret",
+                sensitivity="secret", required=True, validation_schema={},
+                apply_mode="next_task", editable=True, sort_order=20,
+            ),
+        ])
+        database.commit()
+
+    releases: dict[str, str] = {}
+    for scope_id, url, token in (
+        ("tps_config_truthy", "https://truthy.invalid", "truthy-secret"),
+        ("tps_config_dating", "https://dating.invalid", "dating-secret"),
+    ):
+        created = client.post(
+            "/api/v1/config/releases", headers={"X-CSRF-Token": csrf},
+            json={
+                "environment_id": "dev", "owner_type": "tool_project_scope",
+                "owner_id": scope_id,
+            },
+        )
+        assert created.status_code == 201
+        release_id = created.json()["id"]
+        releases[scope_id] = release_id
+        updated = client.put(
+            f"/api/v1/config/releases/{release_id}/items",
+            headers={"X-CSRF-Token": csrf},
+            json={
+                "revision": 1,
+                "items": [{
+                    "definition_id": "api-autotest.gateway.url", "value": url,
+                }],
+            },
+        )
+        assert updated.status_code == 200
+        secret = client.put(
+            f"/api/v1/secrets/sec_{scope_id}", headers={"X-CSRF-Token": csrf},
+            json={
+                "environment_id": "dev", "owner_type": "tool_project_scope",
+                "owner_id": scope_id,
+                "definition_id": "api-autotest.gateway.token", "value": token,
+            },
+        )
+        assert secret.status_code == 200
+        assert token not in secret.text
+        assert client.post(
+            f"/api/v1/config/releases/{release_id}/publish",
+            headers={"X-CSRF-Token": csrf},
+        ).status_code == 200
+
+    truthy_secrets = client.get("/api/v1/secrets", params={
+        "environment_id": "dev", "owner_type": "tool_project_scope",
+        "owner_id": "tps_config_truthy",
+    })
+    dating_secrets = client.get("/api/v1/secrets", params={
+        "environment_id": "dev", "owner_type": "tool_project_scope",
+        "owner_id": "tps_config_dating",
+    })
+    assert [item["id"] for item in truthy_secrets.json()] == ["sec_tps_config_truthy"]
+    assert [item["id"] for item in dating_secrets.json()] == ["sec_tps_config_dating"]
+
+    wrong_environment = client.post(
+        "/api/v1/config/releases", headers={"X-CSRF-Token": csrf},
+        json={
+            "environment_id": "prod", "owner_type": "tool_project_scope",
+            "owner_id": "tps_config_truthy",
+        },
+    )
+    assert wrong_environment.status_code == 422
+    assert wrong_environment.json()["code"] == "CONFIG_SCOPE_MISMATCH"
+
+
+def test_api_autotest_runtime_chain_is_scope_aware_and_rejects_overrides(
+    phase2_client,
+    tmp_path: Path,
+) -> None:
+    """规划、物化、ack 与会话写回必须固定在签名上下文解析出的同一 Scope。"""
+
+    client, factory, settings = phase2_client
+    _setup(client)
+    signing_key_path = tmp_path / "scope-user-context-signing-key"
+    signing_key_path.write_bytes(b"scope-runtime-user-context-key-32-bytes-minimum")
+    signing_key_path.chmod(0o600)
+    settings.user_context_signing_key_file = str(signing_key_path)
+    scope_model = getattr(configuration_models, "ToolProjectScope", None)
+    assert scope_model is not None, "缺少 ToolProjectScope 模型"
+
+    with factory() as database:
+        admin = database.scalar(select(User).where(User.username_normalized == "admin"))
+        database.add(Project(
+            id="project_runtime_gateway", code="runtime-gateway",
+            name="Runtime Gateway", status="active",
+        ))
+        database.add(Project(
+            id="project_runtime_other", code="runtime-other",
+            name="Other Runtime", status="active",
+        ))
+        database.add(Tool(
+            id="api-autotest", name="接口自动化", description="",
+            entry_url="/api-autotest/", health_url="http://api-autotest/health",
+            short_code="API", icon_key="api", category="automation", features=[],
+            sort_order=30, is_enabled=True, access_scope="project",
+            project_id="project_runtime_gateway",
+        ))
+        database.add(ToolClient(
+            id="client_api_autotest_scope", tool_id="api-autotest", environment_id="dev",
+            token_hash=token_hash("api-autotest-scope-token"),
+            capabilities=[
+                "runtime.context.create", "config.read", "config.ack",
+                "credential.session.write",
+            ],
+            status="active",
+        ))
+        database.add_all([
+            scope_model(
+                id="tps_truthy_runtime", environment_id="dev", tool_id="api-autotest",
+                platform_project_id="project_runtime_gateway", project_id="truthy",
+                target_env="test", display_name="Truthy", status="active",
+                is_default=True, revision=1, created_by=admin.id, updated_by=admin.id,
+            ),
+            scope_model(
+                id="tps_dating_runtime", environment_id="dev", tool_id="api-autotest",
+                platform_project_id="project_runtime_gateway", project_id="dating",
+                target_env="test", display_name="Dating", status="active",
+                is_default=False, revision=1, created_by=admin.id, updated_by=admin.id,
+            ),
+            scope_model(
+                id="tps_other_project_runtime", environment_id="dev",
+                tool_id="api-autotest", platform_project_id="project_runtime_other",
+                project_id="hidden", target_env="test", display_name="Hidden",
+                status="active", is_default=False, revision=1,
+                created_by=admin.id, updated_by=admin.id,
+            ),
+        ])
+        database.add_all([
+            ConfigDefinition(
+                id="api-autotest.gateway.base_url", key="gateway.base_url",
+                display_name="Gateway", description="", owner_type="tool",
+                owner_id="api-autotest", group_key="gateway", value_type="string",
+                sensitivity="normal", required=True, validation_schema={},
+                apply_mode="next_task", editable=True, sort_order=10,
+            ),
+            ConfigDefinition(
+                id="api-autotest.SESSION_TOKEN", key="SESSION_TOKEN",
+                display_name="Session Token", description="", owner_type="tool",
+                owner_id="api-autotest", group_key="credential", value_type="secret",
+                sensitivity="secret", required=True, validation_schema={},
+                apply_mode="next_task", editable=True, sort_order=20,
+                value_scope="user", credential_provider_type="gateway_session",
+            ),
+            ConfigDefinition(
+                id="api-autotest.ADMIN_TOKEN", key="ADMIN_TOKEN",
+                display_name="Admin Token", description="", owner_type="tool",
+                owner_id="api-autotest", group_key="credential", value_type="secret",
+                sensitivity="secret", required=True, validation_schema={},
+                apply_mode="next_task", editable=True, sort_order=30,
+                value_scope="user", credential_provider_type="admin_login",
+            ),
+        ])
+        database.add_all([
+            ConfigRelease(
+                id="rel_truthy_runtime", environment_id="dev",
+                owner_type="tool_project_scope", owner_id="tps_truthy_runtime",
+                version=1, revision=1, status="active", created_by=admin.id,
+            ),
+            ConfigRelease(
+                id="rel_dating_runtime", environment_id="dev",
+                owner_type="tool_project_scope", owner_id="tps_dating_runtime",
+                version=1, revision=1, status="active", created_by=admin.id,
+            ),
+        ])
+        database.flush()
+        database.add_all([
+            ConfigReleaseItem(
+                release_id="rel_truthy_runtime",
+                definition_id="api-autotest.gateway.base_url",
+                value_json="https://truthy.invalid",
+            ),
+            ConfigReleaseItem(
+                release_id="rel_dating_runtime",
+                definition_id="api-autotest.gateway.base_url",
+                value_json="https://dating.invalid",
+            ),
+            ConfigActivation(
+                environment_id="dev", owner_type="tool_project_scope",
+                owner_id="tps_truthy_runtime", active_release_id="rel_truthy_runtime",
+            ),
+            ConfigActivation(
+                environment_id="dev", owner_type="tool_project_scope",
+                owner_id="tps_dating_runtime", active_release_id="rel_dating_runtime",
+            ),
+        ])
+        credentials = [
+            UserCredential(
+                id="ucred_truthy_runtime", user_id=admin.id, tool_id="api-autotest",
+                environment_id="dev", runtime_scope_id="tps_truthy_runtime",
+                provider_type="gateway_session", status="healthy", current_version=1,
+            ),
+            UserCredential(
+                id="ucred_dating_runtime", user_id=admin.id, tool_id="api-autotest",
+                environment_id="dev", runtime_scope_id="tps_dating_runtime",
+                provider_type="gateway_session", status="healthy", current_version=1,
+            ),
+        ]
+        database.add_all(credentials)
+        # Dating 的匿名链路不依赖 Admin Profile。即使用户曾配置过但当前需要
+        # 重新登录，Scope 快照也只能忽略该可选 Profile，不能阻塞实际只需要
+        # gateway_session 的任务。
+        database.add(UserCredential(
+            id="ucred_dating_admin_stale", user_id=admin.id,
+            tool_id="api-autotest", environment_id="dev",
+            runtime_scope_id="tps_dating_runtime", provider_type="admin_login",
+            status="action_required", current_version=1,
+        ))
+        database.flush()
+        cipher = load_secret_cipher(settings)
+        for credential, value in zip(credentials, ("truthy-token", "dating-token"), strict=True):
+            secret = Secret(
+                id=f"sec_{credential.id}", environment_id="dev",
+                owner_type="user_credential", owner_id=credential.id,
+                definition_id="api-autotest.SESSION_TOKEN", status="missing",
+            )
+            database.add(secret)
+            database.flush()
+            version = replace_secret(database, cipher, secret, value, admin.id)
+            database.flush()
+            database.add(UserCredentialItem(
+                credential_id=credential.id, credential_version=1,
+                key="SESSION_TOKEN", secret_version_id=version.id,
+            ))
+        database.commit()
+
+    authorized = client.get("/api/v1/internal/authorize", headers={
+        "X-Tool-ID": "api-autotest",
+        "X-Original-URI": "/api-autotest/api/tasks",
+        "X-Original-Method": "POST",
+    })
+    assert authorized.status_code == 204
+    signed_context = authorized.headers["x-platform-user-context"]
+    headers = {
+        "Authorization": "Bearer api-autotest-scope-token",
+        "X-Platform-User-Context": signed_context,
+    }
+
+    scope_list = client.get(
+        "/api/v1/internal/tools/api-autotest/runtime-scopes", headers=headers
+    )
+    assert scope_list.status_code == 200
+    assert {item["project_id"] for item in scope_list.json()["items"]} == {
+        "truthy", "dating",
+    }
+    assert all(
+        item["management_url"].startswith("/settings/config?scope_id=tps_")
+        for item in scope_list.json()["items"]
+    )
+    unauthorized_project = client.post(
+        "/api/v1/internal/tools/api-autotest/runtime-contexts",
+        headers=headers,
+        json={
+            "project_id": "hidden", "resource_type": "task",
+            "resource_id": "task_scope_unauthorized_project",
+        },
+    )
+    assert unauthorized_project.status_code == 404
+    assert unauthorized_project.json()["code"] == "RUNTIME_SCOPE_NOT_FOUND"
+
+    override = client.post(
+        "/api/v1/internal/tools/api-autotest/runtime-contexts",
+        headers=headers,
+        json={
+            "project_id": "dating", "resource_type": "task",
+            "resource_id": "task_scope_override", "target_env": "prod",
+        },
+    )
+    assert override.status_code == 422
+
+    created = client.post(
+        "/api/v1/internal/tools/api-autotest/runtime-contexts",
+        headers=headers,
+        json={
+            "project_id": "dating", "resource_type": "task",
+            "resource_id": "task_scope_dating",
+        },
+    )
+    assert created.status_code == 201
+    runtime = created.json()
+    assert runtime["runtime_scope"]["scope_id"] == "tps_dating_runtime"
+    assert runtime["runtime_scope"]["platform_environment"] == "dev"
+    assert runtime["runtime_scope"]["target_env"] == "test"
+    assert runtime["snapshot_selector"]["runtime_scope_id"] == "tps_dating_runtime"
+    assert runtime["snapshot_selector"]["release_id"] == "rel_dating_runtime"
+    assert runtime["snapshot_selector"]["credential_versions"] == {
+        "ucred_dating_runtime": 1,
+    }
+
+    materialized = client.post(
+        "/api/v1/internal/tools/api-autotest/runtime-config/materialize",
+        headers={"Authorization": "Bearer api-autotest-scope-token"},
+        json={
+            "runtime_context_id": runtime["runtime_context_id"],
+            "snapshot_selector": runtime["snapshot_selector"],
+        },
+    )
+    assert materialized.status_code == 200
+    assert materialized.json()["runtime_scope_id"] == "tps_dating_runtime"
+    assert materialized.json()["normal"]["gateway.base_url"] == "https://dating.invalid"
+    assert materialized.json()["secrets"]["SESSION_TOKEN"] == "dating-token"
+
+    cross_scope_selector = dict(runtime["snapshot_selector"], release_id="rel_truthy_runtime")
+    cross_scope = client.post(
+        "/api/v1/internal/tools/api-autotest/runtime-config/materialize",
+        headers={"Authorization": "Bearer api-autotest-scope-token"},
+        json={
+            "runtime_context_id": runtime["runtime_context_id"],
+            "snapshot_selector": cross_scope_selector,
+        },
+    )
+    assert cross_scope.status_code == 409
+    assert cross_scope.json()["code"] == "RUNTIME_SNAPSHOT_INVALID"
+
+    wrong_session_scope = client.put(
+        "/api/v1/internal/tools/api-autotest/user-credentials/ucred_truthy_runtime/session",
+        headers={"Authorization": "Bearer api-autotest-scope-token"},
+        json={
+            "runtime_context_id": runtime["runtime_context_id"],
+            "expected_version": 1, "values": {"SESSION_TOKEN": "cross-scope"},
+        },
+    )
+    assert wrong_session_scope.status_code == 404
+
+    wrong_ack = client.post(
+        "/api/v1/internal/tools/api-autotest/config-ack",
+        headers={"Authorization": "Bearer api-autotest-scope-token"},
+        json={
+            "runtime_context_id": runtime["runtime_context_id"],
+            "release_id": "rel_truthy_runtime",
+        },
+    )
+    assert wrong_ack.status_code == 409
+
+    ack = client.post(
+        "/api/v1/internal/tools/api-autotest/config-ack",
+        headers={"Authorization": "Bearer api-autotest-scope-token"},
+        json={
+            "runtime_context_id": runtime["runtime_context_id"],
+            "release_id": "rel_dating_runtime",
+        },
+    )
+    assert ack.status_code == 200
+
+    with factory() as database:
+        dating_scope = database.get(scope_model, "tps_dating_runtime")
+        dating_scope.status = "disabled"
+        database.commit()
+    disabled = client.post(
+        "/api/v1/internal/tools/api-autotest/runtime-contexts",
+        headers=headers,
+        json={
+            "project_id": "dating", "resource_type": "task",
+            "resource_id": "task_scope_disabled",
+        },
+    )
+    assert disabled.status_code == 409
+    assert disabled.json()["code"] == "RUNTIME_SCOPE_DISABLED"
+
+
 def test_runtime_config_uses_gateway_as_primary_when_admin_is_newer(phase2_client) -> None:
     """多 Credential 快照必须聚合状态，并固定用 Gateway 版本供工具 CAS 写回。"""
 
@@ -287,6 +873,13 @@ def test_tool_path_policy_separates_view_result_and_execute() -> None:
     assert required_tool_permission("truthy-search", "POST", "/truthy-search/baselines/v1/people/person_1/available-fields") == "tool.execute"
     assert required_tool_permission("api-autotest", "GET", "/api-autotest/api/tasks") == "tool.result.view"
     assert required_tool_permission("api-autotest", "GET", "/api-autotest/catalog") == "tool.view"
+    assert required_tool_permission("api-autotest", "GET", "/api-autotest/projects") == "tool.view"
+    assert required_tool_permission("api-autotest", "GET", "/api-autotest/api/projects/dating/context") == "tool.view"
+    assert required_tool_permission("api-autotest", "GET", "/api-autotest/tasks/new/single") == "tool.execute"
+    assert required_tool_permission("api-autotest", "POST", "/api-autotest/api/preflight") == "tool.view"
+    assert required_tool_permission("api-autotest", "POST", "/api-autotest/api/tasks") == "tool.execute"
+    assert required_tool_permission("api-autotest", "POST", "/api-autotest/api/tasks/task_1/retry") == "tool.execute"
+    assert required_tool_permission("api-autotest", "POST", "/api-autotest/api/tasks/task_1/cancel") == "task.cancel"
     assert required_tool_permission("log-filter", "POST", "/log-filter/people-search/analyze") == "tool.execute"
     assert required_tool_permission("log-filter", "POST", "/log-filter/export") == "tool.execute"
     assert required_tool_permission("trackevents", "POST", "/trackevents/api/analyze") == "tool.execute"
@@ -356,7 +949,7 @@ def test_gateway_refresh_failure_falls_back_to_new_session(monkeypatch) -> None:
 
     monkeypatch.setattr(credential_agent, "_post_json", fake_post)
     result = credential_agent._gateway_session(
-        {"GATEWAY_API_URL": "https://gateway.example.test"},
+        {"gateway.base_url": "https://gateway.example.test"},
         {"AUTH_TOKEN": "old", "REFRESH_TOKEN": "old-refresh", "DEVICE_ID": "device"},
     )
     assert methods == ["RefreshSession", "CreateAnonymousSession"]

@@ -15,10 +15,34 @@ class FlowConfigError(ValueError):
     """表示 Flow/Scenario 配对或步骤配置不合法。"""
 
 
+def _safe_yaml_paths(directory: Path, project_root: Path, kind: str) -> list[Path]:
+    """枚举项目内 Flow/Scenario 普通文件，拒绝跨项目符号链接。"""
+    boundary = project_root.resolve()
+    paths = sorted(directory.glob("*.yaml"))
+    for path in paths:
+        if path.is_symlink():
+            raise FlowConfigError(f"{kind} 文件禁止使用符号链接: {path.name}")
+        try:
+            path.resolve().relative_to(boundary)
+        except ValueError as exc:
+            raise FlowConfigError(f"{kind} 文件路径越界: {path.name}") from exc
+    return paths
+
+
 _PATH_PATTERN = re.compile(
     r"^\$\.[A-Za-z_][A-Za-z0-9_]*(?:(?:\.[A-Za-z_][A-Za-z0-9_]*)|(?:\[\d+]))*$"
 )
 _VARIABLE_NAME_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_FLOW_ID_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{0,127}$")
+_SIGNED_UPLOAD_FIELDS = {
+    "type",
+    "url",
+    "headers",
+    "fixture",
+    "method",
+    "success_statuses",
+    "output",
+}
 
 
 def _validate_path(path: Any, field: str, allow_short: bool = False) -> None:
@@ -125,17 +149,19 @@ def _validate_flow(
                 f"步骤 {step_id} 的 extract、optional_extract 只能用于 api 步骤"
             )
 
-        if "skip_if" in step:
-            skip_if = step["skip_if"]
-            if not isinstance(skip_if, dict):
-                raise FlowConfigError(f"步骤 {step_id}.skip_if 必须是对象")
-            variable = skip_if.get("variable")
+        for condition_name in ("skip_if", "skip_unless"):
+            if condition_name not in step:
+                continue
+            condition = step[condition_name]
+            if not isinstance(condition, dict):
+                raise FlowConfigError(f"步骤 {step_id}.{condition_name} 必须是对象")
+            variable = condition.get("variable")
             if not isinstance(variable, str) or not _VARIABLE_NAME_PATTERN.fullmatch(variable):
                 raise FlowConfigError(
-                    f"步骤 {step_id}.skip_if.variable 必须是有效变量名"
+                    f"步骤 {step_id}.{condition_name}.variable 必须是有效变量名"
                 )
-            if "equals" not in skip_if:
-                raise FlowConfigError(f"步骤 {step_id}.skip_if 缺少 equals")
+            if "equals" not in condition:
+                raise FlowConfigError(f"步骤 {step_id}.{condition_name} 缺少 equals")
 
         if "until" in step and "api" not in step:
             raise FlowConfigError(
@@ -147,10 +173,43 @@ def _validate_flow(
                     f"步骤 {step_id}.run_on_termination 只能为 API 步骤的布尔值"
                 )
         if "action" in step:
-            if step["action"] != "prepared_media_upload":
+            action = step["action"]
+            if action == "prepared_media_upload":
+                pass
+            elif not isinstance(action, dict):
                 raise FlowConfigError(
-                    f"步骤 {step_id} 包含未知 action: {step['action']}"
+                    f"步骤 {step_id} 包含未知 action: {action}"
                 )
+            else:
+                unexpected = sorted(set(action) - _SIGNED_UPLOAD_FIELDS)
+                if unexpected:
+                    raise FlowConfigError(
+                        f"步骤 {step_id}.action 包含未知字段: {', '.join(unexpected)}"
+                    )
+                if action.get("type") != "signed_binary_upload":
+                    raise FlowConfigError(
+                        f"步骤 {step_id}.action.type 仅支持 signed_binary_upload"
+                    )
+                for field in ("url", "headers", "fixture"):
+                    if not isinstance(action.get(field), str) or not action[field].strip():
+                        raise FlowConfigError(
+                            f"步骤 {step_id}.action.{field} 必须为非空字符串"
+                        )
+                method = action.get("method", "PUT")
+                if method != "PUT":
+                    raise FlowConfigError(
+                        f"步骤 {step_id}.action.method 首期仅支持 PUT"
+                    )
+                statuses = action.get("success_statuses", [200, 201, 202, 204])
+                if not isinstance(statuses, list) or not statuses or any(
+                    isinstance(status, bool)
+                    or not isinstance(status, int)
+                    or not 100 <= status <= 599
+                    for status in statuses
+                ):
+                    raise FlowConfigError(
+                        f"步骤 {step_id}.action.success_statuses 必须是 HTTP 状态码数组"
+                    )
         elif "wait" in step:
             wait = step["wait"]
             if not isinstance(wait, dict) or "seconds" not in wait:
@@ -171,17 +230,31 @@ def _validate_flow(
                     raise FlowConfigError(
                         f"步骤 {step_id}.until.terminate_on 必须是非空字符串数组"
                     )
-            interval = _validate_number(
-                until.get("interval_seconds"),
-                f"步骤 {step_id}.until.interval_seconds",
-                0.000001,
-            )
-            timeout = _validate_number(
-                until.get("timeout_seconds"),
-                f"步骤 {step_id}.until.timeout_seconds",
-                interval,
-            )
-            if timeout < interval:
+            interval_value = until.get("interval_seconds")
+            timeout_value = until.get("timeout_seconds")
+            # 平台 Release 的轮询值在运行时注入，因此完整占位符在静态阶段只校验
+            # 变量语法；字面量仍沿用原有边界校验。
+            if isinstance(interval_value, str) and re.fullmatch(
+                r"{{\s*[A-Za-z_][A-Za-z0-9_]*\s*}}", interval_value
+            ):
+                interval = None
+            else:
+                interval = _validate_number(
+                    interval_value,
+                    f"步骤 {step_id}.until.interval_seconds",
+                    0.000001,
+                )
+            if isinstance(timeout_value, str) and re.fullmatch(
+                r"{{\s*[A-Za-z_][A-Za-z0-9_]*\s*}}", timeout_value
+            ):
+                timeout = None
+            else:
+                timeout = _validate_number(
+                    timeout_value,
+                    f"步骤 {step_id}.until.timeout_seconds",
+                    interval or 0.000001,
+                )
+            if interval is not None and timeout is not None and timeout < interval:
                 raise FlowConfigError(f"步骤 {step_id} 的轮询超时不得小于间隔")
 
     step_data = scenario.get("step_data")
@@ -251,17 +324,23 @@ def load_flow_cases(
     """
     flows_directory = project_root / "data" / "flows"
     scenarios_directory = project_root / "data" / "scenarios"
-    paths = sorted(flows_directory.glob("*.yaml"))
+    paths = _safe_yaml_paths(flows_directory, project_root, "Flow")
     available = [path.stem for path in paths]
     scenario_names = {
-        path.stem for path in sorted(scenarios_directory.glob("*.yaml"))
+        path.stem
+        for path in _safe_yaml_paths(scenarios_directory, project_root, "Scenario")
     }
     orphan_scenarios = scenario_names - set(available)
     if orphan_scenarios:
         names = ", ".join(sorted(orphan_scenarios))
         raise FlowConfigError(f"Scenario 缺少同名 Flow: {names}")
     if selected_flow:
-        normalized = Path(selected_flow).stem
+        # Flow 是项目内逻辑 ID，不是文件路径。禁止 ``Path.stem`` 静默把
+        # ``../flow``、绝对路径或 ``flow.yaml`` 归一成可执行资产，确保 CLI
+        # 与 Web 的路径穿越边界一致。
+        if not _FLOW_ID_PATTERN.fullmatch(selected_flow):
+            raise FlowConfigError(f"Flow ID 不合法: {selected_flow!r}")
+        normalized = selected_flow
         paths = [path for path in paths if path.stem == normalized]
         if not paths:
             names = ", ".join(available) or "无"

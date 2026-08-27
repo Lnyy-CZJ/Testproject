@@ -22,7 +22,18 @@ SENSITIVE_KEYS = {
     # Admin Gateway 审计步骤以请求体参数传递会话凭证，必须与 token 同级脱敏。
     "session_token",
     "token",
+    "user_id",
+    "device_id",
 }
+SENSITIVE_KEY_FRAGMENTS = (
+    "authorization",
+    "cookie",
+    "operator",
+    "password",
+    "secret",
+    "signature",
+    "token",
+)
 
 
 def mask_sensitive(data: Any) -> Any:
@@ -38,7 +49,9 @@ def mask_sensitive(data: Any) -> Any:
         masked: dict[Any, Any] = {}
         for key, value in data.items():
             normalized_key = str(key).lower()
-            if normalized_key in SENSITIVE_KEYS:
+            if normalized_key in SENSITIVE_KEYS or any(
+                fragment in normalized_key for fragment in SENSITIVE_KEY_FRAGMENTS
+            ):
                 masked[key] = "***"
             elif (
                 isinstance(value, str)

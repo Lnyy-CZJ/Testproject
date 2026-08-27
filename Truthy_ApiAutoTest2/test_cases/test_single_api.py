@@ -16,7 +16,8 @@ if str(PROJECT_ROOT) not in sys.path:
 import pytest
 
 from api.gateway_api import GatewayApi
-from utils.custom.case_loader import load_single_cases
+from utils.custom.case_loader import CaseConfigError, load_single_cases
+from utils.custom.project_registry import ProjectRegistry
 from utils.third_party.allure_reporter import set_single_case_metadata, step
 
 # 指定需要调试的完整 Case ID；正式默认值为空元组，收集全部独立单接口用例。
@@ -24,7 +25,14 @@ from utils.third_party.allure_reporter import set_single_case_metadata, step
 RUN_CASE_IDS: tuple[str, ...] = ()
 
 
-def _load_case_params() -> list[Any]:
+def _getoption(config: pytest.Config | None, name: str, default: Any = None) -> Any:
+    """兼容单元测试直接调用；正式收集始终从 pytest Config 读取参数。"""
+    if config is None:
+        return default
+    return config.getoption(name)
+
+
+def _load_case_params(config: pytest.Config | None = None) -> list[Any]:
     """加载已选单接口 case，并转换为 pytest 参数。
 
     功能说明:
@@ -38,11 +46,32 @@ def _load_case_params() -> list[Any]:
         ApiConfigError: API 定义不合法时由 ApiLoader 抛出。
         CaseConfigError: case 集合不合法或指定 ID 不存在时由 CaseLoader 抛出。
     """
+    project_id = str(_getoption(config, "--project", "truthy"))
+    direct_project_root = PROJECT_ROOT if (PROJECT_ROOT / "data").is_dir() else None
+    project_root = (
+        direct_project_root
+        or ProjectRegistry(PROJECT_ROOT / "projects").get(project_id).root
+    )
+    selected_case = _getoption(config, "--case")
+    selected_ids = (str(selected_case),) if selected_case else RUN_CASE_IDS
+    selected_api = _getoption(config, "--api")
+    loaded_cases = load_single_cases(
+        project_root,
+        selected_case_ids=selected_ids,
+    )
+    if selected_api:
+        loaded_cases = [
+            single_case
+            for single_case in loaded_cases
+            if single_case["api_id"] == selected_api
+        ]
+        if not loaded_cases:
+            raise CaseConfigError(
+                f"项目 {project_id} 中 API 不存在或没有 Case: {selected_api}"
+            )
+
     params: list[Any] = []
-    for single_case in load_single_cases(
-        PROJECT_ROOT,
-        selected_case_ids=RUN_CASE_IDS,
-    ):
+    for single_case in loaded_cases:
         marks = [
             getattr(pytest.mark, tag)
             for tag in single_case["tags"]
@@ -50,19 +79,33 @@ def _load_case_params() -> list[Any]:
         params.append(
             pytest.param(
                 single_case,
-                id=single_case["id"],
+                id=(
+                    single_case["id"]
+                    if direct_project_root is not None
+                    else f"{project_id}::{single_case['id']}"
+                ),
                 marks=marks,
             )
         )
     return params
 
 
-@pytest.mark.parametrize("single_case", _load_case_params())
+def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
+    """在 pytest 参数解析后，按当前项目和 API/Case 选择动态收集。"""
+    if "single_case" not in metafunc.fixturenames:
+        return
+    metafunc.parametrize("single_case", _load_case_params(metafunc.config))
+
+
 def test_single_gateway_api(
     single_case: dict[str, Any],
     gateway_api: GatewayApi,
+    runtime_report_metadata: dict[str, str],
 ) -> None:
     """执行一条已组装的 V1.3 单接口 case，并完成分层断言。"""
+    # fixture 的返回值无需在测试体消费；声明依赖即可保证 JUnit/Allure 在
+    # 业务调用前固化本次 Scope/Release 身份。
+    del runtime_report_metadata
     set_single_case_metadata(single_case)
     with step(f"执行接口：{single_case['api_id']}"):
         gateway_api.execute(single_case["execution_case"])

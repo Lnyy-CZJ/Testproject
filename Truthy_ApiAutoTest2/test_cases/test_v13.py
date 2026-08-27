@@ -12,7 +12,7 @@ import yaml
 from utils.custom.config_loader import load_yaml
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[1] / "projects" / "truthy"
 
 
 def _legacy_deep_merge(
@@ -914,7 +914,7 @@ def test_name_with_conditions_and_photo_flow_has_media_upload_prerequisites() ->
         ("search_task_debug", "GetSearchTaskDebug"),
         ("provider_cost_summary", "GetProviderCostSummary"),
     ]
-    assert scenario["variables"]["media_file"].startswith("data/photo/")
+    assert scenario["variables"]["media_file"].startswith("fixtures/")
     assert steps[1]["extract"] == {
         "upload_url": "$.upload_url",
         "upload_headers": "$.upload_headers",
@@ -982,6 +982,9 @@ def _api_definition(
     return {
         "id": api_id,
         "name": f"{api_id} 接口",
+        # 多项目资产必须显式声明逻辑凭证 Profile；测试默认使用无需凭证的
+        # public，避免临时夹具无意依赖平台 Credential。
+        "credential_profile": "public",
         "request": {
             "service_name": service_name,
             "method_name": method_name,
@@ -1085,6 +1088,10 @@ def test_api_loader_rejects_missing_or_invalid_required_fields(
     """API 必填字段缺失或类型错误时应包含具体字段名。"""
     from utils.custom.api_loader import ApiConfigError, load_api_definitions
 
+    # 本组用例只验证各自目标字段，补齐本次多项目契约新增的必填 Profile，
+    # 避免校验在更早的无关字段处终止。
+    definition = deepcopy(definition)
+    definition["credential_profile"] = "public"
     _write_api_definition(tmp_path, "Demo.yaml", definition)
 
     with pytest.raises(ApiConfigError, match=expected_message):

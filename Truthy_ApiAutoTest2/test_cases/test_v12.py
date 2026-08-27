@@ -250,6 +250,7 @@ def _write_flow_fixture(root: Path, flow: dict, scenario: dict) -> None:
             {
                 "id": "Demo",
                 "name": "示例接口",
+                "credential_profile": "public",
                 "request": {
                     "service_name": "service.Demo",
                     "method_name": "Demo",
@@ -396,6 +397,7 @@ def _runner_api_definitions() -> dict[str, dict]:
         "Demo": {
             "id": "Demo",
             "name": "示例接口",
+            "credential_profile": "public",
             "request": {
                 "service_name": "service.Demo",
                 "method_name": "Demo",
@@ -405,6 +407,7 @@ def _runner_api_definitions() -> dict[str, dict]:
         "Detail": {
             "id": "Detail",
             "name": "详情接口",
+            "credential_profile": "public",
             "request": {
                 "service_name": "service.Detail",
                 "method_name": "Detail",
@@ -877,7 +880,7 @@ def test_flow_runner_uploads_prepared_media(tmp_path: Path) -> None:
     """prepared_media_upload 应使用项目相对媒体路径、URL、请求头和文件字节。"""
     from utils.custom.flow_runner import FlowRunner
 
-    media_path = tmp_path / "data" / "photo" / "photo.jpg"
+    media_path = tmp_path / "fixtures" / "photo.jpg"
     media_path.parent.mkdir(parents=True)
     media_path.write_bytes(b"abc")
 
@@ -905,7 +908,7 @@ def test_flow_runner_uploads_prepared_media(tmp_path: Path) -> None:
         "scenario": {
             "name": "上传场景",
             "variables": {
-                "media_file": "data/photo/photo.jpg",
+                "media_file": "fixtures/photo.jpg",
                 "upload_url": "https://upload.example/file",
                 "upload_headers": {"Content-Length": "3", "Content-Type": "image/jpeg"},
             },

@@ -27,8 +27,8 @@ WORKDIR /app
 COPY requirements.txt requirements-web.txt ./
 RUN pip install --no-cache-dir -r requirements.txt -r requirements-web.txt
 
-# 代码与用例资产入库；构建上下文由 .dockerignore 排除凭证与运行时目录，
-# 保证镜像内不含 .env 与任何凭证；config/ 与 data/ 保留在镜像内。
+# 代码与标准项目包入库；构建上下文由 .dockerignore 排除凭证与运行时目录，
+# 保证镜像内不含 .env 与任何凭证；projects/ 随不可变版本发布。
 COPY . .
 
 EXPOSE 5003

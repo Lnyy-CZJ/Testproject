@@ -13,10 +13,70 @@ from utils.custom.logger import get_logger
 
 LOGGER = get_logger(__name__)
 
+# 运行报告只允许携带这些不可变追溯字段。Gateway、Secret、Profile 内容和
+# runtime_variables 不在白名单内，避免 JUnit/Allure 变成第二份配置副本。
+_RUNTIME_METADATA_KEYS = (
+    "task_id",
+    "platform_environment",
+    "runtime_scope_id",
+    "config_release_id",
+    "config_release_version",
+)
+
 
 def _log_reporter_failure(operation: str, exc: Exception) -> None:
     """仅记录报告异常类型，避免原始业务数据通过异常消息泄露。"""
     LOGGER.warning("Allure %s失败: %s", operation, type(exc).__name__)
+
+
+def build_runtime_report_metadata(
+    *,
+    project_id: str,
+    target_env: str,
+    config_source: str,
+    settings: dict[str, Any],
+) -> dict[str, str]:
+    """构造 JUnit/Allure 共用的非敏感运行身份元数据。
+
+    参数说明:
+        project_id: 当前项目包 ID。
+        target_env: 当前被测环境，由平台实例固定映射。
+        config_source: ``platform`` 或兼容期 ``local``。
+        settings: 已加载的运行配置；仅读取其中 ``runtime_metadata`` 白名单。
+
+    返回值:
+        可直接写入报告属性的字符串字典。空字段会被省略，本函数绝不复制
+        Gateway 地址、Secret、Credential 或任意业务配置值。
+    """
+    metadata: dict[str, str] = {
+        "project_id": str(project_id),
+        "target_env": str(target_env),
+        "config_source": str(config_source),
+    }
+    runtime_metadata = settings.get("runtime_metadata")
+    if not isinstance(runtime_metadata, dict):
+        return metadata
+    for key in _RUNTIME_METADATA_KEYS:
+        value = runtime_metadata.get(key)
+        # 白名单字段均应为标量；拒绝容器可防止未来字段形态变化时意外把
+        # Credential/Profile 详情序列化进报告。
+        if value in (None, "") or isinstance(value, (dict, list, tuple, set)):
+            continue
+        metadata[key] = str(value)
+    return metadata
+
+
+def set_runtime_report_metadata(metadata: dict[str, str]) -> None:
+    """把非敏感 Scope/Release 身份写入当前 Allure 用例参数区。
+
+    Allure 属于观察层；报告插件不可用时只记录异常类型，不得改变真实接口
+    测试结果。调用方同时使用 pytest ``record_property`` 写入 JUnit。
+    """
+    try:
+        for name, value in metadata.items():
+            allure.dynamic.parameter(name, value)
+    except Exception as exc:
+        _log_reporter_failure("设置运行上下文元数据", exc)
 
 
 def set_single_case_metadata(single_case: dict[str, Any]) -> None:

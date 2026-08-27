@@ -4,7 +4,7 @@
 #
 # 功能说明:
 #   把一份生成好的 Allure HTML 报告完整复制到版本目录
-#   reports/task-reports/<task_id>/versions/<version>/，写入报告元信息，
+#   reports/task-reports/<project_id>/<task_id>/versions/<version>/，写入报告元信息，
 #   然后通过临时相对软链接 + rename(2) 原子切换该任务自己的 current。
 #   不同任务目录互不覆盖，切换完成前旧报告始终可用。
 #
@@ -24,6 +24,7 @@
 #   PUBLISH_BUILD_URL      Jenkins 构建页面 URL
 #   PUBLISH_ALLURE_VERSION Allure 版本号，默认 unknown
 #   PUBLISH_TASK_ID        必填的平台根任务 ID；用于物理目录和元数据绑定。
+#   PUBLISH_PROJECT_ID     新版任务的工具项目 ID；缺省时仅兼容发布旧版报告路径。
 #
 # 返回值（退出码）:
 #   0  发布成功；
@@ -53,8 +54,18 @@ esac
 [ -n "${PUBLISH_TASK_ID:-}" ] || die 2 "缺少环境变量 PUBLISH_TASK_ID"
 printf '%s' "$PUBLISH_TASK_ID" | LC_ALL=C grep -Eq '^[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$' \
     || die 2 "PUBLISH_TASK_ID 格式非法: $PUBLISH_TASK_ID"
+if [ -n "${PUBLISH_PROJECT_ID:-}" ]; then
+    printf '%s' "$PUBLISH_PROJECT_ID" | LC_ALL=C grep -Eq '^[a-z][a-z0-9-]{1,31}$' \
+        || die 2 "PUBLISH_PROJECT_ID 格式非法: $PUBLISH_PROJECT_ID"
+fi
 
-TASK_REPORT_ROOT="$REPORT_ROOT/task-reports/$PUBLISH_TASK_ID"
+if [ -n "${PUBLISH_PROJECT_ID:-}" ]; then
+    TASK_REPORT_ROOT="$REPORT_ROOT/task-reports/$PUBLISH_PROJECT_ID/$PUBLISH_TASK_ID"
+else
+    # 仅供历史单项目调用方读取；平台/Jenkins 新任务必须显式传项目。
+    log "弃用提示：未提供 PUBLISH_PROJECT_ID，沿用历史单项目报告路径"
+    TASK_REPORT_ROOT="$REPORT_ROOT/task-reports/$PUBLISH_TASK_ID"
+fi
 ALLURE_REPORTS_DIR="$TASK_REPORT_ROOT/versions"
 CURRENT_LINK="$TASK_REPORT_ROOT/current"
 LOCK_DIR="$REPORT_ROOT/.publish.lock"
@@ -145,6 +156,7 @@ write_meta() {
     PUBLISH_BUILD_URL="${PUBLISH_BUILD_URL:-}" \
     PUBLISH_ALLURE_VERSION="${PUBLISH_ALLURE_VERSION:-unknown}" \
     PUBLISH_TASK_ID="${PUBLISH_TASK_ID:-}" \
+    PUBLISH_PROJECT_ID="${PUBLISH_PROJECT_ID:-}" \
     python3 - "$target_dir" <<'PYEOF'
 import json
 import os
@@ -159,6 +171,8 @@ meta = {
 }
 if os.environ["PUBLISH_TASK_ID"]:
     meta["task_id"] = os.environ["PUBLISH_TASK_ID"]
+if os.environ["PUBLISH_PROJECT_ID"]:
+    meta["project_id"] = os.environ["PUBLISH_PROJECT_ID"]
 if os.environ["SOURCE"] == "jenkins":
     meta["job_name"] = os.environ["PUBLISH_JOB_NAME"]
     build_number = os.environ["PUBLISH_BUILD_NUMBER"]

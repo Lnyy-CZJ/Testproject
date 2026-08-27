@@ -264,6 +264,182 @@ class TestBuildCommand:
         assert "test_cases/test_gateway_flow.py" in args
 
 
+class TestMultiProjectTaskV2:
+    """多项目任务必须固化选择与平台快照元数据，且运行产物按项目隔离。"""
+
+    @staticmethod
+    def _runtime_plan(task_id: str, signed_context: str, selection: dict) -> dict:
+        """返回不含 Secret 的平台规划，模拟 Runtime Context 契约。"""
+
+        assert task_id
+        assert signed_context == "signed-user"
+        assert selection["project_id"] == "dating"
+        return {
+            "runtime_context_id": "rtx_dating_user_1",
+            "runtime_scope_id": "scope_dating_dev_test",
+            "platform_project_id": "platform-dating",
+            "platform_environment": "dev",
+            "target_env": "test",
+            "config_source": "platform",
+            "release_id": "release-dating-v3",
+            "release_version": 3,
+            "credential_profiles": [
+                {"id": "anonymous_session", "version": 4}
+            ],
+            "resource_snapshot": {
+                "owner_user_id": "user-1",
+                "access_scope_snapshot": "project",
+                "project_id_snapshot": "platform-dating",
+                "authorization_source_snapshot": "project-member",
+            },
+        }
+
+    @staticmethod
+    def _runtime_snapshot(_record: dict) -> tuple[dict, dict]:
+        """返回执行期完整快照；Secret 只能写入临时文件，不得进入任务 JSON。"""
+
+        return (
+            {
+                "tool_id": "api-autotest",
+                "normal": {"GATEWAY_API_URL": "https://gateway.test.invalid"},
+                "secrets": {"ACCESS_TOKEN": "snapshot-secret"},
+                "credential_metadata": {
+                    "profiles": [{"id": "anonymous_session", "version": 4}]
+                },
+            },
+            {
+                "release_id": "release-dating-v3",
+                "release_version": 3,
+                "runtime_scope_id": "scope_dating_dev_test",
+                "credential_profiles": [
+                    {"id": "anonymous_session", "version": 4}
+                ],
+                "process_environment": {
+                    "API_AUTOTEST_SESSION_PROVIDER": "platform",
+                    "PLATFORM_RUNTIME_CONTEXT_ID": "rtx_dating_user_1",
+                },
+            },
+        )
+
+    def test_build_command_uses_project_selection_and_fixed_target_env(
+        self, multi_project_root, make_manager
+    ):
+        manager = make_manager(multi_project_root)
+        junit_path = multi_project_root / "reports" / "junit" / "dating" / "task.xml"
+        args = manager._build_command(
+            {
+                "project_id": "dating",
+                "target_env": "test",
+                "config_source": "platform",
+                "run_type": "single",
+                "api_id": "GetMe",
+                "case_id": "get_me_success",
+                "flow_id": None,
+                "tag": "smoke",
+            },
+            junit_path,
+        )
+
+        assert "--project=dating" in args
+        assert "--target-env=test" in args
+        assert "--config-source=platform" in args
+        assert "--api=GetMe" in args
+        # Web 契约分别传 api_id/case_id；pytest CaseLoader 使用完整稳定 ID，
+        # TaskManager 必须在进程边界组合，不能把裸 case_id 传给收集器。
+        assert "--case=GetMe::get_me_success" in args
+        assert "--env=test" not in args
+
+    def test_platform_snapshot_is_0600_isolated_and_deleted_at_terminal(
+        self, multi_project_root, make_manager, monkeypatch
+    ):
+        manager = make_manager(
+            multi_project_root,
+            runtime_plan_provider=self._runtime_plan,
+            runtime_snapshot_provider=self._runtime_snapshot,
+        )
+        # 若平台模式错误继承宿主配置，子进程会看到这个污染值；正确实现只传
+        # 快照文件路径和平台会话写回所需的非 Secret 元数据。
+        monkeypatch.setenv("ACCESS_TOKEN", "inherited-secret")
+        patch_command(
+            monkeypatch,
+            manager,
+            "import json, os, stat; "
+            "p=os.environ['API_AUTOTEST_RUNTIME_SNAPSHOT_FILE']; "
+            "d=json.load(open(p, encoding='utf-8')); "
+            "assert d['settings']['runtime_variables']['ACCESS_TOKEN']=='snapshot-secret'; "
+            "assert stat.S_IMODE(os.stat(p).st_mode)==0o600; "
+            "assert 'ACCESS_TOKEN' not in os.environ",
+        )
+
+        record = manager.submit(
+            project_id="dating",
+            run_type="single",
+            api_id="GetMe",
+            case_id="get_me_success",
+            tag="smoke",
+            signed_user_context="signed-user",
+        )
+        finished = wait_terminal(manager, record["id"])
+
+        assert finished["schema_version"] == 2
+        assert finished["project"] == {
+            "platform_project_id": "platform-dating",
+            "project_id": "dating",
+            "display_name": "Dating AI Assistant",
+        }
+        assert finished["runtime"]["runtime_scope_id"] == "scope_dating_dev_test"
+        assert finished["runtime"]["release_version"] == 3
+        assert finished["selection"] == {
+            "run_type": "single",
+            "api_id": "GetMe",
+            "case_id": "get_me_success",
+            "flow_id": None,
+            "tag": "smoke",
+        }
+        assert finished["junit_file"] == (
+            f"reports/junit/dating/{record['id']}.xml"
+        )
+        # 终态只销毁包含 Secret 的临时快照；同目录 console.log 是任务审计
+        # 产物，必须保留供详情页查看，不能通过删除整个任务目录来清理。
+        assert not (
+            multi_project_root
+            / "runtime"
+            / "dating"
+            / record["id"]
+            / "snapshot.json"
+        ).exists()
+        serialized = json.dumps(finished, ensure_ascii=False)
+        assert "snapshot-secret" not in serialized
+        assert "inherited-secret" not in serialized
+
+    def test_retry_creates_new_task_and_preserves_original_snapshot(
+        self, multi_project_root, make_manager, monkeypatch
+    ):
+        manager = make_manager(
+            multi_project_root,
+            runtime_plan_provider=self._runtime_plan,
+            runtime_snapshot_provider=self._runtime_snapshot,
+        )
+        patch_command(monkeypatch, manager, "print('ok')")
+        original = manager.submit(
+            project_id="dating",
+            run_type="flow",
+            flow_id="dating_demo_flow",
+            tag="regression",
+            signed_user_context="signed-user",
+        )
+        wait_terminal(manager, original["id"])
+
+        retried = manager.retry(original["id"], signed_user_context="signed-user")
+        wait_terminal(manager, retried["id"])
+
+        assert retried["id"] != original["id"]
+        assert retried["retry_of"] == original["id"]
+        persisted_original = manager.store.load(original["id"])
+        assert persisted_original["retry_of"] is None
+        assert persisted_original["runtime"]["release_id"] == "release-dating-v3"
+
+
 class TestExecutionOutcomes:
     """退出码映射与结果语义。"""
 
@@ -457,14 +633,26 @@ class TestRecoveryAndStartFailure:
         manager = make_manager(fake_project)
         store = manager.store
 
-        def seed(suffix: str, status: str) -> str:
+        def seed(suffix: str, status: str, *, project_id: str | None = None) -> str:
             task_id = f"20260101-000000-{suffix}"
-            store.save({"id": task_id, "status": status, "input": {}})
+            record = {"id": task_id, "status": status, "input": {}}
+            if project_id is not None:
+                record["project"] = {"project_id": project_id}
+            store.save(record)
             return task_id
 
-        running_id = seed("0001", "running")
+        running_id = seed("0001", "running", project_id="dating")
         pending_id = seed("0002", "pending")
         done_id = seed("0003", "succeeded")
+        # 模拟服务在平台快照落盘后异常退出：重启恢复必须删除 Secret 快照，
+        # 但同目录 console.log 属于任务审计产物，不能一并递归删除。
+        runtime_dir = fake_project / "runtime" / "dating" / running_id
+        runtime_dir.mkdir(parents=True)
+        snapshot_path = runtime_dir / "snapshot.json"
+        snapshot_path.write_text('{"secret":"must-not-survive-restart"}', encoding="utf-8")
+        snapshot_path.chmod(0o600)
+        console_path = runtime_dir / "console.log"
+        console_path.write_text("diagnostic output\n", encoding="utf-8")
 
         recovered = manager.recover_on_startup()
         assert recovered == 2
@@ -472,6 +660,8 @@ class TestRecoveryAndStartFailure:
         assert store.load(running_id)["error_message"] == "服务重启，任务中断"
         assert store.load(pending_id)["status"] == "failed"
         assert store.load(done_id)["status"] == "succeeded"
+        assert not snapshot_path.exists()
+        assert console_path.read_text(encoding="utf-8") == "diagnostic output\n"
 
     def test_start_failure_releases_slot(self, manager, monkeypatch):
         # 解释器不存在导致 Popen 失败：任务置 failed，槽位释放。

@@ -41,6 +41,14 @@ def test_mixed_summary(tmp_path: Path) -> None:
     }
     names = [case["name"] for case in parsed["failed_cases"]]
     assert names == ["case_fail", "case_error"]
+    assert [case["status"] for case in parsed["cases"]] == [
+        "passed",
+        "passed",
+        "failed",
+        "error",
+        "skipped",
+    ]
+    assert parsed["cases"][2]["message"] == "断言失败"
 
 
 def test_failure_message_truncated(tmp_path: Path) -> None:

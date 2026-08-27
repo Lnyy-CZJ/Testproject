@@ -294,6 +294,7 @@ describe("第三阶段 AI 测试工作台", () => {
     vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
       const url = String(input);
       if (url.endsWith("/auth/me")) return jsonResponse(auth);
+      if (url.includes("/runtime-scopes?")) return jsonResponse({ items: [{ id: "tps_search_dev_test", environment_id: "dev", tool_id: "api-autotest", platform_project_id: "project_search", platform_project_name: "检索项目", project_id: "search", display_name: "Search", target_env: "test", status: "active", is_default: true, revision: 1, active_release: null }] });
       if (url.includes("/config/definitions")) return jsonResponse([{ id: "truthy-search.AUTH_TOKEN", key: "AUTH_TOKEN", display_name: "Access Token", description: "", owner_type: "tool", owner_id: "truthy-search", group_key: "credentials", value_type: "secret", sensitivity: "secret", required: true, default_value: null, validation_schema: {}, apply_mode: "next_task", editable: true, sort_order: 10, value_scope: "system", credential_provider_type: null }]);
       if (url.includes("/secrets?")) return jsonResponse([]);
       return jsonResponse({});
@@ -302,6 +303,103 @@ describe("第三阶段 AI 测试工作台", () => {
     expect(await screen.findByText("Access Token")).toBeInTheDocument();
     expect(screen.getByText("missing")).toBeInTheDocument();
     expect(screen.queryByText(/fake|token-value/i)).not.toBeInTheDocument();
+  });
+
+  it("配置控制面按 Runtime Scope 读取配置，并把固定 TEST 环境作为只读上下文", async () => {
+    window.history.replaceState({}, "", "/settings/config?scope_id=tps_dating_dev_test");
+    const scopes = {
+      items: [{
+        id: "tps_dating_dev_test", environment_id: "dev", tool_id: "api-autotest",
+        platform_project_id: "project_dating", platform_project_name: "Dating 平台项目",
+        project_id: "dating", display_name: "Dating API", target_env: "test", status: "active",
+        is_default: true, revision: 4, active_release: { id: "rel_dating_3", version: 3, status: "active" },
+      }],
+    };
+    const definition = { id: "api-autotest.gateway.base_url", key: "gateway.base_url", display_name: "Gateway 地址", description: "", owner_type: "tool", owner_id: "api-autotest", group_key: "gateway", value_type: "text", sensitivity: "normal", required: true, default_value: null, validation_schema: {}, apply_mode: "next_task", editable: true, sort_order: 1, value_scope: "system", credential_provider_type: null };
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const url = String(input);
+      if (url.endsWith("/auth/me")) return jsonResponse(auth);
+      if (url.endsWith("/tools")) return jsonResponse({ items: [] });
+      if (url.includes("/runtime-scopes?")) return jsonResponse(scopes);
+      if (url.includes("/config/definitions")) return jsonResponse([definition]);
+      if (url.includes("/config/releases?")) return jsonResponse([]);
+      return jsonResponse({});
+    });
+    render(<App />);
+
+    expect(await screen.findByLabelText("平台项目")).toHaveDisplayValue("Dating 平台项目");
+    expect(screen.getByLabelText("工具项目")).toHaveDisplayValue("Dating API");
+    expect(screen.getByLabelText("接口环境")).toHaveDisplayValue("TEST（由 DEV 平台固定）");
+    expect(screen.getByLabelText("接口环境")).toBeDisabled();
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("owner_type=tool_project_scope") && String(url).includes("owner_id=tps_dating_dev_test"))).toBe(true);
+    expect(window.location.search).toBe("?scope_id=tps_dating_dev_test");
+  });
+
+  it("切换 Runtime Scope 后 Release 查询使用新 Scope，且不泄漏 Secret 值", async () => {
+    window.history.replaceState({}, "", "/settings/config?scope_id=tps_truthy_dev_test");
+    const scopes = {
+      items: [
+        { id: "tps_truthy_dev_test", environment_id: "dev", tool_id: "api-autotest", platform_project_id: "project_truthy", platform_project_name: "Truthy 平台项目", project_id: "truthy", display_name: "Truthy Gateway", target_env: "test", status: "active", is_default: true, revision: 2, active_release: null },
+        { id: "tps_dating_dev_test", environment_id: "dev", tool_id: "api-autotest", platform_project_id: "project_dating", platform_project_name: "Dating 平台项目", project_id: "dating", display_name: "Dating API", target_env: "test", status: "active", is_default: false, revision: 4, active_release: null },
+      ],
+    };
+    const definition = { id: "api-autotest.gateway.timeout", key: "request.timeout_seconds", display_name: "请求超时", description: "", owner_type: "tool", owner_id: "api-autotest", group_key: "gateway", value_type: "int", sensitivity: "normal", required: true, default_value: 30, validation_schema: {}, apply_mode: "next_task", editable: true, sort_order: 1, value_scope: "system", credential_provider_type: null };
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const url = String(input);
+      if (url.endsWith("/auth/me")) return jsonResponse(auth);
+      if (url.endsWith("/tools")) return jsonResponse({ items: [] });
+      if (url.includes("/runtime-scopes?")) return jsonResponse(scopes);
+      if (url.includes("/config/definitions")) return jsonResponse([definition]);
+      if (url.includes("/config/releases?")) return jsonResponse([]);
+      return jsonResponse({});
+    });
+    render(<App />);
+
+    await screen.findByLabelText("工具项目");
+    fireEvent.change(screen.getByLabelText("平台项目"), { target: { value: "project_dating" } });
+    fireEvent.change(screen.getByLabelText("工具项目"), { target: { value: "tps_dating_dev_test" } });
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).includes("owner_id=tps_dating_dev_test"))).toBe(true));
+    expect(window.location.search).toBe("?scope_id=tps_dating_dev_test");
+    expect(screen.queryByText(/secret-value|token-value/i)).not.toBeInTheDocument();
+  });
+
+  it("编辑 Runtime Scope 只提交可变字段，并由 PATCH 保留固定环境映射", async () => {
+    window.history.replaceState({}, "", "/settings/config?scope_id=tps_dating_dev_test");
+    let patchBody: Record<string, unknown> | null = null;
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url = String(input);
+      if (url.endsWith("/auth/me")) return jsonResponse(auth);
+      if (url.endsWith("/tools")) return jsonResponse({ items: [] });
+      if (url.endsWith("/runtime-scopes/tps_dating_dev_test") && init?.method === "PATCH") { patchBody = JSON.parse(String(init.body)); return jsonResponse({ id: "tps_dating_dev_test" }); }
+      if (url.includes("/runtime-scopes?")) return jsonResponse({ items: [{ id: "tps_dating_dev_test", environment_id: "dev", tool_id: "api-autotest", platform_project_id: "project_dating", platform_project_name: "Dating 平台项目", project_id: "dating", display_name: "Dating API", target_env: "test", status: "active", is_default: true, revision: 4, active_release: null }] });
+      if (url.includes("/config/definitions") || url.includes("/config/releases?")) return jsonResponse([]);
+      return jsonResponse({});
+    });
+    render(<App />);
+
+    await screen.findByLabelText("工具项目");
+    fireEvent.click(screen.getByRole("button", { name: "编辑 Scope" }));
+    fireEvent.change(screen.getByLabelText("Scope 显示名称"), { target: { value: "Dating 自动化" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存 Scope" }));
+    await waitFor(() => expect(patchBody).toEqual({ display_name: "Dating 自动化", status: "active", is_default: true, revision: 4 }));
+  });
+
+  it("被禁用或无权读取的 Scope 不加载配置值，并展示明确的安全状态", async () => {
+    window.history.replaceState({}, "", "/settings/config?scope_id=tps_disabled");
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const url = String(input);
+      if (url.endsWith("/auth/me")) return jsonResponse(auth);
+      if (url.endsWith("/tools")) return jsonResponse({ items: [] });
+      if (url.includes("/runtime-scopes?")) return jsonResponse({ items: [{ id: "tps_disabled", environment_id: "dev", tool_id: "api-autotest", platform_project_id: "project_disabled", platform_project_name: "已停用项目", project_id: "disabled-project", display_name: "停用项目", target_env: "test", status: "disabled", is_default: false, revision: 1, active_release: null }] });
+      if (url.includes("/config/definitions")) return jsonResponse([]);
+      if (url.includes("/config/releases?")) return jsonResponse({ code: "FORBIDDEN", message: "禁止访问" }, 403);
+      return jsonResponse({});
+    });
+    render(<App />);
+
+    expect(await screen.findByText(/该 Runtime Scope 已停用/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "创建草稿" })).toBeDisabled();
+    expect(screen.queryByText(/secret-value|token-value/i)).not.toBeInTheDocument();
   });
 
   it("普通执行用户可从全局导航进入个人凭证与个人 LLM", async () => {

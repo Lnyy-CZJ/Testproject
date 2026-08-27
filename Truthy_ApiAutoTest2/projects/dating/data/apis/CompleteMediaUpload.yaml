@@ -1,0 +1,6 @@
+id: CompleteMediaUpload
+name: 完成 Dating 媒体上传
+credential_profile: anonymous_session
+request:
+  service_name: tool.dating.DatingMediaService
+  method_name: CompleteMediaUpload

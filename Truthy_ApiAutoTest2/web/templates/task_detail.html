@@ -1,182 +1,26 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>任务详情 - 接口自动化</title>
-<style>
-  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
-         margin: 0; background: #f5f6f8; color: #222; }
-  .container { max-width: 960px; margin: 0 auto; padding: 24px 16px 48px; }
-  header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-  h1 { font-size: 20px; margin: 0; }
-  h2 { font-size: 15px; margin: 0 0 12px; }
-  .card { background: #fff; border: 1px solid #e3e5e8; border-radius: 8px;
-          padding: 16px; margin-bottom: 16px; }
-  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
-  .ok { background: #e6f4ea; color: #1e7e34; }
-  .bad { background: #fdecea; color: #c0392b; }
-  .warn { background: #fff8e1; color: #8a6d00; }
-  .muted { color: #888; font-size: 12px; }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #eee;
-           vertical-align: top; word-break: break-all; }
-  a { color: #2f6fed; text-decoration: none; }
-  button { padding: 6px 16px; border: none; border-radius: 4px;
-           background: #c0392b; color: #fff; cursor: pointer; font-size: 13px; }
-  button.secondary { background: #2f6fed; }
-  button:disabled { opacity: .5; cursor: not-allowed; }
-  pre#log-view { background: #1e1e1e; color: #d4d4d4; padding: 12px; border-radius: 6px;
-                 font-size: 12px; max-height: 420px; overflow: auto; white-space: pre-wrap;
-                 word-break: break-all; }
-  code { background: #f0f1f3; padding: 1px 4px; border-radius: 3px; }
-  .kv td:first-child { width: 180px; color: #666; }
-</style>
-</head>
-<body>
-<div class="container">
-  <header>
-    <h1>任务 <code id="task-id">{{ task_id }}</code></h1>
-    <div>
-      <a href="{{ base_path }}/">&larr; 返回首页</a>
-      <span style="margin: 0 8px;">|</span>
-      <a href="{{ platform_home_url }}">返回平台</a>
-    </div>
+{% extends "base.html" %}
+{% block title %}任务详情 · 接口自动化{% endblock %}
+{% block page_id %}task-detail{% endblock %}
+{% block content %}
+<div id="task-detail-root" data-task-id="{{ task_id }}">
+  <header class="page-header detail-header">
+    <div><p class="eyebrow">API AUTOMATION</p><div class="title-with-status"><h1>任务详情 · <span id="detail-task-id">{{ task_id }}</span></h1><span class="status-badge neutral" id="detail-status">加载中</span></div><p id="detail-subtitle">正在读取任务与运行快照。</p></div>
+    <div class="button-row detail-actions"><button class="button secondary compact" id="task-retry" type="button" disabled>重试</button><button class="button danger compact" id="task-cancel" type="button" disabled>取消任务</button><a class="button tertiary compact" id="task-report" href="#" hidden>查看 Allure</a></div>
   </header>
 
-  <div class="card">
-    <h2>状态与时间线 <span id="status-badge"></span></h2>
-    <table class="kv">
-      <tr><td>运行参数</td><td id="input-cell">-</td></tr>
-      <tr><td>创建时间</td><td id="created-at">-</td></tr>
-      <tr><td>开始时间</td><td id="started-at">-</td></tr>
-      <tr><td>结束时间</td><td id="finished-at">-</td></tr>
-      <tr><td>退出码 / 超时</td><td id="exit-cell">-</td></tr>
-      <tr><td>错误信息</td><td id="error-cell">-</td></tr>
-    </table>
-    <div style="margin-top: 12px;">
-      <button id="cancel-btn" onclick="cancelTask()" disabled>取消任务</button>
-    </div>
+  <section class="metric-grid detail-metrics" aria-label="任务结果">
+    <article class="metric-card"><span>任务状态</span><strong id="detail-metric-status">—</strong><small id="detail-metric-time">等待数据</small></article>
+    <article class="metric-card"><span>执行用例</span><strong id="detail-metric-cases">—</strong><small id="detail-metric-result">JUnit</small></article>
+    <article class="metric-card"><span>耗时</span><strong id="detail-metric-duration">—</strong><small>从开始到终态</small></article>
+  </section>
+
+  <div class="two-column detail-columns">
+    <section class="panel" aria-labelledby="snapshot-heading"><div class="panel-heading"><div><h2 id="snapshot-heading">任务快照</h2><p>提交时固化的非敏感上下文。</p></div></div><dl class="summary-list dense" id="detail-snapshot"><div><dt>项目</dt><dd>—</dd></div><div><dt>平台</dt><dd>—</dd></div><div><dt>接口环境</dt><dd>—</dd></div><div><dt>Runtime Scope</dt><dd>—</dd></div><div><dt>Release</dt><dd>—</dd></div><div><dt>Credential Profile</dt><dd>—</dd></div><div><dt>执行对象</dt><dd>—</dd></div><div><dt>重试来源</dt><dd>—</dd></div></dl></section>
+    <section class="panel" aria-labelledby="timeline-heading"><div class="panel-heading"><div><h2 id="timeline-heading">执行时间线</h2><p>任务状态与失败原因。</p></div></div><dl class="summary-list dense" id="detail-timeline"><div><dt>提交时间</dt><dd>—</dd></div><div><dt>开始时间</dt><dd>—</dd></div><div><dt>结束时间</dt><dd>—</dd></div><div><dt>退出码</dt><dd>—</dd></div></dl><div class="inline-status" id="detail-error" hidden></div></section>
   </div>
 
-  <div class="card">
-    <h2>结果统计</h2>
-    <div id="summary-area" class="muted">加载中…</div>
-    <table id="failed-table" style="display:none; margin-top: 12px;">
-      <thead><tr><th style="width:45%;">失败用例</th><th>失败摘要</th></tr></thead>
-      <tbody id="failed-rows"></tbody>
-    </table>
-  </div>
+  <section class="panel table-panel" aria-labelledby="result-heading"><div class="panel-heading"><div><h2 id="result-heading">步骤与用例结果</h2><p>轮询尝试归并到同一业务步骤，不重复计数。</p></div></div><div class="table-scroll"><table><thead><tr><th>用例 / 步骤</th><th>状态</th><th>耗时</th><th>失败摘要</th></tr></thead><tbody id="detail-result-body"><tr><td colspan="4" class="table-state">正在读取 JUnit 结果…</td></tr></tbody></table></div></section>
 
-  <div class="card">
-    <h2>日志</h2>
-    <div style="margin-bottom: 8px;">
-      <label class="muted">尾部行数：</label>
-      <select id="tail-select">
-        <option value="200">200</option>
-        <option value="500" selected>500</option>
-        <option value="1000">1000</option>
-        <option value="2000">2000</option>
-      </select>
-      <button class="secondary" onclick="loadLogs()">刷新日志</button>
-      <span class="muted" id="log-source"></span>
-    </div>
-    <pre id="log-view">加载中…</pre>
-  </div>
+  <section class="panel logs-panel" aria-labelledby="logs-heading"><div class="panel-heading"><div><h2 id="logs-heading">执行日志</h2><p id="detail-log-source">日志会经过服务端脱敏。</p></div><div class="inline-controls"><label for="detail-log-tail">尾部行数</label><select id="detail-log-tail"><option>100</option><option selected>200</option><option>500</option></select><button class="button tertiary compact" id="detail-log-refresh" type="button">刷新日志</button></div></div><pre id="detail-log-view" tabindex="0" aria-live="polite">正在读取日志…</pre></section>
 </div>
-
-<script>
-  // 接口基址由服务端注入，禁止硬编码根路径。
-  const BASE = {{ base_path|tojson }};
-  const TASK_ID = {{ task_id|tojson }};
-  const TERMINAL = ["succeeded", "failed", "cancelled"];
-
-  function statusBadge(status) {
-    const map = { succeeded: "ok", failed: "bad", cancelled: "warn",
-                  running: "warn", pending: "warn" };
-    return '<span class="badge ' + (map[status] || "warn") + '">' + (status || "-") + "</span>";
-  }
-
-  function escapeHtml(text) {
-    const div = document.createElement("div");
-    div.textContent = text == null ? "" : String(text);
-    return div.innerHTML;
-  }
-
-  async function loadTask() {
-    const resp = await fetch(BASE + "/api/tasks/" + TASK_ID);
-    if (!resp.ok) { document.getElementById("summary-area").textContent = "任务不存在"; return null; }
-    const t = await resp.json();
-    document.getElementById("status-badge").innerHTML = statusBadge(t.status);
-    const input = t.input || {};
-    document.getElementById("input-cell").textContent =
-      "env=" + input.env + "，run_type=" + input.run_type +
-      (input.flow ? "，flow=" + input.flow : "") + (input.tag ? "，tag=" + input.tag : "");
-    document.getElementById("created-at").textContent = t.created_at || "-";
-    document.getElementById("started-at").textContent = t.started_at || "-";
-    document.getElementById("finished-at").textContent = t.finished_at || "-";
-    document.getElementById("exit-cell").textContent =
-      (t.exit_code == null ? "-" : t.exit_code) + (t.timeout ? "（超时）" : "");
-    document.getElementById("error-cell").textContent = t.error_message || "-";
-    document.getElementById("cancel-btn").disabled = TERMINAL.includes(t.status);
-    return t;
-  }
-
-  async function loadResult() {
-    const resp = await fetch(BASE + "/api/tasks/" + TASK_ID + "/result");
-    if (!resp.ok) return;
-    const r = await resp.json();
-    const area = document.getElementById("summary-area");
-    if (!r.result_available) {
-      area.textContent = "结果不可用（" + (r.reason_code || "未知原因") + "）";
-      return;
-    }
-    const s = r.summary || {};
-    area.innerHTML = "总计 <b>" + s.total + "</b>，通过 <b>" + s.passed +
-      "</b>，失败 <b>" + s.failed + "</b>，错误 <b>" + s.errors +
-      "</b>，跳过 <b>" + s.skipped + "</b>";
-    if (r.failed_cases && r.failed_cases.length) {
-      document.getElementById("failed-table").style.display = "";
-      document.getElementById("failed-rows").innerHTML = r.failed_cases.map(c =>
-        "<tr><td><code>" + escapeHtml(c.name) + "</code></td><td>" +
-        escapeHtml(c.message) + "</td></tr>").join("");
-    }
-  }
-
-  async function loadLogs() {
-    const tail = document.getElementById("tail-select").value;
-    try {
-      const resp = await fetch(BASE + "/api/tasks/" + TASK_ID + "/logs?tail=" + tail);
-      const data = await resp.json();
-      document.getElementById("log-source").textContent =
-        data.source === "framework_log" ? "（框架脱敏日志：" + data.log_file + "）"
-        : data.source === "console_redacted" ? "（console 二次脱敏兜底）" : "";
-      const view = document.getElementById("log-view");
-      view.textContent = data.lines.length ? data.lines.join("\n") : "暂无日志";
-      view.scrollTop = view.scrollHeight;
-    } catch (e) { document.getElementById("log-view").textContent = "日志加载失败"; }
-  }
-
-  async function cancelTask() {
-    const btn = document.getElementById("cancel-btn");
-    btn.disabled = true;
-    const resp = await fetch(BASE + "/api/tasks/" + TASK_ID + "/cancel", { method: "POST" });
-    const data = await resp.json().catch(() => ({}));
-    if (!resp.ok) { alert(data.error || "取消失败"); btn.disabled = false; }
-  }
-
-  // 非终态时每 3 秒轮询状态与日志。
-  async function pollOnce() {
-    const t = await loadTask();
-    if (t && !TERMINAL.includes(t.status)) {
-      await loadLogs();
-      setTimeout(pollOnce, 3000);
-    } else {
-      await loadResult();
-      await loadLogs();
-    }
-  }
-  pollOnce();
-</script>
-</body>
-</html>
+{% endblock %}

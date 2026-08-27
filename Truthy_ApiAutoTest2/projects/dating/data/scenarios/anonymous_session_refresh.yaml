@@ -1,0 +1,33 @@
+name: Dating 匿名会话完整刷新成功
+variables: {}
+step_data:
+  create_session:
+    params:
+      consent_policy_version: "{{consent_policy_version}}"
+    assert:
+      http_status: 200
+      gateway: {code: 0}
+      response: {id: req_0, success: true, code: 0}
+      data_fields: [user_id, access_token, expires_time, refresh_token, refresh_expires_time, is_new_user]
+  get_me_before_refresh:
+    params: {}
+    assert:
+      http_status: 200
+      gateway: {code: 0}
+      response: {id: req_0, success: true, code: 0}
+      data_fields: [user_id, user_type, device_id, consent_policy_version, create_time]
+  refresh_session:
+    params:
+      refresh_token: "{{refresh_token}}"
+    assert:
+      http_status: 200
+      gateway: {code: 0}
+      response: {id: req_0, success: true, code: 0}
+      data_fields: [user_id, access_token, expires_time, refresh_token, refresh_expires_time]
+  get_me_after_refresh:
+    params: {}
+    assert:
+      http_status: 200
+      gateway: {code: 0}
+      response: {id: req_0, success: true, code: 0}
+      data_fields: [user_id, user_type, device_id, consent_policy_version, create_time]
