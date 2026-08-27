@@ -139,6 +139,8 @@ export interface CredentialMetadata {
   id: string;
   tool_id: string;
   environment_id: string;
+  /** 为空表示历史工具级凭证；非空时必须与当前 Runtime Scope 精确匹配。 */
+  runtime_scope_id: string | null;
   provider_type: string;
   status: string;
   current_version: number;

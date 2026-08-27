@@ -290,10 +290,11 @@ describe("第三阶段 AI 测试工作台", () => {
   });
 
   it("Secret 页仅展示元数据和替换入口", async () => {
-    window.history.replaceState({}, "", "/settings/secrets");
-    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+    window.history.replaceState({}, "", "/settings/secrets?tool_id=truthy-search");
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
       const url = String(input);
       if (url.endsWith("/auth/me")) return jsonResponse(auth);
+      if (url.endsWith("/tools")) return jsonResponse({ items: allTools });
       if (url.includes("/runtime-scopes?")) return jsonResponse({ items: [{ id: "tps_search_dev_test", environment_id: "dev", tool_id: "api-autotest", platform_project_id: "project_search", platform_project_name: "检索项目", project_id: "search", display_name: "Search", target_env: "test", status: "active", is_default: true, revision: 1, active_release: null }] });
       if (url.includes("/config/definitions")) return jsonResponse([{ id: "truthy-search.AUTH_TOKEN", key: "AUTH_TOKEN", display_name: "Access Token", description: "", owner_type: "tool", owner_id: "truthy-search", group_key: "credentials", value_type: "secret", sensitivity: "secret", required: true, default_value: null, validation_schema: {}, apply_mode: "next_task", editable: true, sort_order: 10, value_scope: "system", credential_provider_type: null }]);
       if (url.includes("/secrets?")) return jsonResponse([]);
@@ -303,6 +304,7 @@ describe("第三阶段 AI 测试工作台", () => {
     expect(await screen.findByText("Access Token")).toBeInTheDocument();
     expect(screen.getByText("missing")).toBeInTheDocument();
     expect(screen.queryByText(/fake|token-value/i)).not.toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("owner_type=tool") && String(url).includes("owner_id=truthy-search"))).toBe(true);
   });
 
   it("配置控制面按 Runtime Scope 读取配置，并把固定 TEST 环境作为只读上下文", async () => {
@@ -333,6 +335,48 @@ describe("第三阶段 AI 测试工作台", () => {
     expect(screen.getByLabelText("接口环境")).toBeDisabled();
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes("owner_type=tool_project_scope") && String(url).includes("owner_id=tps_dating_dev_test"))).toBe(true);
     expect(window.location.search).toBe("?scope_id=tps_dating_dev_test");
+  });
+
+  it("配置控制面保留全部既有工具，并按工具能力选择 Scope 或工具级归属", async () => {
+    window.history.replaceState({}, "", "/settings/config?tool_id=functional-test-agent");
+    const definitions = [
+      { id: "api-autotest.gateway.base_url", key: "gateway.base_url", display_name: "Gateway 地址", description: "", owner_type: "tool", owner_id: "api-autotest", group_key: "gateway", value_type: "text", sensitivity: "normal", required: true, default_value: null, validation_schema: {}, apply_mode: "next_task", editable: true, sort_order: 1, value_scope: "system", credential_provider_type: null },
+      { id: "api-test-agent.timeout", key: "timeout", display_name: "API 智能体超时", description: "", owner_type: "tool", owner_id: "api-test-agent", group_key: "runtime", value_type: "int", sensitivity: "normal", required: true, default_value: 30, validation_schema: {}, apply_mode: "next_task", editable: true, sort_order: 1, value_scope: "system", credential_provider_type: null },
+      { id: "functional-test-agent.timeout", key: "timeout", display_name: "功能智能体超时", description: "", owner_type: "tool", owner_id: "functional-test-agent", group_key: "runtime", value_type: "int", sensitivity: "normal", required: true, default_value: 60, validation_schema: {}, apply_mode: "next_task", editable: true, sort_order: 1, value_scope: "system", credential_provider_type: null },
+      { id: "truthy-search.timeout", key: "timeout", display_name: "检索评测超时", description: "", owner_type: "tool", owner_id: "truthy-search", group_key: "runtime", value_type: "int", sensitivity: "normal", required: true, default_value: 45, validation_schema: {}, apply_mode: "next_task", editable: true, sort_order: 1, value_scope: "system", credential_provider_type: null },
+    ];
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const url = String(input);
+      if (url.endsWith("/auth/me")) return jsonResponse(auth);
+      if (url.endsWith("/tools")) return jsonResponse({ items: allTools });
+      if (url.includes("/runtime-scopes?")) return jsonResponse({ items: [{ id: "tps_dating_dev_test", environment_id: "dev", tool_id: "api-autotest", platform_project_id: "project_dating", platform_project_name: "Dating 平台项目", project_id: "dating", display_name: "Dating API", target_env: "test", status: "active", is_default: true, revision: 4, active_release: null }] });
+      if (url.includes("/config/definitions")) return jsonResponse(definitions);
+      if (url.includes("/config/releases?")) return jsonResponse([]);
+      return jsonResponse({ status: "healthy" });
+    });
+    render(<App />);
+
+    const toolSelector = await screen.findByLabelText("工具 / 智能体");
+    expect(toolSelector).toHaveDisplayValue("功能测试智能体");
+    expect(screen.getByRole("option", { name: "API 测试智能体" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "接口自动化" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "检索评测" })).toBeInTheDocument();
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => {
+      const value = String(url);
+      return value.includes("/config/releases?")
+        && value.includes("owner_type=tool")
+        && value.includes("owner_id=functional-test-agent");
+    })).toBe(true));
+    expect(screen.getByLabelText("配置归属")).toHaveDisplayValue("工具级配置");
+
+    fireEvent.change(toolSelector, { target: { value: "api-autotest" } });
+    expect(await screen.findByLabelText("工具项目")).toHaveDisplayValue("Dating API");
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => {
+      const value = String(url);
+      return value.includes("/config/releases?")
+        && value.includes("owner_type=tool_project_scope")
+        && value.includes("owner_id=tps_dating_dev_test");
+    })).toBe(true));
   });
 
   it("切换 Runtime Scope 后 Release 查询使用新 Scope，且不泄漏 Secret 值", async () => {
@@ -400,6 +444,36 @@ describe("第三阶段 AI 测试工作台", () => {
     expect(await screen.findByText(/该 Runtime Scope 已停用/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "创建草稿" })).toBeDisabled();
     expect(screen.queryByText(/secret-value|token-value/i)).not.toBeInTheDocument();
+  });
+
+  it("凭证代理恢复工具级 Credential，并且不会误绑定接口自动化 Scope", async () => {
+    window.history.replaceState({}, "", "/settings/credential-agents?tool_id=truthy-search");
+    let createBody: Record<string, unknown> | null = null;
+    const definitions = [
+      { id: "api-autotest.gateway.base_url", key: "gateway.base_url", display_name: "Gateway 地址", description: "", owner_type: "tool", owner_id: "api-autotest", group_key: "gateway", value_type: "text", sensitivity: "normal", required: true, default_value: null, validation_schema: {}, apply_mode: "next_task", editable: true, sort_order: 1, value_scope: "system", credential_provider_type: null },
+      { id: "truthy-search.timeout", key: "timeout", display_name: "检索超时", description: "", owner_type: "tool", owner_id: "truthy-search", group_key: "runtime", value_type: "int", sensitivity: "normal", required: true, default_value: 45, validation_schema: {}, apply_mode: "next_task", editable: true, sort_order: 1, value_scope: "system", credential_provider_type: null },
+    ];
+    const truthyCredential = { id: "cred_truthy", tool_id: "truthy-search", environment_id: "dev", runtime_scope_id: null, provider_type: "gateway_session", status: "healthy", current_version: 3, expires_at: null, refresh_expires_at: null, last_error_code: null, last_checked_at: null };
+    const scopedCredential = { ...truthyCredential, id: "cred_api", tool_id: "api-autotest", runtime_scope_id: "tps_dating_dev_test" };
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url = String(input);
+      if (url.endsWith("/auth/me")) return jsonResponse(auth);
+      if (url.endsWith("/tools")) return jsonResponse({ items: allTools });
+      if (url.includes("/runtime-scopes?")) return jsonResponse({ items: [{ id: "tps_dating_dev_test", environment_id: "dev", tool_id: "api-autotest", platform_project_id: "project_dating", platform_project_name: "Dating 平台项目", project_id: "dating", display_name: "Dating API", target_env: "test", status: "active", is_default: true, revision: 4, active_release: null }] });
+      if (url.includes("/config/definitions")) return jsonResponse(definitions);
+      if (url.endsWith("/credentials") && init?.method === "POST") { createBody = JSON.parse(String(init.body)); return jsonResponse({ ...truthyCredential, id: "cred_new", provider_type: "admin_login", status: "pending_validation" }, 201); }
+      if (url.includes("/credentials?")) return jsonResponse([truthyCredential, scopedCredential]);
+      return jsonResponse({ status: "healthy" });
+    });
+    render(<App />);
+
+    expect(await screen.findByLabelText("工具 / 智能体")).toHaveDisplayValue("检索评测");
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/credentials?environment_id=dev") && !String(url).includes("runtime_scope_id"))).toBe(true));
+    expect(screen.getByLabelText("配置归属")).toHaveDisplayValue("工具级配置");
+    fireEvent.click(screen.getByRole("button", { name: "创建 Credential" }));
+    fireEvent.change(screen.getByLabelText("Provider"), { target: { value: "admin_login" } });
+    fireEvent.click(screen.getByRole("button", { name: "创建并等待验证" }));
+    await waitFor(() => expect(createBody).toEqual({ provider_type: "admin_login", tool_id: "truthy-search", environment_id: "dev" }));
   });
 
   it("普通执行用户可从全局导航进入个人凭证与个人 LLM", async () => {
