@@ -47,6 +47,22 @@ _ADMIN_RUNTIME_VARIABLES = {
 }
 
 
+def _handle_flow_environment_error(
+    config_source: str,
+    error: FlowEnvironmentError,
+) -> None:
+    """按配置源处理项目运行资产缺失。
+
+    本地开发可能尚未准备真实媒体 fixture，保持可识别的 skip；平台模式运行
+    的项目包已经是发布资产，缺失文件或越界引用必须 fail-closed，使 CLI、
+    Jenkins 与 Web 三条入口得到一致的非零结论。
+    """
+
+    if config_source == "platform":
+        pytest.fail(f"平台项目运行资产不可用: {error}", pytrace=False)
+    pytest.skip(f"真实 Flow 未执行: {error}")
+
+
 def _load_selected_flow_cases(
     selected_flow: str | None,
     project_id: str = "truthy",
@@ -153,6 +169,7 @@ def test_gateway_flow(
     gateway_api: GatewayApi,
     project_package: Any,
     runtime_report_metadata: dict[str, str],
+    request: pytest.FixtureRequest,
 ) -> None:
     """使用通用 FlowRunner 执行一条独立 Flow/Scenario 用例。"""
     # fixture 的返回值无需在测试体消费；声明依赖即可保证报告身份先落盘。
@@ -189,6 +206,9 @@ def test_gateway_flow(
             api_definitions=gateway_api.api_definitions,
             now_ms=gateway_api.now_ms,
             session_env_path=gateway_api.session_env_path,
+            # 平台 writer 内部持有共享 CAS 版本；所有 Flow 子 Gateway 必须复用
+            # 同一闭包，确保连续创建/刷新按版本顺序写回当前 Scope Credential。
+            session_state_writer=gateway_api.session_state_writer,
         )
 
     try:
@@ -210,8 +230,10 @@ def test_gateway_flow(
             runtime_variables=flow_runtime_variables,
         ).run(flow_case)
     except FlowEnvironmentError as exc:
-        # 真实媒体文件属于本地运行条件，缺失时保持原有跳过策略。
-        pytest.skip(f"真实 Flow 未执行: {exc}")
+        _handle_flow_environment_error(
+            str(request.config.getoption("--config-source")),
+            exc,
+        )
 
 
 def main(argv: Sequence[str] | None = None) -> int:

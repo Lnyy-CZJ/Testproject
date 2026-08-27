@@ -56,6 +56,20 @@ step_data:
       response: {id: req_0, success: true, code: 0}
       data_fields: [task_id, task_type, result_id, schema_version, result, create_time, expire_time]
       data_equals: {schema_version: dating.relationship_analysis.v1}
+      data_types:
+        result: object
+        result.overview: object
+        result.overview.next_steps: array
+        result.overview.dashboard: object
+        result.chat_signals: object
+        result.chat_signals.positive: array
+        result.chat_signals.watch: array
+        result.chat_signals.risk: array
+        result.key_events: object
+        result.key_events.turning_points: array
+        result.key_events.hidden_meanings: array
+        result.key_events.did_well: array
+        result.key_events.could_improve: array
   delete_task_data:
     params:
       task_id: "{{task_id}}"
@@ -66,6 +80,13 @@ step_data:
       data_fields: [task_id, logical_deleted, object_deletion_status, delete_time]
       data_equals: {logical_deleted: true}
   verify_deleted_task:
+    params:
+      task_id: "{{task_id}}"
+    assert:
+      http_status: 200
+      gateway: {code: 0}
+      response: {id: req_0, success: false, business_error_code: NOT_FOUND}
+  verify_deleted_result:
     params:
       task_id: "{{task_id}}"
     assert:

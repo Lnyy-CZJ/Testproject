@@ -44,3 +44,5 @@ steps:
     run_on_termination: true
   - id: verify_deleted_task
     api: GetAnalysisTask
+  - id: verify_deleted_result
+    api: GetAnalysisResult

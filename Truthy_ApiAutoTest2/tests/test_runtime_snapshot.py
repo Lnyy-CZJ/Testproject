@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -226,3 +228,43 @@ def test_platform_settings_contract_reports_missing_logical_keys() -> None:
                 "flow.analysis.timeout_seconds",
             ),
         )
+
+
+def test_platform_pytest_invalid_snapshot_exits_nonzero(tmp_path: Path) -> None:
+    """平台快照损坏时直接 pytest/CI 也必须失败，不能以 skipped 退出 0。"""
+
+    snapshot_path = tmp_path / "invalid-snapshot.json"
+    snapshot_path.write_text(
+        json.dumps(_snapshot(schema_version=2)),
+        encoding="utf-8",
+    )
+    snapshot_path.chmod(0o600)
+    environment = os.environ.copy()
+    environment["API_AUTOTEST_RUNTIME_SNAPSHOT_FILE"] = str(snapshot_path)
+    project_root = Path(__file__).resolve().parents[1]
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            "test_cases/test_single_api.py",
+            "--project=dating",
+            "--target-env=test",
+            "--config-source=platform",
+            "--api=GetMe",
+            "--case=GetMe::get_me_success",
+            "--task-id=task-1",
+            "--runtime-scope-id=scope-1",
+            "-q",
+        ],
+        cwd=project_root,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    output = f"{completed.stdout}\n{completed.stderr}"
+    assert completed.returncode != 0, output
+    assert "schema_version" in output

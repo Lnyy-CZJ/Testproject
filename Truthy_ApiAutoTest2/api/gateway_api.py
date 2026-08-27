@@ -168,8 +168,7 @@ class GatewayApi:
         data = assert_gateway_response(response, case.get("assert") or {})
         if self.runtime_context and case.get("extract"):
             self.runtime_context.extract(data, case["extract"])
-            if self._is_session_case(case):
-                self._persist_session_state()
+            self.persist_session_state_for_case(case)
         return response
 
     def invoke(self, case: dict[str, Any]):
@@ -332,3 +331,21 @@ class GatewayApi:
             self.session_state_writer(values)
         elif self.session_env_path:
             persist_session_to_dotenv(self.session_env_path, values)
+
+    def persist_session_state_for_case(self, case: dict[str, Any]) -> None:
+        """在显式会话 Case 已完成响应提取后持久化当前完整会话。
+
+        单接口执行由 :meth:`execute` 调用；FlowRunner 会先按 Flow 的 extract
+        规则更新独立上下文，再调用本方法。这样两条执行路径共享同一判断，且
+        平台 CAS writer 只在成功的 CreateAnonymousSession/RefreshSession 后
+        触发，不会把半成品会话写回唯一真源。
+
+        参数说明:
+            case: 已成功完成协议断言和变量提取的执行 Case。
+
+        返回值:
+            无。非会话 Case 不执行任何写入。
+        """
+
+        if self._is_session_case(case):
+            self._persist_session_state()

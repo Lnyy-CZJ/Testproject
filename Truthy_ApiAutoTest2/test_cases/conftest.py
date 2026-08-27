@@ -202,6 +202,11 @@ def gateway_settings(
             )
         return settings
     except ConfigError as exc:
+        if config_source == "platform":
+            # 平台快照是发布后的唯一配置源；缺失、篡改或契约不完整均属于
+            # 执行失败。这里必须让直接 pytest/Jenkins 返回非零，不能依赖
+            # Web TaskManager 事后把 all-skipped 修正为 failed。
+            pytest.fail(f"平台运行快照不可用: {exc}", pytrace=False)
         pytest.skip(f"真实 Gateway 用例未执行: {exc}")
 
 

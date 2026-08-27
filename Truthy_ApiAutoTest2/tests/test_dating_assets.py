@@ -95,6 +95,33 @@ def test_dating_has_cases_and_two_p0_flows_with_success_gated_result_cleanup() -
     assert poll_step["until"]["interval_seconds"] == "{{analysis_poll_interval_seconds}}"
     assert poll_step["until"]["timeout_seconds"] == "{{analysis_timeout_seconds}}"
 
+    scenario = flows["single_image_analysis_happy_path"]["scenario"]["step_data"]
+    result_assertions = scenario["get_analysis_result"]["assert"]
+    assert result_assertions["data_types"] == {
+        "result": "object",
+        "result.overview": "object",
+        "result.overview.next_steps": "array",
+        "result.overview.dashboard": "object",
+        "result.chat_signals": "object",
+        "result.chat_signals.positive": "array",
+        "result.chat_signals.watch": "array",
+        "result.chat_signals.risk": "array",
+        "result.key_events": "object",
+        "result.key_events.turning_points": "array",
+        "result.key_events.hidden_meanings": "array",
+        "result.key_events.did_well": "array",
+        "result.key_events.could_improve": "array",
+    }
+    assert analysis_steps[-1] == {
+        "id": "verify_deleted_result",
+        "api": "GetAnalysisResult",
+    }
+    assert scenario["verify_deleted_result"]["assert"]["response"] == {
+        "id": "req_0",
+        "success": False,
+        "business_error_code": "NOT_FOUND",
+    }
+
 
 def test_third_fixture_project_validates_without_engine_branch() -> None:
     """第三项目只增加项目包即可通过公共注册表，不需要引擎项目分支。"""

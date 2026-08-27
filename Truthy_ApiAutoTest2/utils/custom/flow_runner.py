@@ -264,6 +264,12 @@ class FlowRunner:
             # 防止 NO_RESULT 被按 SUCCEEDED 的场景断言误判为失败。
             return True
         self._finalize_api(step, case, data, context)
+        # Flow 直接调用 invoke 并自行提取变量，不能依赖 GatewayApi.execute 的
+        # 单接口持久化路径。仅在断言和提取全部成功后通知可选会话写回钩子，
+        # 保证平台 Credential 不会停留在任务启动时的旧 token。
+        persist_session = getattr(gateway, "persist_session_state_for_case", None)
+        if callable(persist_session):
+            persist_session(case)
         return False
 
     def _poll(

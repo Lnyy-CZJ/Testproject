@@ -4,7 +4,27 @@ from __future__ import annotations
 
 from typing import Any
 
-from utils.custom.runtime_context import RuntimeContext
+from utils.custom.runtime_context import RuntimeContext, RuntimeContextError
+
+
+def _matches_declared_type(value: Any, declared_type: str) -> bool:
+    """按 YAML 稳定类型名判断 JSON 值，避免 Python ``bool`` 被当成整数。"""
+
+    if declared_type == "object":
+        return isinstance(value, dict)
+    if declared_type == "array":
+        return isinstance(value, list)
+    if declared_type == "string":
+        return isinstance(value, str)
+    if declared_type == "boolean":
+        return isinstance(value, bool)
+    if declared_type == "integer":
+        return isinstance(value, int) and not isinstance(value, bool)
+    if declared_type == "number":
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+    if declared_type == "null":
+        return value is None
+    raise AssertionError(f"不支持的业务数据类型声明: {declared_type}")
 
 
 def _assert_fields(actual: dict[str, Any], expected: dict[str, Any], scope: str) -> None:
@@ -58,6 +78,18 @@ def assert_gateway_response(response: Any, expected: dict[str, Any]) -> dict[str
     assert isinstance(data, dict), "业务子响应 data 必须是对象"
     for field in expected.get("data_fields") or []:
         assert field in data, f"业务数据字段 {field} 不存在"
+    for path, declared_type in (expected.get("data_types") or {}).items():
+        normalized_path = path if str(path).startswith("$.") else f"$.{path}"
+        try:
+            actual_value = RuntimeContext.read_path(data, normalized_path)
+        except RuntimeContextError as exc:
+            # 类型契约属于响应断言的一部分，对调用方统一表现为 AssertionError，
+            # 不把 RuntimeContext 的内部路径解析异常泄漏成不同失败语义。
+            raise AssertionError(f"业务数据类型路径 {path} 不存在") from exc
+        assert _matches_declared_type(actual_value, str(declared_type)), (
+            f"业务数据路径 {path} 类型断言失败: "
+            f"期望 {declared_type}，实际 {type(actual_value).__name__}"
+        )
     return data
 
 
