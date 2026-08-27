@@ -1,5 +1,5 @@
 name: Dating 单图 Analysis 成功链路
-tags: [dating, smoke, flow, analysis, media]
+tags: [dating, smoke, regression, flow, analysis, media]
 steps:
   - id: get_upload_config
     api: GetMediaUploadConfig

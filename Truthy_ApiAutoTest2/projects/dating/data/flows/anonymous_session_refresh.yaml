@@ -1,5 +1,5 @@
 name: Dating 匿名会话创建与刷新
-tags: [dating, smoke, flow, identity]
+tags: [dating, smoke, regression, flow, identity]
 steps:
   - id: create_session
     api: CreateAnonymousSession

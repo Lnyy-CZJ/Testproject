@@ -75,6 +75,9 @@ def test_dating_has_cases_and_two_p0_flows_with_success_gated_result_cleanup() -
         "anonymous_session_refresh",
         "single_image_analysis_happy_path",
     }
+    # Web 创建 Flow 任务的默认示例使用 regression 过滤；P0 Flow 必须带同名
+    # pytest marker，否则平台会成功提交却在收集阶段把唯一用例全部 deselect。
+    assert all("regression" in flow["tags"] for flow in flows.values())
     refresh_api_ids = [step.get("api") for step in flows["anonymous_session_refresh"]["flow"]["steps"]]
     assert refresh_api_ids == [
         "CreateAnonymousSession",
