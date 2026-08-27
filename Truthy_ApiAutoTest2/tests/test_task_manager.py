@@ -267,6 +267,41 @@ class TestBuildCommand:
 class TestMultiProjectTaskV2:
     """多项目任务必须固化选择与平台快照元数据，且运行产物按项目隔离。"""
 
+    def test_platform_payload_preserves_gateway_comm_before_credential_overlay(self):
+        """Release 的 Gateway 通讯字段必须保留，凭证只覆盖对应动态字段。
+
+        平台的 ConfigDefinition 使用 ``gateway.comm`` 逻辑键保存公共通讯参数，
+        Credential/Secret 只负责补充当前会话的 token、user_id、device_id。
+        转换后的执行快照既不能丢失 platform/locale，也不能让 Release 中的旧
+        device_id 覆盖用户凭证提供的当前设备标识。
+        """
+
+        settings = TaskManager._settings_from_platform_payload(
+            {
+                "normal": {
+                    "gateway.base_url": "https://gateway.example",
+                    "gateway.path": "/dating/gateway/invoke",
+                    "gateway.comm": {
+                        "platform": "ios",
+                        "locale": "zh-Hans-CN",
+                        "device_id": "release-device",
+                    },
+                },
+                "secrets": {
+                    "AUTH_TOKEN": "credential-token",
+                    "DEVICE_ID": "credential-device",
+                },
+            }
+        )
+
+        assert settings["comm"] == {
+            "platform": "ios",
+            "locale": "zh-Hans-CN",
+            "device_id": "credential-device",
+            "auth_token": "credential-token",
+        }
+        assert "gateway.comm" not in settings
+
     @staticmethod
     def _runtime_plan(task_id: str, signed_context: str, selection: dict) -> dict:
         """返回不含 Secret 的平台规划，模拟 Runtime Context 契约。"""

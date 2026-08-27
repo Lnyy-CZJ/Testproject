@@ -667,6 +667,26 @@ class TaskManager:
         )
         if gateway_value and not settings.get("gateway_base_url"):
             settings["gateway_base_url"] = gateway_value
+
+        # 平台 Release 以 ConfigDefinition 的逻辑键 ``gateway.comm`` 返回公共
+        # 通讯参数。必须先把它归一化为执行器使用的 ``comm``，再由当前用户的
+        # Credential 覆盖 token/device_id 等动态字段；否则提前创建空 ``comm``
+        # 会让后续配置加载器误判目标键已存在，造成 platform/locale 静默丢失。
+        logical_comm = settings.pop("gateway.comm", None)
+        if logical_comm is not None:
+            if not isinstance(logical_comm, dict):
+                raise SubmissionError(
+                    503, PLATFORM_CONFIG_UNAVAILABLE, "平台快照 gateway.comm 配置无效"
+                )
+            existing_comm = settings.get("comm")
+            if existing_comm is not None and not isinstance(existing_comm, dict):
+                raise SubmissionError(
+                    503, PLATFORM_CONFIG_UNAVAILABLE, "平台快照 comm 配置无效"
+                )
+            normalized_comm = json.loads(json.dumps(logical_comm, ensure_ascii=False))
+            if isinstance(existing_comm, dict):
+                normalized_comm.update(existing_comm)
+            settings["comm"] = normalized_comm
         comm = settings.setdefault("comm", {})
         if not isinstance(comm, dict):
             raise SubmissionError(503, PLATFORM_CONFIG_UNAVAILABLE, "平台快照 comm 配置无效")
