@@ -978,7 +978,15 @@ def _validate_release(database: Session, row: ConfigRelease) -> None:
     """验证 Release 普通必填项及作用域内 Secret 是否已配置。"""
 
     _assert_scope_environment(database, row.owner_type, row.owner_id, row.environment_id)
-    definitions = _owner_definitions(database, row.owner_type, row.owner_id)
+    # Release 是 Scope 下系统运行配置的唯一版本载体；``value_scope=user`` 的
+    # 必填项由各用户 Credential 独立校验。若在这里混合校验，会迫使 Dating
+    # Scope 为未使用的 Truthy Admin Profile 创建全局 Secret，既破坏项目隔离，
+    # 也与“按实际资产校验凭证”的运行时契约冲突。
+    definitions = [
+        definition
+        for definition in _owner_definitions(database, row.owner_type, row.owner_id)
+        if definition.value_scope == "system"
+    ]
     items = {item.definition_id: item for item in database.scalars(select(ConfigReleaseItem).where(ConfigReleaseItem.release_id == row.id)).all()}
     secrets = {
         secret.definition_id: secret

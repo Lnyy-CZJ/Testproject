@@ -527,6 +527,91 @@ def test_scoped_release_and_secret_reuse_tool_definitions_without_cross_scope_le
     assert wrong_environment.json()["code"] == "CONFIG_SCOPE_MISMATCH"
 
 
+def test_runtime_scope_release_validation_ignores_user_credential_definitions(
+    phase2_client,
+) -> None:
+    """Scope Release 只校验系统配置，用户凭证由独立 Credential 生命周期负责。"""
+
+    client, factory, _settings = phase2_client
+    admin_payload = _setup(client)
+    admin_id = admin_payload["user"]["id"]
+    csrf = client.cookies.get("tp_csrf")
+    scope_model = getattr(configuration_models, "ToolProjectScope")
+    with factory() as database:
+        database.add(Project(
+            id="project_release_profile", code="RELEASE_PROFILE",
+            name="Release Profile", description="", status="active",
+            created_by_user_id=admin_id,
+        ))
+        database.add(Tool(
+            id="api-autotest", name="接口自动化", description="",
+            entry_url="/api-autotest/", health_url="http://api-autotest/health",
+            short_code="API", icon_key="api", category="automation", features=[],
+            sort_order=30, is_enabled=True, access_scope="project",
+            project_id="project_release_profile",
+        ))
+        database.add(scope_model(
+            id="tps_release_dating", environment_id="dev", tool_id="api-autotest",
+            platform_project_id="project_release_profile", project_id="dating",
+            target_env="test", display_name="Dating", status="active",
+            is_default=True, revision=1, created_by=admin_id, updated_by=admin_id,
+        ))
+        database.add_all([
+            ConfigDefinition(
+                id="api-autotest.gateway.base_url", key="gateway.base_url",
+                display_name="Gateway", description="", owner_type="tool",
+                owner_id="api-autotest", group_key="gateway", value_type="url",
+                sensitivity="normal", required=True, validation_schema={},
+                apply_mode="next_task", editable=True, sort_order=10,
+                value_scope="system",
+            ),
+            ConfigDefinition(
+                id="api-autotest.AUTH_TOKEN", key="AUTH_TOKEN",
+                display_name="Access Token", description="", owner_type="tool",
+                owner_id="api-autotest", group_key="credentials", value_type="secret",
+                sensitivity="secret", required=True, validation_schema={},
+                apply_mode="next_task", editable=True, sort_order=20,
+                value_scope="user", credential_provider_type="gateway_session",
+            ),
+        ])
+        database.commit()
+
+    created = client.post(
+        "/api/v1/config/releases",
+        headers={"X-CSRF-Token": csrf},
+        json={
+            "environment_id": "dev",
+            "owner_type": "tool_project_scope",
+            "owner_id": "tps_release_dating",
+        },
+    )
+    assert created.status_code == 201
+    release_id = created.json()["id"]
+    updated = client.put(
+        f"/api/v1/config/releases/{release_id}/items",
+        headers={"X-CSRF-Token": csrf},
+        json={
+            "revision": 1,
+            "items": [{
+                "definition_id": "api-autotest.gateway.base_url",
+                "value": "https://dating.example.test",
+            }],
+        },
+    )
+    assert updated.status_code == 200
+
+    validated = client.post(
+        f"/api/v1/config/releases/{release_id}/validate",
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert validated.status_code == 200
+    published = client.post(
+        f"/api/v1/config/releases/{release_id}/publish",
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert published.status_code == 200
+
+
 def test_api_autotest_runtime_chain_is_scope_aware_and_rejects_overrides(
     phase2_client,
     tmp_path: Path,
