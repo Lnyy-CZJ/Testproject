@@ -231,6 +231,60 @@ class DatingRedactionTest(unittest.TestCase):
             ordinary,
         )
 
+    def test_credential_key_table_matches_raw_and_report_without_overreach(self):
+        """显式凭证键及紧凑别名脱敏，业务复合键在两种输出中均保留。"""
+        cases = (
+            ("Authorization", "credential-authorization", True),
+            ("Proxy-Authorization", "credential-proxy-authorization", True),
+            ("Cookie", "credential-cookie", True),
+            ("Set-Cookie", "credential-set-cookie", True),
+            ("auth_token", "credential-auth-token", True),
+            ("X-Auth-Token", "credential-x-auth-token", True),
+            ("accessToken", "credential-access-token", True),
+            ("refreshToken", "credential-refresh-token", True),
+            ("id_token", "credential-id-token", True),
+            ("sessionToken", "credential-session-token", True),
+            ("api_key", "credential-api-key", True),
+            ("X-API-Key", "credential-x-api-key", True),
+            ("secret", "credential-secret", True),
+            ("client_secret", "credential-client-secret", True),
+            ("apiSecret", "credential-api-secret", True),
+            ("AWS-Secret-Access-Key", "credential-aws-secret", True),
+            ("xauthtoken", "compact-x-auth-token", True),
+            ("XAUTHTOKEN", "compact-upper-x-auth-token", True),
+            ("apisecret", "compact-api-secret", True),
+            ("APISECRET", "compact-upper-api-secret", True),
+            ("awssecretaccesskey", "compact-aws-secret", True),
+            ("AWSSECRETACCESSKEY", "compact-upper-aws-secret", True),
+            ("cookieConsent", "business-cookie-consent", False),
+            ("tokenBucketSize", "business-token-bucket-size", False),
+            ("secretSantaName", "business-secret-santa-name", False),
+            ("apiKeyRotationDate", "business-api-key-rotation-date", False),
+            ("authorizationMode", "business-authorization-mode", False),
+            ("authorization_status", "business-authorization-status", False),
+            ("token_count", "business-token-count", False),
+            ("accessTokenStatus", "business-access-token-status", False),
+            ("api_key_count", "business-api-key-count", False),
+            ("client_secret_hint", "business-secret-hint", False),
+        )
+        source = {key: value for key, value, _sensitive in cases}
+
+        redacted = dating_log_rules.redact_dating_response(source)
+        analysis = _load_reply_analysis()
+        checks = run_dating_checks(analysis)
+        checks[0]["actual"] = source
+        report = dating_log_rules.render_dating_report(analysis, checks)
+
+        for key, value, sensitive in cases:
+            with self.subTest(surface="raw", key=key):
+                expected = "[REDACTED]" if sensitive else value
+                self.assertEqual(redacted[key], expected)
+            with self.subTest(surface="report", key=key):
+                if sensitive:
+                    self.assertNotIn(value, report)
+                else:
+                    self.assertIn(f'"{key}":"{value}"', report)
+
     def test_long_text_is_truncated_everywhere_and_field_warning_is_added(self):
         # 空格使该值明确属于自由文本，而不是 Base64/URL-safe Base64 候选。
         long_text = "x" * 20000 + " SECRET_TAIL"

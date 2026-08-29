@@ -27,6 +27,40 @@ _NON_CREDENTIAL_KEY_TAILS = {
     ("preferences",),
     ("hint",),
 }
+_CREDENTIAL_KEY_PHRASES = {
+    ("authorization",),
+    ("proxy", "authorization"),
+    ("cookie",),
+    ("set", "cookie"),
+    ("token",),
+    ("auth", "token"),
+    ("x", "auth", "token"),
+    ("access", "token"),
+    ("refresh", "token"),
+    ("id", "token"),
+    ("session", "token"),
+    ("api", "key"),
+    ("x", "api", "key"),
+    ("secret",),
+    ("client", "secret"),
+    ("api", "secret"),
+    ("aws", "secret", "access", "key"),
+}
+_COMPACT_CREDENTIAL_KEY_ALIASES = {
+    "proxyauthorization",
+    "setcookie",
+    "authtoken",
+    "xauthtoken",
+    "accesstoken",
+    "refreshtoken",
+    "idtoken",
+    "sessiontoken",
+    "apikey",
+    "xapikey",
+    "clientsecret",
+    "apisecret",
+    "awssecretaccesskey",
+}
 _BASE64_CANDIDATE_RE = re.compile(r"[A-Za-z0-9+/]*={0,2}\Z")
 _URLSAFE_BASE64_CANDIDATE_RE = re.compile(r"[A-Za-z0-9_-]*={0,2}\Z")
 _TRUNCATION_WARNING_MESSAGE = "字段文本超过 20000 字符，结果仅保留前 20000 字符"
@@ -2019,26 +2053,18 @@ def _key_tokens(key: object) -> tuple[str, ...]:
 
 
 def _is_sensitive_key(key: object) -> bool:
-    """按凭证词元识别敏感键，同时排除只描述计数或状态的元数据键。"""
+    """只匹配完整凭证短语或明确别名，并保留业务复合键与元数据键。"""
     tokens = _key_tokens(key)
     if not tokens:
         return False
     if any(tokens[-len(tail) :] == tail for tail in _NON_CREDENTIAL_KEY_TAILS):
         return False
 
-    if any(
-        token in {"authorization", "cookie", "token", "secret"}
-        for token in tokens
-    ):
+    if tokens in _CREDENTIAL_KEY_PHRASES:
         return True
-    if any(
-        tokens[index : index + 2] == ("api", "key")
-        for index in range(len(tokens) - 1)
-    ):
-        return True
-    # ``XAPIKey`` 的全大写缩写边界无法无歧义拆成 X/API；只对两个完整
-    # 规范名兜底，避免将包含 api/key 字样的普通业务键做模糊命中。
-    return "".join(tokens) in {"apikey", "xapikey"}
+    # 全大写或全小写紧凑键没有 camelCase 边界，只能按完整规范别名匹配；
+    # 禁止做子串命中，避免 cookieConsent、tokenBucketSize 等业务键误删。
+    return "".join(tokens) in _COMPACT_CREDENTIAL_KEY_ALIASES
 
 
 def _is_signed_query_key(key: object) -> bool:
