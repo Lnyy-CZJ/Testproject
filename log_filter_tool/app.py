@@ -8,6 +8,8 @@ from http.cookies import SimpleCookie
 from pathlib import Path
 from urllib import request as urlrequest
 
+from gateway_log_parser import clean_log_line
+
 try:
     from flask import Blueprint, Flask, jsonify, render_template, request
 except ImportError:  # Allows core log parsing tests to run before Flask is installed.
@@ -23,7 +25,6 @@ METHOD_PATTERNS = (
     re.compile(r"method=([A-Za-z0-9_]+)"),
     re.compile(r'"method_name"\s*:\s*"([A-Za-z0-9_]+)"'),
 )
-CONSOLE_PREFIX_PATTERN = re.compile(r"^.*?\bflutter:\s?")
 REQUEST_ID_PATTERN = re.compile(
     r'(?<![A-Za-z0-9_])"?request_id"?\s*[:=]\s*"?([^"\s,}]+)',
     re.IGNORECASE,
@@ -290,18 +291,6 @@ def filter_log_text(log_text, methods):
 
     filtered_blocks = filter_log_blocks(blocks, methods)
     return format_result_text(filtered_blocks), len(filtered_blocks)
-
-
-def clean_log_line(line):
-    line = CONSOLE_PREFIX_PATTERN.sub("", line, count=1)
-    stripped_line = line.lstrip()
-    if stripped_line.startswith(("┌", "└")):
-        return ""
-    if line.startswith("│ "):
-        return line[2:]
-    if line.startswith("│"):
-        return line[1:]
-    return line.replace("│", "")
 
 
 def format_result_text(blocks):
