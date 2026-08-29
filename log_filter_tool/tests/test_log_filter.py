@@ -166,6 +166,187 @@ class LogFilterTests(unittest.TestCase):
             self.assertEqual(response.status_code, 400)
             self.assertEqual(list(Path(export_dir).iterdir()), [])
 
+    def test_export_dating_report_redacts_and_saves_markdown(self):
+        """Dating Markdown 使用固定后缀，并在写盘前兜底删除签名查询。"""
+        app = create_app()
+        app.testing = True
+        signed_url = (
+            "https://signed.example/object.png?"
+            "q-signature=markdown-export-secret&x=1"
+        )
+
+        with TemporaryDirectory() as export_dir:
+            app.config.update(
+                LOG_EXPORT_DIR=export_dir,
+                LOG_EXPORT_DISPLAY_DIR=export_dir,
+            )
+            response = app.test_client().post(
+                "/export",
+                json={
+                    "export_type": "dating_analysis_report",
+                    "content": signed_url,
+                },
+            )
+            payload = response.get_json()
+
+            self.assertEqual(response.status_code, 200)
+            self.assertTrue(
+                payload["filename"].startswith(
+                    "dating_structured_analysis_"
+                )
+            )
+            self.assertTrue(payload["filename"].endswith(".md"))
+            self.assertEqual(
+                (Path(export_dir) / payload["filename"]).read_text(
+                    encoding="utf-8"
+                ),
+                "https://signed.example/object.png?[REDACTED]",
+            )
+
+    def test_export_dating_json_redacts_and_dumps_deterministically(self):
+        """JSON 导出解析真实结构、递归脱敏，并保持稳定 UTF-8 格式。"""
+        app = create_app()
+        app.testing = True
+        content = (
+            '{"verdict":"NO_ISSUES",'
+            '"Authorization":"Bearer json-export-secret",'
+            '"signed_url":"https://signed.example/a?'
+            'q-signature=json-signature",'
+            '"token_count":3}'
+        )
+
+        with TemporaryDirectory() as export_dir:
+            app.config.update(
+                LOG_EXPORT_DIR=export_dir,
+                LOG_EXPORT_DISPLAY_DIR=export_dir,
+            )
+            response = app.test_client().post(
+                "/export",
+                json={"export_type": "dating_analysis_json", "content": content},
+            )
+            payload = response.get_json()
+
+            self.assertEqual(response.status_code, 200)
+            self.assertTrue(
+                payload["filename"].startswith(
+                    "dating_structured_analysis_"
+                )
+            )
+            self.assertTrue(payload["filename"].endswith(".json"))
+            saved = (Path(export_dir) / payload["filename"]).read_text(
+                encoding="utf-8"
+            )
+            self.assertEqual(
+                saved,
+                "{\n"
+                '  "verdict": "NO_ISSUES",\n'
+                '  "Authorization": "[REDACTED]",\n'
+                '  "signed_url": '
+                '"https://signed.example/a?[REDACTED]",\n'
+                '  "token_count": 3\n'
+                "}",
+            )
+            self.assertNotIn("json-export-secret", saved)
+            self.assertNotIn("json-signature", saved)
+
+    def test_export_dating_json_accepts_all_valid_json_value_types(self):
+        """list、scalar 和 null 都是有效 JSON，不能被错误限制为对象。"""
+        app = create_app()
+        app.testing = True
+        cases = (
+            (
+                '[{"secret":"list-secret"}]',
+                '[\n  {\n    "secret": "[REDACTED]"\n  }\n]',
+            ),
+            ('"scalar"', '"scalar"'),
+            ("null", "null"),
+            ("0", "0"),
+        )
+
+        with TemporaryDirectory() as export_dir:
+            app.config.update(
+                LOG_EXPORT_DIR=export_dir,
+                LOG_EXPORT_DISPLAY_DIR=export_dir,
+            )
+            client = app.test_client()
+            for content, expected in cases:
+                with self.subTest(content=content):
+                    response = client.post(
+                        "/export",
+                        json={
+                            "export_type": "dating_analysis_json",
+                            "content": content,
+                        },
+                    )
+                    payload = response.get_json()
+                    self.assertEqual(response.status_code, 200)
+                    self.assertEqual(
+                        (Path(export_dir) / payload["filename"]).read_text(
+                            encoding="utf-8"
+                        ),
+                        expected,
+                    )
+
+    def test_export_dating_json_rejects_invalid_json_without_file(self):
+        """JSON 语法错误返回 400，且参数校验阶段不留下文件。"""
+        app = create_app()
+        app.testing = True
+
+        with TemporaryDirectory() as export_dir:
+            app.config.update(
+                LOG_EXPORT_DIR=export_dir,
+                LOG_EXPORT_DISPLAY_DIR=export_dir,
+            )
+            response = app.test_client().post(
+                "/export",
+                json={"export_type": "dating_analysis_json", "content": "{"},
+            )
+
+            self.assertEqual(response.status_code, 400)
+            self.assertIn("JSON", response.get_json()["message"])
+            self.assertEqual(list(Path(export_dir).iterdir()), [])
+
+    def test_existing_analysis_report_and_unknown_export_contracts_remain(self):
+        """新增 allow-list 不改变既有 Markdown 与未知类型的响应。"""
+        app = create_app()
+        app.testing = True
+
+        with TemporaryDirectory() as export_dir:
+            app.config.update(
+                LOG_EXPORT_DIR=export_dir,
+                LOG_EXPORT_DISPLAY_DIR=export_dir,
+            )
+            client = app.test_client()
+            existing = client.post(
+                "/export",
+                json={"export_type": "analysis_report", "content": "# People"},
+            )
+            unknown = client.post(
+                "/export",
+                json={"export_type": "future_type", "content": "content"},
+            )
+
+            self.assertEqual(existing.status_code, 200)
+            self.assertTrue(existing.get_json()["filename"].endswith(".md"))
+            self.assertEqual(unknown.status_code, 400)
+            self.assertEqual(unknown.get_json()["message"], "不支持的导出类型")
+
+    def test_home_receives_disabled_dating_flag_and_still_renders(self):
+        """首页只接收开关上下文；关闭 Dating 时现有页面仍正常渲染。"""
+        app = create_app()
+        app.testing = True
+        app.config["DATING_STRUCTURED_ANALYZER_ENABLED"] = False
+
+        with patch("app.render_template", return_value="rendered") as render:
+            response = app.test_client().get("/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_data(as_text=True), "rendered")
+        self.assertFalse(
+            render.call_args.kwargs["dating_analyzer_enabled"]
+        )
+        self.assertIn("platform_home_url", render.call_args.kwargs)
+
     def test_page_contains_export_search_and_auto_filter_controls(self):
         """页面应提供两个导出入口、结果搜索和 method 自动提交逻辑。"""
         app = create_app()
