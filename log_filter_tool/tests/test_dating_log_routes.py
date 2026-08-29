@@ -38,6 +38,11 @@ class DatingPageTest(unittest.TestCase):
         self.app.config["TESTING"] = True
         self.client = self.app.test_client()
 
+    def assert_contains_contracts(self, source, contracts):
+        """集中报告缺失的静态合同，避免失败时打印整段内联 JavaScript。"""
+        missing = [contract for contract in contracts if contract not in source]
+        self.assertEqual(missing, [], f"缺失前端合同：{missing}")
+
     def test_enabled_page_contains_complete_dating_workbench(self):
         """缺失任一业务区块时，工程师都无法完成 PRD 的排查流程。"""
         html = self.client.get("/").get_data(as_text=True)
@@ -166,6 +171,102 @@ class DatingPageTest(unittest.TestCase):
 
         self.assertIn("state.className = 'dating-state success'", dating_script)
         self.assertIn("state.textContent = '分析完成：'", dating_script)
+
+    def test_schema_specific_result_views_preserve_documented_facts(self):
+        """已知 Schema 必须使用事实视图，未知 Schema 才只展示通用字段。"""
+        html = self.client.get("/").get_data(as_text=True)
+        dating_script = html[html.index("var latestDatingAnalysis") :]
+
+        self.assert_contains_contracts(dating_script, (
+            "function sortDatingRolesByRank(roles)",
+            "function renderDatingReplyResult(resultPayload)",
+            "function renderDatingReplyRole(role)",
+            "role.role_id",
+            "role.role_name",
+            "role.selection_rule_id",
+            "role.selection_reasons",
+            "role.coach_note",
+            "role.replies",
+            "role.top_pick",
+            "role.alternatives",
+            "reply.reply_id",
+            "reply.text",
+            "reply.is_top_pick",
+            "function renderDatingAnalysisResult(resultPayload)",
+            "overview.insight_title",
+            "overview.insight_summary",
+            "overview.next_steps",
+            "overview.dashboard",
+            "signals.positive_signals",
+            "signals.watch_signals",
+            "signals.risk_signals",
+            "events.turning_points",
+            "events.hidden_meanings",
+            "events.did_well",
+            "events.could_improve",
+            "item.evidence_message_ids",
+            "UNKNOWN_SCHEMA：仅提供通用字段树和字段索引。",
+        ))
+
+        self.assertNotIn("appendDatingText(pre, section.value)", dating_script)
+
+    def test_collapsed_dating_details_materialize_once_on_first_open(self):
+        """首屏不得创建折叠字段树、调用行或每个调用的 JSON 详情。"""
+        html = self.client.get("/").get_data(as_text=True)
+        dating_script = html[html.index("var latestDatingAnalysis") :]
+
+        self.assert_contains_contracts(dating_script, (
+            "var datingFieldTreeMaterialized = false",
+            "var datingCallsMaterialized = false",
+            "function setupDatingLazySections(taskSnapshot, calls)",
+            "function materializeDatingFieldTreeOnce()",
+            "function materializeDatingCallsOnce()",
+            "fieldTreeDetails.addEventListener('toggle'",
+            "interfaceDetails.addEventListener('toggle'",
+            "var detailMaterialized = false",
+            "function materializeDatingCallDetailOnce()",
+            "if (detailMaterialized) return",
+        ))
+
+        render_start = dating_script.index("function renderDatingAnalysis(data)")
+        render_end = dating_script.index("function renderDatingSummary(summary)")
+        initial_renderer = dating_script[render_start:render_end]
+        self.assertIn(
+            "setupDatingLazySections(taskSnapshot, data.calls || [])",
+            initial_renderer,
+        )
+        self.assertNotIn("renderDatingFieldTree(", initial_renderer)
+        self.assertNotIn("renderDatingCalls(", initial_renderer)
+
+        result_start = dating_script.index("function renderDatingResult(taskSnapshot)")
+        result_end = dating_script.index("function createDatingPresence(field)")
+        self.assertNotIn(
+            "renderDatingFieldTree(", dating_script[result_start:result_end]
+        )
+
+    def test_put_assets_are_mapped_to_interface_calls_and_terminal_is_explicit(self):
+        """PUT 行必须可追溯 asset，未完成任务必须与 verdict 分开提示。"""
+        html = self.client.get("/").get_data(as_text=True)
+        dating_script = html[html.index("var latestDatingAnalysis") :]
+
+        self.assert_contains_contracts(dating_script, (
+            "function buildDatingPutAssetMap(taskSnapshot)",
+            "asset.put_call_id",
+            "putAssetMap[call.call_id]",
+            "function datingCallReference(call, putAssetMap)",
+            "lifecycle.terminal === false",
+            "任务未到终态或日志截断",
+        ))
+
+    def test_empty_string_is_distinct_from_null_and_unavailable(self):
+        """业务空字符串必须显示其 presence，不能与 undefined/null 混淆。"""
+        html = self.client.get("/").get_data(as_text=True)
+        dating_script = html[html.index("var latestDatingAnalysis") :]
+
+        self.assertIn("value === '' ? '空字符串'", dating_script)
+        self.assertIn("if (value === null) return 'null'", dating_script)
+        self.assertIn("if (value === undefined) return '—'", dating_script)
+        self.assertNotIn("value === undefined || value === '' ? '—'", dating_script)
 
 
 class DatingRouteTest(unittest.TestCase):

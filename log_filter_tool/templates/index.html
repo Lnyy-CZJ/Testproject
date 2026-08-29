@@ -1803,6 +1803,12 @@
       var datingExpandedPaths = Object.create(null);
       var datingTreeLimits = Object.create(null);
       var datingVisibleFieldCount = 200;
+      var pendingDatingFieldTreeFields = [];
+      var pendingDatingCalls = [];
+      var pendingDatingPutAssetMap = Object.create(null);
+      var datingFieldTreeMaterialized = false;
+      var datingCallsMaterialized = false;
+      var datingLazyListenersAttached = false;
       var datingAnalyzeUrl = {{ url_for('tool.analyze_dating')|tojson }};
       var datingExportUrl = {{ url_for('tool.export_log')|tojson }};
 
@@ -1819,7 +1825,7 @@
         } else if (value === undefined) {
           text = '—';
         } else if (typeof value === 'string') {
-          text = value;
+          text = value === '' ? '空字符串' : value;
         } else if (typeof value === 'object') {
           try {
             text = JSON.stringify(value, null, 2);
@@ -1853,10 +1859,11 @@
       /** 向摘要 dl 追加一个稳定的 label/value 对。 */
       function appendDatingDefinition(parent, label, value) {
         var group = document.createElement('div');
+        var displayValue = value === '' ? '空字符串' : value;
         group.className = 'dating-summary-item';
         group.appendChild(createDatingTextElement('dt', '', label));
         group.appendChild(createDatingTextElement(
-          'dd', '', value === undefined || value === '' ? '—' : value
+          'dd', '', displayValue === undefined ? '—' : displayValue
         ));
         parent.appendChild(group);
       }
@@ -1890,6 +1897,75 @@
       }
 
       /**
+       * 从已完成的上传关联构建 PUT call_id → asset_id 映射。
+       * 同一 PUT 若异常地出现多个 asset，仅保留日志顺序中的首个事实，避免前端猜测。
+       */
+      function buildDatingPutAssetMap(taskSnapshot) {
+        var putAssetMap = Object.create(null);
+        var assets = taskSnapshot && Array.isArray(taskSnapshot.input_assets)
+          ? taskSnapshot.input_assets : [];
+        assets.forEach(function(asset) {
+          if (!asset || !asset.put_call_id || asset.asset_id === null ||
+              asset.asset_id === undefined || asset.asset_id === '') {
+            return;
+          }
+          var putCallId = String(asset.put_call_id);
+          if (!Object.prototype.hasOwnProperty.call(putAssetMap, putCallId)) {
+            putAssetMap[putCallId] = String(asset.asset_id);
+          }
+        });
+        return putAssetMap;
+      }
+
+      /** 原始字段树只在用户首次展开对应 details 时创建。 */
+      function materializeDatingFieldTreeOnce() {
+        if (datingFieldTreeMaterialized) return;
+        datingFieldTreeMaterialized = true;
+        renderDatingFieldTree(pendingDatingFieldTreeFields);
+      }
+
+      /** 接口调用表只在用户首次展开对应 details 时创建。 */
+      function materializeDatingCallsOnce() {
+        if (datingCallsMaterialized) return;
+        datingCallsMaterialized = true;
+        renderDatingCalls(pendingDatingCalls, pendingDatingPutAssetMap);
+      }
+
+      /**
+       * 保存当前响应的重型分区数据，并为两个折叠区安装一次性 toggle 入口。
+       * 每轮分析都会重置物化标记，但事件监听器在页面生命周期内只绑定一次。
+       */
+      function setupDatingLazySections(taskSnapshot, calls) {
+        pendingDatingFieldTreeFields = Array.isArray(taskSnapshot.result_fields)
+          ? taskSnapshot.result_fields.slice() : [];
+        pendingDatingCalls = Array.isArray(calls) ? calls.slice() : [];
+        pendingDatingPutAssetMap = buildDatingPutAssetMap(taskSnapshot);
+        datingFieldTreeMaterialized = false;
+        datingCallsMaterialized = false;
+        datingExpandedPaths = Object.create(null);
+        datingTreeLimits = Object.create(null);
+
+        var fieldTreeDetails = document.getElementById('dating-field-tree-details');
+        var interfaceDetails = document.getElementById('dating-interface-details');
+        fieldTreeDetails.open = false;
+        interfaceDetails.open = false;
+        clearDatingNode('dating-field-tree');
+        clearDatingNode('dating-interface-table-body');
+        document.getElementById('dating-call-count').textContent =
+          '共 ' + pendingDatingCalls.length + ' 条 · 展开后加载';
+
+        if (!datingLazyListenersAttached) {
+          fieldTreeDetails.addEventListener('toggle', function() {
+            if (fieldTreeDetails.open) materializeDatingFieldTreeOnce();
+          });
+          interfaceDetails.addEventListener('toggle', function() {
+            if (interfaceDetails.open) materializeDatingCallsOnce();
+          });
+          datingLazyListenersAttached = true;
+        }
+      }
+
+      /**
        * 控制 Dating 请求期按钮和状态；完成后仅按当前结果决定导出可用性。
        * @param {boolean} isLoading 是否正在等待分析接口。
        */
@@ -1918,10 +1994,19 @@
         latestDatingAnalysis = null;
         latestDatingReport = '';
         latestDatingFields = [];
+        pendingDatingFieldTreeFields = [];
+        pendingDatingCalls = [];
+        pendingDatingPutAssetMap = Object.create(null);
+        datingFieldTreeMaterialized = false;
+        datingCallsMaterialized = false;
         datingExpandedPaths = Object.create(null);
         datingTreeLimits = Object.create(null);
         datingVisibleFieldCount = 200;
         document.getElementById('dating-content').hidden = true;
+        document.getElementById('dating-field-tree-details').open = false;
+        document.getElementById('dating-interface-details').open = false;
+        clearDatingNode('dating-field-tree');
+        clearDatingNode('dating-interface-table-body');
         clearDatingNode('dating-report');
         document.getElementById('copy-dating-report-btn').disabled = true;
         document.getElementById('export-dating-report-btn').disabled = true;
@@ -2058,7 +2143,7 @@
         renderDatingLifecycle(taskSnapshot);
         renderDatingResult(taskSnapshot);
         renderDatingFields(taskSnapshot.result_fields || []);
-        renderDatingCalls(data.calls || []);
+        setupDatingLazySections(taskSnapshot, data.calls || []);
         renderDatingChecks(data.checks || []);
         renderDatingParseWarnings(data.parse_warnings || []);
         clearDatingNode('dating-report').textContent = latestDatingReport;
@@ -2212,7 +2297,11 @@
         var lifecycle = taskSnapshot.lifecycle || {};
         var diagnostics = taskSnapshot.progress_diagnostics || {};
         var metrics = clearDatingNode('dating-lifecycle-metrics');
+        var terminalText = lifecycle.terminal === false
+          ? '任务未到终态或日志截断'
+          : lifecycle.terminal === true ? '任务已到终态' : '终态未知';
         [
+          ['生命周期', terminalText],
           ['Poll 次数', lifecycle.poll_count],
           ['不同进度', Array.isArray(diagnostics.distinct_progress_values) ? diagnostics.distinct_progress_values.join('、') : '—'],
           ['未变化 Poll', diagnostics.unchanged_poll_count],
@@ -2291,22 +2380,380 @@
         });
       }
 
+      /** 使用固定文本区分缺失、null、空字符串及空容器。 */
+      function datingSchemaValue(value) {
+        if (value === null) return 'null';
+        if (value === undefined) return '字段缺失';
+        if (value === '') return '空字符串';
+        if (Array.isArray(value) && !value.length) return '空数组 []';
+        if (value && typeof value === 'object' && !Object.keys(value).length) {
+          return '空对象 {}';
+        }
+        return datingCompactValue(value);
+      }
+
       /**
-       * 根据服务端 schema_version 展示 Reply/Analysis 摘要与业务分组。
-       * 未知 Schema 不推断专属分组，仍保留原始字段树。
+       * 创建首次展开才生成 body 的结果分组，避免已知 Schema 的长数组阻塞首屏。
+       * renderer 只能返回使用纯文本 API 构建的节点。
+       */
+      function appendDatingLazyDetails(parent, summaryText, renderer) {
+        var details = document.createElement('details');
+        details.className = 'dating-result-section';
+        var summary = document.createElement('summary');
+        appendDatingText(summary, summaryText);
+        var body = document.createElement('div');
+        var materialized = false;
+        details.addEventListener('toggle', function() {
+          if (!details.open || materialized) return;
+          materialized = true;
+          body.appendChild(renderer());
+        });
+        details.appendChild(summary);
+        details.appendChild(body);
+        parent.appendChild(details);
+      }
+
+      /** 返回按 rank 升序、同 rank 保持服务端顺序的角色副本。 */
+      function sortDatingRolesByRank(roles) {
+        return (Array.isArray(roles) ? roles : []).map(function(role, index) {
+          return {role: role || {}, index: index};
+        }).sort(function(left, right) {
+          var leftRank = Number(left.role.rank);
+          var rightRank = Number(right.role.rank);
+          leftRank = Number.isFinite(leftRank) ? leftRank : Number.POSITIVE_INFINITY;
+          rightRank = Number.isFinite(rightRank) ? rightRank : Number.POSITIVE_INFINITY;
+          return leftRank === rightRank ? left.index - right.index : leftRank - rightRank;
+        }).map(function(entry) {
+          return entry.role;
+        });
+      }
+
+      /** 创建 Reply v1 单个角色的事实详情。 */
+      function renderDatingReplyRole(role) {
+        var body = document.createElement('div');
+        var facts = document.createElement('dl');
+        facts.className = 'dating-result-summary';
+        [
+          ['role_id', role.role_id],
+          ['name', role.role_name],
+          ['rank', role.rank],
+          ['selection_rule_id', role.selection_rule_id],
+          ['reasons', role.selection_reasons],
+          ['coach note', role.coach_note]
+        ].forEach(function(entry) {
+          appendDatingDefinition(facts, entry[0], datingSchemaValue(entry[1]));
+        });
+        body.appendChild(facts);
+
+        body.appendChild(createDatingTextElement('h4', '', 'Replies'));
+        var replies = role.replies;
+        if (!Array.isArray(replies)) {
+          body.appendChild(createDatingTextElement(
+            'p', 'dating-muted', datingSchemaValue(replies)
+          ));
+        } else if (!replies.length) {
+          body.appendChild(createDatingTextElement('p', 'dating-muted', '空数组 []'));
+        } else {
+          var tableWrap = document.createElement('div');
+          tableWrap.className = 'table-scroll';
+          var table = document.createElement('table');
+          table.className = 'dating-field-table';
+          var head = document.createElement('thead');
+          var headRow = document.createElement('tr');
+          ['reply_id', 'text', 'is_top_pick'].forEach(function(label) {
+            headRow.appendChild(createDatingTextElement('th', '', label));
+          });
+          head.appendChild(headRow);
+          table.appendChild(head);
+          var tableBody = document.createElement('tbody');
+          replies.forEach(function(reply) {
+            reply = reply || {};
+            var row = document.createElement('tr');
+            row.appendChild(createDatingTextElement(
+              'td', 'dating-mono', datingSchemaValue(reply.reply_id)
+            ));
+            row.appendChild(createDatingTextElement(
+              'td', 'dating-value-cell', datingSchemaValue(reply.text)
+            ));
+            row.appendChild(createDatingTextElement(
+              'td', '', datingSchemaValue(reply.is_top_pick)
+            ));
+            tableBody.appendChild(row);
+          });
+          table.appendChild(tableBody);
+          tableWrap.appendChild(table);
+          body.appendChild(tableWrap);
+        }
+
+        var topPick = role.top_pick;
+        body.appendChild(createDatingTextElement('h4', '', 'top_pick 引用'));
+        if (!topPick || typeof topPick !== 'object' || Array.isArray(topPick)) {
+          body.appendChild(createDatingTextElement(
+            'p', 'dating-muted', datingSchemaValue(topPick)
+          ));
+        } else {
+          var topPickFacts = document.createElement('dl');
+          topPickFacts.className = 'dating-result-summary';
+          appendDatingDefinition(
+            topPickFacts, 'reply_id', datingSchemaValue(topPick.reply_id)
+          );
+          appendDatingDefinition(
+            topPickFacts, 'text', datingSchemaValue(topPick.text)
+          );
+          body.appendChild(topPickFacts);
+        }
+
+        body.appendChild(createDatingTextElement('h4', '', 'alternatives 引用'));
+        var alternatives = role.alternatives;
+        var alternativeList = document.createElement('ul');
+        if (!Array.isArray(alternatives)) {
+          alternativeList.appendChild(createDatingTextElement(
+            'li', 'dating-muted', datingSchemaValue(alternatives)
+          ));
+        } else if (!alternatives.length) {
+          alternativeList.appendChild(createDatingTextElement('li', 'dating-muted', '空数组 []'));
+        }
+        (Array.isArray(alternatives) ? alternatives : []).forEach(function(alternative) {
+          alternative = alternative || {};
+          alternativeList.appendChild(createDatingTextElement(
+            'li', '', datingSchemaValue(alternative.reply_id) + ' · ' +
+              datingSchemaValue(alternative.text)
+          ));
+        });
+        body.appendChild(alternativeList);
+        return body;
+      }
+
+      /** 创建 Reply v1 角色列表；角色摘要按 rank 排序，详情按需物化。 */
+      function renderDatingReplyResult(resultPayload) {
+        var container = document.createElement('div');
+        if (!resultPayload || typeof resultPayload !== 'object' || Array.isArray(resultPayload)) {
+          container.appendChild(createDatingTextElement(
+            'p', 'dating-muted', 'Reply Result 不是对象，专属视图不可用。'
+          ));
+          return container;
+        }
+        var rolesValue = resultPayload.roles;
+        var roles = sortDatingRolesByRank(rolesValue);
+        if (!Array.isArray(rolesValue)) {
+          container.appendChild(createDatingTextElement(
+            'p', 'dating-muted', 'roles：' + datingSchemaValue(rolesValue)
+          ));
+        } else if (!roles.length) {
+          container.appendChild(createDatingTextElement('p', 'dating-muted', 'roles：空数组 []'));
+        }
+        roles.forEach(function(role) {
+          appendDatingLazyDetails(
+            container,
+            'rank=' + datingSchemaValue(role.rank) + ' · ' +
+              datingSchemaValue(role.role_id) + ' · ' + datingSchemaValue(role.role_name),
+            function() { return renderDatingReplyRole(role); }
+          );
+        });
+        return container;
+      }
+
+      /** 为 Analysis v1 的 Overview 生成固定字段和空值状态。 */
+      function renderDatingAnalysisOverview(overview) {
+        var container = document.createElement('section');
+        container.appendChild(createDatingTextElement('h4', '', 'Overview 原文'));
+        var facts = document.createElement('dl');
+        facts.className = 'dating-result-summary';
+        [
+          ['insight_title', overview.insight_title],
+          ['insight_summary', overview.insight_summary],
+          ['relationship_stage', overview.relationship_stage],
+          ['current_state', overview.current_state],
+          ['reliability_level', overview.reliability_level]
+        ].forEach(function(entry) {
+          appendDatingDefinition(facts, entry[0], datingSchemaValue(entry[1]));
+        });
+        container.appendChild(facts);
+
+        container.appendChild(createDatingTextElement('h4', '', 'next_steps'));
+        var nextSteps = overview.next_steps;
+        if (!nextSteps || typeof nextSteps !== 'object' || Array.isArray(nextSteps)) {
+          container.appendChild(createDatingTextElement(
+            'p', 'dating-muted', datingSchemaValue(nextSteps)
+          ));
+        } else {
+          var nextStepFacts = document.createElement('dl');
+          nextStepFacts.className = 'dating-result-summary';
+          ['action', 'communication', 'observation'].forEach(function(key) {
+            appendDatingDefinition(
+              nextStepFacts, key, datingSchemaValue(nextSteps[key])
+            );
+          });
+          container.appendChild(nextStepFacts);
+        }
+
+        container.appendChild(createDatingTextElement('h4', '', 'Dashboard'));
+        var dashboard = overview.dashboard;
+        if (!dashboard || typeof dashboard !== 'object' || Array.isArray(dashboard) ||
+            !Object.keys(dashboard).length) {
+          container.appendChild(createDatingTextElement(
+            'p', 'dating-muted', datingSchemaValue(dashboard)
+          ));
+          return container;
+        }
+        [
+          ['message_counts', ['user', 'other']],
+          ['effort', ['you_score', 'them_score']],
+          ['match_degree', ['score', 'level']],
+          ['keywords', ['user_focus', 'other_focus']]
+        ].forEach(function(group) {
+          container.appendChild(createDatingTextElement('h5', '', group[0]));
+          var groupValue = dashboard[group[0]];
+          var groupFacts = document.createElement('dl');
+          groupFacts.className = 'dating-result-summary';
+          if (!groupValue || typeof groupValue !== 'object' || Array.isArray(groupValue) ||
+              !Object.keys(groupValue).length) {
+            appendDatingDefinition(groupFacts, '状态', datingSchemaValue(groupValue));
+          } else {
+            group[1].forEach(function(key) {
+              appendDatingDefinition(groupFacts, key, datingSchemaValue(groupValue[key]));
+            });
+          }
+          container.appendChild(groupFacts);
+        });
+        return container;
+      }
+
+      /** 创建 signal_id/text/evidence_message_ids 的事实列表。 */
+      function renderDatingSignalItems(items) {
+        var container = document.createElement('div');
+        if (!Array.isArray(items)) {
+          container.appendChild(createDatingTextElement(
+            'p', 'dating-muted', datingSchemaValue(items)
+          ));
+          return container;
+        }
+        var safeItems = items;
+        if (!safeItems.length) {
+          container.appendChild(createDatingTextElement('p', 'dating-muted', '空数组 []'));
+        }
+        safeItems.forEach(function(item) {
+          item = item || {};
+          var facts = document.createElement('dl');
+          facts.className = 'dating-result-summary';
+          appendDatingDefinition(facts, 'signal_id', datingSchemaValue(item.signal_id));
+          appendDatingDefinition(facts, 'text', datingSchemaValue(item.text));
+          appendDatingDefinition(
+            facts, 'evidence_message_ids', datingSchemaValue(item.evidence_message_ids)
+          );
+          container.appendChild(facts);
+        });
+        return container;
+      }
+
+      /** 创建 key event 的 event/takeaway/evidence_message_ids 事实列表。 */
+      function renderDatingEventItems(items) {
+        var container = document.createElement('div');
+        if (!Array.isArray(items)) {
+          container.appendChild(createDatingTextElement(
+            'p', 'dating-muted', datingSchemaValue(items)
+          ));
+          return container;
+        }
+        var safeItems = items;
+        if (!safeItems.length) {
+          container.appendChild(createDatingTextElement('p', 'dating-muted', '空数组 []'));
+        }
+        safeItems.forEach(function(item) {
+          item = item || {};
+          var facts = document.createElement('dl');
+          facts.className = 'dating-result-summary';
+          appendDatingDefinition(facts, 'event_id', datingSchemaValue(item.event_id));
+          appendDatingDefinition(facts, 'event', datingSchemaValue(item.event));
+          appendDatingDefinition(facts, 'takeaway', datingSchemaValue(item.takeaway));
+          appendDatingDefinition(
+            facts, 'evidence_message_ids', datingSchemaValue(item.evidence_message_ids)
+          );
+          container.appendChild(facts);
+        });
+        return container;
+      }
+
+      /** 创建 Analysis v1 的 Overview、signals 和 key events 事实视图。 */
+      function renderDatingAnalysisResult(resultPayload) {
+        var container = document.createElement('div');
+        if (!resultPayload || typeof resultPayload !== 'object' || Array.isArray(resultPayload)) {
+          container.appendChild(createDatingTextElement(
+            'p', 'dating-muted', 'Analysis Result 不是对象，专属视图不可用。'
+          ));
+          return container;
+        }
+        var overview = resultPayload.overview;
+        if (!overview || typeof overview !== 'object' || Array.isArray(overview)) {
+          container.appendChild(createDatingTextElement(
+            'p', 'dating-muted', 'Overview：' + datingSchemaValue(overview)
+          ));
+        } else {
+          container.appendChild(renderDatingAnalysisOverview(overview));
+        }
+
+        var signals = resultPayload.chat_signals;
+        signals = signals && typeof signals === 'object' && !Array.isArray(signals)
+          ? signals : {};
+        container.appendChild(createDatingTextElement(
+          'p', 'dating-muted', 'signal_summary：' + datingSchemaValue(signals.signal_summary)
+        ));
+        [
+          ['positive_signals', signals.positive_signals],
+          ['watch_signals', signals.watch_signals],
+          ['risk_signals', signals.risk_signals]
+        ].forEach(function(group) {
+          appendDatingLazyDetails(
+            container, group[0] + ' · ' +
+              (Array.isArray(group[1]) ? group[1].length : datingSchemaValue(group[1])),
+            function() { return renderDatingSignalItems(group[1]); }
+          );
+        });
+
+        var events = resultPayload.key_events;
+        events = events && typeof events === 'object' && !Array.isArray(events)
+          ? events : {};
+        [
+          ['turning_points', events.turning_points],
+          ['hidden_meanings', events.hidden_meanings],
+          ['did_well', events.did_well],
+          ['could_improve', events.could_improve]
+        ].forEach(function(group) {
+          appendDatingLazyDetails(
+            container, group[0] + ' · ' +
+              (Array.isArray(group[1]) ? group[1].length : datingSchemaValue(group[1])),
+            function() { return renderDatingEventItems(group[1]); }
+          );
+        });
+        return container;
+      }
+
+      /**
+       * 根据服务端 schema_version 分派固定事实视图；未知 Schema 不推断结构。
+       * 原始字段树由独立折叠区首次打开时按需构建。
        */
       function renderDatingResult(taskSnapshot) {
         var schemaVersion = taskSnapshot.schema_version || 'UNKNOWN_SCHEMA';
         var schemaStatus = taskSnapshot.schema_status || 'UNKNOWN_SCHEMA';
-        var summaryTitle = schemaVersion === 'dating.reply_generation.v1'
-          ? 'Reply v1 业务摘要'
-          : schemaVersion === 'dating.relationship_analysis.v1'
+        var knownReply = schemaVersion === 'dating.reply_generation.v1' &&
+          schemaStatus !== 'UNKNOWN_SCHEMA';
+        var knownAnalysis = schemaVersion === 'dating.relationship_analysis.v1' &&
+          schemaStatus !== 'UNKNOWN_SCHEMA';
+        document.getElementById('dating-result-heading').textContent = knownReply
+          ? 'Reply v1 业务摘要' : knownAnalysis
             ? 'Analysis v1 业务摘要' : '未知 Schema · 通用字段树';
-        document.getElementById('dating-result-heading').textContent = summaryTitle;
         document.getElementById('dating-schema-status').textContent =
           schemaVersion + ' · ' + schemaStatus;
 
         var resultSummary = clearDatingNode('dating-result-summary');
+        var sectionsContainer = clearDatingNode('dating-result-sections');
+        if (!knownReply && !knownAnalysis) {
+          sectionsContainer.appendChild(createDatingTextElement(
+            'p', 'dating-muted', 'UNKNOWN_SCHEMA：仅提供通用字段树和字段索引。'
+          ));
+          return;
+        }
+
         var summary = taskSnapshot.result_summary || {};
         var summaryKeys = Object.keys(summary);
         if (!summaryKeys.length) {
@@ -2315,36 +2762,13 @@
           ));
         }
         summaryKeys.forEach(function(key) {
-          appendDatingDefinition(resultSummary, key, datingCompactValue(summary[key]));
+          appendDatingDefinition(resultSummary, key, datingSchemaValue(summary[key]));
         });
 
-        var sectionsContainer = clearDatingNode('dating-result-sections');
-        var sections = Array.isArray(taskSnapshot.result_sections)
-          ? taskSnapshot.result_sections : [];
-        if (!sections.length) {
-          sectionsContainer.appendChild(createDatingTextElement(
-            'p', 'dating-muted',
-            schemaStatus === 'UNKNOWN_SCHEMA'
-              ? '未知 Schema：仅展示通用字段树和字段索引。'
-              : '结果分组为空。'
-          ));
-        }
-        sections.forEach(function(section) {
-          var details = document.createElement('details');
-          details.className = 'dating-result-section';
-          var summaryNode = document.createElement('summary');
-          appendDatingText(summaryNode, (section.label || section.path || '未命名分组') +
-            (section.path ? ' · ' + section.path : ''));
-          var pre = document.createElement('pre');
-          appendDatingText(pre, section.value);
-          details.appendChild(summaryNode);
-          details.appendChild(pre);
-          sectionsContainer.appendChild(details);
-        });
-
-        datingExpandedPaths = Object.create(null);
-        datingTreeLimits = Object.create(null);
-        renderDatingFieldTree(taskSnapshot.result_fields || []);
+        var resultPayload = taskSnapshot.result_payload;
+        sectionsContainer.appendChild(knownReply
+          ? renderDatingReplyResult(resultPayload)
+          : renderDatingAnalysisResult(resultPayload));
       }
 
       /** 将字段 presence 映射为固定文本和前端允许的样式类。 */
@@ -2475,9 +2899,13 @@
           currentPath = parentField ? parentField.parent_path : null;
           guard += 1;
         }
-        renderDatingFieldTree(latestDatingFields);
         var details = document.getElementById('dating-field-tree-details');
         details.open = true;
+        if (datingFieldTreeMaterialized) {
+          renderDatingFieldTree(latestDatingFields);
+        } else {
+          materializeDatingFieldTreeOnce();
+        }
         details.scrollIntoView({block: 'start'});
       }
 
@@ -2574,12 +3002,16 @@
           : '显示更多（剩余 ' + (filtered.length - visible.length) + '）';
       }
 
-      /** 从 documented params/data 路径提取当前调用的 task_id 或 asset_id。 */
-      function datingCallReference(call) {
+      /**
+       * 从 documented params/data 路径提取 task_id/asset_id；PUT 仅使用后端已关联的映射。
+       */
+      function datingCallReference(call, putAssetMap) {
         var requestParams = call && call.request && call.request.params || {};
         var responseData = call && call.response && call.response.data || {};
+        putAssetMap = putAssetMap || Object.create(null);
         return requestParams.task_id || responseData.task_id ||
-          requestParams.asset_id || responseData.asset_id || '—';
+          requestParams.asset_id || responseData.asset_id ||
+          (call && call.call_id && putAssetMap[call.call_id]) || '—';
       }
 
       /** 追加调用详情中的一个纯文本 JSON 区块。 */
@@ -2598,6 +3030,8 @@
        */
       function renderDatingCalls(calls) {
         var safeCalls = Array.isArray(calls) ? calls : [];
+        var putAssetMap = arguments.length > 1 && arguments[1]
+          ? arguments[1] : Object.create(null);
         var body = clearDatingNode('dating-interface-table-body');
         document.getElementById('dating-call-count').textContent =
           '共 ' + safeCalls.length + ' 条';
@@ -2640,7 +3074,7 @@
               : 'success=' + String(subResponse.success) + ' / code=' + datingCompactValue(subResponse.code),
             response.elapsed_ms === null || response.elapsed_ms === undefined
               ? '—' : response.elapsed_ms + ' ms',
-            datingCallReference(call),
+            datingCallReference(call, putAssetMap),
             call.result_class || 'unknown'
           ].forEach(function(value, cellIndex) {
             row.appendChild(createDatingTextElement(
@@ -2669,16 +3103,28 @@
           detailRow.className = 'dating-call-detail-row';
           var detailCell = document.createElement('td');
           detailCell.colSpan = 11;
-          var detail = document.createElement('div');
-          detail.className = 'dating-call-detail';
-          appendDatingCallDetail(detail, '请求 params', request.params || {});
-          appendDatingCallDetail(detail, 'Gateway envelope', response.gateway || null);
-          appendDatingCallDetail(detail, 'SubResponse data', response.data === undefined ? null : response.data);
-          appendDatingCallDetail(detail, 'Parser warnings', call.warnings || []);
-          detailCell.appendChild(detail);
+          var detailMaterialized = false;
+
+          /** 当前调用的 JSON 详情只在该行首次展开时创建。 */
+          function materializeDatingCallDetailOnce() {
+            if (detailMaterialized) return;
+            detailMaterialized = true;
+            var detail = document.createElement('div');
+            detail.className = 'dating-call-detail';
+            appendDatingCallDetail(detail, '请求 params', request.params || {});
+            appendDatingCallDetail(detail, 'Gateway envelope', response.gateway || null);
+            appendDatingCallDetail(
+              detail, 'SubResponse data',
+              response.data === undefined ? null : response.data
+            );
+            appendDatingCallDetail(detail, 'Parser warnings', call.warnings || []);
+            detailCell.appendChild(detail);
+          }
+
           detailRow.appendChild(detailCell);
           body.appendChild(detailRow);
           toggle.addEventListener('click', function() {
+            if (detailRow.hidden) materializeDatingCallDetailOnce();
             detailRow.hidden = !detailRow.hidden;
             toggle.setAttribute('aria-expanded', detailRow.hidden ? 'false' : 'true');
           });
