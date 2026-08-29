@@ -30,6 +30,144 @@ SUCCESS_KEYS = [
 ]
 
 
+class DatingPageTest(unittest.TestCase):
+    """锁定 Dating 工作台的 DOM、交互、安全写入和部署路径合同。"""
+
+    def setUp(self):
+        self.app = create_app()
+        self.app.config["TESTING"] = True
+        self.client = self.app.test_client()
+
+    def test_enabled_page_contains_complete_dating_workbench(self):
+        """缺失任一业务区块时，工程师都无法完成 PRD 的排查流程。"""
+        html = self.client.get("/").get_data(as_text=True)
+
+        for marker in (
+            'id="analyze-dating-btn"',
+            'id="dating-analysis"',
+            'id="dating-summary"',
+            'id="dating-interface-table"',
+            'id="dating-upload-list"',
+            'id="dating-task-timeline"',
+            'id="dating-result-sections"',
+            'id="dating-field-tree"',
+            'id="dating-field-filter"',
+            'id="dating-field-search"',
+            'id="dating-field-table"',
+            'id="dating-check-list"',
+            'id="dating-parse-warnings"',
+            'id="dating-report"',
+            'id="copy-dating-report-btn"',
+            'id="export-dating-report-btn"',
+            'id="export-dating-json-btn"',
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, html)
+
+        people_position = html.find('id="analyze-people-search-btn"')
+        dating_position = html.find('id="analyze-dating-btn"')
+        self.assertGreater(dating_position, people_position)
+        self.assertIn("/dating/analyze", html)
+
+    def test_disabled_page_omits_dating_ui_but_preserves_people(self):
+        """功能开关关闭时不能留下不可用入口，也不能影响 People 面板。"""
+        self.app.config["DATING_STRUCTURED_ANALYZER_ENABLED"] = False
+
+        html = self.client.get("/").get_data(as_text=True)
+
+        self.assertNotIn('id="analyze-dating-btn"', html)
+        self.assertNotIn('id="dating-analysis"', html)
+        self.assertNotIn("function analyzeDatingLog()", html)
+        self.assertIn('id="analyze-people-search-btn"', html)
+        self.assertIn('id="people-search-analysis"', html)
+
+    def test_dating_urls_follow_base_path_and_exports_use_exact_types(self):
+        """硬编码根路径会让带 SCRIPT_NAME 的部署请求落到错误 endpoint。"""
+        app = create_app("/log-tool")
+        app.config["TESTING"] = True
+
+        html = app.test_client().get("/log-tool/").get_data(as_text=True)
+
+        self.assertIn('var datingAnalyzeUrl = "/log-tool/dating/analyze"', html)
+        self.assertIn('var datingExportUrl = "/log-tool/export"', html)
+        self.assertIn("'dating_analysis_report'", html)
+        self.assertIn("'dating_analysis_json'", html)
+        self.assertNotIn("fetch('/dating/analyze'", html)
+        self.assertNotIn('fetch("/dating/analyze"', html)
+
+    def test_dating_javascript_is_independent_and_uses_safe_dom_writes(self):
+        """Dating 数据不得覆盖 Filter/People，也不得作为 HTML 执行。"""
+        html = self.client.get("/").get_data(as_text=True)
+        self.assertIn("var latestDatingAnalysis", html)
+        dating_script = html[html.index("var latestDatingAnalysis") :]
+
+        for contract in (
+            "var latestDatingAnalysis = null",
+            "var latestDatingReport = ''",
+            "function analyzeDatingLog()",
+            "function setDatingLoading(isLoading)",
+            "function renderDatingAnalysis(data)",
+            "function renderDatingSummary(summary)",
+            "function renderDatingLifecycle(taskSnapshot)",
+            "function renderDatingResult(taskSnapshot)",
+            "function renderDatingCalls(calls)",
+            "function renderDatingFields(fields)",
+            "function renderDatingChecks(checks)",
+            "function appendDatingText(parent, value)",
+            "document.createTextNode",
+        ):
+            with self.subTest(contract=contract):
+                self.assertIn(contract, dating_script)
+
+        self.assertNotIn("innerHTML", dating_script)
+        self.assertNotIn("people-search-report", dating_script)
+        self.assertNotIn("resultRawText =", dating_script)
+
+    def test_dating_states_filters_and_line_locator_are_accessible(self):
+        """状态不能只靠颜色，字段与证据必须可筛选并回到原日志。"""
+        html = self.client.get("/").get_data(as_text=True)
+
+        for presence in (
+            "ALL",
+            "PRESENT",
+            "NULL",
+            "EMPTY_STRING",
+            "EMPTY_ARRAY",
+            "EMPTY_OBJECT",
+            "MISSING",
+            "UNKNOWN_SCHEMA_FIELD",
+        ):
+            self.assertIn(f'value="{presence}"', html)
+        for contract in (
+            'id="dating-state" role="status" aria-live="polite"',
+            "正在解析接口和结果字段…",
+            "EMPTY_LOG",
+            "LOG_TOO_LARGE",
+            "UNSUPPORTED_LOG",
+            "ANALYSIS_INTERNAL_ERROR",
+            "function focusLogLines(startLine, endLine)",
+            "function renderDatingFieldTree(fields)",
+            "parent_path",
+            ":focus-visible",
+            "prefers-reduced-motion: reduce",
+        ):
+            with self.subTest(contract=contract):
+                self.assertIn(contract, html)
+
+        self.assertIn('id="copy-dating-report-btn"', html)
+        self.assertIn('id="copy-dating-report-btn" type="button" disabled', html)
+        self.assertIn('id="export-dating-report-btn" type="button" disabled', html)
+        self.assertIn('id="export-dating-json-btn" type="button" disabled', html)
+
+    def test_success_renderer_replaces_loading_state(self):
+        """成功响应必须结束 loading 文案，避免同时显示“完成”和“分析中”。"""
+        html = self.client.get("/").get_data(as_text=True)
+        dating_script = html[html.index("var latestDatingAnalysis") :]
+
+        self.assertIn("state.className = 'dating-state success'", dating_script)
+        self.assertIn("state.textContent = '分析完成：'", dating_script)
+
+
 class DatingRouteTest(unittest.TestCase):
     """覆盖 Dating API 的严格输入合同、错误映射与成功响应。"""
 

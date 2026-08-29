@@ -312,6 +312,22 @@
         cursor: not-allowed;
       }
 
+      button:disabled {
+        background: #aab4c4;
+        cursor: not-allowed;
+        opacity: .78;
+      }
+
+      button:focus-visible,
+      input:focus-visible,
+      select:focus-visible,
+      textarea:focus-visible,
+      summary:focus-visible,
+      [tabindex]:focus-visible {
+        outline: 3px solid rgba(36, 87, 214, .42);
+        outline-offset: 2px;
+      }
+
       .message {
         padding: 10px 12px;
         border: 1px solid #e0bc63;
@@ -490,6 +506,398 @@
         accent-color: #2457d6;
       }
 
+      /* Dating 结果沿用现有色彩和控件，只为高密度工程信息增加稳定层级。 */
+      .dating-workbench {
+        display: grid;
+        gap: 18px;
+        margin-top: 28px;
+        padding-top: 24px;
+        border-top: 1px solid rgba(0, 0, 0, .12);
+      }
+
+      .dating-workbench[hidden],
+      .dating-content[hidden],
+      .dating-call-detail[hidden] {
+        display: none;
+      }
+
+      .dating-state {
+        padding: 14px 16px;
+        border: 1px solid #d8e0ed;
+        border-radius: 10px;
+        background: #ffffff;
+        color: #526070;
+        line-height: 1.5;
+      }
+
+      .dating-state.loading {
+        border-color: #9eb4ea;
+        color: #1d49b7;
+      }
+
+      .dating-state.success {
+        border-color: #8ac79b;
+        color: #1d6b32;
+      }
+
+      .dating-state.error {
+        border-color: #e19a9a;
+        background: #fff7f7;
+        color: #8a1f1f;
+      }
+
+      .dating-state p {
+        margin: 4px 0 0;
+      }
+
+      .dating-content {
+        display: grid;
+        gap: 22px;
+      }
+
+      .dating-verdict {
+        padding: 18px 20px;
+        border: 1px solid #d8e0ed;
+        border-left: 4px solid #6e6e73;
+        border-radius: 12px;
+        background: #ffffff;
+      }
+
+      .dating-verdict.no-issues { border-left-color: #1f8a4c; }
+      .dating-verdict.warnings { border-left-color: #b26a00; }
+      .dating-verdict.issues { border-left-color: #c9342f; }
+      .dating-verdict.incomplete { border-left-color: #6e6e73; }
+
+      .dating-verdict h3 {
+        margin: 0;
+        font-size: 20px;
+      }
+
+      .dating-verdict p {
+        margin: 7px 0 0;
+        color: #526070;
+      }
+
+      .dating-summary-grid,
+      .dating-result-summary,
+      .dating-lifecycle-metrics {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 0 20px;
+        margin: 0;
+      }
+
+      .dating-summary-item {
+        min-width: 0;
+        padding: 12px 0;
+        border-bottom: 1px solid rgba(0, 0, 0, .09);
+      }
+
+      .dating-summary-item dt {
+        color: #6e6e73;
+        font-size: 12px;
+      }
+
+      .dating-summary-item dd {
+        overflow-wrap: anywhere;
+        margin: 5px 0 0;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 13px;
+        font-weight: 650;
+      }
+
+      .dating-section {
+        padding-top: 18px;
+        border-top: 1px solid rgba(0, 0, 0, .12);
+      }
+
+      .dating-section:first-child {
+        padding-top: 0;
+        border-top: 0;
+      }
+
+      .dating-section-heading {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 16px;
+        margin-bottom: 12px;
+      }
+
+      .dating-section-heading h3,
+      .dating-section-heading p {
+        margin: 0;
+      }
+
+      .dating-section-heading p {
+        color: #6e6e73;
+        font-size: 13px;
+      }
+
+      .dating-upload-list,
+      .dating-check-list,
+      .dating-result-sections {
+        display: grid;
+        gap: 10px;
+      }
+
+      .dating-upload-item,
+      .dating-check,
+      .dating-result-section {
+        border: 1px solid #d8e0ed;
+        border-radius: 10px;
+        background: #ffffff;
+      }
+
+      .dating-upload-item {
+        padding: 13px 15px;
+      }
+
+      .dating-upload-item h4,
+      .dating-upload-item p {
+        margin: 0;
+      }
+
+      .dating-upload-item h4 {
+        overflow-wrap: anywhere;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 13px;
+      }
+
+      .dating-upload-chain {
+        margin-top: 8px !important;
+        color: #34435a;
+        font-size: 13px;
+        line-height: 1.55;
+      }
+
+      .dating-upload-meta,
+      .dating-muted {
+        margin-top: 6px !important;
+        color: #6e6e73;
+        font-size: 12px;
+      }
+
+      .dating-timeline {
+        display: grid;
+        gap: 0;
+        margin: 12px 0 0;
+        padding: 0;
+        list-style: none;
+        border-top: 1px solid rgba(0, 0, 0, .1);
+      }
+
+      .dating-timeline li {
+        display: grid;
+        grid-template-columns: 54px minmax(150px, .9fr) minmax(200px, 1.3fr) minmax(100px, .5fr) auto;
+        gap: 12px;
+        align-items: center;
+        padding: 10px 0;
+        border-bottom: 1px solid rgba(0, 0, 0, .08);
+        font-size: 13px;
+      }
+
+      .dating-timeline-sequence,
+      .dating-mono {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      }
+
+      .dating-details > summary,
+      .dating-check > summary,
+      .dating-result-section > summary {
+        padding: 12px 14px;
+        color: #2457d6;
+        font-weight: 650;
+        cursor: pointer;
+      }
+
+      .dating-details[open] > summary,
+      .dating-check[open] > summary,
+      .dating-result-section[open] > summary {
+        border-bottom: 1px solid rgba(0, 0, 0, .09);
+      }
+
+      .dating-result-section pre,
+      .dating-check-body pre,
+      .dating-call-detail pre {
+        box-sizing: border-box;
+        width: 100%;
+        min-height: 0;
+        height: auto;
+        max-height: 360px;
+        border: 0;
+        border-radius: 0;
+        background: #f8f9fc;
+      }
+
+      .dating-field-controls {
+        display: grid;
+        grid-template-columns: minmax(190px, 240px) minmax(260px, 1fr) auto;
+        gap: 10px;
+        align-items: end;
+        margin-bottom: 12px;
+      }
+
+      .dating-field-controls label {
+        margin-bottom: 5px;
+        color: #526070;
+        font-size: 12px;
+      }
+
+      .dating-field-controls .search-input {
+        width: 100%;
+      }
+
+      .dating-field-tree {
+        margin: 0;
+        padding: 10px 14px 14px 30px;
+        list-style: none;
+      }
+
+      .dating-field-tree ul {
+        margin: 5px 0 0 14px;
+        padding-left: 18px;
+        border-left: 1px solid #d8e0ed;
+        list-style: none;
+      }
+
+      .dating-field-node {
+        padding: 5px 0;
+        font-size: 13px;
+      }
+
+      .dating-field-node-line {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        min-width: 0;
+      }
+
+      .dating-path-button,
+      .dating-line-button,
+      .dating-more-button,
+      .dating-row-toggle {
+        min-height: 28px;
+        padding: 3px 8px;
+        border: 1px solid #c8d1e1;
+        background: #ffffff;
+        color: #2457d6;
+        font-size: 12px;
+      }
+
+      .dating-path-button:hover,
+      .dating-line-button:hover,
+      .dating-more-button:hover,
+      .dating-row-toggle:hover {
+        background: #eef3ff;
+      }
+
+      .dating-path-button {
+        overflow: hidden;
+        max-width: 100%;
+        text-align: left;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .dating-presence {
+        display: inline-block;
+        padding: 2px 6px;
+        border: 1px solid #c8d1e1;
+        border-radius: 999px;
+        color: #526070;
+        font-size: 11px;
+        font-weight: 650;
+        white-space: nowrap;
+      }
+
+      .dating-presence.missing,
+      .dating-presence.null {
+        border-color: #e0bc63;
+        color: #694a00;
+      }
+
+      .dating-presence.unknown {
+        border-color: #b7a6d9;
+        color: #5c3c91;
+      }
+
+      .dating-field-table,
+      .dating-interface-table {
+        min-width: 1120px;
+        font-size: 12px;
+      }
+
+      .dating-field-table td,
+      .dating-interface-table td {
+        vertical-align: top;
+      }
+
+      .dating-value-cell {
+        min-width: 220px;
+        max-width: 420px;
+        overflow-wrap: anywhere;
+        white-space: pre-wrap;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      }
+
+      .dating-call-detail {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+        padding: 12px;
+        background: #f8f9fc;
+      }
+
+      .dating-call-detail h4 {
+        margin: 0 0 5px;
+        font-size: 12px;
+      }
+
+      .dating-check.fail { border-left: 3px solid #c9342f; }
+      .dating-check.warn { border-left: 3px solid #b26a00; }
+      .dating-check.unknown { border-left: 3px solid #6e6e73; }
+      .dating-check.pass { border-left: 3px solid #1f8a4c; }
+
+      .dating-check-body {
+        display: grid;
+        gap: 10px;
+        padding: 12px 14px 14px;
+      }
+
+      .dating-evidence-list,
+      .dating-warning-list {
+        display: grid;
+        gap: 8px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .dating-evidence-item {
+        padding: 9px 10px;
+        border-left: 2px solid #9eb4ea;
+        background: #f8f9fc;
+        font-size: 12px;
+        line-height: 1.5;
+      }
+
+      .dating-report {
+        min-height: 260px;
+        height: 520px;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          scroll-behavior: auto !important;
+          transition-duration: .01ms !important;
+          animation-duration: .01ms !important;
+          animation-iteration-count: 1 !important;
+        }
+      }
+
       @media (max-width: 720px) {
         .toolbar {
           grid-template-columns: 1fr;
@@ -512,6 +920,14 @@
 
         .search-input {
           width: 100%;
+        }
+
+        .dating-summary-grid,
+        .dating-result-summary,
+        .dating-lifecycle-metrics,
+        .dating-call-detail,
+        .dating-field-controls {
+          grid-template-columns: 1fr;
         }
       }
     </style>
@@ -566,6 +982,9 @@
           <div class="toolbar-buttons">
             <button type="submit">解析日志</button>
             <button type="button" id="analyze-people-search-btn" onclick="analyzePeopleSearch()">分析检索链路</button>
+            {% if dating_analyzer_enabled %}
+              <button type="button" id="analyze-dating-btn" onclick="analyzeDatingLog()">Dating 结构化分析</button>
+            {% endif %}
           </div>
 
           <div class="stats">
@@ -724,6 +1143,145 @@
           </details>
         </div>
       </section>
+
+      {% if dating_analyzer_enabled %}
+        <section id="dating-analysis" class="dating-workbench" tabindex="-1" aria-labelledby="dating-heading" hidden>
+          <div class="result-header">
+            <div>
+              <h2 id="dating-heading">Dating 结构化分析</h2>
+              <div class="stats" id="dating-status">未分析</div>
+            </div>
+            <div class="result-tools" aria-label="Dating 报告操作">
+              <button id="copy-dating-report-btn" type="button" disabled onclick="copyDatingReport()">复制报告</button>
+              <button id="export-dating-report-btn" type="button" disabled onclick="exportDatingReport()">导出 Markdown</button>
+              <button id="export-dating-json-btn" type="button" disabled onclick="exportDatingJson()">导出 JSON</button>
+            </div>
+          </div>
+
+          <div id="dating-state" role="status" aria-live="polite" class="dating-state">
+            等待分析。粘贴 Dating 日志后点击“Dating 结构化分析”。
+          </div>
+
+          <div id="dating-content" class="dating-content" hidden>
+            <section class="dating-section" aria-labelledby="dating-summary-heading">
+              <div id="dating-verdict" class="dating-verdict incomplete">
+                <h3 id="dating-summary-heading">等待分析</h3>
+                <p id="dating-verdict-detail">尚无可展示的任务状态。</p>
+                <p id="dating-next-action">下一步：粘贴日志并开始分析。</p>
+              </div>
+              <dl id="dating-summary" class="dating-summary-grid" aria-label="总体摘要"></dl>
+            </section>
+
+            <section class="dating-section" aria-labelledby="dating-lifecycle-heading">
+              <div class="dating-section-heading">
+                <h3 id="dating-lifecycle-heading">上传与任务生命周期</h3>
+                <p>保留每次 Poll，不合并重复状态</p>
+              </div>
+              <dl id="dating-lifecycle-metrics" class="dating-lifecycle-metrics"></dl>
+              <h4>上传链路</h4>
+              <div id="dating-upload-list" class="dating-upload-list"></div>
+              <h4>完整 Poll 时间线</h4>
+              <ol id="dating-task-timeline" class="dating-timeline"></ol>
+            </section>
+
+            <section class="dating-section" aria-labelledby="dating-result-heading">
+              <div class="dating-section-heading">
+                <h3 id="dating-result-heading">Result 业务摘要</h3>
+                <p id="dating-schema-status">Schema 待识别</p>
+              </div>
+              <dl id="dating-result-summary" class="dating-result-summary"></dl>
+              <div id="dating-result-sections" class="dating-result-sections"></div>
+              <details id="dating-field-tree-details" class="dating-details">
+                <summary>查看原始字段树</summary>
+                <div id="dating-field-tree" aria-label="Result 原始字段树"></div>
+              </details>
+            </section>
+
+            <section class="dating-section" aria-labelledby="dating-field-heading">
+              <div class="dating-section-heading">
+                <h3 id="dating-field-heading">Result 字段索引</h3>
+                <p id="dating-field-count" aria-live="polite">0 个字段</p>
+              </div>
+              <div class="dating-field-controls">
+                <div>
+                  <label for="dating-field-filter">Presence</label>
+                  <select id="dating-field-filter" onchange="resetAndRenderDatingFields()">
+                    <option value="ALL">全部</option>
+                    <option value="PRESENT">PRESENT</option>
+                    <option value="NULL">NULL</option>
+                    <option value="EMPTY_STRING">EMPTY_STRING</option>
+                    <option value="EMPTY_ARRAY">EMPTY_ARRAY</option>
+                    <option value="EMPTY_OBJECT">EMPTY_OBJECT</option>
+                    <option value="MISSING">MISSING</option>
+                    <option value="UNKNOWN_SCHEMA_FIELD">未知 Schema 字段</option>
+                  </select>
+                </div>
+                <div>
+                  <label for="dating-field-search">Path / Value 搜索</label>
+                  <input id="dating-field-search" class="search-input" type="search" placeholder="输入字段路径或值" oninput="resetAndRenderDatingFields()">
+                </div>
+                <button id="dating-field-more" class="dating-more-button" type="button" onclick="showMoreDatingFields()" hidden>显示更多字段</button>
+              </div>
+              <div class="table-scroll">
+                <table id="dating-field-table" class="dating-field-table">
+                  <thead>
+                    <tr>
+                      <th>Path</th>
+                      <th>Type</th>
+                      <th>Presence</th>
+                      <th>Value</th>
+                      <th>Source</th>
+                    </tr>
+                  </thead>
+                  <tbody id="dating-field-table-body"></tbody>
+                </table>
+              </div>
+            </section>
+
+            <details id="dating-interface-details" class="dating-section dating-details">
+              <summary>接口执行链路（默认折叠） <span id="dating-call-count"></span></summary>
+              <div class="table-scroll">
+                <table id="dating-interface-table" class="dating-interface-table">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>请求时间</th>
+                      <th>Service</th>
+                      <th>Method</th>
+                      <th>HTTP</th>
+                      <th>Gateway</th>
+                      <th>SubResponse</th>
+                      <th>耗时</th>
+                      <th>任务/资源</th>
+                      <th>结果</th>
+                      <th>行号</th>
+                    </tr>
+                  </thead>
+                  <tbody id="dating-interface-table-body"></tbody>
+                </table>
+              </div>
+            </details>
+
+            <section class="dating-section" aria-labelledby="dating-check-heading">
+              <div class="dating-section-heading">
+                <h3 id="dating-check-heading">一致性检查与证据</h3>
+                <p>FAIL → WARN → UNKNOWN → PASS → NA</p>
+              </div>
+              <div id="dating-check-list" class="dating-check-list"></div>
+            </section>
+
+            <details class="dating-section dating-details">
+              <summary>解析警告 <span id="dating-warning-count"></span></summary>
+              <ul id="dating-parse-warnings" class="dating-warning-list"></ul>
+            </details>
+
+            <details class="dating-section dating-details">
+              <summary>固定 Markdown 报告</summary>
+              <pre id="dating-report" class="dating-report"></pre>
+            </details>
+          </div>
+        </section>
+      {% endif %}
     </main>
     <script>
       (function() {
@@ -1233,6 +1791,1063 @@
         var reportText = document.getElementById('people-search-report').textContent;
         exportLog('analysis_report', reportText);
       }
+
+      {% if dating_analyzer_enabled %}
+      /*
+       * Dating 使用独立状态，绝不复用 Filter 的 resultRawText 或 People 报告节点。
+       * 服务端返回值只能进入 textContent/createTextNode，避免日志内容变成 HTML。
+       */
+      var latestDatingAnalysis = null;
+      var latestDatingReport = '';
+      var latestDatingFields = [];
+      var datingExpandedPaths = Object.create(null);
+      var datingTreeLimits = Object.create(null);
+      var datingVisibleFieldCount = 200;
+      var datingAnalyzeUrl = {{ url_for('tool.analyze_dating')|tojson }};
+      var datingExportUrl = {{ url_for('tool.export_log')|tojson }};
+
+      /**
+       * 将任意服务端值转换为纯文本并追加到节点。
+       * @param {Node} parent 目标 DOM 节点。
+       * @param {*} value 已由后端脱敏的结构化值。
+       * @returns {Node} 原目标节点，便于调用方继续组装。
+       */
+      function appendDatingText(parent, value) {
+        var text;
+        if (value === null) {
+          text = 'null';
+        } else if (value === undefined) {
+          text = '—';
+        } else if (typeof value === 'string') {
+          text = value;
+        } else if (typeof value === 'object') {
+          try {
+            text = JSON.stringify(value, null, 2);
+          } catch (error) {
+            text = String(value);
+          }
+        } else {
+          text = String(value);
+        }
+        parent.appendChild(document.createTextNode(text));
+        return parent;
+      }
+
+      /** 清空并返回 Dating 专属节点，不影响页面其他模式。 */
+      function clearDatingNode(id) {
+        var node = document.getElementById(id);
+        node.textContent = '';
+        return node;
+      }
+
+      /** 创建只包含纯文本的节点，className 仅来自前端固定样式。 */
+      function createDatingTextElement(tagName, className, value) {
+        var node = document.createElement(tagName);
+        if (className) {
+          node.className = className;
+        }
+        appendDatingText(node, value);
+        return node;
+      }
+
+      /** 向摘要 dl 追加一个稳定的 label/value 对。 */
+      function appendDatingDefinition(parent, label, value) {
+        var group = document.createElement('div');
+        group.className = 'dating-summary-item';
+        group.appendChild(createDatingTextElement('dt', '', label));
+        group.appendChild(createDatingTextElement(
+          'dd', '', value === undefined || value === '' ? '—' : value
+        ));
+        parent.appendChild(group);
+      }
+
+      /**
+       * 返回便于单行扫描的事实值。对象仍使用 JSON 文本，不生成 HTML。
+       * @param {*} value 字段、检查或调用中的值。
+       * @returns {string} 稳定文本。
+       */
+      function datingCompactValue(value) {
+        if (value === null) return 'null';
+        if (value === undefined) return '—';
+        if (typeof value === 'string') return value;
+        if (typeof value === 'object') {
+          try {
+            return JSON.stringify(value);
+          } catch (error) {
+            return String(value);
+          }
+        }
+        return String(value);
+      }
+
+      /** 根据 result_call_id 从事实调用中读取 result_id，不从全文猜测。 */
+      function findDatingResultId(calls, resultCallId) {
+        var resultCall = (Array.isArray(calls) ? calls : []).find(function(call) {
+          return call.call_id === resultCallId;
+        });
+        var data = resultCall && resultCall.response && resultCall.response.data;
+        return data && data.result_id !== undefined ? data.result_id : null;
+      }
+
+      /**
+       * 控制 Dating 请求期按钮和状态；完成后仅按当前结果决定导出可用性。
+       * @param {boolean} isLoading 是否正在等待分析接口。
+       */
+      function setDatingLoading(isLoading) {
+        var analyzeButton = document.getElementById('analyze-dating-btn');
+        var copyButton = document.getElementById('copy-dating-report-btn');
+        var reportButton = document.getElementById('export-dating-report-btn');
+        var jsonButton = document.getElementById('export-dating-json-btn');
+        var status = document.getElementById('dating-status');
+        var state = document.getElementById('dating-state');
+
+        analyzeButton.disabled = isLoading;
+        analyzeButton.textContent = isLoading ? '分析中...' : 'Dating 结构化分析';
+        copyButton.disabled = isLoading || !latestDatingReport;
+        reportButton.disabled = isLoading || !latestDatingReport;
+        jsonButton.disabled = isLoading || !latestDatingAnalysis;
+        if (isLoading) {
+          status.textContent = '分析中';
+          state.className = 'dating-state loading';
+          state.textContent = '正在解析接口和结果字段…';
+        }
+      }
+
+      /** 清除上一轮 Dating 结果，错误请求不能继续显示为旧成功结果。 */
+      function resetDatingResult() {
+        latestDatingAnalysis = null;
+        latestDatingReport = '';
+        latestDatingFields = [];
+        datingExpandedPaths = Object.create(null);
+        datingTreeLimits = Object.create(null);
+        datingVisibleFieldCount = 200;
+        document.getElementById('dating-content').hidden = true;
+        clearDatingNode('dating-report');
+        document.getElementById('copy-dating-report-btn').disabled = true;
+        document.getElementById('export-dating-report-btn').disabled = true;
+        document.getElementById('export-dating-json-btn').disabled = true;
+      }
+
+      /**
+       * 展示稳定 HTTP/error_code 和可执行提示，不暴露异常堆栈。
+       * @param {string} message 后端安全错误信息。
+       * @param {string} errorCode 稳定错误码。
+       * @param {number} statusCode HTTP 状态码。
+       */
+      function renderDatingError(message, errorCode, statusCode) {
+        var section = document.getElementById('dating-analysis');
+        var status = document.getElementById('dating-status');
+        var state = clearDatingNode('dating-state');
+        var actionByStatus = {
+          400: '请检查日志内容后重新分析。',
+          413: '请缩小日志到 10 MiB 以内后重试。',
+          422: '请确认日志包含 Dating 调用；多任务日志需指定单个 task_id。',
+          500: '请保留原日志并稍后重试；服务端已记录内部异常。'
+        };
+        var stableCode = errorCode || (
+          statusCode === 413 ? 'LOG_TOO_LARGE' :
+          statusCode === 422 ? 'UNSUPPORTED_LOG' :
+          statusCode === 500 ? 'ANALYSIS_INTERNAL_ERROR' : 'EMPTY_LOG'
+        );
+
+        section.hidden = false;
+        status.textContent = '失败 · ' + String(statusCode || 400) + ' · ' + stableCode;
+        state.className = 'dating-state error';
+        state.appendChild(createDatingTextElement(
+          'strong', '', String(statusCode || 400) + ' · ' + stableCode
+        ));
+        state.appendChild(createDatingTextElement('p', '', message || 'Dating 日志分析失败'));
+        state.appendChild(createDatingTextElement(
+          'p', '', actionByStatus[statusCode] || actionByStatus[400]
+        ));
+        section.scrollIntoView({block: 'start'});
+        section.focus({preventScroll: true});
+      }
+
+      /**
+       * 调用本地确定性 Dating API。请求开始即清空旧结果，确保失败态不混淆。
+       */
+      async function analyzeDatingLog() {
+        var logText = document.getElementById('log_text').value;
+        var section = document.getElementById('dating-analysis');
+        section.hidden = false;
+        resetDatingResult();
+
+        if (!logText.trim()) {
+          renderDatingError('日志内容为空，请先粘贴日志再分析。', 'EMPTY_LOG', 400);
+          return;
+        }
+
+        setDatingLoading(true);
+        try {
+          var response = await fetch(datingAnalyzeUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-CSRF-Token': readCookie('tp_csrf')
+            },
+            body: JSON.stringify({log_text: logText, task_id: null})
+          });
+          var payload;
+          try {
+            payload = await response.json();
+          } catch (parseError) {
+            payload = {};
+          }
+          if (!response.ok) {
+            var requestError = new Error(payload.message || 'Dating 日志分析失败');
+            requestError.errorCode = payload.error_code || '';
+            requestError.statusCode = response.status;
+            if (Array.isArray(payload.task_ids) && payload.task_ids.length) {
+              requestError.message += '：' + payload.task_ids.join('、');
+            }
+            throw requestError;
+          }
+
+          latestDatingAnalysis = payload;
+          latestDatingReport = typeof payload.report_markdown === 'string'
+            ? payload.report_markdown : '';
+          renderDatingAnalysis(payload);
+          section.scrollIntoView({block: 'start'});
+          section.focus({preventScroll: true});
+        } catch (error) {
+          resetDatingResult();
+          renderDatingError(
+            error.message,
+            error.errorCode || 'ANALYSIS_INTERNAL_ERROR',
+            error.statusCode || 500
+          );
+        } finally {
+          setDatingLoading(false);
+        }
+      }
+
+      /**
+       * 只负责组织各事实分区；Schema 和规则判断均来自服务端。
+       * @param {Object} data Dating API 的已脱敏成功响应。
+       */
+      function renderDatingAnalysis(data) {
+        var taskSnapshot = data.task_snapshot || {};
+        var lifecycle = taskSnapshot.lifecycle || {};
+        var baseSummary = data.summary || {};
+        var inputAssets = Array.isArray(taskSnapshot.input_assets)
+          ? taskSnapshot.input_assets : [];
+        var summary = {
+          verdict: data.verdict,
+          task_type: taskSnapshot.task_type,
+          task_id: taskSnapshot.task_id,
+          result_id: findDatingResultId(data.calls, taskSnapshot.result_call_id),
+          schema_version: taskSnapshot.schema_version,
+          final_status: lifecycle.final_status,
+          duration_ms: lifecycle.duration_ms,
+          gateway_call_count: baseSummary.gateway_call_count,
+          upload_call_count: baseSummary.upload_call_count,
+          asset_count: inputAssets.length,
+          poll_count: lifecycle.poll_count,
+          http_error_count: baseSummary.http_error_count,
+          business_error_count: baseSummary.business_error_count,
+          check_fail_count: baseSummary.check_fail_count,
+          check_warn_count: baseSummary.check_warn_count
+        };
+
+        document.getElementById('dating-content').hidden = false;
+        var state = document.getElementById('dating-state');
+        state.className = 'dating-state success';
+        state.textContent = '分析完成：' + (data.verdict || '完成') + '。';
+        renderDatingSummary(summary);
+        renderDatingLifecycle(taskSnapshot);
+        renderDatingResult(taskSnapshot);
+        renderDatingFields(taskSnapshot.result_fields || []);
+        renderDatingCalls(data.calls || []);
+        renderDatingChecks(data.checks || []);
+        renderDatingParseWarnings(data.parse_warnings || []);
+        clearDatingNode('dating-report').textContent = latestDatingReport;
+        document.getElementById('dating-status').textContent =
+          (data.verdict || '完成') + ' · task_id=' + (taskSnapshot.task_id || '—');
+      }
+
+      /**
+       * 渲染当前结论、下一步和高价值摘要，状态文本与颜色同时表达语义。
+       * @param {Object} summary 由成功响应事实组装的摘要。
+       */
+      function renderDatingSummary(summary) {
+        var verdictLabels = {
+          NO_ISSUES: '未发现问题',
+          WARNINGS_FOUND: '存在需要确认项',
+          ISSUES_FOUND: '发现已确认异常',
+          INCOMPLETE_LOG: '日志证据不足'
+        };
+        var verdictClasses = {
+          NO_ISSUES: 'no-issues',
+          WARNINGS_FOUND: 'warnings',
+          ISSUES_FOUND: 'issues',
+          INCOMPLETE_LOG: 'incomplete'
+        };
+        var nextActions = {
+          NO_ISSUES: '下一步：可继续核对生命周期和最终字段。',
+          WARNINGS_FOUND: '下一步：先核对 WARN 检查项及其原日志证据。',
+          ISSUES_FOUND: '下一步：先处理 FAIL 检查项，再核对关联调用。',
+          INCOMPLETE_LOG: '下一步：补齐缺失的请求、响应或任务终态日志。'
+        };
+        var verdict = summary.verdict || 'INCOMPLETE_LOG';
+        var verdictPanel = document.getElementById('dating-verdict');
+        verdictPanel.className = 'dating-verdict ' + (verdictClasses[verdict] || 'incomplete');
+        document.getElementById('dating-summary-heading').textContent =
+          verdictLabels[verdict] || verdict;
+        document.getElementById('dating-verdict-detail').textContent =
+          '最终状态 ' + (summary.final_status || '未知') +
+          ' · FAIL ' + String(summary.check_fail_count || 0) +
+          ' · WARN ' + String(summary.check_warn_count || 0);
+        document.getElementById('dating-next-action').textContent =
+          nextActions[verdict] || nextActions.INCOMPLETE_LOG;
+
+        var container = clearDatingNode('dating-summary');
+        [
+          ['任务类型', summary.task_type],
+          ['task_id', summary.task_id],
+          ['result_id', summary.result_id],
+          ['schema_version', summary.schema_version],
+          ['最终状态', summary.final_status],
+          ['任务耗时', summary.duration_ms === null || summary.duration_ms === undefined ? '—' : summary.duration_ms + ' ms'],
+          ['Gateway', summary.gateway_call_count],
+          ['PUT', summary.upload_call_count],
+          ['Asset', summary.asset_count],
+          ['Poll', summary.poll_count],
+          ['HTTP / Business Error', String(summary.http_error_count || 0) + ' / ' + String(summary.business_error_count || 0)],
+          ['FAIL / WARN', String(summary.check_fail_count || 0) + ' / ' + String(summary.check_warn_count || 0)]
+        ].forEach(function(entry) {
+          appendDatingDefinition(container, entry[0], entry[1]);
+        });
+      }
+
+      /** 从当前 Dating 响应中按 call_id 读取事实调用。 */
+      function findDatingCall(callId) {
+        if (!callId || !latestDatingAnalysis || !Array.isArray(latestDatingAnalysis.calls)) {
+          return null;
+        }
+        return latestDatingAnalysis.calls.find(function(call) {
+          return call.call_id === callId;
+        }) || null;
+      }
+
+      /**
+       * 创建可键盘操作的原日志行号定位按钮。
+       * @param {number} startLine 起始行（1-based）。
+       * @param {number} endLine 结束行（1-based）。
+       * @param {string} label 可选的阶段名称。
+       */
+      function createDatingLineButton(startLine, endLine, label) {
+        if (!Number.isFinite(Number(startLine)) || Number(startLine) < 1) {
+          return createDatingTextElement('span', 'dating-muted', '日志证据不足');
+        }
+        var safeStart = Number(startLine);
+        var safeEnd = Number.isFinite(Number(endLine)) && Number(endLine) >= safeStart
+          ? Number(endLine) : safeStart;
+        var button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'dating-line-button';
+        button.textContent = (label ? label + ' ' : '') + 'L' + safeStart +
+          (safeEnd === safeStart ? '' : '–' + safeEnd);
+        button.addEventListener('click', function() {
+          focusLogLines(safeStart, safeEnd);
+        });
+        return button;
+      }
+
+      /**
+       * 在原始 textarea 中选择目标行范围；method 筛选不自动改变。
+       * 当前筛选不是“全部”时只提示用户，避免静默改变排查上下文。
+       */
+      function focusLogLines(startLine, endLine) {
+        var textarea = document.getElementById('log_text');
+        var text = textarea.value;
+        var lineStarts = [0];
+        var index;
+        for (index = 0; index < text.length; index += 1) {
+          if (text.charAt(index) === '\n') {
+            lineStarts.push(index + 1);
+          }
+        }
+        var safeStart = Math.max(1, Math.min(Number(startLine) || 1, lineStarts.length));
+        var safeEnd = Math.max(safeStart, Math.min(Number(endLine) || safeStart, lineStarts.length));
+        var selectionStart = lineStarts[safeStart - 1];
+        var selectionEnd = safeEnd < lineStarts.length ? lineStarts[safeEnd] - 1 : text.length;
+        var allMethod = document.querySelector('#method-dropdown input[data-is-all="1"]');
+
+        if (allMethod && !allMethod.checked) {
+          showActionMessage('当前 method 筛选可能隐藏目标，请切换“全部”接口后核对过滤结果。', true);
+        } else {
+          showActionMessage('已定位到原日志 L' + safeStart + (safeEnd === safeStart ? '' : '–' + safeEnd), false);
+        }
+        textarea.focus();
+        textarea.setSelectionRange(selectionStart, selectionEnd);
+        var lineHeight = parseFloat(window.getComputedStyle(textarea).lineHeight) || 20;
+        textarea.scrollTop = Math.max(0, (safeStart - 2) * lineHeight);
+        textarea.scrollIntoView({block: 'center'});
+      }
+
+      /** 为 upload 阶段追加对应调用的请求/响应行号。 */
+      function appendDatingCallLines(parent, callId, label) {
+        var call = findDatingCall(callId);
+        if (!call) return;
+        var request = call.request || {};
+        var response = call.response || {};
+        if (request.line_start) {
+          parent.appendChild(createDatingLineButton(
+            request.line_start, request.line_end, label + ' 请求'
+          ));
+        }
+        if (response.line_start) {
+          parent.appendChild(createDatingLineButton(
+            response.line_start, response.line_end, label + ' 响应'
+          ));
+        }
+      }
+
+      /**
+       * 展示上传关联、生命周期诊断和每一条 Poll；不做状态去重。
+       * @param {Object} taskSnapshot 服务端任务快照。
+       */
+      function renderDatingLifecycle(taskSnapshot) {
+        var lifecycle = taskSnapshot.lifecycle || {};
+        var diagnostics = taskSnapshot.progress_diagnostics || {};
+        var metrics = clearDatingNode('dating-lifecycle-metrics');
+        [
+          ['Poll 次数', lifecycle.poll_count],
+          ['不同进度', Array.isArray(diagnostics.distinct_progress_values) ? diagnostics.distinct_progress_values.join('、') : '—'],
+          ['未变化 Poll', diagnostics.unchanged_poll_count],
+          ['任务耗时', lifecycle.duration_ms === null || lifecycle.duration_ms === undefined ? '—' : lifecycle.duration_ms + ' ms']
+        ].forEach(function(entry) {
+          appendDatingDefinition(metrics, entry[0], entry[1]);
+        });
+
+        var uploadList = clearDatingNode('dating-upload-list');
+        var assets = Array.isArray(taskSnapshot.input_assets) ? taskSnapshot.input_assets : [];
+        if (!assets.length) {
+          uploadList.appendChild(createDatingTextElement(
+            'p', 'dating-muted', '没有可关联的上传资源。'
+          ));
+        }
+        assets.forEach(function(asset, assetIndex) {
+          var item = document.createElement('article');
+          item.className = 'dating-upload-item';
+          item.appendChild(createDatingTextElement(
+            'h4', '', String(assetIndex + 1) + '. ' + (asset.asset_id || 'orphan PUT')
+          ));
+          item.appendChild(createDatingTextElement(
+            'p', 'dating-upload-chain',
+            'Prepare ' + (asset.prepare_status || '未知') +
+            ' → PUT ' + (asset.put_http_status === null || asset.put_http_status === undefined ? '未知' : asset.put_http_status) +
+            ' → Complete ' + (asset.complete_status || '未知') +
+            ' → Used by Task ' + (asset.used_by_task ? '是' : '否')
+          ));
+          item.appendChild(createDatingTextElement(
+            'p', 'dating-upload-meta',
+            '关联状态=' + (asset.upload_state || 'unknown') +
+            ' · content_type=' + (asset.content_type || '—') +
+            ' · size=' + (asset.size_bytes === null || asset.size_bytes === undefined ? '—' : asset.size_bytes + ' bytes')
+          ));
+          var lines = document.createElement('div');
+          lines.className = 'result-tools';
+          appendDatingCallLines(lines, asset.prepare_call_id, 'Prepare');
+          appendDatingCallLines(lines, asset.put_call_id, 'PUT');
+          appendDatingCallLines(lines, asset.complete_call_id, 'Complete');
+          if (lines.childNodes.length) item.appendChild(lines);
+          if (Array.isArray(asset.warnings) && asset.warnings.length) {
+            item.appendChild(createDatingTextElement(
+              'p', 'dating-muted', 'Warnings: ' + datingCompactValue(asset.warnings)
+            ));
+          }
+          uploadList.appendChild(item);
+        });
+
+        var timeline = clearDatingNode('dating-task-timeline');
+        var samples = Array.isArray(taskSnapshot.status_samples)
+          ? taskSnapshot.status_samples : [];
+        if (!samples.length) {
+          timeline.appendChild(createDatingTextElement(
+            'li', 'dating-muted', '日志中没有 Poll 状态样本。'
+          ));
+        }
+        samples.forEach(function(sample, sampleIndex) {
+          var item = document.createElement('li');
+          item.appendChild(createDatingTextElement(
+            'span', 'dating-timeline-sequence', '#' + String(sampleIndex + 1)
+          ));
+          item.appendChild(createDatingTextElement(
+            'span', 'dating-mono', sample.timestamp || '时间未知'
+          ));
+          item.appendChild(createDatingTextElement(
+            'span', '', (sample.status || 'unknown') + ' / ' + (sample.phase || 'unknown')
+          ));
+          item.appendChild(createDatingTextElement(
+            'span', '', sample.progress_percent === null || sample.progress_percent === undefined
+              ? '进度未知' : String(sample.progress_percent) + '%'
+          ));
+          item.appendChild(createDatingLineButton(
+            sample.line_start, sample.line_end, 'Poll'
+          ));
+          timeline.appendChild(item);
+        });
+      }
+
+      /**
+       * 根据服务端 schema_version 展示 Reply/Analysis 摘要与业务分组。
+       * 未知 Schema 不推断专属分组，仍保留原始字段树。
+       */
+      function renderDatingResult(taskSnapshot) {
+        var schemaVersion = taskSnapshot.schema_version || 'UNKNOWN_SCHEMA';
+        var schemaStatus = taskSnapshot.schema_status || 'UNKNOWN_SCHEMA';
+        var summaryTitle = schemaVersion === 'dating.reply_generation.v1'
+          ? 'Reply v1 业务摘要'
+          : schemaVersion === 'dating.relationship_analysis.v1'
+            ? 'Analysis v1 业务摘要' : '未知 Schema · 通用字段树';
+        document.getElementById('dating-result-heading').textContent = summaryTitle;
+        document.getElementById('dating-schema-status').textContent =
+          schemaVersion + ' · ' + schemaStatus;
+
+        var resultSummary = clearDatingNode('dating-result-summary');
+        var summary = taskSnapshot.result_summary || {};
+        var summaryKeys = Object.keys(summary);
+        if (!summaryKeys.length) {
+          resultSummary.appendChild(createDatingTextElement(
+            'div', 'dating-muted', '没有可展示的 Schema 专属摘要。'
+          ));
+        }
+        summaryKeys.forEach(function(key) {
+          appendDatingDefinition(resultSummary, key, datingCompactValue(summary[key]));
+        });
+
+        var sectionsContainer = clearDatingNode('dating-result-sections');
+        var sections = Array.isArray(taskSnapshot.result_sections)
+          ? taskSnapshot.result_sections : [];
+        if (!sections.length) {
+          sectionsContainer.appendChild(createDatingTextElement(
+            'p', 'dating-muted',
+            schemaStatus === 'UNKNOWN_SCHEMA'
+              ? '未知 Schema：仅展示通用字段树和字段索引。'
+              : '结果分组为空。'
+          ));
+        }
+        sections.forEach(function(section) {
+          var details = document.createElement('details');
+          details.className = 'dating-result-section';
+          var summaryNode = document.createElement('summary');
+          appendDatingText(summaryNode, (section.label || section.path || '未命名分组') +
+            (section.path ? ' · ' + section.path : ''));
+          var pre = document.createElement('pre');
+          appendDatingText(pre, section.value);
+          details.appendChild(summaryNode);
+          details.appendChild(pre);
+          sectionsContainer.appendChild(details);
+        });
+
+        datingExpandedPaths = Object.create(null);
+        datingTreeLimits = Object.create(null);
+        renderDatingFieldTree(taskSnapshot.result_fields || []);
+      }
+
+      /** 将字段 presence 映射为固定文本和前端允许的样式类。 */
+      function createDatingPresence(field) {
+        var node = document.createElement('span');
+        var presence = field && field.presence ? field.presence : 'UNKNOWN';
+        var className = 'dating-presence';
+        if (presence === 'MISSING') className += ' missing';
+        if (presence === 'NULL') className += ' null';
+        if (field && field.schema_known === false) className += ' unknown';
+        node.className = className;
+        node.textContent = presence + (field && field.schema_known === false ? ' · 未知字段' : '');
+        return node;
+      }
+
+      /** 对字段值使用 PRD 的空值语义，避免把 MISSING 伪装为空字符串。 */
+      function datingFieldValue(field) {
+        if (!field) return '—';
+        if (field.presence === 'MISSING') return '字段缺失';
+        if (field.presence === 'NULL') return 'null';
+        if (field.presence === 'EMPTY_STRING') return '空字符串';
+        if (field.presence === 'EMPTY_ARRAY') return '空数组 []';
+        if (field.presence === 'EMPTY_OBJECT') return '空对象 {}';
+        if (field.value_type === 'array' && Array.isArray(field.value)) {
+          return '数组，共 ' + field.value.length + ' 项';
+        }
+        if (field.value_type === 'object' && field.value && typeof field.value === 'object') {
+          return '对象，共 ' + Object.keys(field.value).length + ' 个键';
+        }
+        return datingCompactValue(field.value);
+      }
+
+      /**
+       * 生成可展开的原始字段树；每个 parent_path 首次最多渲染 20 个子节点。
+       * @param {Array} fields 服务端扁平字段索引。
+       */
+      function renderDatingFieldTree(fields) {
+        var safeFields = Array.isArray(fields) ? fields : [];
+        var container = clearDatingNode('dating-field-tree');
+        var childrenByParent = Object.create(null);
+        var fieldByPath = Object.create(null);
+
+        safeFields.forEach(function(field) {
+          var parentKey = field.parent_path === null || field.parent_path === undefined
+            ? '__ROOT__' : String(field.parent_path);
+          if (!childrenByParent[parentKey]) childrenByParent[parentKey] = [];
+          childrenByParent[parentKey].push(field);
+          if (field.path && !fieldByPath[field.path]) fieldByPath[field.path] = field;
+        });
+
+        if (!safeFields.length) {
+          container.appendChild(createDatingTextElement(
+            'p', 'dating-muted', 'Result 字段树为空。'
+          ));
+          return;
+        }
+
+        function renderChildren(parentPath, list) {
+          var key = parentPath === null ? '__ROOT__' : String(parentPath);
+          var children = childrenByParent[key] || [];
+          var limit = datingTreeLimits[key] || 20;
+          children.slice(0, limit).forEach(function(field) {
+            var item = document.createElement('li');
+            item.className = 'dating-field-node';
+            var line = document.createElement('div');
+            line.className = 'dating-field-node-line';
+            var fieldChildren = childrenByParent[String(field.path)] || [];
+            var pathButton = document.createElement('button');
+            pathButton.type = 'button';
+            pathButton.className = 'dating-path-button';
+            pathButton.textContent = field.path || field.key || '未命名字段';
+            pathButton.setAttribute('aria-expanded',
+              fieldChildren.length && datingExpandedPaths[field.path] ? 'true' : 'false');
+            pathButton.addEventListener('click', function() {
+              if (!fieldChildren.length) return;
+              datingExpandedPaths[field.path] = !datingExpandedPaths[field.path];
+              renderDatingFieldTree(safeFields);
+            });
+            line.appendChild(pathButton);
+            line.appendChild(createDatingPresence(field));
+            line.appendChild(createDatingTextElement(
+              'span', 'dating-muted', datingFieldValue(field)
+            ));
+            var source = field.source || {};
+            line.appendChild(createDatingLineButton(
+              source.line_start, source.line_end, source.location_precision || 'Source'
+            ));
+            item.appendChild(line);
+            if (fieldChildren.length && datingExpandedPaths[field.path]) {
+              var nested = document.createElement('ul');
+              renderChildren(field.path, nested);
+              item.appendChild(nested);
+            }
+            list.appendChild(item);
+          });
+
+          if (children.length > limit) {
+            var moreItem = document.createElement('li');
+            var moreButton = document.createElement('button');
+            moreButton.type = 'button';
+            moreButton.className = 'dating-more-button';
+            moreButton.textContent = '加载后续 ' + Math.min(20, children.length - limit) +
+              ' 个节点（剩余 ' + (children.length - limit) + '）';
+            moreButton.addEventListener('click', function() {
+              datingTreeLimits[key] = limit + 20;
+              renderDatingFieldTree(safeFields);
+            });
+            moreItem.appendChild(moreButton);
+            list.appendChild(moreItem);
+          }
+        }
+
+        var rootList = document.createElement('ul');
+        rootList.className = 'dating-field-tree';
+        renderChildren(null, rootList);
+        container.appendChild(rootList);
+      }
+
+      /** 展开字段及其 parent_path 祖先，然后将原始字段树带入可见区。 */
+      function expandDatingParentPath(parentPath) {
+        var currentPath = parentPath;
+        var guard = 0;
+        while (currentPath && guard < 50) {
+          datingExpandedPaths[currentPath] = true;
+          var parentField = latestDatingFields.find(function(field) {
+            return field.path === currentPath;
+          });
+          currentPath = parentField ? parentField.parent_path : null;
+          guard += 1;
+        }
+        renderDatingFieldTree(latestDatingFields);
+        var details = document.getElementById('dating-field-tree-details');
+        details.open = true;
+        details.scrollIntoView({block: 'start'});
+      }
+
+      /** Presence/search 改变时从第一页重新渲染字段索引。 */
+      function resetAndRenderDatingFields() {
+        datingVisibleFieldCount = 200;
+        renderDatingFields();
+      }
+
+      /** 按固定批次增加字段索引可见行，避免一次创建 20,000 行。 */
+      function showMoreDatingFields() {
+        datingVisibleFieldCount += 200;
+        renderDatingFields();
+      }
+
+      /**
+       * 渲染可搜索、可按 presence 筛选的字段索引。
+       * @param {Array} fields 新分析结果的字段；省略时复用当前独立状态。
+       */
+      function renderDatingFields(fields) {
+        if (Array.isArray(fields)) {
+          latestDatingFields = fields.slice();
+          datingVisibleFieldCount = 200;
+        }
+        var filter = document.getElementById('dating-field-filter').value;
+        var query = document.getElementById('dating-field-search').value.trim().toLowerCase();
+        var filtered = latestDatingFields.filter(function(field) {
+          var presenceMatches = filter === 'ALL' ||
+            (filter === 'UNKNOWN_SCHEMA_FIELD'
+              ? field.schema_known === false
+              : field.presence === filter);
+          if (!presenceMatches) return false;
+          if (!query) return true;
+          return String(field.path || '').toLowerCase().indexOf(query) !== -1 ||
+            datingCompactValue(field.value).toLowerCase().indexOf(query) !== -1;
+        });
+        var visible = filtered.slice(0, datingVisibleFieldCount);
+        var body = clearDatingNode('dating-field-table-body');
+
+        if (!visible.length) {
+          var emptyRow = document.createElement('tr');
+          var emptyCell = createDatingTextElement(
+            'td', 'dating-muted', '当前筛选条件下没有字段。'
+          );
+          emptyCell.colSpan = 5;
+          emptyRow.appendChild(emptyCell);
+          body.appendChild(emptyRow);
+        }
+
+        visible.forEach(function(field) {
+          var row = document.createElement('tr');
+          var pathCell = document.createElement('td');
+          var pathButton = document.createElement('button');
+          pathButton.type = 'button';
+          pathButton.className = 'dating-path-button';
+          pathButton.textContent = field.path || '未命名字段';
+          pathButton.addEventListener('click', function() {
+            expandDatingParentPath(field.parent_path || field.path);
+          });
+          pathCell.appendChild(pathButton);
+          if (field.label && field.label !== field.key) {
+            pathCell.appendChild(createDatingTextElement(
+              'div', 'dating-muted', field.label
+            ));
+          }
+          row.appendChild(pathCell);
+          row.appendChild(createDatingTextElement('td', 'dating-mono', field.value_type || 'unknown'));
+          var presenceCell = document.createElement('td');
+          presenceCell.appendChild(createDatingPresence(field));
+          row.appendChild(presenceCell);
+          row.appendChild(createDatingTextElement(
+            'td', 'dating-value-cell', datingFieldValue(field)
+          ));
+          var sourceCell = document.createElement('td');
+          var source = field.source || {};
+          sourceCell.appendChild(createDatingTextElement(
+            'div', 'dating-mono', (source.method || 'method 未知') +
+              (source.call_id ? ' · ' + source.call_id : '')
+          ));
+          sourceCell.appendChild(createDatingLineButton(
+            source.line_start, source.line_end, source.location_precision || 'Source'
+          ));
+          row.appendChild(sourceCell);
+          body.appendChild(row);
+        });
+
+        document.getElementById('dating-field-count').textContent =
+          '匹配 ' + filtered.length + ' / ' + latestDatingFields.length +
+          '，当前显示 ' + visible.length;
+        var moreButton = document.getElementById('dating-field-more');
+        moreButton.hidden = visible.length >= filtered.length;
+        moreButton.textContent = moreButton.hidden
+          ? '显示更多字段'
+          : '显示更多（剩余 ' + (filtered.length - visible.length) + '）';
+      }
+
+      /** 从 documented params/data 路径提取当前调用的 task_id 或 asset_id。 */
+      function datingCallReference(call) {
+        var requestParams = call && call.request && call.request.params || {};
+        var responseData = call && call.response && call.response.data || {};
+        return requestParams.task_id || responseData.task_id ||
+          requestParams.asset_id || responseData.asset_id || '—';
+      }
+
+      /** 追加调用详情中的一个纯文本 JSON 区块。 */
+      function appendDatingCallDetail(parent, heading, value) {
+        var group = document.createElement('section');
+        group.appendChild(createDatingTextElement('h4', '', heading));
+        var pre = document.createElement('pre');
+        appendDatingText(pre, value === undefined ? null : value);
+        group.appendChild(pre);
+        parent.appendChild(group);
+      }
+
+      /**
+       * 展示 HTTP、Gateway、SubResponse 三层事实值与可展开原始结构。
+       * @param {Array} calls 解析器保留日志顺序的调用列表。
+       */
+      function renderDatingCalls(calls) {
+        var safeCalls = Array.isArray(calls) ? calls : [];
+        var body = clearDatingNode('dating-interface-table-body');
+        document.getElementById('dating-call-count').textContent =
+          '共 ' + safeCalls.length + ' 条';
+
+        if (!safeCalls.length) {
+          var emptyRow = document.createElement('tr');
+          var emptyCell = createDatingTextElement(
+            'td', 'dating-muted', '没有可展示的接口调用。'
+          );
+          emptyCell.colSpan = 11;
+          emptyRow.appendChild(emptyCell);
+          body.appendChild(emptyRow);
+          return;
+        }
+
+        safeCalls.forEach(function(call, callIndex) {
+          var request = call.request || {};
+          var response = call.response || {};
+          var gateway = response.gateway || {};
+          var subResponse = response.sub_response || {};
+          var row = document.createElement('tr');
+          var sequenceCell = document.createElement('td');
+          var toggle = document.createElement('button');
+          toggle.type = 'button';
+          toggle.className = 'dating-row-toggle';
+          toggle.textContent = String(call.sequence === undefined ? callIndex + 1 : call.sequence);
+          toggle.setAttribute('aria-expanded', 'false');
+          sequenceCell.appendChild(toggle);
+          row.appendChild(sequenceCell);
+          [
+            request.timestamp || '—',
+            call.service_name || '—',
+            call.method_name || '—',
+            response.http_status === null || response.http_status === undefined
+              ? 'HTTP 未知' : 'HTTP ' + response.http_status,
+            gateway.code === null || gateway.code === undefined
+              ? 'Gateway 未知' : 'code=' + gateway.code,
+            subResponse.success === null || subResponse.success === undefined
+              ? 'SubResponse 未知'
+              : 'success=' + String(subResponse.success) + ' / code=' + datingCompactValue(subResponse.code),
+            response.elapsed_ms === null || response.elapsed_ms === undefined
+              ? '—' : response.elapsed_ms + ' ms',
+            datingCallReference(call),
+            call.result_class || 'unknown'
+          ].forEach(function(value, cellIndex) {
+            row.appendChild(createDatingTextElement(
+              'td', cellIndex === 1 || cellIndex === 2 || cellIndex === 7 ? 'dating-mono' : '', value
+            ));
+          });
+          var lineCell = document.createElement('td');
+          if (request.line_start) {
+            lineCell.appendChild(createDatingLineButton(
+              request.line_start, request.line_end, '请求'
+            ));
+          }
+          if (response.line_start) {
+            lineCell.appendChild(createDatingLineButton(
+              response.line_start, response.line_end, '响应'
+            ));
+          }
+          if (!lineCell.childNodes.length) {
+            appendDatingText(lineCell, '日志证据不足');
+          }
+          row.appendChild(lineCell);
+          body.appendChild(row);
+
+          var detailRow = document.createElement('tr');
+          detailRow.hidden = true;
+          detailRow.className = 'dating-call-detail-row';
+          var detailCell = document.createElement('td');
+          detailCell.colSpan = 11;
+          var detail = document.createElement('div');
+          detail.className = 'dating-call-detail';
+          appendDatingCallDetail(detail, '请求 params', request.params || {});
+          appendDatingCallDetail(detail, 'Gateway envelope', response.gateway || null);
+          appendDatingCallDetail(detail, 'SubResponse data', response.data === undefined ? null : response.data);
+          appendDatingCallDetail(detail, 'Parser warnings', call.warnings || []);
+          detailCell.appendChild(detail);
+          detailRow.appendChild(detailCell);
+          body.appendChild(detailRow);
+          toggle.addEventListener('click', function() {
+            detailRow.hidden = !detailRow.hidden;
+            toggle.setAttribute('aria-expanded', detailRow.hidden ? 'false' : 'true');
+          });
+        });
+      }
+
+      /** 规则结果使用固定允许列表排序，后端未知 outcome 放在末尾。 */
+      function datingCheckOrder(outcome) {
+        var order = {FAIL: 0, WARN: 1, UNKNOWN: 2, PASS: 3, NA: 4};
+        return Object.prototype.hasOwnProperty.call(order, outcome) ? order[outcome] : 5;
+      }
+
+      /**
+       * 展示 40 条检查及 evidence；FAIL/WARN 默认展开以支持异常优先排查。
+       * @param {Array} checks 规则引擎输出。
+       */
+      function renderDatingChecks(checks) {
+        var container = clearDatingNode('dating-check-list');
+        var safeChecks = Array.isArray(checks) ? checks.slice() : [];
+        safeChecks.sort(function(left, right) {
+          return datingCheckOrder(left.outcome) - datingCheckOrder(right.outcome);
+        });
+        if (!safeChecks.length) {
+          container.appendChild(createDatingTextElement(
+            'p', 'dating-muted', '没有可展示的规则检查。'
+          ));
+          return;
+        }
+
+        safeChecks.forEach(function(check) {
+          var details = document.createElement('details');
+          var outcome = ['FAIL', 'WARN', 'UNKNOWN', 'PASS', 'NA'].indexOf(check.outcome) !== -1
+            ? check.outcome : 'UNKNOWN';
+          details.className = 'dating-check ' + outcome.toLowerCase();
+          details.open = outcome === 'FAIL' || outcome === 'WARN';
+          var summary = document.createElement('summary');
+          appendDatingText(summary,
+            outcome + ' · ' + (check.rule_id || 'UNKNOWN-RULE') +
+            ' · ' + (check.title || '未命名检查'));
+          details.appendChild(summary);
+          var body = document.createElement('div');
+          body.className = 'dating-check-body';
+          var actual = document.createElement('pre');
+          appendDatingText(actual, check.actual);
+          var expected = document.createElement('pre');
+          appendDatingText(expected, check.expected);
+          var actualGroup = document.createElement('div');
+          actualGroup.appendChild(createDatingTextElement('strong', '', 'Actual'));
+          actualGroup.appendChild(actual);
+          body.appendChild(actualGroup);
+          var expectedGroup = document.createElement('div');
+          expectedGroup.appendChild(createDatingTextElement('strong', '', 'Expected'));
+          expectedGroup.appendChild(expected);
+          body.appendChild(expectedGroup);
+
+          var evidenceHeading = createDatingTextElement('strong', '', 'Evidence');
+          body.appendChild(evidenceHeading);
+          var evidenceList = document.createElement('ul');
+          evidenceList.className = 'dating-evidence-list';
+          var evidence = Array.isArray(check.evidence) ? check.evidence : [];
+          if (!evidence.length) {
+            evidenceList.appendChild(createDatingTextElement(
+              'li', 'dating-evidence-item', '日志证据不足'
+            ));
+          }
+          evidence.forEach(function(item) {
+            var evidenceItem = document.createElement('li');
+            evidenceItem.className = 'dating-evidence-item';
+            evidenceItem.appendChild(createDatingTextElement(
+              'div', 'dating-mono',
+              (item.method || item.call_id || '调用未知') +
+              ' · ' + (item.json_path || '路径未知')
+            ));
+            evidenceItem.appendChild(createDatingTextElement(
+              'div', 'dating-value-cell', datingCompactValue(item.value)
+            ));
+            evidenceItem.appendChild(createDatingLineButton(
+              item.line_start, item.line_end, '证据'
+            ));
+            evidenceList.appendChild(evidenceItem);
+          });
+          body.appendChild(evidenceList);
+          details.appendChild(body);
+          container.appendChild(details);
+        });
+      }
+
+      /** 展示解析警告；对象警告若带行号则同样可定位。 */
+      function renderDatingParseWarnings(warnings) {
+        var safeWarnings = Array.isArray(warnings) ? warnings : [];
+        var list = clearDatingNode('dating-parse-warnings');
+        document.getElementById('dating-warning-count').textContent =
+          '共 ' + safeWarnings.length + ' 条';
+        if (!safeWarnings.length) {
+          list.appendChild(createDatingTextElement(
+            'li', 'dating-muted', '没有解析警告。'
+          ));
+        }
+        safeWarnings.forEach(function(warning) {
+          var item = document.createElement('li');
+          item.className = 'dating-evidence-item';
+          appendDatingText(item, datingCompactValue(warning));
+          if (warning && typeof warning === 'object' && warning.line_start) {
+            item.appendChild(createDatingLineButton(
+              warning.line_start, warning.line_end, '警告'
+            ));
+          }
+          list.appendChild(item);
+        });
+      }
+
+      /** 复制后端固定 Markdown；无当前结果时保持按钮禁用并拒绝空操作。 */
+      function copyDatingReport() {
+        if (!latestDatingReport) return;
+        navigator.clipboard.writeText(latestDatingReport)
+          .then(function() {
+            showActionMessage('Dating Markdown 报告已复制。', false);
+          })
+          .catch(function() {
+            showActionMessage('复制失败，请检查浏览器剪贴板权限。', true);
+          });
+      }
+
+      /**
+       * 调用既有导出接口保存 Dating 内容；URL 由 Flask 生成并携带 base path。
+       */
+      async function exportDatingContent(exportType, content, button) {
+        if (!content) return;
+        var originalText = button.textContent;
+        button.disabled = true;
+        button.textContent = '导出中...';
+        try {
+          var response = await fetch(datingExportUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-CSRF-Token': readCookie('tp_csrf')
+            },
+            body: JSON.stringify({export_type: exportType, content: content})
+          });
+          var payload = await response.json();
+          if (!response.ok) throw new Error(payload.message || '导出失败');
+          showActionMessage('已保存：' + payload.path, false);
+        } catch (error) {
+          showActionMessage(error.message, true);
+        } finally {
+          button.disabled = false;
+          button.textContent = originalText;
+        }
+      }
+
+      /** 导出完整、已脱敏的固定 Markdown 文档。 */
+      function exportDatingReport() {
+        exportDatingContent(
+          'dating_analysis_report',
+          latestDatingReport,
+          document.getElementById('export-dating-report-btn')
+        );
+      }
+
+      /** 导出与 API 当前响应一致的已脱敏 JSON。 */
+      function exportDatingJson() {
+        exportDatingContent(
+          'dating_analysis_json',
+          latestDatingAnalysis ? JSON.stringify(latestDatingAnalysis, null, 2) : '',
+          document.getElementById('export-dating-json-btn')
+        );
+      }
+      {% endif %}
     </script>
   </body>
 </html>
