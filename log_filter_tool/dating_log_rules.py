@@ -7,6 +7,8 @@
 
 from __future__ import annotations
 
+import math
+
 
 CHECK_OUTCOMES = {"PASS", "FAIL", "WARN", "UNKNOWN", "NA"}
 
@@ -112,6 +114,19 @@ def _is_meaningful_text(value: object) -> bool:
     return isinstance(value, str) and bool(value.strip())
 
 
+def _is_exact_numeric_zero(value: object) -> bool:
+    """只接受 JSON 数值语义的有限零，显式排除 bool 和其他类型。
+
+    ``bool`` 是 ``int`` 子类，不能用 ``isinstance(value, (int, float))``
+    直接判断；浮点数还需拒绝 NaN/Infinity，避免损坏的 analyzer 输入绕过规则。
+    """
+    if type(value) is int:
+        return value == 0
+    if type(value) is float:
+        return math.isfinite(value) and value == 0.0
+    return False
+
+
 def _is_structured_evidence(item: object) -> bool:
     """校验证据是否能稳定定位到真实调用块或调用字段。
 
@@ -193,7 +208,7 @@ def _evidence(call: dict, json_path: str, value: object) -> dict:
     # Parser warning 本身也带真实 block 行号。允许统一构造器消费这种记录，
     # 避免 PARSE/PAIR 规则各自拼装不同 evidence 形状。
     block = source if isinstance(source, dict) else call
-    return {
+    evidence = {
         "method": (
             call.get("method_name")
             or call.get("method")
@@ -207,6 +222,11 @@ def _evidence(call: dict, json_path: str, value: object) -> dict:
         "line_end": block.get("line_end"),
         "location_precision": "block",
     }
+    # response-only parser call 没有 method_name，但 parser 已分配稳定 call_id；
+    # 保留该真实身份即可满足证据契约，无需放宽校验或伪造业务方法名。
+    if _is_meaningful_text(call.get("call_id")):
+        evidence["call_id"] = call["call_id"]
+    return evidence
 
 
 def _result(
@@ -396,9 +416,7 @@ def check_gateway_status(analysis: dict) -> dict:
             unknown = True
             continue
         code = gateway["code"]
-        # bool 是 int 的子类，普通相等比较会错误地把 False 当作 0；
-        # 协议只接受 JSON 整数 0，null、布尔值和浮点数都属于已定位的坏值。
-        if type(code) is not int or code != 0:
+        if not _is_exact_numeric_zero(code):
             failures.append((call, code))
     if failures:
         return _result(
@@ -430,8 +448,7 @@ def check_subresponse_status(analysis: dict) -> dict:
             unknown = True
         elif (
             sub.get("success") is not True
-            or type(sub.get("code")) is not int
-            or sub.get("code") != 0
+            or not _is_exact_numeric_zero(sub.get("code"))
         ):
             failures.append((call, sub))
     if failures:

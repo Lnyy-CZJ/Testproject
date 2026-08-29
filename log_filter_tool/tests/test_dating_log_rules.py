@@ -103,7 +103,11 @@ def _assert_evidence_shape(testcase: unittest.TestCase, check: dict) -> None:
         "location_precision",
     }
     for evidence in check["evidence"]:
-        testcase.assertEqual(set(evidence), required)
+        testcase.assertTrue(required.issubset(evidence))
+        testcase.assertTrue(set(evidence).issubset(required | {"call_id"}))
+        if "call_id" in evidence:
+            testcase.assertIsInstance(evidence["call_id"], str)
+            testcase.assertTrue(evidence["call_id"])
         testcase.assertEqual(evidence["location_precision"], "block")
 
 
@@ -329,6 +333,42 @@ class GenericAndUploadRuleTest(unittest.TestCase):
         self.assertEqual(check["outcome"], "FAIL")
         _assert_evidence_shape(self, check)
 
+    def test_response_only_gateway_pairing_uses_call_id_evidence(self):
+        response_only_log = "\n".join(
+            [
+                (
+                    "2026-08-29 18:51:08,125 | INFO | tests.gateway | "
+                    "Gateway 响应数据: HTTP 200 elapsed_ms=1.25"
+                ),
+                'headers={"Content-Type":"application/json"}',
+                (
+                    'body={"code":0,"message":"ok",'
+                    '"request_id":"gw_response_only",'
+                    '"trace_id":"trace_response_only","responses":['
+                    '{"id":"req_0","success":true,"code":0,'
+                    '"message":"ok","data":{}}]}'
+                ),
+            ]
+        )
+        analysis = analyze_dating_log(response_only_log)
+        call = analysis["calls"][0]
+        self.assertIsNone(call["request"])
+        self.assertIsNone(call["method_name"])
+
+        try:
+            checks = run_dating_checks(analysis)
+        except ValueError as exc:
+            self.fail(f"run_dating_checks raised for real response-only call: {exc}")
+
+        check = _check_by_id(checks, "PAIR-001")
+        self.assertEqual(check["outcome"], "FAIL")
+        self.assertEqual(len(check["evidence"]), 1)
+        evidence = check["evidence"][0]
+        self.assertEqual(evidence["call_id"], call["call_id"])
+        self.assertIsNone(evidence["method"])
+        self.assertEqual((evidence["line_start"], evidence["line_end"]), (1, 3))
+        self.assertEqual(evidence["location_precision"], "block")
+
     def test_put_http_failure_is_not_confused_with_gateway_status(self):
         analysis = _load_analysis()
         put_call = next(
@@ -358,7 +398,7 @@ class GenericAndUploadRuleTest(unittest.TestCase):
                 self.assertEqual(check["outcome"], "FAIL")
                 _assert_evidence_shape(self, check)
 
-    def test_gateway_and_subresponse_codes_require_exact_integer_zero(self):
+    def test_gateway_and_subresponse_codes_require_exact_numeric_zero(self):
         original_log = (
             FIXTURE_DIR / "reply_generation_multi_image_success.log"
         ).read_text(encoding="utf-8")
@@ -366,11 +406,7 @@ class GenericAndUploadRuleTest(unittest.TestCase):
             ("gateway", "GATEWAY-001"),
             ("sub_response", "SUBRESP-001"),
         ):
-            for invalid_code, json_literal in (
-                (False, "false"),
-                (None, "null"),
-                (0.0, "0.0"),
-            ):
+            for invalid_code, json_literal in ((False, "false"), (None, "null")):
                 with self.subTest(layer=layer, invalid_code=invalid_code):
                     if layer == "gateway":
                         mutated_log = original_log.replace(
@@ -391,13 +427,38 @@ class GenericAndUploadRuleTest(unittest.TestCase):
                     self.assertEqual(check["outcome"], "FAIL")
                     _assert_evidence_shape(self, check)
 
-        valid_checks = run_dating_checks(_load_analysis())
-        self.assertEqual(
-            _check_by_id(valid_checks, "GATEWAY-001")["outcome"], "PASS"
-        )
-        self.assertEqual(
-            _check_by_id(valid_checks, "SUBRESP-001")["outcome"], "PASS"
-        )
+            for json_literal in ("0", "0.0"):
+                with self.subTest(layer=layer, valid_code=json_literal):
+                    if layer == "gateway":
+                        mutated_log = original_log.replace(
+                            'body={\n  "code": 0,',
+                            f'body={{\n  "code": {json_literal},',
+                            1,
+                        )
+                    else:
+                        mutated_log = original_log.replace(
+                            '      "success": true,\n      "code": 0,',
+                            f'      "success": true,\n      "code": {json_literal},',
+                            1,
+                        )
+
+                    check = _check_by_id(
+                        run_dating_checks(analyze_dating_log(mutated_log)), rule_id
+                    )
+
+                    self.assertEqual(check["outcome"], "PASS")
+
+            # 非有限浮点值不能来自标准 JSON，但规则公共入口仍须拒绝损坏的
+            # analyzer 输入；非零整数/浮点数同样不得被当作成功 code。
+            for invalid_code in (1, -1, 0.5, float("inf"), float("-inf"), float("nan")):
+                with self.subTest(layer=layer, invalid_numeric=invalid_code):
+                    analysis = _load_analysis()
+                    analysis["calls"][0]["response"][layer]["code"] = invalid_code
+
+                    check = _check_by_id(run_dating_checks(analysis), rule_id)
+
+                    self.assertEqual(check["outcome"], "FAIL")
+                    _assert_evidence_shape(self, check)
 
     def test_missing_trace_id_warns_but_missing_trace_source_is_unknown(self):
         analysis = _load_analysis()
