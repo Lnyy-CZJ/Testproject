@@ -466,6 +466,29 @@ def _parse_response(
         gateway = None
         items = []
 
+    # Marker 的正则故意先识别形似数字的原始字段，以便即使耗时损坏也能把
+    # 响应与既有请求配对并保留 headers/body 证据。因此数值转换必须在这条
+    # 元数据边界内降级：转换失败记为确定性 warning 和 parse_error，不能让
+    # ValueError 穿透并中止整份日志，也不能伪装成成功或 no_response。
+    elapsed_raw = match.group(2)
+    try:
+        elapsed_ms = float(elapsed_raw)
+    except (TypeError, ValueError):
+        elapsed_ms = None
+        parse_error = True
+        local_warnings.append(
+            _warning(
+                warnings,
+                "RESPONSE_ELAPSED_MS_INVALID",
+                f"响应 elapsed_ms 不是有效数字: {elapsed_raw!r}",
+                line_start=line_start,
+                line_end=line_end,
+                gateway_exchange_id=exchange_id,
+                transport=transport,
+                raw_value=elapsed_raw,
+            )
+        )
+
     return {
         "transport": transport,
         "gateway_exchange_id": exchange_id,
@@ -473,7 +496,7 @@ def _parse_response(
         "line_start": line_start,
         "line_end": line_end,
         "http_status": int(match.group(1)),
-        "elapsed_ms": float(match.group(2)),
+        "elapsed_ms": elapsed_ms,
         "headers": headers if isinstance(headers, dict) else None,
         "gateway": gateway,
         "items": items,

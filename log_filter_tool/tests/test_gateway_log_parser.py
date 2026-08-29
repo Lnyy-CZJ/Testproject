@@ -47,12 +47,13 @@ def make_gateway_response(
     responses,
     *,
     http_status=200,
+    elapsed_ms="1.25",
     gateway_code=0,
     gateway_message="ok",
     timestamp="2026-08-29 18:51:08,125",
     truncate_body=False,
 ):
-    """生成真实 ``headers=``/``body=`` 响应，可选截断 body 复现坏日志。"""
+    """生成真实 ``headers=``/``body=`` 响应，可注入坏元数据或截断 body。"""
     envelope = {
         "code": gateway_code,
         "message": gateway_message,
@@ -69,7 +70,7 @@ def make_gateway_response(
         [
             (
                 f"{timestamp} | INFO | tests.gateway | Gateway 响应数据: "
-                f"HTTP {http_status} elapsed_ms=1.25"
+                f"HTTP {http_status} elapsed_ms={elapsed_ms}"
             ),
             'headers=' + json.dumps(
                 {"Content-Type": "application/json"},
@@ -421,6 +422,101 @@ class GatewayPairingEdgeTests(unittest.TestCase):
         self.assertTrue(by_method["Broken"]["warnings"])
         self.assertEqual("success", by_method["Valid"]["result_class"])
         self.assertTrue(by_method["Valid"]["response"]["data"]["ok"])
+
+    def test_gateway_malformed_elapsed_preserves_exchange_as_parse_error(self):
+        """Gateway marker 已识别时，坏耗时不能让整份日志丢失。"""
+        log = make_gateway_exchange(
+            [{"id": "bad", "service_name": "svc", "method_name": "BadElapsed", "params": {}}],
+            [{
+                "id": "bad",
+                "success": True,
+                "code": 0,
+                "message": "ok",
+                "data": {"kept": True},
+            }],
+            elapsed_ms=".",
+        )
+
+        parsed = parse_interface_log(log)
+        self.assertEqual(1, len(parsed["calls"]))
+        call = parsed["calls"][0]
+        warning = {
+            "code": "RESPONSE_ELAPSED_MS_INVALID",
+            "message": "响应 elapsed_ms 不是有效数字: '.'",
+            "line_start": 21,
+            "line_end": 41,
+            "gateway_exchange_id": "gateway_0001",
+            "transport": "gateway",
+            "raw_value": ".",
+        }
+
+        self.assertEqual("call_0001", call["call_id"])
+        self.assertEqual("gateway_0001", call["gateway_exchange_id"])
+        self.assertEqual("2026-08-29 18:51:08.000", call["request"]["timestamp"])
+        self.assertEqual((1, 20), (
+            call["request"]["line_start"],
+            call["request"]["line_end"],
+        ))
+        self.assertEqual("2026-08-29 18:51:08.125", call["response"]["timestamp"])
+        self.assertEqual((21, 41), (
+            call["response"]["line_start"],
+            call["response"]["line_end"],
+        ))
+        self.assertEqual(200, call["response"]["http_status"])
+        self.assertIsNone(call["response"]["elapsed_ms"])
+        self.assertTrue(call["response"]["data"]["kept"])
+        self.assertEqual("PARSE_ERROR", call["parse_status"])
+        self.assertEqual("parse_error", call["result_class"])
+        self.assertEqual([warning], call["warnings"])
+        self.assertEqual([warning], parsed["parse_warnings"])
+
+    def test_put_malformed_elapsed_preserves_lines_as_parse_error(self):
+        """PUT 的坏耗时同样保留请求、响应和原始 marker 行证据。"""
+        log = "\n".join([
+            "2026-08-29 20:00:01,000 | INFO | tests.gateway | PUT 上传请求数据:",
+            json.dumps({
+                "url": "https://storage.example.test/object",
+                "headers": {"Content-Type": "image/jpeg"},
+                "content_length": 4,
+            }, ensure_ascii=False),
+            (
+                "2026-08-29 20:00:01,010 | INFO | tests.gateway | "
+                "PUT 上传响应: HTTP 200 elapsed_ms=1.2.3"
+            ),
+            'headers={"ETag":"kept"}',
+        ])
+
+        parsed = parse_interface_log(log)
+        self.assertEqual(1, len(parsed["calls"]))
+        call = parsed["calls"][0]
+        warning = {
+            "code": "RESPONSE_ELAPSED_MS_INVALID",
+            "message": "响应 elapsed_ms 不是有效数字: '1.2.3'",
+            "line_start": 3,
+            "line_end": 4,
+            "transport": "object_storage_put",
+            "raw_value": "1.2.3",
+        }
+
+        self.assertEqual("call_0001", call["call_id"])
+        self.assertIsNone(call["gateway_exchange_id"])
+        self.assertEqual("2026-08-29 20:00:01.000", call["request"]["timestamp"])
+        self.assertEqual((1, 2), (
+            call["request"]["line_start"],
+            call["request"]["line_end"],
+        ))
+        self.assertEqual("2026-08-29 20:00:01.010", call["response"]["timestamp"])
+        self.assertEqual((3, 4), (
+            call["response"]["line_start"],
+            call["response"]["line_end"],
+        ))
+        self.assertEqual(200, call["response"]["http_status"])
+        self.assertIsNone(call["response"]["elapsed_ms"])
+        self.assertEqual({"ETag": "kept"}, call["response"]["headers"])
+        self.assertEqual("PARSE_ERROR", call["parse_status"])
+        self.assertEqual("parse_error", call["result_class"])
+        self.assertEqual([warning], call["warnings"])
+        self.assertEqual([warning], parsed["parse_warnings"])
 
     def test_result_class_priority_keeps_transport_layers_separate(self):
         cases = [
