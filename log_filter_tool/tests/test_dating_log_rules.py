@@ -148,6 +148,65 @@ class DatingRuleFrameworkTest(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "without evidence"):
                     _check("TEST-001", "P0", "测试", outcome, None, None)
 
+    def test_check_rejects_structurally_invalid_finding_evidence(self):
+        base = {
+            "method": "GetTask",
+            "json_path": "response.data.status",
+            "value": "failed",
+            "line_start": 10,
+            "line_end": 12,
+            "location_precision": "block",
+        }
+        invalid_entries = [
+            {},
+            {**base, "method": ""},
+            {key: value for key, value in base.items() if key != "json_path"},
+            {key: value for key, value in base.items() if key != "value"},
+            {**base, "line_start": 0},
+            {**base, "line_start": 13},
+            {**base, "line_end": True},
+            {**base, "location_precision": "field"},
+        ]
+
+        for outcome in ("FAIL", "WARN"):
+            for entry in invalid_entries:
+                with self.subTest(outcome=outcome, evidence=entry):
+                    with self.assertRaisesRegex(ValueError, "without evidence"):
+                        _check(
+                            "TEST-001",
+                            "P0",
+                            "测试",
+                            outcome,
+                            None,
+                            None,
+                            [entry],
+                        )
+
+    def test_check_accepts_path_and_call_level_evidence_contracts(self):
+        path_evidence = {
+            "method": "GetTask",
+            "json_path": "response.data.error",
+            # null 仍是已定位的真实值，必须与缺少 value 键区分。
+            "value": None,
+            "line_start": 10,
+            "line_end": 12,
+            "location_precision": "block",
+        }
+        call_evidence = {
+            "method": "GetTask",
+            "call_id": "call_7",
+            "line_start": 10,
+            "line_end": 12,
+            "location_precision": "block",
+        }
+
+        for entry in (path_evidence, call_evidence):
+            with self.subTest(evidence=entry):
+                check = _check(
+                    "TEST-001", "P0", "测试", "FAIL", None, None, [entry]
+                )
+                self.assertEqual(check["evidence"], [entry])
+
     def test_verdict_priority_is_deterministic(self):
         def item(priority: str, outcome: str) -> dict:
             evidence = None
@@ -225,7 +284,7 @@ class GenericAndUploadRuleTest(unittest.TestCase):
         _assert_evidence_shape(self, check)
         self.assertEqual(check["evidence"][0]["line_start"], 34)
 
-    def test_recoverable_parser_noise_warns_even_when_call_is_parse_error(self):
+    def test_recoverable_parser_noise_warns_when_call_remains_parsed(self):
         analysis = _load_analysis()
         warning = {
             "code": "RESPONSE_ELAPSED_MS_INVALID",
@@ -235,11 +294,30 @@ class GenericAndUploadRuleTest(unittest.TestCase):
         }
         analysis["parse_warnings"].append(warning)
         analysis["calls"][0]["warnings"].append(warning)
-        analysis["calls"][0]["parse_status"] = "PARSE_ERROR"
 
         check = _check_by_id(run_dating_checks(analysis), "PARSE-001")
 
         self.assertEqual(check["outcome"], "WARN")
+        _assert_evidence_shape(self, check)
+
+    def test_fatal_headers_parse_error_wins_over_invalid_elapsed_warning(self):
+        log_text = (FIXTURE_DIR / "reply_generation_multi_image_success.log").read_text(
+            encoding="utf-8"
+        )
+        log_text = log_text.replace("elapsed_ms=1489.23", "elapsed_ms=1..2", 1)
+        headers_start = log_text.index("headers={")
+        body_start = log_text.index("\nbody=", headers_start)
+        log_text = log_text[:headers_start] + "headers=[]" + log_text[body_start:]
+        analysis = analyze_dating_log(log_text)
+        first_call = analysis["calls"][0]
+        warning_codes = {warning["code"] for warning in first_call["warnings"]}
+
+        check = _check_by_id(run_dating_checks(analysis), "PARSE-001")
+
+        self.assertEqual(first_call["parse_status"], "PARSE_ERROR")
+        self.assertIn("GATEWAY_RESPONSE_HEADERS_TYPE_ERROR", warning_codes)
+        self.assertIn("RESPONSE_ELAPSED_MS_INVALID", warning_codes)
+        self.assertEqual(check["outcome"], "FAIL")
         _assert_evidence_shape(self, check)
 
     def test_missing_gateway_response_fails_pairing(self):
@@ -279,6 +357,47 @@ class GenericAndUploadRuleTest(unittest.TestCase):
                 check = _check_by_id(run_dating_checks(analysis), rule_id)
                 self.assertEqual(check["outcome"], "FAIL")
                 _assert_evidence_shape(self, check)
+
+    def test_gateway_and_subresponse_codes_require_exact_integer_zero(self):
+        original_log = (
+            FIXTURE_DIR / "reply_generation_multi_image_success.log"
+        ).read_text(encoding="utf-8")
+        for layer, rule_id in (
+            ("gateway", "GATEWAY-001"),
+            ("sub_response", "SUBRESP-001"),
+        ):
+            for invalid_code, json_literal in (
+                (False, "false"),
+                (None, "null"),
+                (0.0, "0.0"),
+            ):
+                with self.subTest(layer=layer, invalid_code=invalid_code):
+                    if layer == "gateway":
+                        mutated_log = original_log.replace(
+                            'body={\n  "code": 0,',
+                            f'body={{\n  "code": {json_literal},',
+                            1,
+                        )
+                    else:
+                        mutated_log = original_log.replace(
+                            '      "success": true,\n      "code": 0,',
+                            f'      "success": true,\n      "code": {json_literal},',
+                            1,
+                        )
+                    analysis = analyze_dating_log(mutated_log)
+
+                    check = _check_by_id(run_dating_checks(analysis), rule_id)
+
+                    self.assertEqual(check["outcome"], "FAIL")
+                    _assert_evidence_shape(self, check)
+
+        valid_checks = run_dating_checks(_load_analysis())
+        self.assertEqual(
+            _check_by_id(valid_checks, "GATEWAY-001")["outcome"], "PASS"
+        )
+        self.assertEqual(
+            _check_by_id(valid_checks, "SUBRESP-001")["outcome"], "PASS"
+        )
 
     def test_missing_trace_id_warns_but_missing_trace_source_is_unknown(self):
         analysis = _load_analysis()
@@ -394,6 +513,28 @@ class TaskLifecycleRuleTest(unittest.TestCase):
         self.assertEqual(check["outcome"], "FAIL")
         _assert_evidence_shape(self, check)
         self.assertIn("succeeded -> processing", check["actual"])
+        self.assertEqual(check["evidence"][0]["value"], "processing")
+
+    def test_proven_illegal_transition_wins_when_another_status_is_unknown(self):
+        analysis = _load_analysis()
+        samples = analysis["task_snapshot"]["status_samples"]
+
+        # 一个未知枚举只能让相邻两段无法证明；后续独立存在的
+        # succeeded -> processing 仍是已证实的非法转换，必须优先 FAIL。
+        samples[1]["status"] = "waiting_external"
+        _call_by_id(analysis, samples[1]["call_id"])["response"]["data"][
+            "status"
+        ] = "waiting_external"
+        samples[2]["status"] = "succeeded"
+        _call_by_id(analysis, samples[2]["call_id"])["response"]["data"][
+            "status"
+        ] = "succeeded"
+
+        check = _check_by_id(run_dating_checks(analysis), "TASK-003")
+
+        self.assertEqual(check["outcome"], "FAIL")
+        self.assertEqual(check["actual"], "succeeded -> processing")
+        _assert_evidence_shape(self, check)
         self.assertEqual(check["evidence"][0]["value"], "processing")
 
     def test_progress_regression_and_incomplete_success_fail(self):

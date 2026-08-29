@@ -43,9 +43,14 @@ _PARSE_FAILURE_CODES = {
     "MALFORMED_JSON_BLOCK",
     "UNPAIRED_GATEWAY_BLOCK",
     "GATEWAY_REQUEST_JSON_ERROR",
+    "GATEWAY_REQUEST_TYPE_ERROR",
     "GATEWAY_RESPONSE_BODY_JSON_ERROR",
+    "GATEWAY_RESPONSE_HEADERS_JSON_ERROR",
+    "GATEWAY_RESPONSE_HEADERS_TYPE_ERROR",
     "PUT_REQUEST_JSON_ERROR",
-    "PUT_RESPONSE_JSON_ERROR",
+    "PUT_REQUEST_TYPE_ERROR",
+    "PUT_RESPONSE_HEADERS_JSON_ERROR",
+    "PUT_RESPONSE_HEADERS_TYPE_ERROR",
     "GATEWAY_PAYLOAD_TYPE_ERROR",
     "GATEWAY_REQUESTS_TYPE_ERROR",
     "GATEWAY_RESPONSES_TYPE_ERROR",
@@ -102,6 +107,36 @@ _EXPECTED_TASK_METHODS = {
 }
 
 
+def _is_meaningful_text(value: object) -> bool:
+    """判断证据标识符是否为非空文本，避免空白字符串冒充定位信息。"""
+    return isinstance(value, str) and bool(value.strip())
+
+
+def _is_structured_evidence(item: object) -> bool:
+    """校验证据是否能稳定定位到真实调用块或调用字段。
+
+    字段级证据需要来源标识、JSON 路径和值键；调用级证据可没有路径和值，
+    但必须同时提供 method 与 call_id。两类证据都必须使用有效的一基 block
+    行范围，且显式排除 Python 中会伪装成整数的 bool。
+    """
+    if not isinstance(item, dict) or item.get("location_precision") != "block":
+        return False
+    line_start = item.get("line_start")
+    line_end = item.get("line_end")
+    if (
+        type(line_start) is not int
+        or type(line_end) is not int
+        or line_start < 1
+        or line_end < line_start
+    ):
+        return False
+
+    has_method = _is_meaningful_text(item.get("method"))
+    has_call_id = _is_meaningful_text(item.get("call_id"))
+    has_path_value = _is_meaningful_text(item.get("json_path")) and "value" in item
+    return (has_method or has_call_id) and (has_path_value or (has_method and has_call_id))
+
+
 def _check(
     rule_id: str,
     priority: str,
@@ -123,13 +158,19 @@ def _check(
         包含七个固定字段的普通字典。
 
     异常:
-        ValueError: outcome 非法，或 FAIL/WARN 未提供证据时抛出。
+        ValueError: outcome 非法，或 FAIL/WARN 未提供符合定位契约的证据时抛出。
     """
-    resolved_evidence = evidence or []
+    resolved_evidence = evidence if isinstance(evidence, list) else []
     if outcome not in CHECK_OUTCOMES:
         raise ValueError(f"unsupported check outcome: {outcome}")
-    if outcome in {"FAIL", "WARN"} and not resolved_evidence:
-        raise ValueError(f"{rule_id} cannot return {outcome} without evidence")
+    if outcome in {"FAIL", "WARN"} and (
+        not resolved_evidence
+        or any(not _is_structured_evidence(item) for item in resolved_evidence)
+    ):
+        raise ValueError(
+            f"{rule_id} cannot return {outcome} without evidence "
+            "that satisfies the structural contract"
+        )
     return {
         "rule_id": rule_id,
         "priority": priority,
@@ -153,7 +194,13 @@ def _evidence(call: dict, json_path: str, value: object) -> dict:
     # 避免 PARSE/PAIR 规则各自拼装不同 evidence 形状。
     block = source if isinstance(source, dict) else call
     return {
-        "method": call.get("method_name") or call.get("method"),
+        "method": (
+            call.get("method_name")
+            or call.get("method")
+            # Parser warning 没有业务 method，但 code 与真实日志块行号共同标识
+            # 解析器来源；使用固定来源名而不是伪造某个业务接口。
+            or ("parse_interface_log" if _is_meaningful_text(call.get("code")) else None)
+        ),
         "json_path": json_path,
         "value": value,
         "line_start": block.get("line_start"),
@@ -225,9 +272,6 @@ def check_parse_complete(analysis: dict) -> dict:
         call
         for call in calls
         if call.get("parse_status") == "PARSE_ERROR"
-        # 已有稳定 warning code 时由上、下分支决定严重度；只有 parser
-        # 没给出原因的 PARSE_ERROR 才保守按不可恢复失败处理。
-        and not (_warning_codes(call) & _PARSER_WARNING_CODES)
     ]
     if severe or parse_error_calls:
         evidence = [
@@ -348,10 +392,13 @@ def check_gateway_status(analysis: dict) -> dict:
     for call in calls:
         response = call.get("response")
         gateway = response.get("gateway") if isinstance(response, dict) else None
-        code = gateway.get("code") if isinstance(gateway, dict) else None
-        if code is None:
+        if not isinstance(gateway, dict) or "code" not in gateway:
             unknown = True
-        elif code != 0:
+            continue
+        code = gateway["code"]
+        # bool 是 int 的子类，普通相等比较会错误地把 False 当作 0；
+        # 协议只接受 JSON 整数 0，null、布尔值和浮点数都属于已定位的坏值。
+        if type(code) is not int or code != 0:
             failures.append((call, code))
     if failures:
         return _result(
@@ -381,7 +428,11 @@ def check_subresponse_status(analysis: dict) -> dict:
         sub = response.get("sub_response") if isinstance(response, dict) else None
         if not isinstance(sub, dict) or "success" not in sub or "code" not in sub:
             unknown = True
-        elif sub.get("success") is not True or sub.get("code") != 0:
+        elif (
+            sub.get("success") is not True
+            or type(sub.get("code")) is not int
+            or sub.get("code") != 0
+        ):
             failures.append((call, sub))
     if failures:
         return _result(
@@ -731,9 +782,13 @@ def check_task_status_transitions(analysis: dict) -> dict:
         _status_text(sample.get("status")) if isinstance(sample, dict) else None
         for sample in samples
     )
-    if any(state is None or state not in ALLOWED_TRANSITIONS for state in states):
-        return _result("TASK-003", "UNKNOWN", states, "状态枚举均可识别")
+    has_unknown_transition = False
     for index, (previous, current) in enumerate(zip(states, states[1:])):
+        # 未知枚举只影响与其相邻的转换，不能掩盖序列其他位置已经能够
+        # 证明的非法转换；因此先遍历全部已知相邻对，最后才返回 UNKNOWN。
+        if previous not in ALLOWED_TRANSITIONS or current not in ALLOWED_TRANSITIONS:
+            has_unknown_transition = True
+            continue
         if current not in ALLOWED_TRANSITIONS[previous]:
             # ``states`` 在首位插入了 initial_status，因此第 index 个转换的
             # current 恰好对应 samples[index]；证据必须指向发生回退的 Poll。
@@ -750,6 +805,8 @@ def check_task_status_transitions(analysis: dict) -> dict:
                 "只允许配置表中的合法状态转换",
                 [_evidence(call, "response.data.status", sample.get("status"))],
             )
+    if has_unknown_transition:
+        return _result("TASK-003", "UNKNOWN", states, "状态枚举均可识别")
     return _result(
         "TASK-003",
         "PASS",
