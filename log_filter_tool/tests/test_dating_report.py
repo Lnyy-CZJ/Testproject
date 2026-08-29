@@ -116,6 +116,90 @@ class DatingRedactionTest(unittest.TestCase):
         self.assertEqual(second, first)
         self.assertTrue(first.endswith("END-OF-FULL-REPORT\n"))
 
+    def test_document_credential_formats_replace_only_sensitive_values(self):
+        """常见 Markdown/JSON 包装不能绕过显式敏感键判定。"""
+        cases = (
+            (
+                "bold",
+                "**Authorization**: Bearer bold-secret",
+                "**Authorization**: [REDACTED]",
+            ),
+            (
+                "backtick",
+                "`X-Auth-Token`: backtick-secret",
+                "`X-Auth-Token`: [REDACTED]",
+            ),
+            (
+                "quoted-header",
+                '"Authorization": Bearer quoted-header-secret',
+                '"Authorization": [REDACTED]',
+            ),
+            (
+                "underscore",
+                "_Cookie_: underscore-secret",
+                "_Cookie_: [REDACTED]",
+            ),
+            (
+                "table",
+                "| Cookie | table-secret |",
+                "| Cookie | [REDACTED] |",
+            ),
+            (
+                "table-safe-neighbors",
+                "| Cookie | table-secret | note | keep |",
+                "| Cookie | [REDACTED] | note | keep |",
+            ),
+            (
+                "inline-json",
+                '{"apiSecret":"json-secret","status":"ok"}',
+                '{"apiSecret":"[REDACTED]","status":"ok"}',
+            ),
+            (
+                "inline-json-spaces",
+                '{"apiSecret" : "space-secret", "status": "ok"}',
+                '{"apiSecret" : "[REDACTED]", "status": "ok"}',
+            ),
+            (
+                "plain-colon",
+                "Authorization: plain-secret",
+                "Authorization: [REDACTED]",
+            ),
+            (
+                "plain-equals",
+                "api_key=equal-secret",
+                "api_key=[REDACTED]",
+            ),
+            (
+                "safe-bold",
+                "**authorizationMode**: delegated",
+                "**authorizationMode**: delegated",
+            ),
+            (
+                "safe-table",
+                "| cookieConsent | accepted |",
+                "| cookieConsent | accepted |",
+            ),
+            (
+                "safe-json",
+                '{"apiKeyRotationDate":"2026-01-01","status":"ok"}',
+                '{"apiKeyRotationDate":"2026-01-01","status":"ok"}',
+            ),
+            (
+                "safe-equals",
+                "secretSantaName=Alice",
+                "secretSantaName=Alice",
+            ),
+        )
+
+        for name, source, expected in cases:
+            with self.subTest(name=name):
+                redacted = dating_log_rules.redact_dating_document(source)
+                self.assertEqual(redacted, expected)
+                self.assertEqual(
+                    dating_log_rules.redact_dating_document(redacted),
+                    expected,
+                )
+
     def test_sensitive_keys_signed_urls_and_base64_are_redacted(self):
         data_url = "data:image/png;base64," + "A" * 32
         base64_blob = "B" * 256

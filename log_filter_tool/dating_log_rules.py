@@ -65,9 +65,14 @@ _BASE64_CANDIDATE_RE = re.compile(r"[A-Za-z0-9+/]*={0,2}\Z")
 _URLSAFE_BASE64_CANDIDATE_RE = re.compile(r"[A-Za-z0-9_-]*={0,2}\Z")
 _DOCUMENT_HEADER_LINE_RE = re.compile(
     r"^(?P<leading>[ \t]*(?:(?:[-*+]|>)\s+)?)"
-    r"(?P<quote>[\"'`]?)"
+    # 空分支保留无包装 header；较长包装必须排在单字符包装之前。
+    r"(?P<wrapper>\*\*|__|\*|_|`|[\"']|)"
     r"(?P<key>[A-Za-z][A-Za-z0-9_-]*)"
-    r"(?P=quote)(?P<separator>[ \t]*:[ \t]*)(?P<value>.*)$"
+    r"(?P=wrapper)(?P<separator>[ \t]*[:=][ \t]*)(?P<value>.*)$"
+)
+_DOCUMENT_JSON_PAIR_RE = re.compile(
+    r'(?P<prefix>"(?P<key>[A-Za-z][A-Za-z0-9_-]*)"[ \t]*:[ \t]*)'
+    r'(?P<value>"(?:\\.|[^"\\])*")'
 )
 _DOCUMENT_URL_RE = re.compile(r"https?://[^\s<>\"'`]+", re.IGNORECASE)
 _DOCUMENT_DATA_URL_RE = re.compile(
@@ -2136,7 +2141,7 @@ def _is_long_base64_candidate(value: str) -> bool:
 
 
 def _redact_document_header_line(line: str) -> str:
-    """脱敏单行 Markdown/HTTP 凭证头，并原样保留行前缀与换行符。"""
+    """脱敏普通或强调包装的凭证头，并保留包装、空白与换行。"""
     if line.endswith("\r\n"):
         body, ending = line[:-2], "\r\n"
     elif line.endswith(("\r", "\n")):
@@ -2146,15 +2151,74 @@ def _redact_document_header_line(line: str) -> str:
     match = _DOCUMENT_HEADER_LINE_RE.match(body)
     if match is None or not _is_sensitive_key(match.group("key")):
         return line
+    value = match.group("value")
+    # 双引号 key + 双引号 value 属于 JSON；JSON 子流程已精确替换 value，
+    # 此处必须跳过，避免把同一行后续安全键值一并吞掉。
+    if match.group("wrapper") == '"' and value.lstrip().startswith('"'):
+        return line
+    trailing = value[len(value.rstrip()) :]
     return (
         match.group("leading")
-        + match.group("quote")
+        + match.group("wrapper")
         + match.group("key")
-        + match.group("quote")
+        + match.group("wrapper")
         + match.group("separator")
         + _REDACTED
+        + trailing
         + ending
     )
+
+
+def _redact_document_json_pair(match: re.Match[str]) -> str:
+    """按 JSON 键定位字符串值，只替换已确认敏感键对应的值。"""
+    if not _is_sensitive_key(match.group("key")):
+        return match.group(0)
+    return match.group("prefix") + json.dumps(_REDACTED)
+
+
+def _redact_document_table_line(line: str) -> str:
+    """脱敏两列及以上 Markdown 表格中的首个敏感键值对。"""
+    if line.endswith("\r\n"):
+        body, ending = line[:-2], "\r\n"
+    elif line.endswith(("\r", "\n")):
+        body, ending = line[:-1], line[-1]
+    else:
+        body, ending = line, ""
+    cells = body.split("|")
+    key_index = 1 if body.lstrip().startswith("|") else 0
+    value_index = key_index + 1
+    if len(cells) <= value_index:
+        return line
+
+    rendered_key = cells[key_index].strip()
+    for wrapper in ("**", "__", "*", "_", "`", '"', "'"):
+        if (
+            rendered_key.startswith(wrapper)
+            and rendered_key.endswith(wrapper)
+            and len(rendered_key) > len(wrapper) * 2
+        ):
+            rendered_key = rendered_key[len(wrapper) : -len(wrapper)]
+            break
+    if not _is_sensitive_key(rendered_key):
+        return line
+
+    value_cell = cells[value_index]
+    leading = value_cell[: len(value_cell) - len(value_cell.lstrip())]
+    trailing = value_cell[len(value_cell.rstrip()) :]
+    cells[value_index] = leading + _REDACTED + trailing
+    return "|".join(cells) + ending
+
+
+def _redact_document_credentials(document: str) -> str:
+    """统一处理 JSON、Markdown 表格和逐行 header 三种凭证键语法。"""
+    redacted = _DOCUMENT_JSON_PAIR_RE.sub(
+        _redact_document_json_pair, document
+    )
+    lines = []
+    for line in redacted.splitlines(keepends=True):
+        line = _redact_document_table_line(line)
+        lines.append(_redact_document_header_line(line))
+    return "".join(lines)
 
 
 def _redact_document_url(match: re.Match[str]) -> str:
@@ -2183,17 +2247,15 @@ def redact_dating_document(document: str) -> str:
         document: 需要写入报告、API 或导出文件的完整文本文档。
 
     返回:
-        保持原文结构的脱敏副本。凭证头行、内嵌签名 URL、data URL 及
-        连续 256 字符以上的标准/URL-safe Base64 会被稳定占位符替换。
+        保持原文结构的脱敏副本。普通/强调凭证头、Markdown 表格、内联
+        JSON、签名 URL、data URL 及连续 256 字符以上的标准/URL-safe
+        Base64 会用稳定占位符替换对应敏感值。
 
     约束:
         本入口与单字段递归脱敏共享凭证/签名判定，但绝不截断整篇文档；
         占位符不会再次命中，因此重复调用结果保持不变。
     """
-    redacted = "".join(
-        _redact_document_header_line(line)
-        for line in document.splitlines(keepends=True)
-    )
+    redacted = _redact_document_credentials(document)
     redacted = _DOCUMENT_URL_RE.sub(_redact_document_url, redacted)
     redacted = _DOCUMENT_DATA_URL_RE.sub(
         lambda match: f"[REDACTED_BASE64 length={len(match.group(0))}]",
@@ -2279,12 +2341,9 @@ def _redact_dating_value(
     if not isinstance(value, str):
         return value
 
-    # 单字段只复用逐行凭证识别；签名 URL、data URL 与 Base64 仍按字段
-    # 整体判定，避免把普通长文本中的连续字母片段误当作内嵌二进制。
-    value = "".join(
-        _redact_document_header_line(line)
-        for line in value.splitlines(keepends=True)
-    )
+    # 单字段只复用凭证键语法识别；签名 URL、data URL 与 Base64 仍按
+    # 字段整体判定，避免把普通长文本中的连续字母片段误当作二进制。
+    value = _redact_document_credentials(value)
     signed_url = _redacted_signed_url(value)
     if signed_url is not None:
         return signed_url

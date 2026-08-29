@@ -203,6 +203,76 @@ class LogFilterTests(unittest.TestCase):
                 "https://signed.example/object.png?[REDACTED]",
             )
 
+    def test_export_dating_report_redacts_formatted_credential_values(self):
+        """Markdown 导出落盘内容必须覆盖格式化凭证并保留安全邻接语法。"""
+        cases = (
+            (
+                "bold",
+                "**Authorization**: Bearer bold-secret",
+                "**Authorization**: [REDACTED]",
+            ),
+            (
+                "table",
+                "| Cookie | table-secret |",
+                "| Cookie | [REDACTED] |",
+            ),
+            (
+                "inline-json",
+                '{"apiSecret":"json-secret","status":"ok"}',
+                '{"apiSecret":"[REDACTED]","status":"ok"}',
+            ),
+            (
+                "inline-json-spaces",
+                '{"apiSecret" : "space-secret", "status": "ok"}',
+                '{"apiSecret" : "[REDACTED]", "status": "ok"}',
+            ),
+            (
+                "plain-equals",
+                "api_key=equal-secret",
+                "api_key=[REDACTED]",
+            ),
+            (
+                "safe-bold",
+                "**authorizationMode**: delegated",
+                "**authorizationMode**: delegated",
+            ),
+            (
+                "safe-table",
+                "| cookieConsent | accepted |",
+                "| cookieConsent | accepted |",
+            ),
+            (
+                "safe-json",
+                '{"apiKeyRotationDate":"2026-01-01","status":"ok"}',
+                '{"apiKeyRotationDate":"2026-01-01","status":"ok"}',
+            ),
+        )
+        app = create_app()
+        app.testing = True
+
+        with TemporaryDirectory() as export_dir:
+            app.config.update(
+                LOG_EXPORT_DIR=export_dir,
+                LOG_EXPORT_DISPLAY_DIR=export_dir,
+            )
+            client = app.test_client()
+            for name, source, expected in cases:
+                with self.subTest(name=name):
+                    response = client.post(
+                        "/export",
+                        json={
+                            "export_type": "dating_analysis_report",
+                            "content": source,
+                        },
+                    )
+                    payload = response.get_json()
+                    persisted = (
+                        Path(export_dir) / payload["filename"]
+                    ).read_text(encoding="utf-8")
+
+                    self.assertEqual(response.status_code, 200)
+                    self.assertEqual(persisted, expected)
+
     def test_export_dating_json_redacts_and_dumps_deterministically(self):
         """JSON 导出解析真实结构、递归脱敏，并保持稳定 UTF-8 格式。"""
         app = create_app()
