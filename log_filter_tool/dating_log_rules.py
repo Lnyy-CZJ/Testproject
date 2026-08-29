@@ -17,21 +17,15 @@ CHECK_OUTCOMES = {"PASS", "FAIL", "WARN", "UNKNOWN", "NA"}
 
 _REDACTED = "[REDACTED]"
 _MAX_TEXT_VALUE_CHARS = 20_000
-_SENSITIVE_KEYS = {
-    "authorization",
-    "proxyauthorization",
-    "cookie",
-    "setcookie",
-    "token",
-    "authtoken",
-    "accesstoken",
-    "refreshtoken",
-    "idtoken",
-    "sessiontoken",
-    "apikey",
-    "xapikey",
-    "secret",
-    "clientsecret",
+_NON_CREDENTIAL_KEY_TAILS = {
+    ("count",),
+    ("status",),
+    ("status", "code"),
+    ("status", "label"),
+    ("status", "message"),
+    ("status", "name"),
+    ("preferences",),
+    ("hint",),
 }
 _BASE64_CANDIDATE_RE = re.compile(r"[A-Za-z0-9+/]*={0,2}\Z")
 _URLSAFE_BASE64_CANDIDATE_RE = re.compile(r"[A-Za-z0-9_-]*={0,2}\Z")
@@ -2012,13 +2006,50 @@ ANALYSIS_RULES = (
 )
 
 
-def _normalized_secret_key(key: object) -> str:
-    """把大小写、连字符、下划线和 camel 变体归一为精确类别键。
+def _key_tokens(key: object) -> tuple[str, ...]:
+    """把大小写、连接符和 camelCase 键拆成稳定的小写词元。"""
+    text = str(key)
+    # 先拆 ``APISecret`` 的缩写边界，再拆 ``accessToken`` 的驼峰边界；
+    # 最后统一处理连字符、下划线及其他非字母数字分隔符。
+    text = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1_\2", text)
+    text = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", text)
+    return tuple(
+        part.lower() for part in re.split(r"[^A-Za-z0-9]+", text) if part
+    )
 
-    仅移除约定的格式分隔符，不做前缀或模糊命中；例如 ``token_count``
-    会归一为 ``tokencount``，不会误命中精确的 ``token``。
-    """
-    return str(key).lower().replace("-", "").replace("_", "")
+
+def _is_sensitive_key(key: object) -> bool:
+    """按凭证词元识别敏感键，同时排除只描述计数或状态的元数据键。"""
+    tokens = _key_tokens(key)
+    if not tokens:
+        return False
+    if any(tokens[-len(tail) :] == tail for tail in _NON_CREDENTIAL_KEY_TAILS):
+        return False
+
+    if any(
+        token in {"authorization", "cookie", "token", "secret"}
+        for token in tokens
+    ):
+        return True
+    if any(
+        tokens[index : index + 2] == ("api", "key")
+        for index in range(len(tokens) - 1)
+    ):
+        return True
+    # ``XAPIKey`` 的全大写缩写边界无法无歧义拆成 X/API；只对两个完整
+    # 规范名兜底，避免将包含 api/key 字样的普通业务键做模糊命中。
+    return "".join(tokens) in {"apikey", "xapikey"}
+
+
+def _is_signed_query_key(key: object) -> bool:
+    """按完整词元识别签名参数，禁止用 ``signature`` 子串模糊命中。"""
+    tokens = _key_tokens(key)
+    return (
+        tokens in {("sig",), ("signature",), ("q", "sign", "algorithm")}
+        # q_signature、x_amz_signature、x_goog_signature 等签名键都以
+        # 独立 signature 词元结尾；signature_color 则不会命中。
+        or (len(tokens) > 1 and tokens[-1] == "signature")
+    )
 
 
 def _redacted_signed_url(value: str) -> str | None:
@@ -2031,19 +2062,11 @@ def _redacted_signed_url(value: str) -> str | None:
         return None
     if not parsed.scheme or not parsed.netloc or not parsed.query:
         return None
-    query_keys = {
-        _normalized_secret_key(query_key)
+    has_signature = any(
+        _is_signed_query_key(query_key)
         for query_key, _query_value in parse_qsl(
             parsed.query, keep_blank_values=True
         )
-    }
-    has_signature = any(
-        "signature" in query_key
-        or query_key == "qsignalgorithm"
-        # Azure SAS 使用短键 sig；必须精确匹配，避免把普通 signal 等参数
-        # 当成签名并删除整个查询串。
-        or query_key == "sig"
-        for query_key in query_keys
     )
     if not has_signature:
         return None
@@ -2103,7 +2126,7 @@ def _redact_dating_value(
     truncated_field_paths: list[str],
 ) -> object:
     """递归构造脱敏副本，并记录发生自由文本截断的 Result Field。"""
-    if key is not None and _normalized_secret_key(key) in _SENSITIVE_KEYS:
+    if key is not None and _is_sensitive_key(key):
         return _REDACTED
 
     if isinstance(value, dict):
@@ -2541,6 +2564,10 @@ def render_dating_report(analysis_result: dict, checks: list[dict]) -> str:
         (
             "## 日志不足",
             _report_checks(safe_checks, "UNKNOWN")
+            # NA 与 UNKNOWN 同属固定“日志不足”顶级章节，但必须单独呈现，
+            # 避免调用方把“不适用”误读成“缺少证据”。
+            + ["", "### 不适用", ""]
+            + _report_checks(safe_checks, "NA")
             + ["", "### 解析警告", ""]
             + _report_warnings(analysis, snapshot),
         ),

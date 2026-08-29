@@ -101,27 +101,74 @@ class DatingRedactionTest(unittest.TestCase):
         urlsafe_blob = "A" * 255 + "_"
         source = {
             "cos": "https://cos.example/a.png?q-signature=cos-secret&x=1",
+            "cos_underscore": (
+                "https://cos.example/a2.png?q_signature=cos-secret&x=1"
+            ),
             "aws": "https://s3.example/b.png?X-Amz-Signature=aws-secret&x=1",
+            "aws_underscore": (
+                "https://s3.example/b2.png?x_amz_signature=aws-secret&x=1"
+            ),
             "google": (
                 "https://storage.example/c.png?"
                 "X-Goog-Signature=google-secret&x=1"
             ),
+            "google_underscore": (
+                "https://storage.example/c2.png?"
+                "x_goog_signature=google-secret&x=1"
+            ),
             "azure": "https://blob.example/d.png?sv=2025-01-01&SIG=azure-secret",
+            "algorithm": (
+                "https://cos.example/e.png?q_sign_algorithm=sha256&x=1"
+            ),
             "urlsafe_blob": urlsafe_blob,
         }
 
         redacted = dating_log_rules.redact_dating_response(source)
 
         self.assertEqual(redacted["cos"], "https://cos.example/a.png?[REDACTED]")
+        self.assertEqual(
+            redacted["cos_underscore"],
+            "https://cos.example/a2.png?[REDACTED]",
+        )
         self.assertEqual(redacted["aws"], "https://s3.example/b.png?[REDACTED]")
+        self.assertEqual(
+            redacted["aws_underscore"],
+            "https://s3.example/b2.png?[REDACTED]",
+        )
         self.assertEqual(
             redacted["google"], "https://storage.example/c.png?[REDACTED]"
         )
+        self.assertEqual(
+            redacted["google_underscore"],
+            "https://storage.example/c2.png?[REDACTED]",
+        )
         self.assertEqual(redacted["azure"], "https://blob.example/d.png?[REDACTED]")
+        self.assertEqual(
+            redacted["algorithm"], "https://cos.example/e.png?[REDACTED]"
+        )
         self.assertEqual(
             redacted["urlsafe_blob"],
             f"[REDACTED_BASE64 length={len(urlsafe_blob)}]",
         )
+
+    def test_signature_like_business_query_keys_are_not_over_redacted(self):
+        """仅有 signature/sig 前缀的业务参数不是签名凭证。"""
+        source = {
+            "snake": "https://host.example/a?signature_color=blue&x=1",
+            "camel": "https://host.example/b?signatureColor=green&x=1",
+            "short": "https://host.example/c?sig_color=red&x=1",
+            "metadata": "https://host.example/d?signature_count=3&x=1",
+        }
+
+        redacted = dating_log_rules.redact_dating_response(source)
+        analysis = _load_reply_analysis()
+        checks = run_dating_checks(analysis)
+        checks[0]["actual"] = source
+        report = dating_log_rules.render_dating_report(analysis, checks)
+
+        self.assertEqual(redacted, source)
+        for url in source.values():
+            self.assertIn(url, report)
 
     def test_malformed_url_like_text_does_not_crash_redaction_or_report(self):
         """坏 URL 只作为普通文本保留，不能让递归响应或报告渲染中断。"""
@@ -139,10 +186,11 @@ class DatingRedactionTest(unittest.TestCase):
         self.assertIn(malformed, report)
 
     def test_sensitive_key_format_variants_redact_without_business_overmatch(self):
-        """敏感类别按精确规范名匹配，camel/连字符变化不影响结果。"""
+        """敏感类别按完整词元匹配，camel/连字符变化不影响结果。"""
         sensitive = {
             "authorization": "secret-authorization",
             "Proxy-Authorization": "secret-proxy-authorization",
+            "X-Auth-Token": "secret-x-auth-token",
             "cookie": "secret-cookie",
             "setCookie": "secret-set-cookie",
             "auth_token": "secret-auth-token",
@@ -153,13 +201,18 @@ class DatingRedactionTest(unittest.TestCase):
             "api_key": "secret-api-key",
             "X-API-Key": "secret-x-api-key",
             "secret": "secret-value",
+            "apiSecret": "secret-api-secret",
             "clientSecret": "secret-client-value",
+            "AWS-Secret-Access-Key": "secret-aws-access-key",
         }
         ordinary = {
             "authorization_status": "approved",
             "cookie_preferences": "essential-only",
             "token_count": 3,
+            "token_status": "active",
             "sessionTokenCount": 2,
+            "accessTokenStatus": "expired",
+            "auth_token_count": 4,
             "api_key_count": 1,
             "client_secret_hint": "last-four",
             "secretary": "business-value",
@@ -282,8 +335,36 @@ class DatingReportTest(unittest.TestCase):
                 self.assertIn(expected_marker, section)
                 for other_marker in set(partitions.values()) - {expected_marker}:
                     self.assertNotIn(other_marker, section)
-        # PRD 允许 NA 省略；当前模板采用省略策略，不创建额外顶级章节。
-        self.assertNotIn("[NA] T-NA", first)
+        log_section = _report_section(first, "## 日志不足")
+        self.assertIn("### 不适用", log_section)
+        self.assertIn("[NA] T-NA", log_section)
+        self.assertLess(
+            log_section.index("[UNKNOWN] T-UNKNOWN"),
+            log_section.index("### 不适用"),
+        )
+        self.assertLess(
+            log_section.index("### 不适用"),
+            log_section.index("[NA] T-NA"),
+        )
+        for heading in ("## 已确认正常", "## 已确认异常", "## 需要确认"):
+            self.assertNotIn("[NA] T-NA", _report_section(first, heading))
+        self.assertEqual(
+            [line for line in first.splitlines() if line.startswith("## ")],
+            REPORT_HEADINGS,
+        )
+
+    def test_every_stable_rule_appears_exactly_once_in_report(self):
+        """40 条规则无论 outcome 都必须在固定报告中可追溯且不重复。"""
+        analysis = _load_reply_analysis()
+        checks = run_dating_checks(analysis)
+
+        report = dating_log_rules.render_dating_report(analysis, checks)
+
+        self.assertEqual(len(checks), 40)
+        for check in checks:
+            marker = f"[{check['outcome']}] {check['rule_id']}"
+            with self.subTest(rule_id=check["rule_id"]):
+                self.assertEqual(report.count(marker), 1)
 
     def test_parse_warnings_are_in_fixed_log_insufficient_section(self):
         """解析 warning 进入既有“日志不足”章节，不能新增顶级章节。"""
@@ -342,6 +423,29 @@ class DatingReportTest(unittest.TestCase):
             analysis["calls"][0]["request"]["Authorization"],
             "Bearer secret-token-value",
         )
+
+    def test_report_redacts_composite_credential_keys_without_hiding_metadata(self):
+        """报告入口沿用凭证键分类，同时保留 token 计数和状态字段。"""
+        analysis = _load_reply_analysis()
+        checks = run_dating_checks(analysis)
+        checks[0]["actual"] = {
+            "X-Auth-Token": "report-x-auth-secret",
+            "apiSecret": "report-api-secret",
+            "AWS-Secret-Access-Key": "report-aws-access-secret",
+            "accessTokenStatus": "expired",
+            "auth_token_count": 4,
+        }
+
+        report = dating_log_rules.render_dating_report(analysis, checks)
+
+        for secret in (
+            "report-x-auth-secret",
+            "report-api-secret",
+            "report-aws-access-secret",
+        ):
+            self.assertNotIn(secret, report)
+        self.assertIn('"accessTokenStatus":"expired"', report)
+        self.assertIn('"auth_token_count":4', report)
 
     def test_report_does_not_leak_azure_sas_or_urlsafe_base64_from_checks(self):
         """报告入口必须递归脱敏 checks 中的 Azure SAS 与二进制候选值。"""
