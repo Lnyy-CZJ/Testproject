@@ -7,10 +7,30 @@
 
 from __future__ import annotations
 
+import json
 import math
+import re
+from urllib.parse import parse_qsl, urlsplit
 
 
 CHECK_OUTCOMES = {"PASS", "FAIL", "WARN", "UNKNOWN", "NA"}
+
+_REDACTED = "[REDACTED]"
+_MAX_TEXT_VALUE_CHARS = 20_000
+_SENSITIVE_KEYS = {
+    "authorization",
+    "cookie",
+    "set_cookie",
+    "token",
+    "auth_token",
+    "access_token",
+    "refresh_token",
+    "session_token",
+    "api_key",
+    "secret",
+}
+_BASE64_CANDIDATE_RE = re.compile(r"[A-Za-z0-9+/]*={0,2}\Z")
+_TRUNCATION_WARNING_MESSAGE = "字段文本超过 20000 字符，结果仅保留前 20000 字符"
 
 RULE_SPECS = (
     ("PARSE-001", "P0", "已识别请求或响应 JSON 可解析"),
@@ -37,6 +57,22 @@ RULE_SPECS = (
     ("RESULT-004", "P1", "已知 Schema 必填字段存在"),
     ("RESULT-005", "P2", "汇总 Result 空值健康度"),
     ("RESULT-006", "P2", "未知字段被保留并标记"),
+    ("REPLY-001", "P0", "Reply ID 唯一"),
+    ("REPLY-002", "P0", "每个 Role 最多一个 Top Pick"),
+    ("REPLY-003", "P0", "Top Pick 引用已有 Reply"),
+    ("REPLY-004", "P1", "Top Pick 文案与 Reply 一致"),
+    ("REPLY-005", "P1", "Alternatives 与非 Top Pick Replies 一致"),
+    ("REPLY-006", "P1", "Role rank 唯一且可排序"),
+    ("REPLY-007", "P1", "降级 warning 与 is_degraded 一致"),
+    ("REPLY-008", "P2", "Person history 使用状态与 person_id 一致"),
+    ("ANALYSIS-001", "P0", "上传资源计数守恒"),
+    ("ANALYSIS-002", "P0", "分析消息数不超过有效消息数"),
+    ("ANALYSIS-003", "P0", "双方消息数等于分析消息总数"),
+    ("ANALYSIS-004", "P1", "同类型 Signal ID 唯一"),
+    ("ANALYSIS-005", "P1", "Key Event ID 唯一"),
+    ("ANALYSIS-006", "P1", "Signal 与 Event 证据消息非空"),
+    ("ANALYSIS-007", "P2", "汇总 Analysis 空值"),
+    ("ANALYSIS-008", "P2", "汇总 Analysis warnings"),
 )
 RULE_IDS = tuple(spec[0] for spec in RULE_SPECS)
 _RULE_SPEC_BY_ID = {spec[0]: spec for spec in RULE_SPECS}
@@ -1307,6 +1343,592 @@ def check_unknown_result_fields_preserved(analysis: dict) -> dict:
     )
 
 
+_REPLY_SCHEMA_VERSION = "dating.reply_generation.v1"
+_ANALYSIS_SCHEMA_VERSION = "dating.relationship_analysis.v1"
+_SIGNAL_GROUPS = ("positive_signals", "watch_signals", "risk_signals")
+_EVENT_GROUPS = ("turning_points", "hidden_meanings", "did_well", "could_improve")
+
+
+def _schema_rule_inputs(
+    analysis: dict,
+    rule_id: str,
+    expected_schema: str,
+) -> tuple[dict | None, dict | None, dict | None]:
+    """统一判定 Schema 专属规则是否适用，并解析固定业务分组。
+
+    返回 ``(snapshot, sections, early_result)``。未知 Schema 和另一种已知
+    Schema 明确返回 NA；日志不足或投影结构损坏返回 UNKNOWN。业务规则只从
+    Task 5 的 summary/sections/fields 读取事实，不回读原始 Result payload。
+    """
+    snapshot = _task_snapshot(analysis)
+    if snapshot is None:
+        return None, None, _result(
+            rule_id, "UNKNOWN", None, f"{expected_schema} 结构化 Result 可用"
+        )
+    schema_version = snapshot.get("schema_version")
+    schema_status = snapshot.get("schema_status")
+    if schema_status == "UNKNOWN_SCHEMA":
+        return None, None, _result(
+            rule_id, "NA", schema_version, f"仅适用于 {expected_schema}"
+        )
+    if schema_status == "KNOWN_SCHEMA" and schema_version != expected_schema:
+        return None, None, _result(
+            rule_id, "NA", schema_version, f"仅适用于 {expected_schema}"
+        )
+    if schema_status != "KNOWN_SCHEMA" or schema_version != expected_schema:
+        return None, None, _result(
+            rule_id, "UNKNOWN", schema_version, f"{expected_schema} Schema 可定位"
+        )
+    if _result_call(analysis, snapshot) is None:
+        return None, None, _result(
+            rule_id, "UNKNOWN", None, "Result 调用及业务分组可定位"
+        )
+
+    summary = snapshot.get("result_summary")
+    raw_sections = snapshot.get("result_sections")
+    fields = snapshot.get("result_fields")
+    if (
+        not isinstance(summary, dict)
+        or not isinstance(raw_sections, list)
+        or not isinstance(fields, list)
+    ):
+        return None, None, _result(
+            rule_id, "UNKNOWN", None, "Result summary/sections/fields 结构完整"
+        )
+
+    sections: dict[str, object] = {}
+    for section in raw_sections:
+        if (
+            not isinstance(section, dict)
+            or not _is_meaningful_text(section.get("path"))
+            or "value" not in section
+            or section["path"] in sections
+        ):
+            return None, None, _result(
+                rule_id, "UNKNOWN", None, "Result section path 唯一且可读取"
+            )
+        sections[section["path"]] = section["value"]
+    return snapshot, sections, None
+
+
+def _schema_evidence(analysis: dict, json_path: str, value: object) -> list[dict]:
+    """把业务规则事实定位到真实 Result 响应块，保持 FAIL/WARN 证据不变量。"""
+    call = _result_call(analysis)
+    return [_evidence(call, json_path, value)] if call is not None else []
+
+
+def _reply_roles(
+    analysis: dict, rule_id: str
+) -> tuple[list[dict] | None, dict | None]:
+    """读取 Reply roles；不适用或结构不足时直接返回稳定规则结果。"""
+    _, sections, early = _schema_rule_inputs(
+        analysis, rule_id, _REPLY_SCHEMA_VERSION
+    )
+    if early is not None:
+        return None, early
+    roles = sections.get("result.roles") if sections is not None else None
+    if not isinstance(roles, list) or any(not isinstance(role, dict) for role in roles):
+        return None, _result(rule_id, "UNKNOWN", roles, "result.roles 为对象数组")
+    return roles, None
+
+
+def check_reply_ids_unique(analysis: dict) -> dict:
+    """REPLY-001：全部 Role 下的 reply_id 必须为非空且全局唯一。"""
+    roles, early = _reply_roles(analysis, "REPLY-001")
+    if early is not None:
+        return early
+    reply_ids: list[str] = []
+    for role in roles or []:
+        replies = role.get("replies")
+        if not isinstance(replies, list) or any(
+            not isinstance(reply, dict) for reply in replies
+        ):
+            return _result("REPLY-001", "UNKNOWN", replies, "replies 为对象数组")
+        for reply in replies:
+            reply_id = reply.get("reply_id")
+            if not _is_meaningful_text(reply_id):
+                return _result("REPLY-001", "UNKNOWN", reply_id, "reply_id 可定位")
+            reply_ids.append(reply_id)
+    duplicates = sorted({item for item in reply_ids if reply_ids.count(item) > 1})
+    if duplicates:
+        return _result(
+            "REPLY-001",
+            "FAIL",
+            {"duplicate_reply_ids": duplicates},
+            "每个 reply_id 唯一",
+            _schema_evidence(
+                analysis, "result.roles[].replies[].reply_id", duplicates
+            ),
+        )
+    return _result(
+        "REPLY-001",
+        "PASS",
+        {"reply_count": len(reply_ids), "unique_reply_id_count": len(reply_ids)},
+        "每个 reply_id 唯一",
+    )
+
+
+def check_reply_one_top_pick_per_role(analysis: dict) -> dict:
+    """REPLY-002：每个 Role 最多一个 reply 显式标记为 Top Pick。"""
+    roles, early = _reply_roles(analysis, "REPLY-002")
+    if early is not None:
+        return early
+    counts: list[int] = []
+    for index, role in enumerate(roles or []):
+        replies = role.get("replies")
+        if not isinstance(replies, list) or any(
+            not isinstance(reply, dict) for reply in replies
+        ):
+            return _result("REPLY-002", "UNKNOWN", replies, "replies 为对象数组")
+        count = sum(reply.get("is_top_pick") is True for reply in replies)
+        counts.append(count)
+        if count > 1:
+            return _result(
+                "REPLY-002",
+                "FAIL",
+                {"role_index": index, "top_pick_count": count},
+                "每个 Role 最多一个 is_top_pick=true",
+                _schema_evidence(
+                    analysis, f"result.roles[{index}].replies", replies
+                ),
+            )
+    return _result("REPLY-002", "PASS", counts, "每个 Role 最多一个 Top Pick")
+
+
+def check_reply_top_pick_reference(analysis: dict) -> dict:
+    """REPLY-003：每个 top_pick.reply_id 必须引用同 Role 的 replies。"""
+    roles, early = _reply_roles(analysis, "REPLY-003")
+    if early is not None:
+        return early
+    for index, role in enumerate(roles or []):
+        replies = role.get("replies")
+        top_pick = role.get("top_pick")
+        if not isinstance(replies, list) or not isinstance(top_pick, dict):
+            return _result("REPLY-003", "UNKNOWN", top_pick, "top_pick 与 replies 可用")
+        reply_ids = {
+            reply.get("reply_id")
+            for reply in replies
+            if isinstance(reply, dict) and _is_meaningful_text(reply.get("reply_id"))
+        }
+        top_pick_id = top_pick.get("reply_id")
+        if not _is_meaningful_text(top_pick_id):
+            return _result("REPLY-003", "UNKNOWN", top_pick_id, "top_pick.reply_id 可定位")
+        if top_pick_id not in reply_ids:
+            return _result(
+                "REPLY-003",
+                "FAIL",
+                top_pick_id,
+                sorted(reply_ids),
+                _schema_evidence(
+                    analysis, f"result.roles[{index}].top_pick.reply_id", top_pick_id
+                ),
+            )
+    return _result("REPLY-003", "PASS", "all referenced", "Top Pick 引用已有 Reply")
+
+
+def check_reply_top_pick_text(analysis: dict) -> dict:
+    """REPLY-004：Top Pick 的冗余文案必须与被引用 Reply 完全一致。"""
+    roles, early = _reply_roles(analysis, "REPLY-004")
+    if early is not None:
+        return early
+    for index, role in enumerate(roles or []):
+        replies = role.get("replies")
+        top_pick = role.get("top_pick")
+        if not isinstance(replies, list) or not isinstance(top_pick, dict):
+            return _result("REPLY-004", "UNKNOWN", top_pick, "top_pick 与 replies 可用")
+        top_pick_id = top_pick.get("reply_id")
+        referenced = next(
+            (
+                reply
+                for reply in replies
+                if isinstance(reply, dict) and reply.get("reply_id") == top_pick_id
+            ),
+            None,
+        )
+        if referenced is None:
+            return _result("REPLY-004", "UNKNOWN", top_pick_id, "Top Pick 引用可解析")
+        expected_text = referenced.get("text")
+        actual_text = top_pick.get("text")
+        if not isinstance(expected_text, str) or not isinstance(actual_text, str):
+            return _result("REPLY-004", "UNKNOWN", actual_text, "两处文案可定位")
+        if actual_text != expected_text:
+            return _result(
+                "REPLY-004",
+                "FAIL",
+                actual_text,
+                expected_text,
+                _schema_evidence(
+                    analysis, f"result.roles[{index}].top_pick.text", actual_text
+                ),
+            )
+    return _result("REPLY-004", "PASS", "all matched", "Top Pick 文案与 Reply 一致")
+
+
+def check_reply_alternatives(analysis: dict) -> dict:
+    """REPLY-005：alternatives ID 多重集合等于非 Top Pick Reply ID。"""
+    roles, early = _reply_roles(analysis, "REPLY-005")
+    if early is not None:
+        return early
+    for index, role in enumerate(roles or []):
+        replies = role.get("replies")
+        alternatives = role.get("alternatives")
+        if (
+            not isinstance(replies, list)
+            or not isinstance(alternatives, list)
+            or any(not isinstance(item, dict) for item in replies + alternatives)
+        ):
+            return _result("REPLY-005", "UNKNOWN", alternatives, "Reply/alternative 数组可用")
+        expected_ids = [
+            item.get("reply_id")
+            for item in replies
+            if item.get("is_top_pick") is not True
+        ]
+        actual_ids = [item.get("reply_id") for item in alternatives]
+        if any(not _is_meaningful_text(item) for item in expected_ids + actual_ids):
+            return _result("REPLY-005", "UNKNOWN", actual_ids, "alternative reply_id 可定位")
+        if sorted(actual_ids) != sorted(expected_ids):
+            return _result(
+                "REPLY-005",
+                "FAIL",
+                actual_ids,
+                expected_ids,
+                _schema_evidence(
+                    analysis, f"result.roles[{index}].alternatives", actual_ids
+                ),
+            )
+    return _result("REPLY-005", "PASS", "all matched", "Alternatives 与非 Top Pick 一致")
+
+
+def check_reply_role_ranks(analysis: dict) -> dict:
+    """REPLY-006：Role rank 必须是可排序的唯一整数。"""
+    roles, early = _reply_roles(analysis, "REPLY-006")
+    if early is not None:
+        return early
+    ranks = [role.get("rank") for role in roles or []]
+    if any(type(rank) is not int for rank in ranks):
+        return _result("REPLY-006", "UNKNOWN", ranks, "Role rank 为整数")
+    duplicates = sorted({rank for rank in ranks if ranks.count(rank) > 1})
+    if duplicates:
+        return _result(
+            "REPLY-006",
+            "FAIL",
+            {"duplicate_ranks": duplicates},
+            "Role rank 不重复且可从小到大排序",
+            _schema_evidence(analysis, "result.roles[].rank", duplicates),
+        )
+    return _result("REPLY-006", "PASS", sorted(ranks), "Role rank 唯一且可排序")
+
+
+def check_reply_degradation_consistency(analysis: dict) -> dict:
+    """REPLY-007：降级 warning 存在而标志为 false 时输出可定位 WARN。"""
+    _, sections, early = _schema_rule_inputs(
+        analysis, "REPLY-007", _REPLY_SCHEMA_VERSION
+    )
+    if early is not None:
+        return early
+    degradation = sections.get("result.degradation") if sections else None
+    warnings = sections.get("result.warnings") if sections else None
+    if not isinstance(degradation, dict) or not isinstance(warnings, list):
+        return _result("REPLY-007", "UNKNOWN", None, "degradation/warnings 可用")
+    is_degraded = degradation.get("is_degraded")
+    if type(is_degraded) is not bool:
+        return _result("REPLY-007", "UNKNOWN", is_degraded, "is_degraded 为布尔值")
+    degradation_warnings = []
+    for warning in warnings:
+        warning_text = (
+            warning
+            if isinstance(warning, str)
+            else warning.get("code") if isinstance(warning, dict) else None
+        )
+        if isinstance(warning_text, str) and "DEGRAD" in warning_text.upper():
+            degradation_warnings.append(warning)
+    actual = {"is_degraded": is_degraded, "warnings": warnings}
+    if degradation_warnings and not is_degraded:
+        return _result(
+            "REPLY-007",
+            "WARN",
+            actual,
+            "含降级 warning 时 is_degraded=true",
+            _schema_evidence(
+                analysis, "result.degradation.is_degraded", is_degraded
+            ),
+        )
+    return _result("REPLY-007", "PASS", actual, "降级 warning 与标志一致")
+
+
+def check_reply_person_history_nullability(analysis: dict) -> dict:
+    """REPLY-008：未使用历史时允许 null；使用历史时 person_id 必须非空。"""
+    _, sections, early = _schema_rule_inputs(
+        analysis, "REPLY-008", _REPLY_SCHEMA_VERSION
+    )
+    if early is not None:
+        return early
+    association = sections.get("result.association") if sections else None
+    if not isinstance(association, dict):
+        return _result("REPLY-008", "UNKNOWN", association, "association 可用")
+    used = association.get("person_history_used")
+    person_id = association.get("person_id")
+    if type(used) is not bool:
+        return _result("REPLY-008", "UNKNOWN", used, "person_history_used 为布尔值")
+    if used and not _is_meaningful_text(person_id):
+        return _result(
+            "REPLY-008",
+            "FAIL",
+            {"person_history_used": used, "person_id": person_id},
+            "使用人物历史时 person_id 非空",
+            _schema_evidence(analysis, "result.association.person_id", person_id),
+        )
+    return _result(
+        "REPLY-008",
+        "PASS",
+        {"person_history_used": used, "person_id": person_id},
+        "person_history_used=false 时允许 person_id=null",
+    )
+
+
+def _analysis_sections(
+    analysis: dict, rule_id: str
+) -> tuple[dict[str, object] | None, dict | None]:
+    """读取 Analysis 业务分组，并复用统一 Schema 适用性语义。"""
+    _, sections, early = _schema_rule_inputs(
+        analysis, rule_id, _ANALYSIS_SCHEMA_VERSION
+    )
+    return sections, early
+
+
+def _integer_values(mapping: dict, keys: tuple[str, ...]) -> list[int] | None:
+    """仅接受 JSON 整数计数，排除 bool 和缺失字段。"""
+    values = [mapping.get(key) for key in keys]
+    return values if all(type(value) is int for value in values) else None
+
+
+def check_analysis_asset_counts(analysis: dict) -> dict:
+    """ANALYSIS-001：有效与忽略资源计数之和等于上传资源数。"""
+    sections, early = _analysis_sections(analysis, "ANALYSIS-001")
+    if early is not None:
+        return early
+    scope = sections.get("result.analysis_scope") if sections else None
+    if not isinstance(scope, dict):
+        return _result("ANALYSIS-001", "UNKNOWN", scope, "analysis_scope 可用")
+    keys = ("uploaded_asset_count", "valid_asset_count", "ignored_asset_count")
+    values = _integer_values(scope, keys)
+    if values is None:
+        return _result("ANALYSIS-001", "UNKNOWN", scope, "三项资源计数为整数")
+    uploaded, valid, ignored = values
+    actual = dict(zip(keys, values))
+    if valid + ignored != uploaded:
+        return _result(
+            "ANALYSIS-001",
+            "FAIL",
+            actual,
+            "valid_asset_count + ignored_asset_count = uploaded_asset_count",
+            _schema_evidence(analysis, "result.analysis_scope", actual),
+        )
+    return _result("ANALYSIS-001", "PASS", actual, "资源计数守恒")
+
+
+def check_analysis_valid_message_count(analysis: dict) -> dict:
+    """ANALYSIS-002：分析消息数不得超过有效消息数。"""
+    sections, early = _analysis_sections(analysis, "ANALYSIS-002")
+    if early is not None:
+        return early
+    scope = sections.get("result.analysis_scope") if sections else None
+    if not isinstance(scope, dict):
+        return _result("ANALYSIS-002", "UNKNOWN", scope, "analysis_scope 可用")
+    keys = ("valid_message_count", "analyzed_message_count")
+    values = _integer_values(scope, keys)
+    if values is None:
+        return _result("ANALYSIS-002", "UNKNOWN", scope, "两项消息计数为整数")
+    valid, analyzed = values
+    actual = dict(zip(keys, values))
+    if analyzed > valid:
+        return _result(
+            "ANALYSIS-002",
+            "FAIL",
+            actual,
+            "analyzed_message_count <= valid_message_count",
+            _schema_evidence(
+                analysis, "result.analysis_scope.analyzed_message_count", analyzed
+            ),
+        )
+    return _result("ANALYSIS-002", "PASS", actual, "分析消息数不超过有效消息数")
+
+
+def check_analysis_participant_counts(analysis: dict) -> dict:
+    """ANALYSIS-003：双方消息计数必须等于 analyzed_message_count。"""
+    sections, early = _analysis_sections(analysis, "ANALYSIS-003")
+    if early is not None:
+        return early
+    scope = sections.get("result.analysis_scope") if sections else None
+    dashboard = sections.get("result.overview.dashboard") if sections else None
+    message_counts = dashboard.get("message_counts") if isinstance(dashboard, dict) else None
+    if not isinstance(scope, dict) or not isinstance(message_counts, dict):
+        return _result("ANALYSIS-003", "UNKNOWN", None, "消息计数分组可用")
+    participant_values = _integer_values(message_counts, ("user", "other"))
+    analyzed_values = _integer_values(scope, ("analyzed_message_count",))
+    if participant_values is None or analyzed_values is None:
+        return _result("ANALYSIS-003", "UNKNOWN", None, "三项消息计数为整数")
+    user_count, other_count = participant_values
+    analyzed = analyzed_values[0]
+    actual = {"user": user_count, "other": other_count, "analyzed": analyzed}
+    if user_count + other_count != analyzed:
+        return _result(
+            "ANALYSIS-003",
+            "FAIL",
+            actual,
+            "user + other = analyzed_message_count",
+            _schema_evidence(
+                analysis, "result.overview.dashboard.message_counts", actual
+            ),
+        )
+    return _result("ANALYSIS-003", "PASS", actual, "双方消息数等于分析消息总数")
+
+
+def check_analysis_signal_ids(analysis: dict) -> dict:
+    """ANALYSIS-004：signal_id 只要求在各自类型数组内唯一。"""
+    sections, early = _analysis_sections(analysis, "ANALYSIS-004")
+    if early is not None:
+        return early
+    signals = sections.get("result.chat_signals") if sections else None
+    if not isinstance(signals, dict):
+        return _result("ANALYSIS-004", "UNKNOWN", signals, "chat_signals 可用")
+    counts: dict[str, int] = {}
+    for group in _SIGNAL_GROUPS:
+        items = signals.get(group)
+        if not isinstance(items, list) or any(not isinstance(item, dict) for item in items):
+            return _result("ANALYSIS-004", "UNKNOWN", items, f"{group} 为对象数组")
+        ids = [item.get("signal_id") for item in items]
+        if any(not _is_meaningful_text(item) for item in ids):
+            return _result("ANALYSIS-004", "UNKNOWN", ids, "signal_id 可定位")
+        duplicates = sorted({item for item in ids if ids.count(item) > 1})
+        if duplicates:
+            return _result(
+                "ANALYSIS-004",
+                "FAIL",
+                {"signal_type": group, "duplicate_signal_ids": duplicates},
+                "signal_id 在同一类型数组中唯一",
+                _schema_evidence(
+                    analysis, f"result.chat_signals.{group}[].signal_id", duplicates
+                ),
+            )
+        counts[group] = len(ids)
+    return _result("ANALYSIS-004", "PASS", counts, "同类型 Signal ID 唯一")
+
+
+def check_analysis_event_ids(analysis: dict) -> dict:
+    """ANALYSIS-005：event_id 在整个 key_events 分组中全局唯一。"""
+    sections, early = _analysis_sections(analysis, "ANALYSIS-005")
+    if early is not None:
+        return early
+    events = sections.get("result.key_events") if sections else None
+    if not isinstance(events, dict):
+        return _result("ANALYSIS-005", "UNKNOWN", events, "key_events 可用")
+    event_ids: list[str] = []
+    for group in _EVENT_GROUPS:
+        items = events.get(group)
+        if not isinstance(items, list) or any(not isinstance(item, dict) for item in items):
+            return _result("ANALYSIS-005", "UNKNOWN", items, f"{group} 为对象数组")
+        ids = [item.get("event_id") for item in items]
+        if any(not _is_meaningful_text(item) for item in ids):
+            return _result("ANALYSIS-005", "UNKNOWN", ids, "event_id 可定位")
+        event_ids.extend(ids)
+    duplicates = sorted({item for item in event_ids if event_ids.count(item) > 1})
+    if duplicates:
+        return _result(
+            "ANALYSIS-005",
+            "FAIL",
+            {"duplicate_event_ids": duplicates},
+            "event_id 在 key_events 中唯一",
+            _schema_evidence(analysis, "result.key_events", duplicates),
+        )
+    return _result("ANALYSIS-005", "PASS", len(event_ids), "Key Event ID 唯一")
+
+
+def check_analysis_evidence_message_ids(analysis: dict) -> dict:
+    """ANALYSIS-006：每个 Signal/Event 的 evidence_message_ids 数组非空。"""
+    sections, early = _analysis_sections(analysis, "ANALYSIS-006")
+    if early is not None:
+        return early
+    signals = sections.get("result.chat_signals") if sections else None
+    events = sections.get("result.key_events") if sections else None
+    if not isinstance(signals, dict) or not isinstance(events, dict):
+        return _result("ANALYSIS-006", "UNKNOWN", None, "Signal/Event 分组可用")
+    empty_paths: list[str] = []
+    for root, groups, container in (
+        ("result.chat_signals", _SIGNAL_GROUPS, signals),
+        ("result.key_events", _EVENT_GROUPS, events),
+    ):
+        for group in groups:
+            items = container.get(group)
+            if not isinstance(items, list) or any(
+                not isinstance(item, dict) for item in items
+            ):
+                return _result("ANALYSIS-006", "UNKNOWN", items, f"{group} 为对象数组")
+            for index, item in enumerate(items):
+                evidence_ids = item.get("evidence_message_ids")
+                if not isinstance(evidence_ids, list) or not evidence_ids:
+                    empty_paths.append(
+                        f"{root}.{group}[{index}].evidence_message_ids"
+                    )
+    if empty_paths:
+        return _result(
+            "ANALYSIS-006",
+            "FAIL",
+            empty_paths,
+            "Signal/Event 的 evidence_message_ids 非空",
+            _schema_evidence(analysis, empty_paths[0], []),
+        )
+    return _result("ANALYSIS-006", "PASS", "all non-empty", "证据消息数组非空")
+
+
+def check_analysis_empty_value_summary(analysis: dict) -> dict:
+    """ANALYSIS-007：只统计 Dashboard 指定 null/空数组，不生成告警。"""
+    sections, early = _analysis_sections(analysis, "ANALYSIS-007")
+    if early is not None:
+        return early
+    dashboard = sections.get("result.overview.dashboard") if sections else None
+    if not isinstance(dashboard, dict):
+        return _result("ANALYSIS-007", "UNKNOWN", dashboard, "Dashboard 可用")
+    effort = dashboard.get("effort")
+    match_degree = dashboard.get("match_degree")
+    keywords = dashboard.get("keywords")
+    if (
+        not isinstance(effort, dict)
+        or not isinstance(match_degree, dict)
+        or not isinstance(keywords, dict)
+        or any(key not in effort for key in ("you_score", "them_score"))
+        or "score" not in match_degree
+        or any(key not in keywords for key in ("user_focus", "other_focus"))
+    ):
+        return _result("ANALYSIS-007", "UNKNOWN", None, "指定 Dashboard 字段可定位")
+    actual = {
+        "effort_null_count": sum(
+            effort[key] is None for key in ("you_score", "them_score")
+        ),
+        "match_degree_null_count": int(match_degree["score"] is None),
+        "keywords_empty_array_count": sum(
+            keywords[key] == [] for key in ("user_focus", "other_focus")
+        ),
+    }
+    return _result("ANALYSIS-007", "PASS", actual, "仅汇总，不把空值统计判为异常")
+
+
+def check_analysis_warning_summary(analysis: dict) -> dict:
+    """ANALYSIS-008：原样汇总 warnings 数组，不依据内容推断质量。"""
+    sections, early = _analysis_sections(analysis, "ANALYSIS-008")
+    if early is not None:
+        return early
+    warnings = sections.get("result.warnings") if sections else None
+    if not isinstance(warnings, list):
+        return _result("ANALYSIS-008", "UNKNOWN", warnings, "warnings 数组可用")
+    return _result(
+        "ANALYSIS-008",
+        "PASS",
+        {"warning_count": len(warnings), "warnings": warnings},
+        "仅汇总 Analysis warnings",
+    )
+
+
 GENERIC_RULES = (
     check_parse_complete,
     check_gateway_pairing,
@@ -1337,13 +1959,486 @@ RESULT_RULES = (
     check_result_empty_health,
     check_unknown_result_fields_preserved,
 )
+REPLY_RULES = (
+    check_reply_ids_unique,
+    check_reply_one_top_pick_per_role,
+    check_reply_top_pick_reference,
+    check_reply_top_pick_text,
+    check_reply_alternatives,
+    check_reply_role_ranks,
+    check_reply_degradation_consistency,
+    check_reply_person_history_nullability,
+)
+ANALYSIS_RULES = (
+    check_analysis_asset_counts,
+    check_analysis_valid_message_count,
+    check_analysis_participant_counts,
+    check_analysis_signal_ids,
+    check_analysis_event_ids,
+    check_analysis_evidence_message_ids,
+    check_analysis_empty_value_summary,
+    check_analysis_warning_summary,
+)
+
+
+def _normalized_secret_key(key: object) -> str:
+    """把 JSON 键规范为脱敏规则使用的小写下划线形式。"""
+    return str(key).lower().replace("-", "_")
+
+
+def _redacted_signed_url(value: str) -> str | None:
+    """识别签名 URL，并在保留对象路径的同时移除整个查询串。"""
+    parsed = urlsplit(value)
+    if not parsed.scheme or not parsed.netloc or not parsed.query:
+        return None
+    query_keys = {
+        _normalized_secret_key(query_key)
+        for query_key, _query_value in parse_qsl(
+            parsed.query, keep_blank_values=True
+        )
+    }
+    has_signature = any(
+        "signature" in query_key or query_key == "q_sign_algorithm"
+        for query_key in query_keys
+    )
+    if not has_signature:
+        return None
+    # 不使用 urlunsplit，避免固定占位符中的方括号被百分号编码。
+    return f"{parsed.scheme}://{parsed.netloc}{parsed.path}?{_REDACTED}"
+
+
+def _is_long_base64_candidate(value: str) -> bool:
+    """判断连续 256 字符以上的标准 Base64 候选值。"""
+    return len(value) >= 256 and _BASE64_CANDIDATE_RE.fullmatch(value) is not None
+
+
+def _append_truncation_warnings(snapshot: dict, paths: list[str]) -> None:
+    """在新建的 task snapshot 上补充去重后的字段截断告警。"""
+    if not paths:
+        return
+    warnings = snapshot.get("warnings")
+    if not isinstance(warnings, list):
+        warnings = []
+        snapshot["warnings"] = warnings
+    existing = {
+        (warning.get("code"), warning.get("json_path"))
+        for warning in warnings
+        if isinstance(warning, dict)
+    }
+    for path in paths:
+        identity = ("VALUE_TRUNCATED", path)
+        if identity in existing:
+            continue
+        warnings.append(
+            {
+                "code": "VALUE_TRUNCATED",
+                "message": _TRUNCATION_WARNING_MESSAGE,
+                "json_path": path,
+            }
+        )
+        existing.add(identity)
+
+
+def _redact_dating_value(
+    value: object,
+    *,
+    key: object = None,
+    field_path: str | None = None,
+    truncated_field_paths: list[str],
+) -> object:
+    """递归构造脱敏副本，并记录发生自由文本截断的 Result Field。"""
+    if key is not None and _normalized_secret_key(key) in _SENSITIVE_KEYS:
+        return _REDACTED
+
+    if isinstance(value, dict):
+        node_path = value.get("path")
+        is_field_node = isinstance(node_path, str) and "value" in value
+        redacted = {}
+        for child_key, child_value in value.items():
+            child_field_path = (
+                node_path if is_field_node and child_key == "value" else field_path
+            )
+            redacted[child_key] = _redact_dating_value(
+                child_value,
+                key=child_key,
+                field_path=child_field_path,
+                truncated_field_paths=truncated_field_paths,
+            )
+        if is_field_node and node_path in truncated_field_paths:
+            redacted["value_truncated"] = True
+
+        # 仅修改刚构造的副本；父级 analysis 和 snapshot 入口都执行去重，
+        # 从而兼容直接脱敏 snapshot 与脱敏完整分析响应两种调用方式。
+        if "result_fields" in redacted:
+            _append_truncation_warnings(redacted, truncated_field_paths)
+        snapshot = redacted.get("task_snapshot")
+        if isinstance(snapshot, dict):
+            _append_truncation_warnings(snapshot, truncated_field_paths)
+        return redacted
+
+    if isinstance(value, list):
+        return [
+            _redact_dating_value(
+                item,
+                field_path=field_path,
+                truncated_field_paths=truncated_field_paths,
+            )
+            for item in value
+        ]
+
+    if not isinstance(value, str):
+        return value
+
+    signed_url = _redacted_signed_url(value)
+    if signed_url is not None:
+        return signed_url
+    if value.lower().startswith("data:") and ";base64," in value.lower():
+        return f"[REDACTED_BASE64 length={len(value)}]"
+    if _is_long_base64_candidate(value):
+        return f"[REDACTED_BASE64 length={len(value)}]"
+    if len(value) > _MAX_TEXT_VALUE_CHARS:
+        if field_path is not None and field_path not in truncated_field_paths:
+            truncated_field_paths.append(field_path)
+        return value[:_MAX_TEXT_VALUE_CHARS]
+    return value
+
+
+def redact_dating_response(value: object, key: str | None = None) -> object:
+    """返回 Dating 响应的递归脱敏副本，不修改调用方传入对象。
+
+    敏感键、签名 URL 和 Base64 候选值使用固定占位符；其他超过
+    20,000 字符的自由文本被截断。若超限值来自 Result Field，还会设置
+    ``value_truncated`` 并在 task snapshot 中生成带字段路径的稳定告警。
+    """
+    return _redact_dating_value(
+        value,
+        key=key,
+        truncated_field_paths=[],
+    )
+
+
+def _report_value(value: object) -> str:
+    """把结构化值稳定序列化为单个 Markdown 单元格。"""
+    if isinstance(value, str):
+        rendered = value
+    else:
+        rendered = json.dumps(
+            value,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    return rendered.replace("|", "\\|").replace("\r\n", "<br>").replace(
+        "\n", "<br>"
+    )
+
+
+def _report_table(headers: tuple[str, ...], rows: list[tuple[object, ...]]) -> list[str]:
+    """渲染列数固定的 Markdown 表格；空表也保留表头以稳定模板。"""
+    lines = [
+        "| " + " | ".join(headers) + " |",
+        "| " + " | ".join("---" for _header in headers) + " |",
+    ]
+    lines.extend(
+        "| " + " | ".join(_report_value(cell) for cell in row) + " |"
+        for row in rows
+    )
+    return lines
+
+
+def _warning_location(warning: dict) -> object:
+    """提取 warning 已有的块级或 JSON 路径证据，不制造具体行定位。"""
+    location = {
+        key: warning[key]
+        for key in (
+            "call_id",
+            "method",
+            "line",
+            "line_start",
+            "line_end",
+            "json_path",
+        )
+        if warning.get(key) is not None
+    }
+    evidence = warning.get("evidence")
+    if evidence:
+        location["evidence"] = evidence
+    return location or None
+
+
+def _report_overview(analysis: dict, checks: list[dict]) -> list[str]:
+    """生成总体结论，只汇总已有事实和确定性计数。"""
+    snapshot = analysis.get("task_snapshot")
+    snapshot = snapshot if isinstance(snapshot, dict) else {}
+    summary = analysis.get("summary")
+    summary = summary if isinstance(summary, dict) else {}
+    abnormal_calls = sum(
+        value
+        for value in (
+            summary.get("http_error_count"),
+            summary.get("gateway_error_count"),
+            summary.get("business_error_count"),
+        )
+        if isinstance(value, int) and not isinstance(value, bool)
+    )
+    outcome_counts = {
+        outcome: sum(check.get("outcome") == outcome for check in checks)
+        for outcome in ("FAIL", "WARN", "UNKNOWN")
+    }
+    return [
+        f"- verdict: `{compute_dating_verdict(checks)}`",
+        f"- 任务类型: `{_report_value(snapshot.get('task_type'))}`",
+        f"- Schema: `{_report_value(snapshot.get('schema_version'))}`",
+        "- 接口调用数: "
+        f"{_report_value(summary.get('logical_interface_call_count', len(analysis.get('calls', []))))}",
+        f"- 异常调用数: {abnormal_calls}",
+        "- 规则计数: "
+        f"FAIL={outcome_counts['FAIL']}, WARN={outcome_counts['WARN']}, "
+        f"UNKNOWN={outcome_counts['UNKNOWN']}",
+    ]
+
+
+def _report_calls(analysis: dict) -> list[str]:
+    """按 parser 调用顺序输出接口、状态、追踪 ID 与耗时。"""
+    rows = []
+    calls = analysis.get("calls")
+    calls = calls if isinstance(calls, list) else []
+    for index, call in enumerate(calls, start=1):
+        if not isinstance(call, dict):
+            continue
+        response = call.get("response")
+        response = response if isinstance(response, dict) else {}
+        gateway = response.get("gateway")
+        gateway = gateway if isinstance(gateway, dict) else {}
+        rows.append(
+            (
+                call.get("sequence", index),
+                call.get("service_name"),
+                call.get("method_name"),
+                call.get("result_class"),
+                gateway.get("request_id"),
+                response.get("elapsed_ms"),
+            )
+        )
+    return _report_table(
+        ("序号", "接口名", "method", "状态", "request_id", "耗时(ms)"), rows
+    )
+
+
+def _report_uploads(snapshot: dict) -> list[str]:
+    """输出 analyzer 已确定关联的上传资产，不重新猜测关联关系。"""
+    rows = []
+    assets = snapshot.get("input_assets")
+    assets = assets if isinstance(assets, list) else []
+    for asset in assets:
+        if not isinstance(asset, dict):
+            continue
+        rows.append(
+            (
+                asset.get("asset_id"),
+                asset.get("purpose"),
+                asset.get("upload_state"),
+                asset.get("prepare_status"),
+                asset.get("put_http_status"),
+                asset.get("complete_status"),
+                asset.get("used_by_task"),
+                asset.get("object_path"),
+            )
+        )
+    return _report_table(
+        (
+            "asset_id",
+            "purpose",
+            "upload_state",
+            "Prepare",
+            "PUT",
+            "Complete",
+            "used_by_task",
+            "object_path",
+        ),
+        rows,
+    )
+
+
+def _report_lifecycle(snapshot: dict) -> list[str]:
+    """输出完整轮询状态序列及 analyzer 聚合的终态事实。"""
+    lifecycle = snapshot.get("lifecycle")
+    lifecycle = lifecycle if isinstance(lifecycle, dict) else {}
+    samples = snapshot.get("status_samples")
+    samples = samples if isinstance(samples, list) else []
+    statuses = [
+        sample.get("status")
+        for sample in samples
+        if isinstance(sample, dict)
+    ]
+    return [
+        f"- task_id: `{_report_value(snapshot.get('task_id'))}`",
+        f"- Create call: `{_report_value(snapshot.get('create_call_id'))}`",
+        f"- Poll count: {_report_value(lifecycle.get('poll_count'))}",
+        f"- Poll statuses: `{_report_value(statuses)}`",
+        f"- Final status: `{_report_value(lifecycle.get('final_status'))}`",
+        f"- Final phase: `{_report_value(lifecycle.get('final_phase'))}`",
+        f"- Final progress: {_report_value(lifecycle.get('final_progress_percent'))}",
+        f"- Terminal: {_report_value(lifecycle.get('terminal'))}",
+        f"- Duration(ms): {_report_value(lifecycle.get('duration_ms'))}",
+        f"- Result call: `{_report_value(snapshot.get('result_call_id'))}`",
+    ]
+
+
+def _report_result_summary(snapshot: dict) -> list[str]:
+    """按稳定 key 顺序输出摘要，并按 analyzer 的 section 顺序输出块值。"""
+    lines = [
+        f"- Schema status: `{_report_value(snapshot.get('schema_status'))}`",
+        "- Result payload present: "
+        f"{_report_value(snapshot.get('result_payload_present'))}",
+    ]
+    summary = snapshot.get("result_summary")
+    summary = summary if isinstance(summary, dict) else {}
+    lines.extend(
+        _report_table(
+            ("摘要字段", "值"),
+            [(key, summary[key]) for key in sorted(summary)],
+        )
+    )
+    sections = snapshot.get("result_sections")
+    sections = sections if isinstance(sections, list) else []
+    section_rows = [
+        (section.get("label"), section.get("path"), section.get("value"))
+        for section in sections
+        if isinstance(section, dict)
+    ]
+    lines.extend(["", "### Result Sections", ""])
+    lines.extend(_report_table(("label", "path", "value"), section_rows))
+    return lines
+
+
+def _report_result_fields(snapshot: dict) -> list[str]:
+    """输出 Task 5 字段索引的固定七列，不执行 Schema 二次投影。"""
+    fields = snapshot.get("result_fields")
+    fields = fields if isinstance(fields, list) else []
+    rows = [
+        (
+            field.get("path"),
+            field.get("value_type"),
+            field.get("presence"),
+            field.get("value"),
+            field.get("schema_known"),
+            field.get("source"),
+            field.get("value_truncated"),
+        )
+        for field in fields
+        if isinstance(field, dict)
+    ]
+    return _report_table(
+        (
+            "path",
+            "value_type",
+            "presence",
+            "value",
+            "schema_known",
+            "source",
+            "value_truncated",
+        ),
+        rows,
+    )
+
+
+def _report_checks(checks: list[dict]) -> list[str]:
+    """按固定 outcome 优先级排序，保留同 outcome 的输入顺序。"""
+    outcome_rank = {"FAIL": 0, "WARN": 1, "UNKNOWN": 2, "PASS": 3, "NA": 4}
+    indexed_checks = [
+        (index, check)
+        for index, check in enumerate(checks)
+        if isinstance(check, dict)
+    ]
+    indexed_checks.sort(
+        key=lambda item: (outcome_rank.get(item[1].get("outcome"), 5), item[0])
+    )
+    lines = []
+    for _index, check in indexed_checks:
+        lines.extend(
+            [
+                f"### [{check.get('outcome')}] {check.get('rule_id')} — {check.get('title')}",
+                "",
+                f"- priority: `{_report_value(check.get('priority'))}`",
+                f"- actual: `{_report_value(check.get('actual'))}`",
+                f"- expected: `{_report_value(check.get('expected'))}`",
+                f"- evidence: `{_report_value(check.get('evidence'))}`",
+                "",
+            ]
+        )
+    return lines
+
+
+def _report_warnings(analysis: dict, snapshot: dict) -> list[str]:
+    """汇总 parser 与 task warning，并按首次出现顺序去重。"""
+    candidates = []
+    for warning_group in (
+        analysis.get("parse_warnings"),
+        snapshot.get("warnings"),
+    ):
+        if isinstance(warning_group, list):
+            candidates.extend(warning_group)
+    rows = []
+    seen = set()
+    for warning in candidates:
+        if not isinstance(warning, dict):
+            continue
+        identity = _report_value(warning)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        rows.append(
+            (
+                warning.get("code"),
+                warning.get("message"),
+                _warning_location(warning),
+            )
+        )
+    return _report_table(("code", "message", "证据位置"), rows)
+
+
+def render_dating_report(analysis_result: dict, checks: list[dict]) -> str:
+    """由已脱敏结构化数据渲染固定 Markdown，不调用模型或推测原因。
+
+    入口仍执行一次递归脱敏，保证调用方即使误传内部原值，报告也不会泄漏
+    凭证、签名 URL、Base64 或超过长度上限的自由文本。
+    """
+    safe = redact_dating_response(
+        {"analysis_result": analysis_result, "checks": checks}
+    )
+    analysis = safe.get("analysis_result")
+    analysis = analysis if isinstance(analysis, dict) else {}
+    safe_checks = safe.get("checks")
+    safe_checks = safe_checks if isinstance(safe_checks, list) else []
+    snapshot = analysis.get("task_snapshot")
+    snapshot = snapshot if isinstance(snapshot, dict) else {}
+
+    sections = (
+        ("## 总体结论", _report_overview(analysis, safe_checks)),
+        ("## 接口调用链", _report_calls(analysis)),
+        ("## 上传资源", _report_uploads(snapshot)),
+        ("## 任务生命周期", _report_lifecycle(snapshot)),
+        ("## Result 摘要", _report_result_summary(snapshot)),
+        ("## Result 字段", _report_result_fields(snapshot)),
+        ("## 规则检查", _report_checks(safe_checks)),
+        ("## 解析警告", _report_warnings(analysis, snapshot)),
+    )
+    lines = ["# Dating 结构化接口日志分析", ""]
+    for heading, content in sections:
+        lines.extend([heading, ""])
+        lines.extend(content)
+        lines.append("")
+    return "\n".join(lines).rstrip() + "\n"
 
 
 def run_dating_checks(analysis: dict) -> list[dict]:
-    """按固定顺序运行当前 24 条规则并返回结构化检查列表。"""
+    """按固定顺序运行 24 条通用规则和 16 条 Schema 专属规则。"""
     checks = [rule(analysis) for rule in GENERIC_RULES]
     checks.extend(rule(analysis) for rule in TASK_RULES)
     checks.extend(rule(analysis) for rule in RESULT_RULES)
+    checks.extend(rule(analysis) for rule in REPLY_RULES)
+    checks.extend(rule(analysis) for rule in ANALYSIS_RULES)
     return checks
 
 

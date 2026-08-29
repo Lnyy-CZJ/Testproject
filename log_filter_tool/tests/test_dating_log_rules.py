@@ -41,6 +41,22 @@ EXPECTED_RULE_IDS = (
     "RESULT-004",
     "RESULT-005",
     "RESULT-006",
+    "REPLY-001",
+    "REPLY-002",
+    "REPLY-003",
+    "REPLY-004",
+    "REPLY-005",
+    "REPLY-006",
+    "REPLY-007",
+    "REPLY-008",
+    "ANALYSIS-001",
+    "ANALYSIS-002",
+    "ANALYSIS-003",
+    "ANALYSIS-004",
+    "ANALYSIS-005",
+    "ANALYSIS-006",
+    "ANALYSIS-007",
+    "ANALYSIS-008",
 )
 
 
@@ -89,6 +105,15 @@ def _check_by_id(checks: list[dict], rule_id: str) -> dict:
 def _call_by_id(analysis: dict, call_id: str) -> dict:
     """从 analyzer 保留的调用链中按 ID 获取真实证据块。"""
     return next(call for call in analysis["calls"] if call["call_id"] == call_id)
+
+
+def _section_value(analysis: dict, path: str) -> object:
+    """按稳定业务分组 path 取值，测试变异不绕过 Task 5 投影结构。"""
+    return next(
+        section["value"]
+        for section in analysis["task_snapshot"]["result_sections"]
+        if section["path"] == path
+    )
 
 
 def _assert_evidence_shape(testcase: unittest.TestCase, check: dict) -> None:
@@ -896,6 +921,267 @@ class ResultRuleTest(unittest.TestCase):
             "RESULT-006",
         ):
             self.assertEqual(_check_by_id(checks, rule_id)["outcome"], "UNKNOWN")
+
+
+class ReplyRuleTest(unittest.TestCase):
+    """覆盖 REPLY-001..008 的结构引用、排序与降级一致性。"""
+
+    RULE_IDS = tuple(f"REPLY-{index:03d}" for index in range(1, 9))
+
+    def test_reply_golden_has_exact_rule_order_and_outcomes(self):
+        checks = run_dating_checks(_load_analysis())
+        reply_checks = [check for check in checks if check["rule_id"].startswith("REPLY-")]
+
+        self.assertEqual(tuple(check["rule_id"] for check in reply_checks), self.RULE_IDS)
+        self.assertEqual(
+            {check["rule_id"]: check["outcome"] for check in reply_checks},
+            {
+                "REPLY-001": "PASS",
+                "REPLY-002": "PASS",
+                "REPLY-003": "PASS",
+                "REPLY-004": "PASS",
+                "REPLY-005": "PASS",
+                "REPLY-006": "PASS",
+                "REPLY-007": "WARN",
+                "REPLY-008": "PASS",
+            },
+        )
+        degradation = _check_by_id(checks, "REPLY-007")
+        _assert_evidence_shape(self, degradation)
+        self.assertEqual(degradation["actual"]["warnings"], ["SAFETY_DEGRADED"])
+
+    def test_reply_reference_and_rank_mutations_fail_independently(self):
+        def duplicate_reply_id(analysis: dict) -> None:
+            replies = _section_value(analysis, "result.roles")[0]["replies"]
+            replies[1]["reply_id"] = replies[0]["reply_id"]
+
+        def mark_two_top_picks(analysis: dict) -> None:
+            _section_value(analysis, "result.roles")[0]["replies"][1][
+                "is_top_pick"
+            ] = True
+
+        def break_top_pick_reference(analysis: dict) -> None:
+            _section_value(analysis, "result.roles")[0]["top_pick"][
+                "reply_id"
+            ] = "reply_missing"
+
+        def change_top_pick_text(analysis: dict) -> None:
+            _section_value(analysis, "result.roles")[0]["top_pick"][
+                "text"
+            ] = "different text"
+
+        def omit_alternative(analysis: dict) -> None:
+            _section_value(analysis, "result.roles")[0]["alternatives"].pop()
+
+        def duplicate_role_rank(analysis: dict) -> None:
+            roles = _section_value(analysis, "result.roles")
+            second = deepcopy(roles[0])
+            second["role_id"] = "second_role"
+            second["rank"] = roles[0]["rank"]
+            roles.append(second)
+
+        mutations = (
+            ("REPLY-001", duplicate_reply_id),
+            ("REPLY-002", mark_two_top_picks),
+            ("REPLY-003", break_top_pick_reference),
+            ("REPLY-004", change_top_pick_text),
+            ("REPLY-005", omit_alternative),
+            ("REPLY-006", duplicate_role_rank),
+        )
+        for rule_id, mutate in mutations:
+            with self.subTest(rule_id=rule_id):
+                analysis = _load_analysis()
+                mutate(analysis)
+
+                check = _check_by_id(run_dating_checks(analysis), rule_id)
+
+                self.assertEqual(check["outcome"], "FAIL")
+                _assert_evidence_shape(self, check)
+
+    def test_reply_degradation_and_person_history_boundaries(self):
+        coherent = _load_analysis()
+        _section_value(coherent, "result.degradation")["is_degraded"] = True
+        self.assertEqual(
+            _check_by_id(run_dating_checks(coherent), "REPLY-007")["outcome"],
+            "PASS",
+        )
+
+        no_warning = _load_analysis()
+        _section_value(no_warning, "result.warnings").clear()
+        self.assertEqual(
+            _check_by_id(run_dating_checks(no_warning), "REPLY-007")["outcome"],
+            "PASS",
+        )
+
+        inconsistent_history = _load_analysis()
+        association = _section_value(inconsistent_history, "result.association")
+        association["person_history_used"] = True
+        association["person_id"] = None
+        check = _check_by_id(
+            run_dating_checks(inconsistent_history), "REPLY-008"
+        )
+        self.assertEqual(check["outcome"], "FAIL")
+        _assert_evidence_shape(self, check)
+
+    def test_reply_rules_are_na_for_analysis_schema(self):
+        checks = run_dating_checks(
+            _load_analysis("relationship_analysis_multi_image_success.log")
+        )
+        self.assertEqual(
+            [_check_by_id(checks, rule_id)["outcome"] for rule_id in self.RULE_IDS],
+            ["NA"] * 8,
+        )
+
+
+class AnalysisRuleTest(unittest.TestCase):
+    """覆盖 ANALYSIS-001..008 的计数、ID、证据数组与事实汇总。"""
+
+    RULE_IDS = tuple(f"ANALYSIS-{index:03d}" for index in range(1, 9))
+
+    def test_analysis_golden_has_exact_rule_order_and_outcomes(self):
+        analysis = _load_analysis("relationship_analysis_multi_image_success.log")
+        checks = run_dating_checks(analysis)
+        schema_checks = [
+            check for check in checks if check["rule_id"].startswith("ANALYSIS-")
+        ]
+
+        self.assertEqual(tuple(check["rule_id"] for check in schema_checks), self.RULE_IDS)
+        self.assertEqual([check["outcome"] for check in schema_checks], ["PASS"] * 8)
+        self.assertEqual(
+            _check_by_id(checks, "ANALYSIS-007")["actual"],
+            {
+                "effort_null_count": 2,
+                "match_degree_null_count": 1,
+                "keywords_empty_array_count": 2,
+            },
+        )
+        self.assertEqual(
+            _check_by_id(checks, "ANALYSIS-008")["actual"],
+            {"warning_count": 0, "warnings": []},
+        )
+
+    def test_analysis_count_and_id_mutations_fail_independently(self):
+        def break_asset_count(analysis: dict) -> None:
+            _section_value(analysis, "result.analysis_scope")[
+                "valid_asset_count"
+            ] = 2
+
+        def exceed_valid_messages(analysis: dict) -> None:
+            _section_value(analysis, "result.analysis_scope")[
+                "analyzed_message_count"
+            ] = 39
+
+        def break_participant_sum(analysis: dict) -> None:
+            _section_value(analysis, "result.overview.dashboard")["message_counts"][
+                "user"
+            ] = 18
+
+        def duplicate_signal_id(analysis: dict) -> None:
+            signals = _section_value(analysis, "result.chat_signals")[
+                "positive_signals"
+            ]
+            signals[1]["signal_id"] = signals[0]["signal_id"]
+
+        def duplicate_event_id(analysis: dict) -> None:
+            events = _section_value(analysis, "result.key_events")
+            events["hidden_meanings"][0]["event_id"] = events["turning_points"][0][
+                "event_id"
+            ]
+
+        mutations = (
+            ("ANALYSIS-001", break_asset_count),
+            ("ANALYSIS-002", exceed_valid_messages),
+            ("ANALYSIS-003", break_participant_sum),
+            ("ANALYSIS-004", duplicate_signal_id),
+            ("ANALYSIS-005", duplicate_event_id),
+        )
+        for rule_id, mutate in mutations:
+            with self.subTest(rule_id=rule_id):
+                analysis = _load_analysis(
+                    "relationship_analysis_multi_image_success.log"
+                )
+                mutate(analysis)
+
+                check = _check_by_id(run_dating_checks(analysis), rule_id)
+
+                self.assertEqual(check["outcome"], "FAIL")
+                _assert_evidence_shape(self, check)
+
+    def test_signal_ids_only_need_uniqueness_within_the_same_type(self):
+        analysis = _load_analysis("relationship_analysis_multi_image_success.log")
+        signals = _section_value(analysis, "result.chat_signals")
+        signals["watch_signals"][0]["signal_id"] = signals["positive_signals"][0][
+            "signal_id"
+        ]
+
+        check = _check_by_id(run_dating_checks(analysis), "ANALYSIS-004")
+
+        self.assertEqual(check["outcome"], "PASS")
+
+    def test_empty_signal_or_event_evidence_fails(self):
+        mutations = (
+            lambda sections: sections["signals"]["positive_signals"][0].__setitem__(
+                "evidence_message_ids", []
+            ),
+            lambda sections: sections["events"]["turning_points"][0].__setitem__(
+                "evidence_message_ids", []
+            ),
+        )
+        for mutate in mutations:
+            with self.subTest(mutate=mutate):
+                analysis = _load_analysis(
+                    "relationship_analysis_multi_image_success.log"
+                )
+                mutate(
+                    {
+                        "signals": _section_value(analysis, "result.chat_signals"),
+                        "events": _section_value(analysis, "result.key_events"),
+                    }
+                )
+
+                check = _check_by_id(run_dating_checks(analysis), "ANALYSIS-006")
+
+                self.assertEqual(check["outcome"], "FAIL")
+                _assert_evidence_shape(self, check)
+
+    def test_analysis_diagnostics_summarize_without_warning(self):
+        analysis = _load_analysis("relationship_analysis_multi_image_success.log")
+        warnings = _section_value(analysis, "result.warnings")
+        warnings.append("PARTIAL_INPUT")
+        checks = run_dating_checks(analysis)
+
+        self.assertEqual(_check_by_id(checks, "ANALYSIS-007")["outcome"], "PASS")
+        warning_check = _check_by_id(checks, "ANALYSIS-008")
+        self.assertEqual(warning_check["outcome"], "PASS")
+        self.assertEqual(
+            warning_check["actual"],
+            {"warning_count": 1, "warnings": ["PARTIAL_INPUT"]},
+        )
+
+    def test_analysis_rules_are_na_for_reply_and_all_schema_rules_na_when_unknown(self):
+        reply_checks = run_dating_checks(_load_analysis())
+        self.assertEqual(
+            [
+                _check_by_id(reply_checks, rule_id)["outcome"]
+                for rule_id in self.RULE_IDS
+            ],
+            ["NA"] * 8,
+        )
+
+        unknown = _load_analysis()
+        result_call = _call_by_id(
+            unknown, unknown["task_snapshot"]["result_call_id"]
+        )
+        unknown_version = "dating.reply_generation.v99"
+        result_call["response"]["data"]["schema_version"] = unknown_version
+        result_call["response"]["data"]["result"]["schema_version"] = unknown_version
+        _rebuild_task_snapshot(unknown)
+        checks = run_dating_checks(unknown)
+        schema_rule_ids = ReplyRuleTest.RULE_IDS + self.RULE_IDS
+        self.assertEqual(
+            [_check_by_id(checks, rule_id)["outcome"] for rule_id in schema_rule_ids],
+            ["NA"] * 16,
+        )
 
 
 if __name__ == "__main__":
