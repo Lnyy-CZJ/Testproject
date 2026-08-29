@@ -1,13 +1,14 @@
-"""Dating Gateway 日志的确定性任务与上传生命周期聚合器。
+"""Dating Gateway 日志的确定性任务、上传和 Result Schema 聚合器。
 
 本模块只消费 :func:`gateway_log_parser.parse_interface_log` 的结构化结果，
-不访问网络、数据库、对象存储或 LLM。Task 4 仅负责基础聚合；结果 Schema
-投影、规则判定、报告、API 和脱敏由后续任务实现。
+不访问网络、数据库、对象存储或 LLM。当前仅实现 Task 5 的 Result 字段与
+业务摘要投影；规则判定、报告、API 和脱敏由后续任务实现。
 """
 
 from __future__ import annotations
 
 from datetime import datetime
+import re
 from urllib.parse import urlsplit
 
 from gateway_log_parser import PARSER_VERSION, parse_interface_log
@@ -16,6 +17,173 @@ from gateway_log_parser import PARSER_VERSION, parse_interface_log
 ANALYZER_VERSION = "dating-structured-v1"
 REPLY_SCHEMA_VERSION = "dating.reply_generation.v1"
 ANALYSIS_SCHEMA_VERSION = "dating.relationship_analysis.v1"
+MAX_TEXT_VALUE_CHARS = 20000
+MAX_FIELD_DEPTH = 50
+MAX_FIELD_COUNT = 20000
+
+REPLY_REQUIRED_PATHS = (
+    "result.schema_version",
+    "result.context",
+    "result.roles",
+    "result.association",
+    "result.degradation",
+    "result.warnings",
+)
+ANALYSIS_REQUIRED_PATHS = (
+    "result.schema_version",
+    "result.analysis_scope",
+    "result.overview",
+    "result.chat_signals",
+    "result.key_events",
+    "result.warnings",
+)
+
+# Schema path 使用 ``[]`` 表示任意数组项。集合完整覆盖两份 PRD 黄金样本；
+# 后续响应出现的新字段仍会进入字段索引，但会明确标记 schema_known=false。
+REPLY_SCHEMA_PATHS = frozenset(
+    (
+        "result",
+        "result.schema_version",
+        "result.context",
+        "result.context.conversation_stage",
+        "result.context.moment_type",
+        "result.context.reply_state",
+        "result.context.requested_intent",
+        "result.context.effective_goal",
+        "result.context.signals",
+        "result.context.signals[]",
+        "result.context.signals[].signal_id",
+        "result.context.signals[].value",
+        "result.context.signals[].message_id",
+        "result.comprehensive_analysis",
+        "result.comprehensive_analysis.whats_happening",
+        "result.whats_happening",
+        "result.whats_happening.title",
+        "result.whats_happening.summary",
+        "result.roles",
+        "result.roles[]",
+        "result.roles[].role_id",
+        "result.roles[].role_name",
+        "result.roles[].rank",
+        "result.roles[].is_best_fit",
+        "result.roles[].selection_rule_id",
+        "result.roles[].selection_reasons",
+        "result.roles[].selection_reasons[]",
+        "result.roles[].coach_note",
+        "result.roles[].replies",
+        "result.roles[].replies[]",
+        "result.roles[].replies[].reply_id",
+        "result.roles[].replies[].text",
+        "result.roles[].replies[].is_top_pick",
+        "result.roles[].top_pick",
+        "result.roles[].top_pick.reply_id",
+        "result.roles[].top_pick.text",
+        "result.roles[].alternatives",
+        "result.roles[].alternatives[]",
+        "result.roles[].alternatives[].reply_id",
+        "result.roles[].alternatives[].text",
+        "result.association",
+        "result.association.person_id",
+        "result.association.person_history_used",
+        "result.degradation",
+        "result.degradation.is_degraded",
+        "result.degradation.reason",
+        "result.warnings",
+        "result.warnings[]",
+    )
+)
+
+ANALYSIS_SCHEMA_PATHS = frozenset(
+    (
+        "result",
+        "result.schema_version",
+        "result.analysis_scope",
+        "result.analysis_scope.uploaded_asset_count",
+        "result.analysis_scope.valid_asset_count",
+        "result.analysis_scope.ignored_asset_count",
+        "result.analysis_scope.valid_message_count",
+        "result.analysis_scope.analyzed_message_count",
+        "result.analysis_scope.truncated_to_recent_300",
+        "result.overview",
+        "result.overview.insight_title",
+        "result.overview.insight_summary",
+        "result.overview.relationship_stage",
+        "result.overview.current_state",
+        "result.overview.reliability_level",
+        "result.overview.next_steps",
+        "result.overview.next_steps.action",
+        "result.overview.next_steps.communication",
+        "result.overview.next_steps.observation",
+        "result.overview.dashboard",
+        "result.overview.dashboard.message_counts",
+        "result.overview.dashboard.message_counts.user",
+        "result.overview.dashboard.message_counts.other",
+        "result.overview.dashboard.effort",
+        "result.overview.dashboard.effort.you_score",
+        "result.overview.dashboard.effort.them_score",
+        "result.overview.dashboard.match_degree",
+        "result.overview.dashboard.match_degree.score",
+        "result.overview.dashboard.match_degree.level",
+        "result.overview.dashboard.keywords",
+        "result.overview.dashboard.keywords.user_focus",
+        "result.overview.dashboard.keywords.other_focus",
+        "result.chat_signals",
+        "result.chat_signals.signal_summary",
+        "result.chat_signals.positive_signals",
+        "result.chat_signals.positive_signals[]",
+        "result.chat_signals.positive_signals[].signal_id",
+        "result.chat_signals.positive_signals[].text",
+        "result.chat_signals.positive_signals[].evidence_message_ids",
+        "result.chat_signals.positive_signals[].evidence_message_ids[]",
+        "result.chat_signals.watch_signals",
+        "result.chat_signals.watch_signals[]",
+        "result.chat_signals.watch_signals[].signal_id",
+        "result.chat_signals.watch_signals[].text",
+        "result.chat_signals.watch_signals[].evidence_message_ids",
+        "result.chat_signals.watch_signals[].evidence_message_ids[]",
+        "result.chat_signals.risk_signals",
+        "result.chat_signals.risk_signals[]",
+        "result.chat_signals.risk_signals[].signal_id",
+        "result.chat_signals.risk_signals[].text",
+        "result.chat_signals.risk_signals[].evidence_message_ids",
+        "result.chat_signals.risk_signals[].evidence_message_ids[]",
+        "result.key_events",
+        "result.key_events.turning_points",
+        "result.key_events.turning_points[]",
+        "result.key_events.turning_points[].event_id",
+        "result.key_events.turning_points[].event",
+        "result.key_events.turning_points[].takeaway",
+        "result.key_events.turning_points[].evidence_message_ids",
+        "result.key_events.turning_points[].evidence_message_ids[]",
+        "result.key_events.hidden_meanings",
+        "result.key_events.hidden_meanings[]",
+        "result.key_events.hidden_meanings[].event_id",
+        "result.key_events.hidden_meanings[].event",
+        "result.key_events.hidden_meanings[].takeaway",
+        "result.key_events.hidden_meanings[].evidence_message_ids",
+        "result.key_events.hidden_meanings[].evidence_message_ids[]",
+        "result.key_events.did_well",
+        "result.key_events.did_well[]",
+        "result.key_events.did_well[].event_id",
+        "result.key_events.did_well[].event",
+        "result.key_events.did_well[].takeaway",
+        "result.key_events.did_well[].evidence_message_ids",
+        "result.key_events.did_well[].evidence_message_ids[]",
+        "result.key_events.could_improve",
+        "result.key_events.could_improve[]",
+        "result.key_events.could_improve[].event_id",
+        "result.key_events.could_improve[].event",
+        "result.key_events.could_improve[].takeaway",
+        "result.key_events.could_improve[].evidence_message_ids",
+        "result.key_events.could_improve[].evidence_message_ids[]",
+        "result.warnings",
+        "result.warnings[]",
+    )
+)
+
+_FIELD_LABELS = {
+    "result.overview.dashboard.effort.you_score": "你的投入度",
+}
 
 MULTIPLE_TASKS_FOUND = "MULTIPLE_TASKS_FOUND"
 TASK_NOT_FOUND = "TASK_NOT_FOUND"
@@ -49,6 +217,30 @@ _RESULT_METHODS = {
 }
 _TASK_METHODS = frozenset((*_CREATE_METHODS, *_POLL_METHODS, *_RESULT_METHODS))
 _TERMINAL_STATUSES = frozenset(("succeeded", "failed", "cancelled", "canceled"))
+
+
+def classify_presence(value: object, *, missing: bool = False) -> str:
+    """区分字段缺失、显式 null 与不同类型的空值。
+
+    参数:
+        value: 已解析的 JSON 值；当 ``missing=True`` 时仅作为占位值。
+        missing: 已知 Schema 是否预期该字段、但响应中没有该字段。
+
+    返回:
+        PRD §6 定义的稳定 presence 字符串。布尔值 ``False`` 和数字 ``0``
+        都是有效值，因此统一归类为 ``PRESENT``。
+    """
+    if missing:
+        return "MISSING"
+    if value is None:
+        return "NULL"
+    if value == "":
+        return "EMPTY_STRING"
+    if isinstance(value, list) and not value:
+        return "EMPTY_ARRAY"
+    if isinstance(value, dict) and not value:
+        return "EMPTY_OBJECT"
+    return "PRESENT"
 
 
 def _request_params(call: dict) -> dict:
@@ -151,6 +343,328 @@ def _warning(code: str, message: str, **context: object) -> dict:
     warning = {"code": code, "message": message}
     warning.update({key: value for key, value in context.items() if value is not None})
     return warning
+
+
+def _normalized_schema_path(path: str) -> str:
+    """把实际数组索引归一化为 Schema 使用的 ``[]`` 模板。"""
+    return re.sub(r"\[\d+\]", "[]", path)
+
+
+def _field_identity(path: str, parent_path: str | None) -> tuple[str | None, int | None]:
+    """从字段 path 提取对象 key 或数组索引，两者不会同时存在。"""
+    if parent_path is not None and path.startswith(f"{parent_path}["):
+        suffix = path[len(parent_path) + 1 : -1]
+        if suffix.isdigit():
+            return None, int(suffix)
+    return path.rsplit(".", 1)[-1], None
+
+
+def _json_value_type(value: object, *, missing: bool = False) -> str:
+    """返回与 JSON 类型一致的稳定字段类型名称。"""
+    if missing:
+        return "missing"
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, str):
+        return "string"
+    if isinstance(value, (int, float)):
+        return "number"
+    if isinstance(value, list):
+        return "array"
+    if isinstance(value, dict):
+        return "object"
+    return type(value).__name__
+
+
+def _make_field_node(
+    value: object,
+    path: str,
+    parent_path: str | None,
+    source: dict,
+    known_paths: set[str],
+    *,
+    missing: bool = False,
+) -> tuple[dict, dict | None]:
+    """构造单个字段节点，并仅在自由文本超限时返回 warning。"""
+    key, array_index = _field_identity(path, parent_path)
+    normalized_path = _normalized_schema_path(path)
+    truncated = isinstance(value, str) and len(value) > MAX_TEXT_VALUE_CHARS
+    field_value = value[:MAX_TEXT_VALUE_CHARS] if truncated else value
+    field_source = {
+        "method": source.get("method"),
+        "call_id": source.get("call_id"),
+        "line_start": source.get("line_start"),
+        "line_end": source.get("line_end"),
+        # Task 5 只承诺 Result 响应块级证据，不能伪造具体 JSON key 行号。
+        "location_precision": "block",
+    }
+    field = {
+        "path": path,
+        "parent_path": parent_path,
+        "key": key,
+        "array_index": array_index,
+        "label": _FIELD_LABELS.get(
+            normalized_path, key if key is not None else f"[{array_index}]"
+        ),
+        "value": field_value,
+        "value_type": _json_value_type(value, missing=missing),
+        "presence": classify_presence(value, missing=missing),
+        "schema_known": missing or normalized_path in known_paths,
+        "value_truncated": truncated,
+        "source": field_source,
+    }
+    warning = None
+    if truncated:
+        warning = _warning(
+            "VALUE_TRUNCATED",
+            "字段文本超过 20000 字符，结果仅保留前 20000 字符",
+            json_path=path,
+        )
+    return field, warning
+
+
+def build_field_index(
+    result_payload: object,
+    *,
+    root_path: str,
+    source: dict,
+    known_paths: set[str] | frozenset[str] | None = None,
+    required_paths: tuple[str, ...] = (),
+    max_depth: int = MAX_FIELD_DEPTH,
+    max_fields: int = MAX_FIELD_COUNT,
+) -> tuple[list[dict], list[dict]]:
+    """递归生成 Result 字段索引和遍历 warning。
+
+    实际字段 path 保留数组索引；Schema 匹配使用 ``[]`` 模板。未知字段仍
+    完整输出但 ``schema_known=false``。遍历后为已知 Schema 的缺失必填项
+    追加 ``MISSING`` 节点，且所有节点只使用调用方提供的响应块级证据。
+    """
+    fields: list[dict] = []
+    warnings: list[dict] = []
+    known_path_set = set(known_paths or ())
+    field_limit_reached = False
+
+    def visit(
+        current: object, path: str, parent_path: str | None, depth: int
+    ) -> None:
+        nonlocal field_limit_reached
+        if field_limit_reached:
+            return
+        if depth > max_depth:
+            warnings.append(
+                _warning(
+                    "MAX_FIELD_DEPTH_REACHED",
+                    "Result 字段递归深度超过上限",
+                    json_path=path,
+                )
+            )
+            return
+        if len(fields) >= max_fields:
+            warnings.append(
+                _warning(
+                    "MAX_FIELD_COUNT_REACHED",
+                    "Result 字段节点数量达到上限",
+                    json_path=path,
+                )
+            )
+            field_limit_reached = True
+            return
+
+        field, field_warning = _make_field_node(
+            current, path, parent_path, source, known_path_set
+        )
+        fields.append(field)
+        if field_warning is not None:
+            warnings.append(field_warning)
+
+        if isinstance(current, dict):
+            for key, child in current.items():
+                visit(child, f"{path}.{key}", path, depth + 1)
+        elif isinstance(current, list):
+            for index, child in enumerate(current):
+                visit(child, f"{path}[{index}]", path, depth + 1)
+
+    visit(result_payload, root_path, None, 0)
+
+    present_schema_paths = {
+        _normalized_schema_path(field["path"])
+        for field in fields
+        if field["presence"] != "MISSING"
+    }
+    for required_path in required_paths:
+        if required_path in present_schema_paths or len(fields) >= max_fields:
+            continue
+        parent_path = required_path.rsplit(".", 1)[0] if "." in required_path else None
+        field, _ = _make_field_node(
+            None,
+            required_path,
+            parent_path,
+            source,
+            known_path_set,
+            missing=True,
+        )
+        fields.append(field)
+
+    return fields, warnings
+
+
+def _field_health(fields: list[dict]) -> dict:
+    """按 presence 和 Schema 归属计算纯事实型字段健康摘要。"""
+    presence_counts = {
+        presence: sum(field.get("presence") == presence for field in fields)
+        for presence in (
+            "PRESENT",
+            "NULL",
+            "EMPTY_STRING",
+            "EMPTY_ARRAY",
+            "EMPTY_OBJECT",
+            "MISSING",
+        )
+    }
+    return {
+        "total_field_count": len(fields),
+        "present_count": presence_counts["PRESENT"],
+        "null_count": presence_counts["NULL"],
+        "empty_string_count": presence_counts["EMPTY_STRING"],
+        "empty_array_count": presence_counts["EMPTY_ARRAY"],
+        "empty_object_count": presence_counts["EMPTY_OBJECT"],
+        "missing_count": presence_counts["MISSING"],
+        "unknown_schema_field_count": sum(
+            field.get("schema_known") is False for field in fields
+        ),
+    }
+
+
+def build_reply_sections(result_payload: dict) -> list[dict]:
+    """按 PRD §14.2 的固定顺序构造 Reply 业务分组。"""
+    section_specs = (
+        ("上下文", "result.context", result_payload.get("context")),
+        (
+            "综合分析",
+            "result.comprehensive_analysis",
+            result_payload.get("comprehensive_analysis"),
+        ),
+        ("当前情况", "result.whats_happening", result_payload.get("whats_happening")),
+        ("推荐角色", "result.roles", result_payload.get("roles")),
+        ("人物关联", "result.association", result_payload.get("association")),
+        ("降级", "result.degradation", result_payload.get("degradation")),
+        ("警告", "result.warnings", result_payload.get("warnings")),
+    )
+    return [
+        {"label": label, "path": path, "value": value}
+        for label, path, value in section_specs
+    ]
+
+
+def _project_reply_result(result_payload: dict) -> tuple[dict, list[dict]]:
+    """生成 Reply v1 的 PRD §14.3 摘要和业务分组。"""
+    raw_roles = result_payload.get("roles")
+    roles = [role for role in raw_roles if isinstance(role, dict)] if isinstance(
+        raw_roles, list
+    ) else []
+    replies: list[dict] = []
+    for role in roles:
+        role_replies = role.get("replies")
+        if isinstance(role_replies, list):
+            replies.extend(
+                reply for reply in role_replies if isinstance(reply, dict)
+            )
+    top_pick = next(
+        (reply for reply in replies if reply.get("is_top_pick") is True), None
+    )
+    context_value = result_payload.get("context")
+    association_value = result_payload.get("association")
+    degradation_value = result_payload.get("degradation")
+    context = context_value if isinstance(context_value, dict) else {}
+    association = association_value if isinstance(association_value, dict) else {}
+    degradation = degradation_value if isinstance(degradation_value, dict) else {}
+    signals = context.get("signals")
+    warnings = result_payload.get("warnings")
+    summary = {
+        "conversation_stage": context.get("conversation_stage"),
+        "moment_type": context.get("moment_type"),
+        "reply_state": context.get("reply_state"),
+        "requested_intent": context.get("requested_intent"),
+        "effective_goal": context.get("effective_goal"),
+        "signal_count": len(signals) if isinstance(signals, list) else 0,
+        "role_count": len(roles),
+        "reply_count": len(replies),
+        "top_pick_reply_id": top_pick.get("reply_id") if top_pick else None,
+        "person_history_used": association.get("person_history_used"),
+        "is_degraded": degradation.get("is_degraded"),
+        "warning_count": len(warnings) if isinstance(warnings, list) else 0,
+    }
+    return summary, build_reply_sections(result_payload)
+
+
+def build_analysis_sections(result_payload: dict) -> list[dict]:
+    """按 PRD §15.2 的固定顺序构造 Analysis 业务分组。"""
+    overview_value = result_payload.get("overview")
+    overview = overview_value if isinstance(overview_value, dict) else {}
+    section_specs = (
+        ("分析范围", "result.analysis_scope", result_payload.get("analysis_scope")),
+        ("总览", "result.overview", overview_value),
+        ("Dashboard", "result.overview.dashboard", overview.get("dashboard")),
+        ("聊天信号", "result.chat_signals", result_payload.get("chat_signals")),
+        ("关键事件", "result.key_events", result_payload.get("key_events")),
+        ("警告", "result.warnings", result_payload.get("warnings")),
+    )
+    return [
+        {"label": label, "path": path, "value": value}
+        for label, path, value in section_specs
+    ]
+
+
+def _array_count(container: dict, key: str) -> int | None:
+    """数组存在时返回长度；缺失或类型异常时返回 None，避免伪造空数组。"""
+    if key not in container:
+        return None
+    value = container.get(key)
+    return len(value) if isinstance(value, list) else None
+
+
+def _project_analysis_result(result_payload: dict) -> tuple[dict, list[dict]]:
+    """生成 Analysis v1 的 PRD §15.3 摘要和业务分组。"""
+    scope_value = result_payload.get("analysis_scope")
+    overview_value = result_payload.get("overview")
+    signals_value = result_payload.get("chat_signals")
+    events_value = result_payload.get("key_events")
+    scope = scope_value if isinstance(scope_value, dict) else {}
+    overview = overview_value if isinstance(overview_value, dict) else {}
+    signals = signals_value if isinstance(signals_value, dict) else {}
+    events = events_value if isinstance(events_value, dict) else {}
+    summary = {
+        "relationship_stage": overview.get("relationship_stage"),
+        "current_state": overview.get("current_state"),
+        "reliability_level": overview.get("reliability_level"),
+        "uploaded_asset_count": scope.get("uploaded_asset_count"),
+        "valid_asset_count": scope.get("valid_asset_count"),
+        "ignored_asset_count": scope.get("ignored_asset_count"),
+        "analyzed_message_count": scope.get("analyzed_message_count"),
+        "positive_signal_count": _array_count(signals, "positive_signals"),
+        "watch_signal_count": _array_count(signals, "watch_signals"),
+        "risk_signal_count": _array_count(signals, "risk_signals"),
+        "turning_point_count": _array_count(events, "turning_points"),
+        "warning_count": _array_count(result_payload, "warnings"),
+    }
+    return summary, build_analysis_sections(result_payload)
+
+
+def _result_block_source(result_call: dict) -> dict:
+    """从最后一次成功 Result 响应提取字段树共享的 block 级证据。"""
+    response = (
+        result_call.get("response")
+        if isinstance(result_call.get("response"), dict)
+        else {}
+    )
+    return {
+        "method": result_call.get("method_name"),
+        "call_id": result_call.get("call_id"),
+        "line_start": response.get("line_start"),
+        "line_end": response.get("line_end"),
+    }
 
 
 def _selected_asset_ids(calls: list[dict], selected_task_id: str | None) -> list[str]:
@@ -523,7 +1037,8 @@ def build_task_snapshot(
 
     返回:
         ``(snapshot, warnings)``。Result 按原类型保留服务端 ``data.result``，
-        并单独记录字段是否存在；不在 Task 4 中执行 Schema 字段投影。
+        并单独记录字段是否存在；只有 dict 类型的已知 v1 Result 才生成
+        Schema 专属摘要，原始值本身不会被投影结果替换。
     """
     task_calls = [
         call
@@ -563,16 +1078,77 @@ def build_task_snapshot(
     result_data = _response_data(result_call) if result_call is not None else {}
     result_payload_present = "result" in result_data
     result_payload = result_data["result"] if result_payload_present else None
+    task_warnings: list[dict] = []
     schema_version = result_data.get("schema_version")
     if not isinstance(schema_version, str) and isinstance(result_payload, dict):
         nested_schema = result_payload.get("schema_version")
-        schema_version = nested_schema if isinstance(nested_schema, str) else None
+        if isinstance(nested_schema, str):
+            schema_version = nested_schema
+            task_warnings.append(
+                _warning(
+                    "OUTER_SCHEMA_VERSION_MISSING",
+                    "Result 外层 data.schema_version 缺失，已使用内层版本",
+                    call_id=result_call.get("call_id") if result_call else None,
+                )
+            )
+        else:
+            schema_version = None
 
-    task_warnings: list[dict] = []
+    schema_status = None
+    result_summary: dict = {}
+    result_sections: list[dict] = []
+    result_fields: list[dict] = []
+    field_health: dict = {}
+    known_paths: frozenset[str] | None = None
+    required_paths: tuple[str, ...] = ()
+    if schema_version == REPLY_SCHEMA_VERSION:
+        schema_status = "KNOWN_SCHEMA"
+        known_paths = REPLY_SCHEMA_PATHS
+        required_paths = REPLY_REQUIRED_PATHS
+        if isinstance(result_payload, dict):
+            result_summary, result_sections = _project_reply_result(result_payload)
+    elif schema_version == ANALYSIS_SCHEMA_VERSION:
+        schema_status = "KNOWN_SCHEMA"
+        known_paths = ANALYSIS_SCHEMA_PATHS
+        required_paths = ANALYSIS_REQUIRED_PATHS
+        if isinstance(result_payload, dict):
+            result_summary, result_sections = _project_analysis_result(
+                result_payload
+            )
+    elif result_call is not None:
+        # 未知版本仍遍历原始 Result，但不给任何字段套用旧 Schema，也不生成
+        # Reply/Analysis 专属摘要，避免版本升级后产生看似可信的错误投影。
+        schema_status = "UNKNOWN_SCHEMA"
+        known_paths = frozenset()
+        task_warnings.append(
+            _warning(
+                "UNKNOWN_SCHEMA_VERSION",
+                "Result schema_version 不在当前支持列表中",
+                schema_version=schema_version,
+                call_id=result_call.get("call_id"),
+            )
+        )
+
+    if (
+        result_call is not None
+        and result_payload_present
+        and known_paths is not None
+    ):
+        result_fields, field_warnings = build_field_index(
+            result_payload,
+            root_path="result",
+            source=_result_block_source(result_call),
+            known_paths=known_paths,
+            required_paths=required_paths,
+        )
+        task_warnings.extend(field_warnings)
+        field_health = _field_health(result_fields)
+
     snapshot = {
         "task_id": task_id,
         "task_type": task_type,
         "schema_version": schema_version,
+        "schema_status": schema_status,
         "create_call_id": create_call.get("call_id") if create_call else None,
         "poll_call_ids": [call.get("call_id") for call in poll_calls],
         "result_call_id": result_call.get("call_id") if result_call else None,
@@ -594,9 +1170,10 @@ def build_task_snapshot(
         "status_samples": samples,
         "result_payload": result_payload,
         "result_payload_present": result_payload_present,
-        "result_sections": [],
-        "result_fields": [],
-        "field_health": {},
+        "result_summary": result_summary,
+        "result_sections": result_sections,
+        "result_fields": result_fields,
+        "field_health": field_health,
         "checks": [],
         "warnings": task_warnings,
     }

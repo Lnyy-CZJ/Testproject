@@ -6,8 +6,10 @@ import unittest
 
 from dating_log_analyzer import (
     analyze_dating_log,
+    build_field_index,
     build_task_snapshot,
     build_upload_assets,
+    classify_presence,
 )
 from gateway_log_parser import parse_interface_log
 
@@ -100,6 +102,394 @@ def _put_call(call_id: str, url: str) -> dict:
     call["response"]["sub_response"] = None
     call["response"]["data"] = None
     return call
+
+
+def _fixture_source() -> dict:
+    """提供字段索引测试使用的固定 Result 响应块证据。"""
+    return {
+        "method": "GetTaskResult",
+        "call_id": "call_result",
+        "line_start": 20,
+        "line_end": 40,
+    }
+
+
+def _analyze_reply_fixture() -> dict:
+    """通过公共入口分析 Reply 黄金日志。"""
+    return analyze_dating_log(_read_fixture("reply_generation_multi_image_success.log"))
+
+
+def _analyze_analysis_fixture() -> dict:
+    """通过公共入口分析 Analysis 黄金日志。"""
+    return analyze_dating_log(
+        _read_fixture("relationship_analysis_multi_image_success.log")
+    )
+
+
+def _snapshot_for_schema_result(
+    result_payload: object,
+    schema_version: str | None,
+    *,
+    include_outer_schema: bool = True,
+) -> dict:
+    """构造包含一次成功 Result 的最小真实调用链，供 Schema 边界测试复用。"""
+    task_id = "task_schema_projection"
+    is_analysis = isinstance(schema_version, str) and "relationship_analysis" in schema_version
+    task_type = "relationship_analysis" if is_analysis else "reply_generation"
+    create_method = "CreateAnalysisTask" if is_analysis else "CreateReplyTask"
+    result_method = "GetAnalysisResult" if is_analysis else "GetTaskResult"
+    result_data = {
+        "task_id": task_id,
+        "task_type": task_type,
+        "result": result_payload,
+    }
+    if include_outer_schema:
+        result_data["schema_version"] = schema_version
+    calls = [
+        _gateway_call(
+            "call_0001",
+            create_method,
+            params={"asset_ids": []},
+            data={
+                "task_id": task_id,
+                "task_type": task_type,
+                "status": "queued",
+                "phase": "queued",
+            },
+        ),
+        _gateway_call(
+            "call_0002",
+            result_method,
+            params={"task_id": task_id},
+            data=result_data,
+        ),
+    ]
+    snapshot, _ = build_task_snapshot(calls, [], task_id)
+    return snapshot
+
+
+class PresenceClassificationTests(unittest.TestCase):
+    """锁定字段存在、显式空值和 Schema 缺失之间的事实分类。"""
+
+    def test_presence_states_are_distinct(self):
+        """非空、null、各类空容器和缺失不能被合并成同一状态。"""
+        self.assertEqual(classify_presence("value"), "PRESENT")
+        self.assertEqual(classify_presence(None), "NULL")
+        self.assertEqual(classify_presence(""), "EMPTY_STRING")
+        self.assertEqual(classify_presence([]), "EMPTY_ARRAY")
+        self.assertEqual(classify_presence({}), "EMPTY_OBJECT")
+        self.assertEqual(classify_presence(None, missing=True), "MISSING")
+
+
+class FieldIndexTests(unittest.TestCase):
+    """验证通用字段树索引的值、Schema 和资源上限契约。"""
+
+    def test_long_text_is_truncated_exactly_with_block_evidence(self):
+        """自由文本仅保留前 20000 字符，并保留完整 Result 块证据。"""
+        fields, warnings = build_field_index(
+            {"note": "x" * 20001},
+            root_path="result",
+            source=_fixture_source(),
+        )
+        note = next(field for field in fields if field["path"] == "result.note")
+
+        self.assertEqual(note["value"], "x" * 20000)
+        self.assertEqual(len(note["value"]), 20000)
+        self.assertTrue(note["value_truncated"])
+        self.assertEqual(
+            note["source"],
+            {
+                "method": "GetTaskResult",
+                "call_id": "call_result",
+                "line_start": 20,
+                "line_end": 40,
+                "location_precision": "block",
+            },
+        )
+        self.assertIn("VALUE_TRUNCATED", {item["code"] for item in warnings})
+
+    def test_array_paths_use_schema_templates_and_unknown_fields_are_preserved(self):
+        """输出保留实际索引，但 Schema 匹配必须把数组索引归一化为 []。"""
+        fields, warnings = build_field_index(
+            {"items": [{"known": "yes", "extra": "keep"}]},
+            root_path="result",
+            source=_fixture_source(),
+            known_paths={
+                "result",
+                "result.items",
+                "result.items[]",
+                "result.items[].known",
+                "result.required",
+            },
+            required_paths=("result.required",),
+        )
+        by_path = {field["path"]: field for field in fields}
+
+        self.assertEqual(warnings, [])
+        self.assertTrue(by_path["result.items[0].known"]["schema_known"])
+        self.assertFalse(by_path["result.items[0].extra"]["schema_known"])
+        self.assertEqual(by_path["result.items[0]"]["array_index"], 0)
+        self.assertIsNone(by_path["result.items[0]"]["key"])
+        self.assertEqual(by_path["result.items[0].known"]["key"], "known")
+        self.assertEqual(by_path["result.required"]["presence"], "MISSING")
+        self.assertEqual(by_path["result.required"]["value_type"], "missing")
+        self.assertTrue(by_path["result.required"]["schema_known"])
+
+    def test_max_depth_fifty_stops_deeper_nodes(self):
+        """根节点深度为 0；深度 50 可见，深度 51 必须停止展开。"""
+        payload: object = "leaf"
+        for index in reversed(range(51)):
+            payload = {f"level_{index}": payload}
+
+        fields, warnings = build_field_index(
+            payload,
+            root_path="result",
+            source=_fixture_source(),
+        )
+
+        self.assertEqual(len(fields), 51)
+        self.assertIn(
+            "MAX_FIELD_DEPTH_REACHED", {item["code"] for item in warnings}
+        )
+        self.assertTrue(fields[-1]["path"].endswith(".level_49"))
+
+    def test_max_field_count_twenty_thousand_stops_expansion(self):
+        """容器节点计入 20000 上限，超出的数组项不得进入索引。"""
+        fields, warnings = build_field_index(
+            list(range(20000)),
+            root_path="result",
+            source=_fixture_source(),
+        )
+
+        self.assertEqual(len(fields), 20000)
+        self.assertEqual(fields[-1]["path"], "result[19998]")
+        self.assertIn(
+            "MAX_FIELD_COUNT_REACHED", {item["code"] for item in warnings}
+        )
+
+
+class DatingResultProjectionTests(unittest.TestCase):
+    """锁定两个 v1 Schema 的业务摘要、分组、字段与空值健康。"""
+
+    def test_reply_v1_summary_sections_and_empty_field_health(self):
+        """Reply 黄金结果必须逐项匹配 PRD §14，并保留空字符串和 null。"""
+        task = _analyze_reply_fixture()["task_snapshot"]
+        fields = {field["path"]: field for field in task["result_fields"]}
+
+        self.assertEqual(task["schema_status"], "KNOWN_SCHEMA")
+        self.assertEqual(
+            task["result_summary"],
+            {
+                "conversation_stage": "boundary",
+                "moment_type": "rejection",
+                "reply_state": "user_waiting",
+                "requested_intent": "",
+                "effective_goal": "respect_boundary",
+                "signal_count": 1,
+                "role_count": 1,
+                "reply_count": 4,
+                "top_pick_reply_id": "reply_1",
+                "person_history_used": False,
+                "is_degraded": False,
+                "warning_count": 1,
+            },
+        )
+        self.assertEqual(
+            [(section["label"], section["path"]) for section in task["result_sections"]],
+            [
+                ("上下文", "result.context"),
+                ("综合分析", "result.comprehensive_analysis"),
+                ("当前情况", "result.whats_happening"),
+                ("推荐角色", "result.roles"),
+                ("人物关联", "result.association"),
+                ("降级", "result.degradation"),
+                ("警告", "result.warnings"),
+            ],
+        )
+        self.assertEqual(task["result_sections"][0]["value"], task["result_payload"]["context"])
+        self.assertEqual(
+            fields["result.context.requested_intent"]["presence"], "EMPTY_STRING"
+        )
+        self.assertEqual(fields["result.association.person_id"]["presence"], "NULL")
+        self.assertTrue(fields["result.roles[0].replies[3].text"]["schema_known"])
+        self.assertEqual(
+            task["field_health"],
+            {
+                "total_field_count": 66,
+                "present_count": 63,
+                "null_count": 2,
+                "empty_string_count": 1,
+                "empty_array_count": 0,
+                "empty_object_count": 0,
+                "missing_count": 0,
+                "unknown_schema_field_count": 0,
+            },
+        )
+
+    def test_analysis_v1_summary_sections_and_empty_field_health(self):
+        """Analysis 黄金结果必须逐项匹配 PRD §15，并保留 null 与空数组。"""
+        task = _analyze_analysis_fixture()["task_snapshot"]
+        fields = {field["path"]: field for field in task["result_fields"]}
+
+        self.assertEqual(task["schema_status"], "KNOWN_SCHEMA")
+        self.assertEqual(
+            task["result_summary"],
+            {
+                "relationship_stage": "ENDED",
+                "current_state": "SETTING_BOUNDARIES",
+                "reliability_level": "VERY_HIGH",
+                "uploaded_asset_count": 3,
+                "valid_asset_count": 3,
+                "ignored_asset_count": 0,
+                "analyzed_message_count": 38,
+                "positive_signal_count": 3,
+                "watch_signal_count": 1,
+                "risk_signal_count": 0,
+                "turning_point_count": 3,
+                "warning_count": 0,
+            },
+        )
+        self.assertEqual(
+            [(section["label"], section["path"]) for section in task["result_sections"]],
+            [
+                ("分析范围", "result.analysis_scope"),
+                ("总览", "result.overview"),
+                ("Dashboard", "result.overview.dashboard"),
+                ("聊天信号", "result.chat_signals"),
+                ("关键事件", "result.key_events"),
+                ("警告", "result.warnings"),
+            ],
+        )
+        self.assertEqual(
+            fields["result.overview.dashboard.effort.you_score"]["presence"],
+            "NULL",
+        )
+        self.assertEqual(
+            fields["result.overview.dashboard.effort.you_score"]["label"],
+            "你的投入度",
+        )
+        self.assertEqual(
+            fields["result.chat_signals.risk_signals"]["presence"], "EMPTY_ARRAY"
+        )
+        self.assertEqual(
+            task["field_health"],
+            {
+                "total_field_count": 101,
+                "present_count": 94,
+                "null_count": 3,
+                "empty_string_count": 0,
+                "empty_array_count": 4,
+                "empty_object_count": 0,
+                "missing_count": 0,
+                "unknown_schema_field_count": 0,
+            },
+        )
+
+    def test_known_schema_keeps_unknown_fields_and_adds_required_missing_nodes(self):
+        """扩展字段不能丢弃；未返回的已知必填分组必须显式标为 MISSING。"""
+        payload = {
+            "schema_version": "dating.reply_generation.v1",
+            "context": {},
+            "roles": [],
+            "future_extension": {"enabled": True},
+        }
+        task = _snapshot_for_schema_result(
+            payload, "dating.reply_generation.v1"
+        )
+        fields = {field["path"]: field for field in task["result_fields"]}
+
+        self.assertIs(task["result_payload"], payload)
+        self.assertFalse(fields["result.future_extension"]["schema_known"])
+        self.assertFalse(fields["result.future_extension.enabled"]["schema_known"])
+        self.assertEqual(fields["result.association"]["presence"], "MISSING")
+        self.assertEqual(fields["result.degradation"]["presence"], "MISSING")
+        self.assertEqual(fields["result.warnings"]["presence"], "MISSING")
+        self.assertEqual(task["field_health"]["missing_count"], 3)
+        self.assertEqual(task["field_health"]["unknown_schema_field_count"], 2)
+
+    def test_analysis_summary_distinguishes_missing_arrays_from_empty_arrays(self):
+        """Schema path 缺失返回 None；字段存在且为空数组才返回计数 0。"""
+        payload = {
+            "schema_version": "dating.relationship_analysis.v1",
+            "analysis_scope": {
+                "uploaded_asset_count": 0,
+                "valid_asset_count": 0,
+                "ignored_asset_count": 0,
+            },
+            "overview": {},
+            "chat_signals": {
+                "positive_signals": [],
+                "risk_signals": [],
+            },
+            "key_events": {"turning_points": []},
+            "warnings": [],
+        }
+        task = _snapshot_for_schema_result(
+            payload, "dating.relationship_analysis.v1"
+        )
+
+        self.assertEqual(task["result_summary"]["positive_signal_count"], 0)
+        self.assertIsNone(task["result_summary"]["watch_signal_count"])
+        self.assertEqual(task["result_summary"]["risk_signal_count"], 0)
+        self.assertEqual(task["result_summary"]["turning_point_count"], 0)
+        self.assertIsNone(task["result_summary"]["analyzed_message_count"])
+
+
+class UnknownSchemaCompatibilityTests(unittest.TestCase):
+    """验证未知版本不丢数据，也不会误套用 v1 业务投影。"""
+
+    def test_unknown_schema_keeps_generic_tree_without_business_summary(self):
+        """未知版本输出通用字段树、空业务摘要和稳定 UNKNOWN_SCHEMA warning。"""
+        payload = {
+            "schema_version": "dating.relationship_analysis.v2",
+            "future": {"score": 9},
+        }
+        task = _snapshot_for_schema_result(
+            payload, "dating.relationship_analysis.v2"
+        )
+        warning_codes = {warning["code"] for warning in task["warnings"]}
+
+        self.assertIs(task["result_payload"], payload)
+        self.assertEqual(task["schema_status"], "UNKNOWN_SCHEMA")
+        self.assertEqual(task["result_summary"], {})
+        self.assertEqual(task["result_sections"], [])
+        self.assertEqual(
+            [field["path"] for field in task["result_fields"]],
+            [
+                "result",
+                "result.schema_version",
+                "result.future",
+                "result.future.score",
+            ],
+        )
+        self.assertTrue(
+            all(field["schema_known"] is False for field in task["result_fields"])
+        )
+        self.assertEqual(task["field_health"]["unknown_schema_field_count"], 4)
+        self.assertIn("UNKNOWN_SCHEMA_VERSION", warning_codes)
+
+    def test_missing_outer_schema_uses_inner_version_and_warns(self):
+        """data.schema_version 缺失时使用 result.schema_version，但保留证据 warning。"""
+        payload = {
+            "schema_version": "dating.reply_generation.v1",
+            "context": {},
+            "roles": [],
+            "association": {},
+            "degradation": {},
+            "warnings": [],
+        }
+        task = _snapshot_for_schema_result(
+            payload,
+            "dating.reply_generation.v1",
+            include_outer_schema=False,
+        )
+
+        self.assertEqual(task["schema_version"], "dating.reply_generation.v1")
+        self.assertEqual(task["schema_status"], "KNOWN_SCHEMA")
+        self.assertIn(
+            "OUTER_SCHEMA_VERSION_MISSING",
+            {warning["code"] for warning in task["warnings"]},
+        )
 
 
 class DatingTaskAggregationTests(unittest.TestCase):
