@@ -1,0 +1,1437 @@
+2026-08-29 18:51:08,132 | INFO | utils.custom.flow_runner | 开始 Flow 步骤: flow=Dating 多图 Reply 保留结果链路 scenario=Dating 多图 Reply 并保留任务数据 step=get_preferences (1/8)
+2026-08-29 18:51:08,133 | INFO | utils.custom.http_client | Gateway 请求数据:
+{
+  "url": "https://gateway.spark-jam.top/dating/gateway/invoke",
+  "headers": {
+    "Content-Type": "application/json",
+    "Accept": "*/*",
+    "Host": "gateway.spark-jam.top",
+    "Connection": "keep-alive"
+  },
+  "payload": {
+    "comm": {
+      "device_id": "dating_device_fixture",
+      "platform": "ios",
+      "app_version": "1.0.0",
+      "locale": "en-US",
+      "timezone": "UTC+08:00",
+      "country": "CN",
+      "app_package": "com.example.dating",
+      "auth_token": "***",
+      "user_id": "dating_user_fixture",
+      "client_request_id": "crid_1788000668133301053"
+    },
+    "requests": [
+      {
+        "id": "req_0",
+        "service_name": "tool.dating.DatingAssistantService",
+        "method_name": "GetUserPreferences",
+        "params": {}
+      }
+    ]
+  }
+}
+2026-08-29 18:51:09,622 | INFO | utils.custom.http_client | Gateway 响应数据: HTTP 200 elapsed_ms=1489.23
+headers={
+  "Date": "Sat, 29 Aug 2026 10:51:10 GMT",
+  "Content-Type": "application/json; charset=utf-8",
+  "Content-Length": "327",
+  "Connection": "keep-alive"
+}
+body={
+  "code": 0,
+  "message": "ok",
+  "request_id": "gw_req_f7f5427cb360b5023654335f27a12199",
+  "trace_id": "trace_59d417b1597f90d33c4362fbe1015e0b",
+  "responses": [
+    {
+      "id": "req_0",
+      "success": true,
+      "code": 0,
+      "message": "ok",
+      "data": {
+        "preferences_complete": true,
+        "dating_goal": "relationship",
+        "your_voice": "warm",
+        "version": 1,
+        "update_time": 1787999588610
+      }
+    }
+  ]
+}
+2026-08-29 18:51:09,623 | INFO | utils.custom.flow_runner | 完成 Flow 步骤: step=get_preferences
+2026-08-29 18:51:09,624 | INFO | utils.custom.flow_runner | 因条件跳过 Flow 步骤: step=update_preferences
+2026-08-29 18:51:09,624 | INFO | utils.custom.flow_runner | 开始 Flow 步骤: flow=Dating 多图 Reply 保留结果链路 scenario=Dating 多图 Reply 并保留任务数据 step=get_upload_config (3/8)
+2026-08-29 18:51:09,624 | INFO | utils.custom.http_client | Gateway 请求数据:
+{
+  "url": "https://gateway.spark-jam.top/dating/gateway/invoke",
+  "headers": {
+    "Content-Type": "application/json",
+    "Accept": "*/*",
+    "Host": "gateway.spark-jam.top",
+    "Connection": "keep-alive"
+  },
+  "payload": {
+    "comm": {
+      "device_id": "dating_device_fixture",
+      "platform": "ios",
+      "app_version": "1.0.0",
+      "locale": "en-US",
+      "timezone": "UTC+08:00",
+      "country": "CN",
+      "app_package": "com.example.dating",
+      "auth_token": "***",
+      "user_id": "dating_user_fixture",
+      "client_request_id": "crid_1788000669624675970"
+    },
+    "requests": [
+      {
+        "id": "req_0",
+        "service_name": "tool.dating.DatingMediaService",
+        "method_name": "GetMediaUploadConfig",
+        "params": {}
+      }
+    ]
+  }
+}
+2026-08-29 18:51:09,882 | INFO | utils.custom.http_client | Gateway 响应数据: HTTP 200 elapsed_ms=256.17
+headers={
+  "Date": "Sat, 29 Aug 2026 10:51:10 GMT",
+  "Content-Type": "application/json; charset=utf-8",
+  "Content-Length": "770",
+  "Connection": "keep-alive"
+}
+body={
+  "code": 0,
+  "message": "ok",
+  "request_id": "gw_req_321c18b4c86777ad5caa7792aff99044",
+  "trace_id": "trace_ab0d19cc3028879750d974e79c866e67",
+  "responses": [
+    {
+      "id": "req_0",
+      "success": true,
+      "code": 0,
+      "message": "ok",
+      "data": {
+        "config_version": "dating-media-v2",
+        "config_cache_ttl_seconds": 300,
+        "cache_expire_time": 1788000970720,
+        "allowed_content_types": [
+          "image/jpeg",
+          "image/png",
+          "image/webp"
+        ],
+        "allowed_purposes": [
+          "chat_screenshot",
+          "feedback_attachment"
+        ],
+        "min_asset_count": 1,
+        "max_asset_count": 9,
+        "max_feedback_asset_count": 5,
+        "max_size_bytes": 7000000,
+        "recommended_max_width": 2048,
+        "recommended_max_height": 8192,
+        "recommended_jpeg_quality": 85,
+        "strip_exif": true,
+        "upload_url_ttl_seconds": 600,
+        "asset_ttl_seconds": 86400,
+        "complete_retry": {
+          "max_attempts": 3,
+          "initial_delay_ms": 500,
+          "max_delay_ms": 5000
+        }
+      }
+    }
+  ]
+}
+2026-08-29 18:51:09,884 | INFO | utils.custom.flow_runner | 完成 Flow 步骤: step=get_upload_config
+2026-08-29 18:51:09,884 | INFO | utils.custom.flow_runner | 开始 Flow 步骤: flow=Dating 多图 Reply 保留结果链路 scenario=Dating 多图 Reply 并保留任务数据 step=validate_media_files (4/8)
+2026-08-29 18:51:09,884 | INFO | utils.custom.flow_runner | 完成 Flow 步骤: step=validate_media_files
+2026-08-29 18:51:09,885 | INFO | utils.custom.flow_runner | 开始 Flow 步骤: flow=Dating 多图 Reply 保留结果链路 scenario=Dating 多图 Reply 并保留任务数据 step=upload_media_files (5/8)
+2026-08-29 18:51:09,885 | INFO | utils.custom.http_client | Gateway 请求数据:
+{
+  "url": "https://gateway.spark-jam.top/dating/gateway/invoke",
+  "headers": {
+    "Content-Type": "application/json",
+    "Accept": "*/*",
+    "Host": "gateway.spark-jam.top",
+    "Connection": "keep-alive"
+  },
+  "payload": {
+    "comm": {
+      "device_id": "dating_device_fixture",
+      "platform": "ios",
+      "app_version": "1.0.0",
+      "locale": "en-US",
+      "timezone": "UTC+08:00",
+      "country": "CN",
+      "app_package": "com.example.dating",
+      "auth_token": "***",
+      "user_id": "dating_user_fixture",
+      "client_request_id": "crid_1788000669885593554"
+    },
+    "requests": [
+      {
+        "id": "req_0",
+        "service_name": "tool.dating.DatingMediaService",
+        "method_name": "PrepareMediaUpload",
+        "params": {
+          "client_request_id": "crid_1788000669885593554",
+          "content_type": "image/png",
+          "size_bytes": 93468
+        }
+      }
+    ]
+  }
+}
+2026-08-29 18:51:10,063 | INFO | utils.custom.http_client | Gateway 响应数据: HTTP 200 elapsed_ms=177.32
+headers={
+  "Date": "Sat, 29 Aug 2026 10:51:10 GMT",
+  "Content-Type": "application/json; charset=utf-8",
+  "Content-Length": "1084",
+  "Connection": "keep-alive"
+}
+body={
+  "code": 0,
+  "message": "ok",
+  "request_id": "gw_req_b968ef441e8a0edd05119822c90b5abf",
+  "trace_id": "trace_6d565df7099cb7357102e01a43c7335f",
+  "responses": [
+    {
+      "id": "req_0",
+      "success": true,
+      "code": 0,
+      "message": "ok",
+      "data": {
+        "asset_id": "dating_media_c93f2385b50067579d9b14a28ec7ba32",
+        "purpose": "chat_screenshot",
+        "status": "pending",
+        "content_type": "image/png",
+        "size_bytes": 93468,
+        "upload_url": "https://tool-srv-people-insight-1349591044.cos.na-siliconvalley.myqcloud.com/dating/staging/chat-screenshots/v1/20260829/c9/dating_media_c93f2385b50067579d9b14a28ec7ba32.png?[REDACTED]",
+        "upload_method": "PUT",
+        "required_headers": {
+          "Content-Length": "93468",
+          "Content-Type": "image/png",
+          "x-cos-forbid-overwrite": "true"
+        },
+        "upload_expire_time": 1788001270900,
+        "asset_expire_time": 1788087070900,
+        "max_size_bytes": 7000000
+      }
+    }
+  ]
+}
+2026-08-29 18:51:10,065 | INFO | utils.custom.flow_runner | 签名二进制上传开始: method=PUT url=https://tool-srv-people-insight-1349591044.cos.na-siliconvalley.myqcloud.com/dating/staging/chat-screenshots/v1/20260829/c9/dating_media_c93f2385b50067579d9b14a28ec7ba32.png?[REDACTED] bytes=93468
+2026-08-29 18:51:10,066 | INFO | utils.custom.http_client | PUT 上传请求数据:
+{
+  "url": "https://tool-srv-people-insight-1349591044.cos.na-siliconvalley.myqcloud.com/dating/staging/chat-screenshots/v1/20260829/c9/dating_media_c93f2385b50067579d9b14a28ec7ba32.png?[REDACTED]",
+  "headers": {
+    "Content-Length": "93468",
+    "Content-Type": "image/png",
+    "x-cos-forbid-overwrite": "true"
+  },
+  "content_length": 93468
+}
+2026-08-29 18:51:11,610 | INFO | utils.custom.http_client | PUT 上传响应: HTTP 200 elapsed_ms=1543.22
+headers={
+  "Content-Length": "0",
+  "Connection": "keep-alive",
+  "Date": "Sat, 29 Aug 2026 10:51:12 GMT",
+  "ETag": "\"15e1973915154c961672832ad4039ec6\"",
+  "Server": "tencent-cos",
+  "x-cos-hash-crc64ecma": "14592761103951689095",
+  "x-cos-request-id": "NmE5MmI5YTBfN2U4YzUwMGJfMjA4MjNfZDFkMDc1NA==",
+  "x-cos-storage-class": "STANDARD"
+}
+body=
+2026-08-29 18:51:11,610 | INFO | utils.custom.flow_runner | 签名二进制上传完成: url=https://tool-srv-people-insight-1349591044.cos.na-siliconvalley.myqcloud.com/dating/staging/chat-screenshots/v1/20260829/c9/dating_media_c93f2385b50067579d9b14a28ec7ba32.png?[REDACTED] status=200
+2026-08-29 18:51:11,611 | INFO | utils.custom.http_client | Gateway 请求数据:
+{
+  "url": "https://gateway.spark-jam.top/dating/gateway/invoke",
+  "headers": {
+    "Content-Type": "application/json",
+    "Accept": "*/*",
+    "Host": "gateway.spark-jam.top",
+    "Connection": "keep-alive"
+  },
+  "payload": {
+    "comm": {
+      "device_id": "dating_device_fixture",
+      "platform": "ios",
+      "app_version": "1.0.0",
+      "locale": "en-US",
+      "timezone": "UTC+08:00",
+      "country": "CN",
+      "app_package": "com.example.dating",
+      "auth_token": "***",
+      "user_id": "dating_user_fixture",
+      "client_request_id": "crid_1788000671611449596"
+    },
+    "requests": [
+      {
+        "id": "req_0",
+        "service_name": "tool.dating.DatingMediaService",
+        "method_name": "CompleteMediaUpload",
+        "params": {
+          "asset_id": "dating_media_c93f2385b50067579d9b14a28ec7ba32"
+        }
+      }
+    ]
+  }
+}
+2026-08-29 18:51:11,859 | INFO | utils.custom.http_client | Gateway 响应数据: HTTP 200 elapsed_ms=247.30
+headers={
+  "Date": "Sat, 29 Aug 2026 10:51:12 GMT",
+  "Content-Type": "application/json; charset=utf-8",
+  "Content-Length": "427",
+  "Connection": "keep-alive"
+}
+body={
+  "code": 0,
+  "message": "ok",
+  "request_id": "gw_req_6d5750c6cde0c5cc536193b4aab0ab07",
+  "trace_id": "trace_dd97d70f4b6848a28c5cf0cda17f5083",
+  "responses": [
+    {
+      "id": "req_0",
+      "success": true,
+      "code": 0,
+      "message": "ok",
+      "data": {
+        "asset_id": "dating_media_c93f2385b50067579d9b14a28ec7ba32",
+        "purpose": "chat_screenshot",
+        "status": "uploaded",
+        "content_type": "image/png",
+        "size_bytes": 93468,
+        "uploaded_time": 1788000672695,
+        "asset_expire_time": 1788087070900
+      }
+    }
+  ]
+}
+2026-08-29 18:51:11,861 | INFO | utils.custom.http_client | Gateway 请求数据:
+{
+  "url": "https://gateway.spark-jam.top/dating/gateway/invoke",
+  "headers": {
+    "Content-Type": "application/json",
+    "Accept": "*/*",
+    "Host": "gateway.spark-jam.top",
+    "Connection": "keep-alive"
+  },
+  "payload": {
+    "comm": {
+      "device_id": "dating_device_fixture",
+      "platform": "ios",
+      "app_version": "1.0.0",
+      "locale": "en-US",
+      "timezone": "UTC+08:00",
+      "country": "CN",
+      "app_package": "com.example.dating",
+      "auth_token": "***",
+      "user_id": "dating_user_fixture",
+      "client_request_id": "crid_1788000671861354804"
+    },
+    "requests": [
+      {
+        "id": "req_0",
+        "service_name": "tool.dating.DatingMediaService",
+        "method_name": "PrepareMediaUpload",
+        "params": {
+          "client_request_id": "crid_1788000671861354804",
+          "content_type": "image/png",
+          "size_bytes": 91569
+        }
+      }
+    ]
+  }
+}
+2026-08-29 18:51:12,068 | INFO | utils.custom.http_client | Gateway 响应数据: HTTP 200 elapsed_ms=205.74
+headers={
+  "Date": "Sat, 29 Aug 2026 10:51:12 GMT",
+  "Content-Type": "application/json; charset=utf-8",
+  "Content-Length": "1084",
+  "Connection": "keep-alive"
+}
+body={
+  "code": 0,
+  "message": "ok",
+  "request_id": "gw_req_ec43ec1a9b18c5581ed812efd071396c",
+  "trace_id": "trace_099538738f490fc7408b69e05b642b68",
+  "responses": [
+    {
+      "id": "req_0",
+      "success": true,
+      "code": 0,
+      "message": "ok",
+      "data": {
+        "asset_id": "dating_media_6ae2a0b08fce432f9461936399ffaceb",
+        "purpose": "chat_screenshot",
+        "status": "pending",
+        "content_type": "image/png",
+        "size_bytes": 91569,
+        "upload_url": "https://tool-srv-people-insight-1349591044.cos.na-siliconvalley.myqcloud.com/dating/staging/chat-screenshots/v1/20260829/6a/dating_media_6ae2a0b08fce432f9461936399ffaceb.png?[REDACTED]",
+        "upload_method": "PUT",
+        "required_headers": {
+          "Content-Length": "91569",
+          "Content-Type": "image/png",
+          "x-cos-forbid-overwrite": "true"
+        },
+        "upload_expire_time": 1788001272876,
+        "asset_expire_time": 1788087072876,
+        "max_size_bytes": 7000000
+      }
+    }
+  ]
+}
+2026-08-29 18:51:12,071 | INFO | utils.custom.flow_runner | 签名二进制上传开始: method=PUT url=https://tool-srv-people-insight-1349591044.cos.na-siliconvalley.myqcloud.com/dating/staging/chat-screenshots/v1/20260829/6a/dating_media_6ae2a0b08fce432f9461936399ffaceb.png?[REDACTED] bytes=91569
+2026-08-29 18:51:12,072 | INFO | utils.custom.http_client | PUT 上传请求数据:
+{
+  "url": "https://tool-srv-people-insight-1349591044.cos.na-siliconvalley.myqcloud.com/dating/staging/chat-screenshots/v1/20260829/6a/dating_media_6ae2a0b08fce432f9461936399ffaceb.png?[REDACTED]",
+  "headers": {
+    "Content-Length": "91569",
+    "Content-Type": "image/png",
+    "x-cos-forbid-overwrite": "true"
+  },
+  "content_length": 91569
+}
+2026-08-29 18:51:12,401 | INFO | utils.custom.http_client | PUT 上传响应: HTTP 200 elapsed_ms=328.81
+headers={
+  "Content-Length": "0",
+  "Connection": "keep-alive",
+  "Date": "Sat, 29 Aug 2026 10:51:13 GMT",
+  "ETag": "\"f35155452cb55ce6e1f1e63eb1360d70\"",
+  "Server": "tencent-cos",
+  "x-cos-hash-crc64ecma": "12847351312702144152",
+  "x-cos-request-id": "NmE5MmI5YTFfN2U4YzUwMGJfMjA4MDNfZDBlOGQwZA==",
+  "x-cos-storage-class": "STANDARD"
+}
+body=
+2026-08-29 18:51:12,402 | INFO | utils.custom.flow_runner | 签名二进制上传完成: url=https://tool-srv-people-insight-1349591044.cos.na-siliconvalley.myqcloud.com/dating/staging/chat-screenshots/v1/20260829/6a/dating_media_6ae2a0b08fce432f9461936399ffaceb.png?[REDACTED] status=200
+2026-08-29 18:51:12,402 | INFO | utils.custom.http_client | Gateway 请求数据:
+{
+  "url": "https://gateway.spark-jam.top/dating/gateway/invoke",
+  "headers": {
+    "Content-Type": "application/json",
+    "Accept": "*/*",
+    "Host": "gateway.spark-jam.top",
+    "Connection": "keep-alive"
+  },
+  "payload": {
+    "comm": {
+      "device_id": "dating_device_fixture",
+      "platform": "ios",
+      "app_version": "1.0.0",
+      "locale": "en-US",
+      "timezone": "UTC+08:00",
+      "country": "CN",
+      "app_package": "com.example.dating",
+      "auth_token": "***",
+      "user_id": "dating_user_fixture",
+      "client_request_id": "crid_1788000672402669930"
+    },
+    "requests": [
+      {
+        "id": "req_0",
+        "service_name": "tool.dating.DatingMediaService",
+        "method_name": "CompleteMediaUpload",
+        "params": {
+          "asset_id": "dating_media_6ae2a0b08fce432f9461936399ffaceb"
+        }
+      }
+    ]
+  }
+}
+2026-08-29 18:51:12,633 | INFO | utils.custom.http_client | Gateway 响应数据: HTTP 200 elapsed_ms=230.11
+headers={
+  "Date": "Sat, 29 Aug 2026 10:51:13 GMT",
+  "Content-Type": "application/json; charset=utf-8",
+  "Content-Length": "427",
+  "Connection": "keep-alive"
+}
+body={
+  "code": 0,
+  "message": "ok",
+  "request_id": "gw_req_d11d79f8538911e720de5c4f7d56c1e4",
+  "trace_id": "trace_5594690119c3403372332dccfe0693b4",
+  "responses": [
+    {
+      "id": "req_0",
+      "success": true,
+      "code": 0,
+      "message": "ok",
+      "data": {
+        "asset_id": "dating_media_6ae2a0b08fce432f9461936399ffaceb",
+        "purpose": "chat_screenshot",
+        "status": "uploaded",
+        "content_type": "image/png",
+        "size_bytes": 91569,
+        "uploaded_time": 1788000673470,
+        "asset_expire_time": 1788087072876
+      }
+    }
+  ]
+}
+2026-08-29 18:51:12,634 | INFO | utils.custom.flow_runner | 完成 Flow 步骤: step=upload_media_files
+2026-08-29 18:51:12,634 | INFO | utils.custom.flow_runner | 开始 Flow 步骤: flow=Dating 多图 Reply 保留结果链路 scenario=Dating 多图 Reply 并保留任务数据 step=create_reply (6/8)
+2026-08-29 18:51:12,634 | INFO | utils.custom.http_client | Gateway 请求数据:
+{
+  "url": "https://gateway.spark-jam.top/dating/gateway/invoke",
+  "headers": {
+    "Content-Type": "application/json",
+    "Accept": "*/*",
+    "Host": "gateway.spark-jam.top",
+    "Connection": "keep-alive"
+  },
+  "payload": {
+    "comm": {
+      "device_id": "dating_device_fixture",
+      "platform": "ios",
+      "app_version": "1.0.0",
+      "locale": "en-US",
+      "timezone": "UTC+08:00",
+      "country": "CN",
+      "app_package": "com.example.dating",
+      "auth_token": "***",
+      "user_id": "dating_user_fixture",
+      "client_request_id": "crid_1788000672634723888"
+    },
+    "requests": [
+      {
+        "id": "req_0",
+        "service_name": "tool.dating.DatingAssistantService",
+        "method_name": "CreateReplyTask",
+        "params": {
+          "client_request_id": "crid_1788000672634723888",
+          "asset_ids": [
+            "dating_media_c93f2385b50067579d9b14a28ec7ba32",
+            "dating_media_6ae2a0b08fce432f9461936399ffaceb"
+          ],
+          "locale": "en-US"
+        }
+      }
+    ]
+  }
+}
+2026-08-29 18:51:12,857 | INFO | utils.custom.http_client | Gateway 响应数据: HTTP 200 elapsed_ms=222.33
+headers={
+  "Date": "Sat, 29 Aug 2026 10:51:13 GMT",
+  "Content-Type": "application/json; charset=utf-8",
+  "Content-Length": "389",
+  "Connection": "keep-alive"
+}
+body={
+  "code": 0,
+  "message": "ok",
+  "request_id": "gw_req_c1619ea2c5a23a1bb0e36293b6701d12",
+  "trace_id": "trace_4f07cefac199c6434287f31ac2d29cff",
+  "responses": [
+    {
+      "id": "req_0",
+      "success": true,
+      "code": 0,
+      "message": "ok",
+      "data": {
+        "task_id": "dating_task_147b21ac92063a1b24bbb8f8865e3bde",
+        "task_type": "reply_generation",
+        "status": "queued",
+        "phase": "queued",
+        "create_time": 1788000673651,
+        "expire_time": 1788087073651
+      }
+    }
+  ]
+}
+2026-08-29 18:51:12,858 | INFO | utils.custom.flow_runner | 完成 Flow 步骤: step=create_reply
+2026-08-29 18:51:12,860 | INFO | utils.custom.flow_runner | 开始 Flow 步骤: flow=Dating 多图 Reply 保留结果链路 scenario=Dating 多图 Reply 并保留任务数据 step=poll_reply (7/8)
+2026-08-29 18:51:12,861 | INFO | utils.custom.http_client | Gateway 请求数据:
+{
+  "url": "https://gateway.spark-jam.top/dating/gateway/invoke",
+  "headers": {
+    "Content-Type": "application/json",
+    "Accept": "*/*",
+    "Host": "gateway.spark-jam.top",
+    "Connection": "keep-alive"
+  },
+  "payload": {
+    "comm": {
+      "device_id": "dating_device_fixture",
+      "platform": "ios",
+      "app_version": "1.0.0",
+      "locale": "en-US",
+      "timezone": "UTC+08:00",
+      "country": "CN",
+      "app_package": "com.example.dating",
+      "auth_token": "***",
+      "user_id": "dating_user_fixture",
+      "client_request_id": "crid_1788000672860944472"
+    },
+    "requests": [
+      {
+        "id": "req_0",
+        "service_name": "tool.dating.DatingAssistantService",
+        "method_name": "GetTask",
+        "params": {
+          "task_id": "dating_task_147b21ac92063a1b24bbb8f8865e3bde"
+        }
+      }
+    ]
+  }
+}
+2026-08-29 18:51:13,110 | INFO | utils.custom.http_client | Gateway 响应数据: HTTP 200 elapsed_ms=248.08
+headers={
+  "Date": "Sat, 29 Aug 2026 10:51:13 GMT",
+  "Content-Type": "application/json; charset=utf-8",
+  "Content-Length": "466",
+  "Connection": "keep-alive"
+}
+body={
+  "code": 0,
+  "message": "ok",
+  "request_id": "gw_req_057847eb90008291685cbcbfb666f624",
+  "trace_id": "trace_06c752c0df39492a59ca4cb68d763a73",
+  "responses": [
+    {
+      "id": "req_0",
+      "success": true,
+      "code": 0,
+      "message": "ok",
+      "data": {
+        "task_id": "dating_task_147b21ac92063a1b24bbb8f8865e3bde",
+        "task_type": "reply_generation",
+        "status": "queued",
+        "phase": "queued",
+        "progress_percent": 5,
+        "retryable": false,
+        "error_code": "",
+        "create_time": 1788000673651,
+        "completed_time": null,
+        "expire_time": 1788087073651
+      }
+    }
+  ]
+}
+2026-08-29 18:51:14,117 | INFO | utils.custom.http_client | Gateway 请求数据:
+{
+  "url": "https://gateway.spark-jam.top/dating/gateway/invoke",
+  "headers": {
+    "Content-Type": "application/json",
+    "Accept": "*/*",
+    "Host": "gateway.spark-jam.top",
+    "Connection": "keep-alive"
+  },
+  "payload": {
+    "comm": {
+      "device_id": "dating_device_fixture",
+      "platform": "ios",
+      "app_version": "1.0.0",
+      "locale": "en-US",
+      "timezone": "UTC+08:00",
+      "country": "CN",
+      "app_package": "com.example.dating",
+      "auth_token": "***",
+      "user_id": "dating_user_fixture",
+      "client_request_id": "crid_1788000674117082125"
+    },
+    "requests": [
+      {
+        "id": "req_0",
+        "service_name": "tool.dating.DatingAssistantService",
+        "method_name": "GetTask",
+        "params": {
+          "task_id": "dating_task_147b21ac92063a1b24bbb8f8865e3bde"
+        }
+      }
+    ]
+  }
+}
+2026-08-29 18:51:14,293 | INFO | utils.custom.http_client | Gateway 响应数据: HTTP 200 elapsed_ms=174.88
+headers={
+  "Date": "Sat, 29 Aug 2026 10:51:15 GMT",
+  "Content-Type": "application/json; charset=utf-8",
+  "Content-Length": "474",
+  "Connection": "keep-alive"
+}
+body={
+  "code": 0,
+  "message": "ok",
+  "request_id": "gw_req_01ac3d0b280eca28352551c986388684",
+  "trace_id": "trace_dd342d34d28a91db1d0880442968b146",
+  "responses": [
+    {
+      "id": "req_0",
+      "success": true,
+      "code": 0,
+      "message": "ok",
+      "data": {
+        "task_id": "dating_task_147b21ac92063a1b24bbb8f8865e3bde",
+        "task_type": "reply_generation",
+        "status": "processing",
+        "phase": "analyzing",
+        "progress_percent": 30,
+        "retryable": false,
+        "error_code": "",
+        "create_time": 1788000673651,
+        "completed_time": null,
+        "expire_time": 1788087073651
+      }
+    }
+  ]
+}
+2026-08-29 18:51:15,296 | INFO | utils.custom.http_client | Gateway 请求数据:
+{
+  "url": "https://gateway.spark-jam.top/dating/gateway/invoke",
+  "headers": {
+    "Content-Type": "application/json",
+    "Accept": "*/*",
+    "Host": "gateway.spark-jam.top",
+    "Connection": "keep-alive"
+  },
+  "payload": {
+    "comm": {
+      "device_id": "dating_device_fixture",
+      "platform": "ios",
+      "app_version": "1.0.0",
+      "locale": "en-US",
+      "timezone": "UTC+08:00",
+      "country": "CN",
+      "app_package": "com.example.dating",
+      "auth_token": "***",
+      "user_id": "dating_user_fixture",
+      "client_request_id": "crid_1788000675295358417"
+    },
+    "requests": [
+      {
+        "id": "req_0",
+        "service_name": "tool.dating.DatingAssistantService",
+        "method_name": "GetTask",
+        "params": {
+          "task_id": "dating_task_147b21ac92063a1b24bbb8f8865e3bde"
+        }
+      }
+    ]
+  }
+}
+2026-08-29 18:51:15,480 | INFO | utils.custom.http_client | Gateway 响应数据: HTTP 200 elapsed_ms=183.21
+headers={
+  "Date": "Sat, 29 Aug 2026 10:51:16 GMT",
+  "Content-Type": "application/json; charset=utf-8",
+  "Content-Length": "474",
+  "Connection": "keep-alive"
+}
+body={
+  "code": 0,
+  "message": "ok",
+  "request_id": "gw_req_c4a0d48447ee3278d0882e1175a88e96",
+  "trace_id": "trace_7057447e8fbcc0decbf57cedc800e523",
+  "responses": [
+    {
+      "id": "req_0",
+      "success": true,
+      "code": 0,
+      "message": "ok",
+      "data": {
+        "task_id": "dating_task_147b21ac92063a1b24bbb8f8865e3bde",
+        "task_type": "reply_generation",
+        "status": "processing",
+        "phase": "analyzing",
+        "progress_percent": 30,
+        "retryable": false,
+        "error_code": "",
+        "create_time": 1788000673651,
+        "completed_time": null,
+        "expire_time": 1788087073651
+      }
+    }
+  ]
+}
+2026-08-29 18:51:16,486 | INFO | utils.custom.http_client | Gateway 请求数据:
+{
+  "url": "https://gateway.spark-jam.top/dating/gateway/invoke",
+  "headers": {
+    "Content-Type": "application/json",
+    "Accept": "*/*",
+    "Host": "gateway.spark-jam.top",
+    "Connection": "keep-alive"
+  },
+  "payload": {
+    "comm": {
+      "device_id": "dating_device_fixture",
+      "platform": "ios",
+      "app_version": "1.0.0",
+      "locale": "en-US",
+      "timezone": "UTC+08:00",
+      "country": "CN",
+      "app_package": "com.example.dating",
+      "auth_token": "***",
+      "user_id": "dating_user_fixture",
+      "client_request_id": "crid_1788000676485558501"
+    },
+    "requests": [
+      {
+        "id": "req_0",
+        "service_name": "tool.dating.DatingAssistantService",
+        "method_name": "GetTask",
+        "params": {
+          "task_id": "dating_task_147b21ac92063a1b24bbb8f8865e3bde"
+        }
+      }
+    ]
+  }
+}
+2026-08-29 18:51:16,695 | INFO | utils.custom.http_client | Gateway 响应数据: HTTP 200 elapsed_ms=207.31
+headers={
+  "Date": "Sat, 29 Aug 2026 10:51:17 GMT",
+  "Content-Type": "application/json; charset=utf-8",
+  "Content-Length": "474",
+  "Connection": "keep-alive"
+}
+body={
+  "code": 0,
+  "message": "ok",
+  "request_id": "gw_req_73771ff8070a99ba2326debfe78f9a51",
+  "trace_id": "trace_62898670cb448071897e4e6c7c256364",
+  "responses": [
+    {
+      "id": "req_0",
+      "success": true,
+      "code": 0,
+      "message": "ok",
+      "data": {
+        "task_id": "dating_task_147b21ac92063a1b24bbb8f8865e3bde",
+        "task_type": "reply_generation",
+        "status": "processing",
+        "phase": "analyzing",
+        "progress_percent": 30,
+        "retryable": false,
+        "error_code": "",
+        "create_time": 1788000673651,
+        "completed_time": null,
+        "expire_time": 1788087073651
+      }
+    }
+  ]
+}
+2026-08-29 18:51:17,698 | INFO | utils.custom.http_client | Gateway 请求数据:
+{
+  "url": "https://gateway.spark-jam.top/dating/gateway/invoke",
+  "headers": {
+    "Content-Type": "application/json",
+    "Accept": "*/*",
+    "Host": "gateway.spark-jam.top",
+    "Connection": "keep-alive"
+  },
+  "payload": {
+    "comm": {
+      "device_id": "dating_device_fixture",
+      "platform": "ios",
+      "app_version": "1.0.0",
+      "locale": "en-US",
+      "timezone": "UTC+08:00",
+      "country": "CN",
+      "app_package": "com.example.dating",
+      "auth_token": "***",
+      "user_id": "dating_user_fixture",
+      "client_request_id": "crid_1788000677697272085"
+    },
+    "requests": [
+      {
+        "id": "req_0",
+        "service_name": "tool.dating.DatingAssistantService",
+        "method_name": "GetTask",
+        "params": {
+          "task_id": "dating_task_147b21ac92063a1b24bbb8f8865e3bde"
+        }
+      }
+    ]
+  }
+}
+2026-08-29 18:51:17,873 | INFO | utils.custom.http_client | Gateway 响应数据: HTTP 200 elapsed_ms=174.41
+headers={
+  "Date": "Sat, 29 Aug 2026 10:51:18 GMT",
+  "Content-Type": "application/json; charset=utf-8",
+  "Content-Length": "474",
+  "Connection": "keep-alive"
+}
+body={
+  "code": 0,
+  "message": "ok",
+  "request_id": "gw_req_1028933c12cdaa42edb6f9f10e1280dc",
+  "trace_id": "trace_c67c080e94f53be3816155c482bf421f",
+  "responses": [
+    {
+      "id": "req_0",
+      "success": true,
+      "code": 0,
+      "message": "ok",
+      "data": {
+        "task_id": "dating_task_147b21ac92063a1b24bbb8f8865e3bde",
+        "task_type": "reply_generation",
+        "status": "processing",
+        "phase": "analyzing",
+        "progress_percent": 30,
+        "retryable": false,
+        "error_code": "",
+        "create_time": 1788000673651,
+        "completed_time": null,
+        "expire_time": 1788087073651
+      }
+    }
+  ]
+}
+2026-08-29 18:51:18,879 | INFO | utils.custom.http_client | Gateway 请求数据:
+{
+  "url": "https://gateway.spark-jam.top/dating/gateway/invoke",
+  "headers": {
+    "Content-Type": "application/json",
+    "Accept": "*/*",
+    "Host": "gateway.spark-jam.top",
+    "Connection": "keep-alive"
+  },
+  "payload": {
+    "comm": {
+      "device_id": "dating_device_fixture",
+      "platform": "ios",
+      "app_version": "1.0.0",
+      "locale": "en-US",
+      "timezone": "UTC+08:00",
+      "country": "CN",
+      "app_package": "com.example.dating",
+      "auth_token": "***",
+      "user_id": "dating_user_fixture",
+      "client_request_id": "crid_1788000678879153919"
+    },
+    "requests": [
+      {
+        "id": "req_0",
+        "service_name": "tool.dating.DatingAssistantService",
+        "method_name": "GetTask",
+        "params": {
+          "task_id": "dating_task_147b21ac92063a1b24bbb8f8865e3bde"
+        }
+      }
+    ]
+  }
+}
+2026-08-29 18:51:19,056 | INFO | utils.custom.http_client | Gateway 响应数据: HTTP 200 elapsed_ms=175.98
+headers={
+  "Date": "Sat, 29 Aug 2026 10:51:19 GMT",
+  "Content-Type": "application/json; charset=utf-8",
+  "Content-Length": "474",
+  "Connection": "keep-alive"
+}
+body={
+  "code": 0,
+  "message": "ok",
+  "request_id": "gw_req_88d07ee54839e59569f59716e7cab058",
+  "trace_id": "trace_03e3504cc12666cce44a7cedbb161e59",
+  "responses": [
+    {
+      "id": "req_0",
+      "success": true,
+      "code": 0,
+      "message": "ok",
+      "data": {
+        "task_id": "dating_task_147b21ac92063a1b24bbb8f8865e3bde",
+        "task_type": "reply_generation",
+        "status": "processing",
+        "phase": "analyzing",
+        "progress_percent": 30,
+        "retryable": false,
+        "error_code": "",
+        "create_time": 1788000673651,
+        "completed_time": null,
+        "expire_time": 1788087073651
+      }
+    }
+  ]
+}
+2026-08-29 18:51:20,063 | INFO | utils.custom.http_client | Gateway 请求数据:
+{
+  "url": "https://gateway.spark-jam.top/dating/gateway/invoke",
+  "headers": {
+    "Content-Type": "application/json",
+    "Accept": "*/*",
+    "Host": "gateway.spark-jam.top",
+    "Connection": "keep-alive"
+  },
+  "payload": {
+    "comm": {
+      "device_id": "dating_device_fixture",
+      "platform": "ios",
+      "app_version": "1.0.0",
+      "locale": "en-US",
+      "timezone": "UTC+08:00",
+      "country": "CN",
+      "app_package": "com.example.dating",
+      "auth_token": "***",
+      "user_id": "dating_user_fixture",
+      "client_request_id": "crid_1788000680062843794"
+    },
+    "requests": [
+      {
+        "id": "req_0",
+        "service_name": "tool.dating.DatingAssistantService",
+        "method_name": "GetTask",
+        "params": {
+          "task_id": "dating_task_147b21ac92063a1b24bbb8f8865e3bde"
+        }
+      }
+    ]
+  }
+}
+2026-08-29 18:51:20,239 | INFO | utils.custom.http_client | Gateway 响应数据: HTTP 200 elapsed_ms=175.26
+headers={
+  "Date": "Sat, 29 Aug 2026 10:51:21 GMT",
+  "Content-Type": "application/json; charset=utf-8",
+  "Content-Length": "474",
+  "Connection": "keep-alive"
+}
+body={
+  "code": 0,
+  "message": "ok",
+  "request_id": "gw_req_b676da20e7ccb1c9b58b013d80cdb6d9",
+  "trace_id": "trace_64d80840e18b6968dd3fb4fb66856422",
+  "responses": [
+    {
+      "id": "req_0",
+      "success": true,
+      "code": 0,
+      "message": "ok",
+      "data": {
+        "task_id": "dating_task_147b21ac92063a1b24bbb8f8865e3bde",
+        "task_type": "reply_generation",
+        "status": "processing",
+        "phase": "analyzing",
+        "progress_percent": 30,
+        "retryable": false,
+        "error_code": "",
+        "create_time": 1788000673651,
+        "completed_time": null,
+        "expire_time": 1788087073651
+      }
+    }
+  ]
+}
+2026-08-29 18:51:21,244 | INFO | utils.custom.http_client | Gateway 请求数据:
+{
+  "url": "https://gateway.spark-jam.top/dating/gateway/invoke",
+  "headers": {
+    "Content-Type": "application/json",
+    "Accept": "*/*",
+    "Host": "gateway.spark-jam.top",
+    "Connection": "keep-alive"
+  },
+  "payload": {
+    "comm": {
+      "device_id": "dating_device_fixture",
+      "platform": "ios",
+      "app_version": "1.0.0",
+      "locale": "en-US",
+      "timezone": "UTC+08:00",
+      "country": "CN",
+      "app_package": "com.example.dating",
+      "auth_token": "***",
+      "user_id": "dating_user_fixture",
+      "client_request_id": "crid_1788000681244026961"
+    },
+    "requests": [
+      {
+        "id": "req_0",
+        "service_name": "tool.dating.DatingAssistantService",
+        "method_name": "GetTask",
+        "params": {
+          "task_id": "dating_task_147b21ac92063a1b24bbb8f8865e3bde"
+        }
+      }
+    ]
+  }
+}
+2026-08-29 18:51:21,421 | INFO | utils.custom.http_client | Gateway 响应数据: HTTP 200 elapsed_ms=175.30
+headers={
+  "Date": "Sat, 29 Aug 2026 10:51:22 GMT",
+  "Content-Type": "application/json; charset=utf-8",
+  "Content-Length": "474",
+  "Connection": "keep-alive"
+}
+body={
+  "code": 0,
+  "message": "ok",
+  "request_id": "gw_req_91325ca0b05ccf5255d4a35c48619fe3",
+  "trace_id": "trace_955173775d6418e09dedefe9ee534f5b",
+  "responses": [
+    {
+      "id": "req_0",
+      "success": true,
+      "code": 0,
+      "message": "ok",
+      "data": {
+        "task_id": "dating_task_147b21ac92063a1b24bbb8f8865e3bde",
+        "task_type": "reply_generation",
+        "status": "processing",
+        "phase": "analyzing",
+        "progress_percent": 30,
+        "retryable": false,
+        "error_code": "",
+        "create_time": 1788000673651,
+        "completed_time": null,
+        "expire_time": 1788087073651
+      }
+    }
+  ]
+}
+2026-08-29 18:51:22,422 | INFO | utils.custom.http_client | Gateway 请求数据:
+{
+  "url": "https://gateway.spark-jam.top/dating/gateway/invoke",
+  "headers": {
+    "Content-Type": "application/json",
+    "Accept": "*/*",
+    "Host": "gateway.spark-jam.top",
+    "Connection": "keep-alive"
+  },
+  "payload": {
+    "comm": {
+      "device_id": "dating_device_fixture",
+      "platform": "ios",
+      "app_version": "1.0.0",
+      "locale": "en-US",
+      "timezone": "UTC+08:00",
+      "country": "CN",
+      "app_package": "com.example.dating",
+      "auth_token": "***",
+      "user_id": "dating_user_fixture",
+      "client_request_id": "crid_1788000682422249545"
+    },
+    "requests": [
+      {
+        "id": "req_0",
+        "service_name": "tool.dating.DatingAssistantService",
+        "method_name": "GetTask",
+        "params": {
+          "task_id": "dating_task_147b21ac92063a1b24bbb8f8865e3bde"
+        }
+      }
+    ]
+  }
+}
+2026-08-29 18:51:22,600 | INFO | utils.custom.http_client | Gateway 响应数据: HTTP 200 elapsed_ms=176.06
+headers={
+  "Date": "Sat, 29 Aug 2026 10:51:23 GMT",
+  "Content-Type": "application/json; charset=utf-8",
+  "Content-Length": "474",
+  "Connection": "keep-alive"
+}
+body={
+  "code": 0,
+  "message": "ok",
+  "request_id": "gw_req_b44a50584cf29b5a2d66a7df05325ff6",
+  "trace_id": "trace_ed7bbe2c917a5a3b579c22b1ce406f33",
+  "responses": [
+    {
+      "id": "req_0",
+      "success": true,
+      "code": 0,
+      "message": "ok",
+      "data": {
+        "task_id": "dating_task_147b21ac92063a1b24bbb8f8865e3bde",
+        "task_type": "reply_generation",
+        "status": "processing",
+        "phase": "analyzing",
+        "progress_percent": 30,
+        "retryable": false,
+        "error_code": "",
+        "create_time": 1788000673651,
+        "completed_time": null,
+        "expire_time": 1788087073651
+      }
+    }
+  ]
+}
+2026-08-29 18:51:23,604 | INFO | utils.custom.http_client | Gateway 请求数据:
+{
+  "url": "https://gateway.spark-jam.top/dating/gateway/invoke",
+  "headers": {
+    "Content-Type": "application/json",
+    "Accept": "*/*",
+    "Host": "gateway.spark-jam.top",
+    "Connection": "keep-alive"
+  },
+  "payload": {
+    "comm": {
+      "device_id": "dating_device_fixture",
+      "platform": "ios",
+      "app_version": "1.0.0",
+      "locale": "en-US",
+      "timezone": "UTC+08:00",
+      "country": "CN",
+      "app_package": "com.example.dating",
+      "auth_token": "***",
+      "user_id": "dating_user_fixture",
+      "client_request_id": "crid_1788000683603896921"
+    },
+    "requests": [
+      {
+        "id": "req_0",
+        "service_name": "tool.dating.DatingAssistantService",
+        "method_name": "GetTask",
+        "params": {
+          "task_id": "dating_task_147b21ac92063a1b24bbb8f8865e3bde"
+        }
+      }
+    ]
+  }
+}
+2026-08-29 18:51:23,869 | INFO | utils.custom.http_client | Gateway 响应数据: HTTP 200 elapsed_ms=264.53
+headers={
+  "Date": "Sat, 29 Aug 2026 10:51:24 GMT",
+  "Content-Type": "application/json; charset=utf-8",
+  "Content-Length": "474",
+  "Connection": "keep-alive"
+}
+body={
+  "code": 0,
+  "message": "ok",
+  "request_id": "gw_req_3f125cb926673d1e9370e100a11cd8e4",
+  "trace_id": "trace_251194a0111015c9c44651c6a5fa6b32",
+  "responses": [
+    {
+      "id": "req_0",
+      "success": true,
+      "code": 0,
+      "message": "ok",
+      "data": {
+        "task_id": "dating_task_147b21ac92063a1b24bbb8f8865e3bde",
+        "task_type": "reply_generation",
+        "status": "processing",
+        "phase": "analyzing",
+        "progress_percent": 30,
+        "retryable": false,
+        "error_code": "",
+        "create_time": 1788000673651,
+        "completed_time": null,
+        "expire_time": 1788087073651
+      }
+    }
+  ]
+}
+2026-08-29 18:51:24,872 | INFO | utils.custom.http_client | Gateway 请求数据:
+{
+  "url": "https://gateway.spark-jam.top/dating/gateway/invoke",
+  "headers": {
+    "Content-Type": "application/json",
+    "Accept": "*/*",
+    "Host": "gateway.spark-jam.top",
+    "Connection": "keep-alive"
+  },
+  "payload": {
+    "comm": {
+      "device_id": "dating_device_fixture",
+      "platform": "ios",
+      "app_version": "1.0.0",
+      "locale": "en-US",
+      "timezone": "UTC+08:00",
+      "country": "CN",
+      "app_package": "com.example.dating",
+      "auth_token": "***",
+      "user_id": "dating_user_fixture",
+      "client_request_id": "crid_1788000684872348255"
+    },
+    "requests": [
+      {
+        "id": "req_0",
+        "service_name": "tool.dating.DatingAssistantService",
+        "method_name": "GetTask",
+        "params": {
+          "task_id": "dating_task_147b21ac92063a1b24bbb8f8865e3bde"
+        }
+      }
+    ]
+  }
+}
+2026-08-29 18:51:25,084 | INFO | utils.custom.http_client | Gateway 响应数据: HTTP 200 elapsed_ms=211.35
+headers={
+  "Date": "Sat, 29 Aug 2026 10:51:25 GMT",
+  "Content-Type": "application/json; charset=utf-8",
+  "Content-Length": "484",
+  "Connection": "keep-alive"
+}
+body={
+  "code": 0,
+  "message": "ok",
+  "request_id": "gw_req_7a52322539b8c4c795f9632f754c4165",
+  "trace_id": "trace_376491d4ac232389685a1227cbfdf9bd",
+  "responses": [
+    {
+      "id": "req_0",
+      "success": true,
+      "code": 0,
+      "message": "ok",
+      "data": {
+        "task_id": "dating_task_147b21ac92063a1b24bbb8f8865e3bde",
+        "task_type": "reply_generation",
+        "status": "succeeded",
+        "phase": "finalizing",
+        "progress_percent": 100,
+        "retryable": false,
+        "error_code": "",
+        "create_time": 1788000673651,
+        "completed_time": 1788000685432,
+        "expire_time": 1788087073651
+      }
+    }
+  ]
+}
+2026-08-29 18:51:25,085 | INFO | utils.custom.flow_runner | 完成 Flow 步骤: step=poll_reply
+2026-08-29 18:51:25,086 | INFO | utils.custom.flow_runner | 开始 Flow 步骤: flow=Dating 多图 Reply 保留结果链路 scenario=Dating 多图 Reply 并保留任务数据 step=get_reply_result (8/8)
+2026-08-29 18:51:25,086 | INFO | utils.custom.http_client | Gateway 请求数据:
+{
+  "url": "https://gateway.spark-jam.top/dating/gateway/invoke",
+  "headers": {
+    "Content-Type": "application/json",
+    "Accept": "*/*",
+    "Host": "gateway.spark-jam.top",
+    "Connection": "keep-alive"
+  },
+  "payload": {
+    "comm": {
+      "device_id": "dating_device_fixture",
+      "platform": "ios",
+      "app_version": "1.0.0",
+      "locale": "en-US",
+      "timezone": "UTC+08:00",
+      "country": "CN",
+      "app_package": "com.example.dating",
+      "auth_token": "***",
+      "user_id": "dating_user_fixture",
+      "client_request_id": "crid_1788000685086416171"
+    },
+    "requests": [
+      {
+        "id": "req_0",
+        "service_name": "tool.dating.DatingAssistantService",
+        "method_name": "GetTaskResult",
+        "params": {
+          "task_id": "dating_task_147b21ac92063a1b24bbb8f8865e3bde"
+        }
+      }
+    ]
+  }
+}
+2026-08-29 18:51:25,266 | INFO | utils.custom.http_client | Gateway 响应数据: HTTP 200 elapsed_ms=178.83
+headers={
+  "Date": "Sat, 29 Aug 2026 10:51:26 GMT",
+  "Content-Type": "application/json; charset=utf-8",
+  "Transfer-Encoding": "chunked",
+  "Connection": "keep-alive"
+}
+body={
+  "code": 0,
+  "message": "ok",
+  "request_id": "gw_req_0197da69f4320202ce49f43d5fc9431f",
+  "trace_id": "trace_2cb3acf1ca2281956968fc111c061077",
+  "responses": [
+    {
+      "id": "req_0",
+      "success": true,
+      "code": 0,
+      "message": "ok",
+      "data": {
+        "task_id": "dating_task_147b21ac92063a1b24bbb8f8865e3bde",
+        "task_type": "reply_generation",
+        "result_id": "dating_result_ac0e7b514cba0f21621223193f2cbc31",
+        "schema_version": "dating.reply_generation.v1",
+        "result": {
+          "schema_version": "dating.reply_generation.v1",
+          "context": {
+            "conversation_stage": "boundary",
+            "moment_type": "rejection",
+            "reply_state": "user_waiting",
+            "requested_intent": "",
+            "effective_goal": "respect_boundary",
+            "signals": [
+              {
+                "signal_id": "has_explicit_boundary",
+                "value": true,
+                "message_id": "m_11"
+              }
+            ]
+          },
+          "comprehensive_analysis": {
+            "whats_happening": "They have asked for distance or ended the interaction. The safest response is brief, accepts the boundary without argument, and does not try to restart the conversation."
+          },
+          "whats_happening": {
+            "title": "Their boundary needs a clear and respectful acknowledgment",
+            "summary": "They have asked for distance or ended the interaction. The safest response is brief, accepts the boundary without argument, and does not try to restart the conversation."
+          },
+          "roles": [
+            {
+              "role_id": "balanced",
+              "role_name": "Balanced",
+              "rank": 1,
+              "is_best_fit": true,
+              "selection_rule_id": "R01_BOUNDARY_OR_LOW_INFO",
+              "selection_reasons": [
+                "has_explicit_boundary"
+              ],
+              "coach_note": "Acknowledge the boundary once, avoid persuasion, and do not contact them again unless they initiate.",
+              "replies": [
+                {
+                  "reply_id": "reply_1",
+                  "text": "I understand. I won’t contact you again. Take care.",
+                  "is_top_pick": true
+                },
+                {
+                  "reply_id": "reply_2",
+                  "text": "Got it — I’ll respect your space and won’t reach out again.",
+                  "is_top_pick": false
+                },
+                {
+                  "reply_id": "reply_3",
+                  "text": "Thanks for being clear. I’ll leave things here and wish you well.",
+                  "is_top_pick": false
+                },
+                {
+                  "reply_id": "reply_4",
+                  "text": "I hear you. I’ll respect that boundary and step back.",
+                  "is_top_pick": false
+                }
+              ],
+              "top_pick": {
+                "reply_id": "reply_1",
+                "text": "I understand. I won’t contact you again. Take care."
+              },
+              "alternatives": [
+                {
+                  "reply_id": "reply_2",
+                  "text": "Got it — I’ll respect your space and won’t reach out again."
+                },
+                {
+                  "reply_id": "reply_3",
+                  "text": "Thanks for being clear. I’ll leave things here and wish you well."
+                },
+                {
+                  "reply_id": "reply_4",
+                  "text": "I hear you. I’ll respect that boundary and step back."
+                }
+              ]
+            }
+          ],
+          "association": {
+            "person_id": null,
+            "person_history_used": false
+          },
+          "degradation": {
+            "is_degraded": false,
+            "reason": null
+          },
+          "warnings": [
+            "SAFETY_DEGRADED"
+          ]
+        },
+        "create_time": 1788000685417,
+        "expire_time": 1788087073651
+      }
+    }
+  ]
+}
+2026-08-29 18:51:25,267 | INFO | utils.custom.flow_runner | 完成 Flow 步骤: step=get_reply_result
