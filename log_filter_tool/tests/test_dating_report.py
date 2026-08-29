@@ -340,6 +340,23 @@ class DatingRedactionTest(unittest.TestCase):
                     expected,
                 )
 
+    def test_document_assignment_apostrophe_does_not_open_quote_state(self):
+        """未加引号文本中的 apostrophe 不得阻断后续凭证赋值扫描。"""
+        source = (
+            "note=it's-safe; "
+            "Authorization=APOSTROPHE_BYPASS_SECRET; count=2"
+        )
+        expected = "note=it's-safe; Authorization=[REDACTED]; count=2"
+
+        redacted = dating_log_rules.redact_dating_document(source)
+
+        self.assertEqual(redacted, expected)
+        self.assertNotIn("APOSTROPHE_BYPASS_SECRET", redacted)
+        self.assertEqual(
+            dating_log_rules.redact_dating_document(redacted),
+            expected,
+        )
+
     def test_document_near_json_fallback_redacts_quoted_credentials(self):
         """JSON 整体损坏时仍须精确遮住 quoted 凭证值并保留诊断标点。"""
         cases = (

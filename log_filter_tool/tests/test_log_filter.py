@@ -458,6 +458,37 @@ class LogFilterTests(unittest.TestCase):
                     for leaked_value in leaked_values:
                         self.assertNotIn(leaked_value, persisted)
 
+    def test_export_dating_report_apostrophe_does_not_hide_assignment(self):
+        """Markdown 落盘前不得让普通 apostrophe 隐藏后续凭证赋值。"""
+        source = (
+            "note=it's-safe; "
+            "Authorization=APOSTROPHE_BYPASS_SECRET; count=2"
+        )
+        expected = "note=it's-safe; Authorization=[REDACTED]; count=2"
+        app = create_app()
+        app.testing = True
+
+        with TemporaryDirectory() as export_dir:
+            app.config.update(
+                LOG_EXPORT_DIR=export_dir,
+                LOG_EXPORT_DISPLAY_DIR=export_dir,
+            )
+            response = app.test_client().post(
+                "/export",
+                json={
+                    "export_type": "dating_analysis_report",
+                    "content": source,
+                },
+            )
+            payload = response.get_json()
+            persisted = (
+                Path(export_dir) / payload["filename"]
+            ).read_text(encoding="utf-8")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(persisted, expected)
+        self.assertNotIn("APOSTROPHE_BYPASS_SECRET", persisted)
+
     def test_export_dating_report_redacts_near_json_credentials(self):
         """Markdown 导出须保留 malformed JSON 诊断结构并遮住凭证值。"""
         cases = (

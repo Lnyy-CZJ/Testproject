@@ -2337,19 +2337,53 @@ def _redact_assignment_segment(segment: str) -> str:
     return segment[:value_start] + _REDACTED + segment[value_end:]
 
 
+def _quote_starts_assignment_value(
+    text: str,
+    segment_start: int,
+    quote_index: int,
+) -> bool:
+    """确认 quote 位于当前赋值的 separator 后，且中间只有水平空白。"""
+    cursor = segment_start
+    while cursor < quote_index and text[cursor] in " \t":
+        cursor += 1
+    if (
+        cursor + 1 < quote_index
+        and text[cursor] in "-*+>"
+        and text[cursor + 1] in " \t"
+    ):
+        cursor += 1
+        while cursor < quote_index and text[cursor] in " \t":
+            cursor += 1
+
+    parsed = _assignment_key_and_separator(text, cursor, quote_index)
+    if parsed is None:
+        return False
+    _key, separator = parsed
+    return all(
+        character in " \t"
+        for character in text[separator + 1 : quote_index]
+    )
+
+
 def _redact_assignment_sequence(text: str) -> str:
     """按引号外的未转义分号拆分赋值序列，并原样保留分隔符。"""
     rendered: list[str] = []
     segment_start = 0
     quote: str | None = None
     for index, character in enumerate(text):
-        if character in "\"'" and not _is_escaped_character(text, index):
-            if quote is None:
-                quote = character
-            elif quote == character:
+        if quote is not None:
+            if (
+                character == quote
+                and not _is_escaped_character(text, index)
+            ):
                 quote = None
             continue
-        if quote is not None:
+        if (
+            character in "\"'"
+            and not _is_escaped_character(text, index)
+            and _quote_starts_assignment_value(text, segment_start, index)
+        ):
+            quote = character
             continue
         if character != ";" or _is_escaped_character(text, index):
             continue
