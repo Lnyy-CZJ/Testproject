@@ -12,13 +12,16 @@ from dating_log_rules import run_dating_checks
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "dating"
 REPORT_HEADINGS = [
     "## 总体结论",
-    "## 接口调用链",
+    "## 任务与结果摘要",
+    "## 接口执行链路",
     "## 上传资源",
-    "## 任务生命周期",
-    "## Result 摘要",
-    "## Result 字段",
-    "## 规则检查",
-    "## 解析警告",
+    "## 任务状态时间线",
+    "## 最终结果字段",
+    "## Null 与空值",
+    "## 已确认正常",
+    "## 已确认异常",
+    "## 需要确认",
+    "## 日志不足",
 ]
 
 
@@ -29,6 +32,13 @@ def _load_reply_analysis() -> dict:
             encoding="utf-8"
         )
     )
+
+
+def _report_section(report: str, heading: str) -> str:
+    """提取一个固定二级章节，避免测试依赖生产报告辅助函数。"""
+    start = report.index(heading) + len(heading)
+    next_heading = report.find("\n## ", start)
+    return report[start:] if next_heading < 0 else report[start:next_heading]
 
 
 class DatingRedactionTest(unittest.TestCase):
@@ -86,8 +96,91 @@ class DatingRedactionTest(unittest.TestCase):
         self.assertEqual(redacted["task_id"], source["task_id"])
         self.assertEqual(source["Authorization"], "Bearer secret-token-value")
 
+    def test_signed_url_variants_and_urlsafe_base64_are_redacted(self):
+        """覆盖四类签名查询键和连续 URL-safe Base64 候选值。"""
+        urlsafe_blob = "A" * 255 + "_"
+        source = {
+            "cos": "https://cos.example/a.png?q-signature=cos-secret&x=1",
+            "aws": "https://s3.example/b.png?X-Amz-Signature=aws-secret&x=1",
+            "google": (
+                "https://storage.example/c.png?"
+                "X-Goog-Signature=google-secret&x=1"
+            ),
+            "azure": "https://blob.example/d.png?sv=2025-01-01&SIG=azure-secret",
+            "urlsafe_blob": urlsafe_blob,
+        }
+
+        redacted = dating_log_rules.redact_dating_response(source)
+
+        self.assertEqual(redacted["cos"], "https://cos.example/a.png?[REDACTED]")
+        self.assertEqual(redacted["aws"], "https://s3.example/b.png?[REDACTED]")
+        self.assertEqual(
+            redacted["google"], "https://storage.example/c.png?[REDACTED]"
+        )
+        self.assertEqual(redacted["azure"], "https://blob.example/d.png?[REDACTED]")
+        self.assertEqual(
+            redacted["urlsafe_blob"],
+            f"[REDACTED_BASE64 length={len(urlsafe_blob)}]",
+        )
+
+    def test_malformed_url_like_text_does_not_crash_redaction_or_report(self):
+        """坏 URL 只作为普通文本保留，不能让递归响应或报告渲染中断。"""
+        malformed = "https://[broken"
+
+        redacted = dating_log_rules.redact_dating_response(
+            {"ordinary_text": malformed}
+        )
+        analysis = _load_reply_analysis()
+        checks = run_dating_checks(analysis)
+        checks[0]["actual"] = malformed
+        report = dating_log_rules.render_dating_report(analysis, checks)
+
+        self.assertEqual(redacted["ordinary_text"], malformed)
+        self.assertIn(malformed, report)
+
+    def test_sensitive_key_format_variants_redact_without_business_overmatch(self):
+        """敏感类别按精确规范名匹配，camel/连字符变化不影响结果。"""
+        sensitive = {
+            "authorization": "secret-authorization",
+            "Proxy-Authorization": "secret-proxy-authorization",
+            "cookie": "secret-cookie",
+            "setCookie": "secret-set-cookie",
+            "auth_token": "secret-auth-token",
+            "accessToken": "secret-access-token",
+            "refreshToken": "secret-refresh-token",
+            "ID-TOKEN": "secret-id-token",
+            "sessionToken": "secret-session-token",
+            "api_key": "secret-api-key",
+            "X-API-Key": "secret-x-api-key",
+            "secret": "secret-value",
+            "clientSecret": "secret-client-value",
+        }
+        ordinary = {
+            "authorization_status": "approved",
+            "cookie_preferences": "essential-only",
+            "token_count": 3,
+            "sessionTokenCount": 2,
+            "api_key_count": 1,
+            "client_secret_hint": "last-four",
+            "secretary": "business-value",
+        }
+
+        redacted = dating_log_rules.redact_dating_response(
+            {**sensitive, **ordinary}
+        )
+
+        self.assertEqual(
+            {key: redacted[key] for key in sensitive},
+            {key: "[REDACTED]" for key in sensitive},
+        )
+        self.assertEqual(
+            {key: redacted[key] for key in ordinary},
+            ordinary,
+        )
+
     def test_long_text_is_truncated_everywhere_and_field_warning_is_added(self):
-        long_text = "x" * 20000 + "SECRET_TAIL"
+        # 空格使该值明确属于自由文本，而不是 Base64/URL-safe Base64 候选。
+        long_text = "x" * 20000 + " SECRET_TAIL"
         source = {
             "task_snapshot": {
                 "result_fields": [
@@ -148,8 +241,9 @@ class DatingReportTest(unittest.TestCase):
         self.assertNotIn("推测", report)
         self.assertIn("dating.reply_generation.v1", report)
         self.assertIn("GetTaskResult", report)
+        self.assertIn("null_count", _report_section(report, "## Null 与空值"))
 
-    def test_report_is_deterministic_and_sorts_checks_by_outcome(self):
+    def test_report_is_deterministic_and_partitions_checks_by_outcome(self):
         analysis = _load_reply_analysis()
         checks = [
             {
@@ -176,15 +270,44 @@ class DatingReportTest(unittest.TestCase):
         )
 
         self.assertEqual(first, second)
-        ordered_markers = [
-            "[FAIL] T-FAIL",
-            "[WARN] T-WARN",
-            "[UNKNOWN] T-UNKNOWN",
-            "[PASS] T-PASS",
-            "[NA] T-NA",
-        ]
-        positions = [first.index(marker) for marker in ordered_markers]
-        self.assertEqual(positions, sorted(positions))
+        partitions = {
+            "## 已确认正常": "[PASS] T-PASS",
+            "## 已确认异常": "[FAIL] T-FAIL",
+            "## 需要确认": "[WARN] T-WARN",
+            "## 日志不足": "[UNKNOWN] T-UNKNOWN",
+        }
+        for heading, expected_marker in partitions.items():
+            with self.subTest(heading=heading):
+                section = _report_section(first, heading)
+                self.assertIn(expected_marker, section)
+                for other_marker in set(partitions.values()) - {expected_marker}:
+                    self.assertNotIn(other_marker, section)
+        # PRD 允许 NA 省略；当前模板采用省略策略，不创建额外顶级章节。
+        self.assertNotIn("[NA] T-NA", first)
+
+    def test_parse_warnings_are_in_fixed_log_insufficient_section(self):
+        """解析 warning 进入既有“日志不足”章节，不能新增顶级章节。"""
+        analysis = _load_reply_analysis()
+        analysis["parse_warnings"].append(
+            {
+                "code": "TEST_PARSE_WARNING",
+                "message": "fixture parse warning",
+                "line_start": 3,
+                "line_end": 4,
+            }
+        )
+
+        report = dating_log_rules.render_dating_report(
+            analysis, run_dating_checks(analysis)
+        )
+
+        section = _report_section(report, "## 日志不足")
+        self.assertIn("TEST_PARSE_WARNING", section)
+        self.assertIn("fixture parse warning", section)
+        self.assertEqual(
+            [line for line in report.splitlines() if line.startswith("## ")],
+            REPORT_HEADINGS,
+        )
 
     def test_report_redacts_analysis_and_check_values_without_mutating_inputs(self):
         analysis = _load_reply_analysis()
@@ -218,6 +341,29 @@ class DatingReportTest(unittest.TestCase):
         self.assertEqual(
             analysis["calls"][0]["request"]["Authorization"],
             "Bearer secret-token-value",
+        )
+
+    def test_report_does_not_leak_azure_sas_or_urlsafe_base64_from_checks(self):
+        """报告入口必须递归脱敏 checks 中的 Azure SAS 与二进制候选值。"""
+        analysis = _load_reply_analysis()
+        checks = run_dating_checks(analysis)
+        urlsafe_blob = "A" * 255 + "_"
+        checks[0]["actual"] = {
+            "azure_url": (
+                "https://blob.example/object.png?"
+                "sv=2025-01-01&sig=azure-check-secret"
+            ),
+            "binary": urlsafe_blob,
+        }
+
+        report = dating_log_rules.render_dating_report(analysis, checks)
+
+        self.assertNotIn("azure-check-secret", report)
+        self.assertNotIn("?sv=", report)
+        self.assertNotIn(urlsafe_blob, report)
+        self.assertIn("https://blob.example/object.png?[REDACTED]", report)
+        self.assertIn(
+            f"[REDACTED_BASE64 length={len(urlsafe_blob)}]", report
         )
 
 

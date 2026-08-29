@@ -19,17 +19,22 @@ _REDACTED = "[REDACTED]"
 _MAX_TEXT_VALUE_CHARS = 20_000
 _SENSITIVE_KEYS = {
     "authorization",
+    "proxyauthorization",
     "cookie",
-    "set_cookie",
+    "setcookie",
     "token",
-    "auth_token",
-    "access_token",
-    "refresh_token",
-    "session_token",
-    "api_key",
+    "authtoken",
+    "accesstoken",
+    "refreshtoken",
+    "idtoken",
+    "sessiontoken",
+    "apikey",
+    "xapikey",
     "secret",
+    "clientsecret",
 }
 _BASE64_CANDIDATE_RE = re.compile(r"[A-Za-z0-9+/]*={0,2}\Z")
+_URLSAFE_BASE64_CANDIDATE_RE = re.compile(r"[A-Za-z0-9_-]*={0,2}\Z")
 _TRUNCATION_WARNING_MESSAGE = "字段文本超过 20000 字符，结果仅保留前 20000 字符"
 
 RULE_SPECS = (
@@ -1657,7 +1662,11 @@ def check_reply_degradation_consistency(analysis: dict) -> dict:
 
 
 def check_reply_person_history_nullability(analysis: dict) -> dict:
-    """REPLY-008：未使用历史时允许 null；使用历史时 person_id 必须非空。"""
+    """REPLY-008：仅确认未使用人物历史时 ``person_id=null`` 合法。
+
+    PRD 没有定义 ``person_history_used=true`` 与 ``person_id`` 的反向约束，
+    因此不能据此构造语义 FAIL；字段缺失则保留为日志事实不足的 UNKNOWN。
+    """
     _, sections, early = _schema_rule_inputs(
         analysis, "REPLY-008", _REPLY_SCHEMA_VERSION
     )
@@ -1666,23 +1675,27 @@ def check_reply_person_history_nullability(analysis: dict) -> dict:
     association = sections.get("result.association") if sections else None
     if not isinstance(association, dict):
         return _result("REPLY-008", "UNKNOWN", association, "association 可用")
-    used = association.get("person_history_used")
-    person_id = association.get("person_id")
-    if type(used) is not bool:
-        return _result("REPLY-008", "UNKNOWN", used, "person_history_used 为布尔值")
-    if used and not _is_meaningful_text(person_id):
+    if "person_history_used" not in association or "person_id" not in association:
+        missing = [
+            key
+            for key in ("person_history_used", "person_id")
+            if key not in association
+        ]
         return _result(
             "REPLY-008",
-            "FAIL",
-            {"person_history_used": used, "person_id": person_id},
-            "使用人物历史时 person_id 非空",
-            _schema_evidence(analysis, "result.association.person_id", person_id),
+            "UNKNOWN",
+            {"missing_fields": missing},
+            "association 两个字段均可定位",
         )
+    used = association["person_history_used"]
+    person_id = association["person_id"]
+    if type(used) is not bool:
+        return _result("REPLY-008", "UNKNOWN", used, "person_history_used 为布尔值")
     return _result(
         "REPLY-008",
         "PASS",
         {"person_history_used": used, "person_id": person_id},
-        "person_history_used=false 时允许 person_id=null",
+        "person_history_used=false 时允许 person_id=null；不推断反向约束",
     )
 
 
@@ -1853,7 +1866,7 @@ def check_analysis_evidence_message_ids(analysis: dict) -> dict:
     events = sections.get("result.key_events") if sections else None
     if not isinstance(signals, dict) or not isinstance(events, dict):
         return _result("ANALYSIS-006", "UNKNOWN", None, "Signal/Event 分组可用")
-    empty_paths: list[str] = []
+    violations: list[dict] = []
     for root, groups, container in (
         ("result.chat_signals", _SIGNAL_GROUPS, signals),
         ("result.key_events", _EVENT_GROUPS, events),
@@ -1865,18 +1878,36 @@ def check_analysis_evidence_message_ids(analysis: dict) -> dict:
             ):
                 return _result("ANALYSIS-006", "UNKNOWN", items, f"{group} 为对象数组")
             for index, item in enumerate(items):
-                evidence_ids = item.get("evidence_message_ids")
+                evidence_ids = (
+                    item["evidence_message_ids"]
+                    if "evidence_message_ids" in item
+                    else "MISSING"
+                )
                 if not isinstance(evidence_ids, list) or not evidence_ids:
-                    empty_paths.append(
-                        f"{root}.{group}[{index}].evidence_message_ids"
+                    violations.append(
+                        {
+                            "path": (
+                                f"{root}.{group}[{index}].evidence_message_ids"
+                            ),
+                            "value": evidence_ids,
+                        }
                     )
-    if empty_paths:
+    if violations:
+        evidence = []
+        for violation in violations:
+            evidence.extend(
+                _schema_evidence(
+                    analysis,
+                    violation["path"],
+                    violation["value"],
+                )
+            )
         return _result(
             "ANALYSIS-006",
             "FAIL",
-            empty_paths,
+            violations,
             "Signal/Event 的 evidence_message_ids 非空",
-            _schema_evidence(analysis, empty_paths[0], []),
+            evidence,
         )
     return _result("ANALYSIS-006", "PASS", "all non-empty", "证据消息数组非空")
 
@@ -1982,13 +2013,22 @@ ANALYSIS_RULES = (
 
 
 def _normalized_secret_key(key: object) -> str:
-    """把 JSON 键规范为脱敏规则使用的小写下划线形式。"""
-    return str(key).lower().replace("-", "_")
+    """把大小写、连字符、下划线和 camel 变体归一为精确类别键。
+
+    仅移除约定的格式分隔符，不做前缀或模糊命中；例如 ``token_count``
+    会归一为 ``tokencount``，不会误命中精确的 ``token``。
+    """
+    return str(key).lower().replace("-", "").replace("_", "")
 
 
 def _redacted_signed_url(value: str) -> str | None:
     """识别签名 URL，并在保留对象路径的同时移除整个查询串。"""
-    parsed = urlsplit(value)
+    try:
+        parsed = urlsplit(value)
+    except ValueError:
+        # urllib 会拒绝未闭合 IPv6 host；这类坏文本没有可安全确认的 URL
+        # 结构，因此按普通字符串继续后续 Base64/长度规则，而不是中断响应。
+        return None
     if not parsed.scheme or not parsed.netloc or not parsed.query:
         return None
     query_keys = {
@@ -1998,7 +2038,11 @@ def _redacted_signed_url(value: str) -> str | None:
         )
     }
     has_signature = any(
-        "signature" in query_key or query_key == "q_sign_algorithm"
+        "signature" in query_key
+        or query_key == "qsignalgorithm"
+        # Azure SAS 使用短键 sig；必须精确匹配，避免把普通 signal 等参数
+        # 当成签名并删除整个查询串。
+        or query_key == "sig"
         for query_key in query_keys
     )
     if not has_signature:
@@ -2008,8 +2052,20 @@ def _redacted_signed_url(value: str) -> str | None:
 
 
 def _is_long_base64_candidate(value: str) -> bool:
-    """判断连续 256 字符以上的标准 Base64 候选值。"""
-    return len(value) >= 256 and _BASE64_CANDIDATE_RE.fullmatch(value) is not None
+    """判断连续 256 字符以上的标准或 URL-safe Base64 候选值。
+
+    URL-safe 候选只要出现 ``-`` 或 ``_`` 专用字符即按二进制处理；普通
+    自由文本由空格、标点等非 Base64 字符与该分支区分。
+    """
+    if len(value) < 256:
+        return False
+    if _BASE64_CANDIDATE_RE.fullmatch(value) is not None:
+        return True
+    urlsafe_marker_count = value.count("-") + value.count("_")
+    return (
+        urlsafe_marker_count >= 1
+        and _URLSAFE_BASE64_CANDIDATE_RE.fullmatch(value) is not None
+    )
 
 
 def _append_truncation_warnings(snapshot: dict, paths: list[str]) -> None:
@@ -2271,7 +2327,7 @@ def _report_lifecycle(snapshot: dict) -> list[str]:
         for sample in samples
         if isinstance(sample, dict)
     ]
-    return [
+    lines = [
         f"- task_id: `{_report_value(snapshot.get('task_id'))}`",
         f"- Create call: `{_report_value(snapshot.get('create_call_id'))}`",
         f"- Poll count: {_report_value(lifecycle.get('poll_count'))}",
@@ -2283,11 +2339,48 @@ def _report_lifecycle(snapshot: dict) -> list[str]:
         f"- Duration(ms): {_report_value(lifecycle.get('duration_ms'))}",
         f"- Result call: `{_report_value(snapshot.get('result_call_id'))}`",
     ]
+    sample_rows = [
+        (
+            sample.get("call_id"),
+            sample.get("timestamp"),
+            sample.get("status"),
+            sample.get("phase"),
+            sample.get("progress_percent"),
+            sample.get("retryable"),
+            sample.get("error_code"),
+            {
+                "line_start": sample.get("line_start"),
+                "line_end": sample.get("line_end"),
+            },
+        )
+        for sample in samples
+        if isinstance(sample, dict)
+    ]
+    lines.extend(["", "### Poll 状态样本", ""])
+    lines.extend(
+        _report_table(
+            (
+                "call_id",
+                "timestamp",
+                "status",
+                "phase",
+                "progress_percent",
+                "retryable",
+                "error_code",
+                "日志行",
+            ),
+            sample_rows,
+        )
+    )
+    return lines
 
 
 def _report_result_summary(snapshot: dict) -> list[str]:
     """按稳定 key 顺序输出摘要，并按 analyzer 的 section 顺序输出块值。"""
     lines = [
+        f"- task_id: `{_report_value(snapshot.get('task_id'))}`",
+        f"- 任务类型: `{_report_value(snapshot.get('task_type'))}`",
+        f"- Schema: `{_report_value(snapshot.get('schema_version'))}`",
         f"- Schema status: `{_report_value(snapshot.get('schema_status'))}`",
         "- Result payload present: "
         f"{_report_value(snapshot.get('result_payload_present'))}",
@@ -2310,6 +2403,28 @@ def _report_result_summary(snapshot: dict) -> list[str]:
     lines.extend(["", "### Result Sections", ""])
     lines.extend(_report_table(("label", "path", "value"), section_rows))
     return lines
+
+
+def _report_field_health(snapshot: dict) -> list[str]:
+    """输出 Task 5 已计算的 Null/空值健康度，不重新解释业务语义。"""
+    health = snapshot.get("field_health")
+    health = health if isinstance(health, dict) else {}
+    ordered_keys = (
+        "total_field_count",
+        "present_count",
+        "null_count",
+        "empty_string_count",
+        "empty_array_count",
+        "empty_object_count",
+        "missing_count",
+        "unknown_schema_field_count",
+    )
+    rows = [(key, health.get(key)) for key in ordered_keys if key in health]
+    rows.extend(
+        (key, health[key])
+        for key in sorted(set(health) - set(ordered_keys))
+    )
+    return _report_table(("指标", "值"), rows)
 
 
 def _report_result_fields(snapshot: dict) -> list[str]:
@@ -2343,19 +2458,17 @@ def _report_result_fields(snapshot: dict) -> list[str]:
     )
 
 
-def _report_checks(checks: list[dict]) -> list[str]:
-    """按固定 outcome 优先级排序，保留同 outcome 的输入顺序。"""
-    outcome_rank = {"FAIL": 0, "WARN": 1, "UNKNOWN": 2, "PASS": 3, "NA": 4}
-    indexed_checks = [
-        (index, check)
-        for index, check in enumerate(checks)
-        if isinstance(check, dict)
+def _report_checks(checks: list[dict], outcome: str) -> list[str]:
+    """只渲染指定 outcome，固定报告用章节本身表达结果类别。"""
+    selected_checks = [
+        check
+        for check in checks
+        if isinstance(check, dict) and check.get("outcome") == outcome
     ]
-    indexed_checks.sort(
-        key=lambda item: (outcome_rank.get(item[1].get("outcome"), 5), item[0])
-    )
+    if not selected_checks:
+        return ["- 无"]
     lines = []
-    for _index, check in indexed_checks:
+    for check in selected_checks:
         lines.extend(
             [
                 f"### [{check.get('outcome')}] {check.get('rule_id')} — {check.get('title')}",
@@ -2416,13 +2529,21 @@ def render_dating_report(analysis_result: dict, checks: list[dict]) -> str:
 
     sections = (
         ("## 总体结论", _report_overview(analysis, safe_checks)),
-        ("## 接口调用链", _report_calls(analysis)),
+        ("## 任务与结果摘要", _report_result_summary(snapshot)),
+        ("## 接口执行链路", _report_calls(analysis)),
         ("## 上传资源", _report_uploads(snapshot)),
-        ("## 任务生命周期", _report_lifecycle(snapshot)),
-        ("## Result 摘要", _report_result_summary(snapshot)),
-        ("## Result 字段", _report_result_fields(snapshot)),
-        ("## 规则检查", _report_checks(safe_checks)),
-        ("## 解析警告", _report_warnings(analysis, snapshot)),
+        ("## 任务状态时间线", _report_lifecycle(snapshot)),
+        ("## 最终结果字段", _report_result_fields(snapshot)),
+        ("## Null 与空值", _report_field_health(snapshot)),
+        ("## 已确认正常", _report_checks(safe_checks, "PASS")),
+        ("## 已确认异常", _report_checks(safe_checks, "FAIL")),
+        ("## 需要确认", _report_checks(safe_checks, "WARN")),
+        (
+            "## 日志不足",
+            _report_checks(safe_checks, "UNKNOWN")
+            + ["", "### 解析警告", ""]
+            + _report_warnings(analysis, snapshot),
+        ),
     )
     lines = ["# Dating 结构化接口日志分析", ""]
     for heading, content in sections:

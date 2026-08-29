@@ -1013,15 +1013,23 @@ class ReplyRuleTest(unittest.TestCase):
             "PASS",
         )
 
-        inconsistent_history = _load_analysis()
-        association = _section_value(inconsistent_history, "result.association")
+        history_used_without_person = _load_analysis()
+        association = _section_value(
+            history_used_without_person, "result.association"
+        )
         association["person_history_used"] = True
         association["person_id"] = None
         check = _check_by_id(
-            run_dating_checks(inconsistent_history), "REPLY-008"
+            run_dating_checks(history_used_without_person), "REPLY-008"
         )
-        self.assertEqual(check["outcome"], "FAIL")
-        _assert_evidence_shape(self, check)
+        self.assertEqual(check["outcome"], "PASS")
+
+        missing_person_id = _load_analysis()
+        _section_value(missing_person_id, "result.association").pop("person_id")
+        missing_check = _check_by_id(
+            run_dating_checks(missing_person_id), "REPLY-008"
+        )
+        self.assertEqual(missing_check["outcome"], "UNKNOWN")
 
     def test_reply_rules_are_na_for_analysis_schema(self):
         checks = run_dating_checks(
@@ -1143,6 +1151,49 @@ class AnalysisRuleTest(unittest.TestCase):
 
                 self.assertEqual(check["outcome"], "FAIL")
                 _assert_evidence_shape(self, check)
+
+    def test_evidence_boundary_preserves_missing_null_and_empty_values(self):
+        """ANALYSIS-006 的 actual/evidence 必须保留三种不同 JSON 事实。"""
+        expected_path = (
+            "result.chat_signals.positive_signals[0].evidence_message_ids"
+        )
+        mutations = (
+            (
+                "missing",
+                lambda signal: signal.pop("evidence_message_ids"),
+                "MISSING",
+            ),
+            (
+                "null",
+                lambda signal: signal.__setitem__("evidence_message_ids", None),
+                None,
+            ),
+            (
+                "empty",
+                lambda signal: signal.__setitem__("evidence_message_ids", []),
+                [],
+            ),
+        )
+        for name, mutate, expected_value in mutations:
+            with self.subTest(name=name):
+                analysis = _load_analysis(
+                    "relationship_analysis_multi_image_success.log"
+                )
+                signal = _section_value(analysis, "result.chat_signals")[
+                    "positive_signals"
+                ][0]
+                mutate(signal)
+
+                check = _check_by_id(run_dating_checks(analysis), "ANALYSIS-006")
+
+                self.assertEqual(check["outcome"], "FAIL")
+                self.assertEqual(
+                    check["actual"],
+                    [{"path": expected_path, "value": expected_value}],
+                )
+                _assert_evidence_shape(self, check)
+                self.assertEqual(check["evidence"][0]["json_path"], expected_path)
+                self.assertEqual(check["evidence"][0]["value"], expected_value)
 
     def test_analysis_diagnostics_summarize_without_warning(self):
         analysis = _load_analysis("relationship_analysis_multi_image_success.log")
