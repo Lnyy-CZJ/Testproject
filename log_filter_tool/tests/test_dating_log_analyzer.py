@@ -131,6 +131,7 @@ def _snapshot_for_schema_result(
     schema_version: str | None,
     *,
     include_outer_schema: bool = True,
+    include_result: bool = True,
 ) -> dict:
     """构造包含一次成功 Result 的最小真实调用链，供 Schema 边界测试复用。"""
     task_id = "task_schema_projection"
@@ -141,8 +142,9 @@ def _snapshot_for_schema_result(
     result_data = {
         "task_id": task_id,
         "task_type": task_type,
-        "result": result_payload,
     }
+    if include_result:
+        result_data["result"] = result_payload
     if include_outer_schema:
         result_data["schema_version"] = schema_version
     calls = [
@@ -265,6 +267,39 @@ class FieldIndexTests(unittest.TestCase):
         self.assertEqual(fields[-1]["path"], "result[19998]")
         self.assertIn(
             "MAX_FIELD_COUNT_REACHED", {item["code"] for item in warnings}
+        )
+
+    def test_full_field_capacity_warns_for_omitted_required_nodes(self):
+        """现有节点恰好占满上限时，required 截断必须有确定性证据。"""
+        fields, warnings = build_field_index(
+            {"existing": 1},
+            root_path="result",
+            source=_fixture_source(),
+            known_paths={
+                "result",
+                "result.existing",
+                "result.required_a",
+                "result.required_b",
+            },
+            required_paths=("result.required_a", "result.required_b"),
+            max_fields=2,
+        )
+        count_warnings = [
+            warning
+            for warning in warnings
+            if warning["code"] == "MAX_FIELD_COUNT_REACHED"
+        ]
+
+        self.assertEqual(len(fields), 2)
+        self.assertEqual(
+            [field["path"] for field in fields],
+            ["result", "result.existing"],
+        )
+        self.assertEqual(len(count_warnings), 1)
+        self.assertEqual(count_warnings[0]["json_path"], "result.required_a")
+        self.assertEqual(
+            count_warnings[0]["omitted_required_paths"],
+            ["result.required_a", "result.required_b"],
         )
 
 
@@ -406,6 +441,63 @@ class DatingResultProjectionTests(unittest.TestCase):
         self.assertEqual(fields["result.warnings"]["presence"], "MISSING")
         self.assertEqual(task["field_health"]["missing_count"], 3)
         self.assertEqual(task["field_health"]["unknown_schema_field_count"], 2)
+
+    def test_known_outer_schema_without_result_emits_required_missing_fields(self):
+        """data.result 缺失时保留 Task 4 presence，并输出全部必填 MISSING 证据。"""
+        task = _snapshot_for_schema_result(
+            None,
+            "dating.reply_generation.v1",
+            include_result=False,
+        )
+
+        self.assertIs(task["result_payload_present"], False)
+        self.assertIsNone(task["result_payload"])
+        self.assertEqual(task["schema_status"], "KNOWN_SCHEMA")
+        self.assertEqual(
+            [field["path"] for field in task["result_fields"]],
+            [
+                "result.schema_version",
+                "result.context",
+                "result.roles",
+                "result.association",
+                "result.degradation",
+                "result.warnings",
+            ],
+        )
+        self.assertTrue(
+            all(
+                field["presence"] == "MISSING"
+                for field in task["result_fields"]
+            )
+        )
+        self.assertTrue(
+            all(
+                field["source"]
+                == {
+                    "method": "GetTaskResult",
+                    "call_id": "call_0002",
+                    "line_start": 2,
+                    "line_end": 2,
+                    "location_precision": "block",
+                }
+                for field in task["result_fields"]
+            )
+        )
+        self.assertEqual(
+            task["field_health"],
+            {
+                "total_field_count": 6,
+                "present_count": 0,
+                "null_count": 0,
+                "empty_string_count": 0,
+                "empty_array_count": 0,
+                "empty_object_count": 0,
+                "missing_count": 6,
+                "unknown_schema_field_count": 0,
+            },
+        )
+        self.assertEqual(task["result_summary"], {})
+        self.assertEqual(task["result_sections"], [])
 
     def test_analysis_summary_distinguishes_missing_arrays_from_empty_arrays(self):
         """Schema path 缺失返回 None；字段存在且为空数组才返回计数 0。"""

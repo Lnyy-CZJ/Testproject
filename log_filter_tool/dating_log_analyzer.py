@@ -432,6 +432,7 @@ def build_field_index(
     source: dict,
     known_paths: set[str] | frozenset[str] | None = None,
     required_paths: tuple[str, ...] = (),
+    payload_present: bool = True,
     max_depth: int = MAX_FIELD_DEPTH,
     max_fields: int = MAX_FIELD_COUNT,
 ) -> tuple[list[dict], list[dict]]:
@@ -439,7 +440,8 @@ def build_field_index(
 
     实际字段 path 保留数组索引；Schema 匹配使用 ``[]`` 模板。未知字段仍
     完整输出但 ``schema_known=false``。遍历后为已知 Schema 的缺失必填项
-    追加 ``MISSING`` 节点，且所有节点只使用调用方提供的响应块级证据。
+    追加 ``MISSING`` 节点。``payload_present=False`` 时不伪造根节点，只输出
+    缺失的 required path；所有节点均使用调用方提供的响应块级证据。
     """
     fields: list[dict] = []
     warnings: list[dict] = []
@@ -486,15 +488,20 @@ def build_field_index(
             for index, child in enumerate(current):
                 visit(child, f"{path}[{index}]", path, depth + 1)
 
-    visit(result_payload, root_path, None, 0)
+    if payload_present:
+        visit(result_payload, root_path, None, 0)
 
     present_schema_paths = {
         _normalized_schema_path(field["path"])
         for field in fields
         if field["presence"] != "MISSING"
     }
+    omitted_required_paths: list[str] = []
     for required_path in required_paths:
-        if required_path in present_schema_paths or len(fields) >= max_fields:
+        if required_path in present_schema_paths:
+            continue
+        if len(fields) >= max_fields:
+            omitted_required_paths.append(required_path)
             continue
         parent_path = required_path.rsplit(".", 1)[0] if "." in required_path else None
         field, _ = _make_field_node(
@@ -506,6 +513,26 @@ def build_field_index(
             missing=True,
         )
         fields.append(field)
+
+    if omitted_required_paths:
+        count_warning = next(
+            (
+                warning
+                for warning in warnings
+                if warning.get("code") == "MAX_FIELD_COUNT_REACHED"
+            ),
+            None,
+        )
+        if count_warning is None:
+            count_warning = _warning(
+                "MAX_FIELD_COUNT_REACHED",
+                "字段数量上限导致 required MISSING 节点无法输出",
+                json_path=omitted_required_paths[0],
+            )
+            warnings.append(count_warning)
+        # 若递归遍历已产生同类 warning，则在同一条记录上补充 required
+        # 截断证据，既保持告警去重，也明确列出所有未能输出的节点。
+        count_warning["omitted_required_paths"] = omitted_required_paths
 
     return fields, warnings
 
@@ -1131,8 +1158,8 @@ def build_task_snapshot(
 
     if (
         result_call is not None
-        and result_payload_present
         and known_paths is not None
+        and (result_payload_present or required_paths)
     ):
         result_fields, field_warnings = build_field_index(
             result_payload,
@@ -1140,6 +1167,7 @@ def build_task_snapshot(
             source=_result_block_source(result_call),
             known_paths=known_paths,
             required_paths=required_paths,
+            payload_present=result_payload_present,
         )
         task_warnings.extend(field_warnings)
         field_health = _field_health(result_fields)
