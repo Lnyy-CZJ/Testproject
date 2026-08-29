@@ -273,6 +273,86 @@ class LogFilterTests(unittest.TestCase):
                     self.assertEqual(response.status_code, 200)
                     self.assertEqual(persisted, expected)
 
+    def test_export_dating_report_preserves_sanitized_structure_boundaries(self):
+        """Markdown 导出须按逻辑边界脱敏，不能泄漏或吞掉安全后缀。"""
+        cases = (
+            (
+                "escaped-table-pipe",
+                r"| Cookie | left\|TABLE_SUFFIX_SECRET | note | keep |",
+                "| Cookie | [REDACTED] | note | keep |",
+                "TABLE_SUFFIX_SECRET",
+            ),
+            (
+                "whole-code-span",
+                "`Authorization=Bearer CODE_PAIR_SECRET`",
+                "`Authorization=[REDACTED]`",
+                "CODE_PAIR_SECRET",
+            ),
+            (
+                "code-span-safe-suffix",
+                "`Authorization=CODE_SUFFIX_SECRET; status=ok`",
+                "`Authorization=[REDACTED]; status=ok`",
+                "CODE_SUFFIX_SECRET",
+            ),
+            (
+                "json-array",
+                '{"apiSecret":["JSON_ARRAY_SECRET"],"status":"ok"}',
+                '{"apiSecret":"[REDACTED]","status":"ok"}',
+                "JSON_ARRAY_SECRET",
+            ),
+            (
+                "json-object",
+                '{"apiSecret":{"value":"JSON_OBJECT_SECRET"},"status":"ok"}',
+                '{"apiSecret":"[REDACTED]","status":"ok"}',
+                "JSON_OBJECT_SECRET",
+            ),
+            (
+                "json-null",
+                '{"apiSecret":null,"status":"ok"}',
+                '{"apiSecret":"[REDACTED]","status":"ok"}',
+                None,
+            ),
+            (
+                "json-number",
+                '{"apiSecret":731,"status":"ok"}',
+                '{"apiSecret":"[REDACTED]","status":"ok"}',
+                "731",
+            ),
+            (
+                "assignment-safe-suffix",
+                "Authorization=HEADER_SECRET; status=ok; count=2",
+                "Authorization=[REDACTED]; status=ok; count=2",
+                "HEADER_SECRET",
+            ),
+        )
+        app = create_app()
+        app.testing = True
+
+        with TemporaryDirectory() as export_dir:
+            app.config.update(
+                LOG_EXPORT_DIR=export_dir,
+                LOG_EXPORT_DISPLAY_DIR=export_dir,
+            )
+            client = app.test_client()
+            for name, source, expected, leaked_value in cases:
+                with self.subTest(name=name):
+                    response = client.post(
+                        "/export",
+                        json={
+                            "export_type": "dating_analysis_report",
+                            "content": source,
+                        },
+                    )
+                    payload = response.get_json()
+                    persisted = (
+                        Path(export_dir) / payload["filename"]
+                    ).read_text(encoding="utf-8")
+
+                    self.assertEqual(response.status_code, 200)
+                    self.assertEqual(persisted, expected)
+                    if leaked_value is not None:
+                        self.assertNotIn(leaked_value, persisted)
+
     def test_export_dating_json_redacts_and_dumps_deterministically(self):
         """JSON 导出解析真实结构、递归脱敏，并保持稳定 UTF-8 格式。"""
         app = create_app()

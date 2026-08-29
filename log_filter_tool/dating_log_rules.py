@@ -63,17 +63,8 @@ _COMPACT_CREDENTIAL_KEY_ALIASES = {
 }
 _BASE64_CANDIDATE_RE = re.compile(r"[A-Za-z0-9+/]*={0,2}\Z")
 _URLSAFE_BASE64_CANDIDATE_RE = re.compile(r"[A-Za-z0-9_-]*={0,2}\Z")
-_DOCUMENT_HEADER_LINE_RE = re.compile(
-    r"^(?P<leading>[ \t]*(?:(?:[-*+]|>)\s+)?)"
-    # 空分支保留无包装 header；较长包装必须排在单字符包装之前。
-    r"(?P<wrapper>\*\*|__|\*|_|`|[\"']|)"
-    r"(?P<key>[A-Za-z][A-Za-z0-9_-]*)"
-    r"(?P=wrapper)(?P<separator>[ \t]*[:=][ \t]*)(?P<value>.*)$"
-)
-_DOCUMENT_JSON_PAIR_RE = re.compile(
-    r'(?P<prefix>"(?P<key>[A-Za-z][A-Za-z0-9_-]*)"[ \t]*:[ \t]*)'
-    r'(?P<value>"(?:\\.|[^"\\])*")'
-)
+_DOCUMENT_JSON_DECODER = json.JSONDecoder()
+_DOCUMENT_KEY_WRAPPERS = ("**", "__", "*", "_", "`", '"', "'")
 _DOCUMENT_URL_RE = re.compile(r"https?://[^\s<>\"'`]+", re.IGNORECASE)
 _DOCUMENT_DATA_URL_RE = re.compile(
     r"data:[^\s<>\"'`,]+?;base64,[A-Za-z0-9+/_=-]+",
@@ -2140,80 +2131,377 @@ def _is_long_base64_candidate(value: str) -> bool:
     )
 
 
-def _redact_document_header_line(line: str) -> str:
-    """脱敏普通或强调包装的凭证头，并保留包装、空白与换行。"""
+def _split_document_line_ending(line: str) -> tuple[str, str]:
+    """拆出行尾，供表格与赋值扫描共享且原样保留 CR/LF。"""
     if line.endswith("\r\n"):
-        body, ending = line[:-2], "\r\n"
-    elif line.endswith(("\r", "\n")):
-        body, ending = line[:-1], line[-1]
-    else:
-        body, ending = line, ""
-    match = _DOCUMENT_HEADER_LINE_RE.match(body)
-    if match is None or not _is_sensitive_key(match.group("key")):
+        return line[:-2], "\r\n"
+    if line.endswith(("\r", "\n")):
+        return line[:-1], line[-1]
+    return line, ""
+
+
+def _is_escaped_character(text: str, index: int) -> bool:
+    """判断当前位置是否被奇数个反斜杠转义。"""
+    slash_count = 0
+    cursor = index - 1
+    while cursor >= 0 and text[cursor] == "\\":
+        slash_count += 1
+        cursor -= 1
+    return slash_count % 2 == 1
+
+
+def _strip_document_key_wrapper(rendered_key: str) -> str:
+    """移除 Markdown/代码样式键包装，但不改变普通业务键。"""
+    key = rendered_key.strip()
+    for wrapper in _DOCUMENT_KEY_WRAPPERS:
+        if (
+            key.startswith(wrapper)
+            and key.endswith(wrapper)
+            and len(key) > len(wrapper) * 2
+        ):
+            return key[len(wrapper) : -len(wrapper)]
+    return key
+
+
+def _markdown_table_cell_spans(body: str) -> list[tuple[int, int]]:
+    """按未转义竖线返回 Markdown 单元格边界。"""
+    delimiters = [
+        index
+        for index, character in enumerate(body)
+        if character == "|" and not _is_escaped_character(body, index)
+    ]
+    if len(delimiters) < 2:
+        return []
+    boundaries = [-1, *delimiters, len(body)]
+    return [
+        (boundaries[index] + 1, boundaries[index + 1])
+        for index in range(len(boundaries) - 1)
+    ]
+
+
+def _redact_document_table_line(line: str) -> str:
+    """按逻辑单元格脱敏，转义竖线属于值而不是分隔符。"""
+    body, ending = _split_document_line_ending(line)
+    cell_spans = _markdown_table_cell_spans(body)
+    key_index = 1 if body.lstrip().startswith("|") else 0
+    value_index = key_index + 1
+    if len(cell_spans) <= value_index:
         return line
-    value = match.group("value")
-    # 双引号 key + 双引号 value 属于 JSON；JSON 子流程已精确替换 value，
-    # 此处必须跳过，避免把同一行后续安全键值一并吞掉。
-    if match.group("wrapper") == '"' and value.lstrip().startswith('"'):
+
+    key_start, key_end = cell_spans[key_index]
+    rendered_key = _strip_document_key_wrapper(body[key_start:key_end])
+    if not _is_sensitive_key(rendered_key):
         return line
-    trailing = value[len(value.rstrip()) :]
+
+    value_start, value_end = cell_spans[value_index]
+    value_cell = body[value_start:value_end]
+    leading = value_cell[: len(value_cell) - len(value_cell.lstrip())]
+    trailing = value_cell[len(value_cell.rstrip()) :]
     return (
-        match.group("leading")
-        + match.group("wrapper")
-        + match.group("key")
-        + match.group("wrapper")
-        + match.group("separator")
+        body[:value_start]
+        + leading
         + _REDACTED
         + trailing
+        + body[value_end:]
         + ending
     )
 
 
-def _redact_document_json_pair(match: re.Match[str]) -> str:
-    """按 JSON 键定位字符串值，只替换已确认敏感键对应的值。"""
-    if not _is_sensitive_key(match.group("key")):
-        return match.group(0)
-    return match.group("prefix") + json.dumps(_REDACTED)
+def _is_document_key(value: str) -> bool:
+    """限制赋值扫描键为 ASCII 标识符，避免把普通文本误作 header。"""
+    return bool(value) and value[0].isascii() and value[0].isalpha() and all(
+        character.isascii()
+        and (character.isalnum() or character in "_-")
+        for character in value
+    )
 
 
-def _redact_document_table_line(line: str) -> str:
-    """脱敏两列及以上 Markdown 表格中的首个敏感键值对。"""
-    if line.endswith("\r\n"):
-        body, ending = line[:-2], "\r\n"
-    elif line.endswith(("\r", "\n")):
-        body, ending = line[:-1], line[-1]
-    else:
-        body, ending = line, ""
-    cells = body.split("|")
-    key_index = 1 if body.lstrip().startswith("|") else 0
-    value_index = key_index + 1
-    if len(cells) <= value_index:
-        return line
+def _separator_after_key(
+    text: str,
+    index: int,
+    limit: int,
+) -> int | None:
+    """跳过键后的水平空白并返回 ``:``/``=`` 位置。"""
+    while index < limit and text[index] in " \t":
+        index += 1
+    if index < limit and text[index] in ":=":
+        return index
+    return None
 
-    rendered_key = cells[key_index].strip()
-    for wrapper in ("**", "__", "*", "_", "`", '"', "'"):
-        if (
-            rendered_key.startswith(wrapper)
-            and rendered_key.endswith(wrapper)
-            and len(rendered_key) > len(wrapper) * 2
-        ):
-            rendered_key = rendered_key[len(wrapper) : -len(wrapper)]
-            break
-    if not _is_sensitive_key(rendered_key):
-        return line
 
-    value_cell = cells[value_index]
-    leading = value_cell[: len(value_cell) - len(value_cell.lstrip())]
-    trailing = value_cell[len(value_cell.rstrip()) :]
-    cells[value_index] = leading + _REDACTED + trailing
-    return "|".join(cells) + ending
+def _assignment_key_and_separator(
+    text: str,
+    start: int,
+    limit: int,
+) -> tuple[str, int] | None:
+    """解析普通键或成对 Markdown 包装键，不依赖整行贪婪正则。"""
+    wrapper = next(
+        (
+            candidate
+            for candidate in _DOCUMENT_KEY_WRAPPERS
+            if text.startswith(candidate, start)
+        ),
+        None,
+    )
+    if wrapper is not None:
+        search_from = start + len(wrapper)
+        while search_from < limit:
+            closing = text.find(wrapper, search_from, limit)
+            if closing < 0:
+                return None
+            key = text[start + len(wrapper) : closing]
+            separator = _separator_after_key(
+                text,
+                closing + len(wrapper),
+                limit,
+            )
+            if _is_document_key(key) and separator is not None:
+                return key, separator
+            search_from = closing + len(wrapper)
+        return None
+
+    cursor = start
+    while cursor < limit and (
+        text[cursor].isascii()
+        and (text[cursor].isalnum() or text[cursor] in "_-")
+    ):
+        cursor += 1
+    key = text[start:cursor]
+    separator = _separator_after_key(text, cursor, limit)
+    if not _is_document_key(key) or separator is None:
+        return None
+    return key, separator
+
+
+def _redact_assignment_segment(segment: str) -> str:
+    """脱敏一个分号边界内的键值赋值，并保留全部包装与空白。"""
+    cursor = 0
+    while cursor < len(segment) and segment[cursor] in " \t":
+        cursor += 1
+    if (
+        cursor + 1 < len(segment)
+        and segment[cursor] in "-*+>"
+        and segment[cursor + 1] in " \t"
+    ):
+        cursor += 1
+        while cursor < len(segment) and segment[cursor] in " \t":
+            cursor += 1
+
+    content_end = len(segment.rstrip(" \t"))
+    if cursor >= content_end:
+        return segment
+
+    # `` `Authorization=value` `` 的反引号包住整段赋值；键包装形式
+    # `` `Authorization`: value `` 则由通用 wrapper 分支处理。
+    whole_code_span = (
+        segment[cursor] == "`"
+        and content_end > cursor + 1
+        and segment[content_end - 1] == "`"
+    )
+    key_start = cursor + 1 if whole_code_span else cursor
+    key_limit = content_end - 1 if whole_code_span else content_end
+    parsed = _assignment_key_and_separator(segment, key_start, key_limit)
+    if parsed is None:
+        return segment
+    key, separator = parsed
+    if not _is_sensitive_key(key):
+        return segment
+
+    value_start = separator + 1
+    while value_start < key_limit and segment[value_start] in " \t":
+        value_start += 1
+    value_end = key_limit
+    while value_end > value_start and segment[value_end - 1] in " \t":
+        value_end -= 1
+    return segment[:value_start] + _REDACTED + segment[value_end:]
+
+
+def _redact_assignment_sequence(text: str) -> str:
+    """按未转义分号拆分赋值序列，并原样保留分隔符。"""
+    rendered: list[str] = []
+    segment_start = 0
+    for index, character in enumerate(text):
+        if character != ";" or _is_escaped_character(text, index):
+            continue
+        rendered.append(_redact_assignment_segment(text[segment_start:index]))
+        rendered.append(";")
+        segment_start = index + 1
+    rendered.append(_redact_assignment_segment(text[segment_start:]))
+    return "".join(rendered)
+
+
+def _redact_document_header_line(line: str) -> str:
+    """逐段扫描凭证赋值；分号后安全字段与 code span 包装保持原样。"""
+    body, ending = _split_document_line_ending(line)
+    cursor = 0
+    while cursor < len(body) and body[cursor] in " \t":
+        cursor += 1
+    if (
+        cursor + 1 < len(body)
+        and body[cursor] in "-*+>"
+        and body[cursor + 1] in " \t"
+    ):
+        cursor += 1
+        while cursor < len(body) and body[cursor] in " \t":
+            cursor += 1
+
+    content_end = len(body.rstrip(" \t"))
+    if (
+        cursor < content_end
+        and body[cursor] == "`"
+        and body[content_end - 1] == "`"
+    ):
+        inner_start = cursor + 1
+        inner_end = content_end - 1
+        body = (
+            body[:inner_start]
+            + _redact_assignment_sequence(body[inner_start:inner_end])
+            + body[inner_end:]
+        )
+        return body + ending
+    return _redact_assignment_sequence(body) + ending
+
+
+def _skip_json_whitespace(text: str, index: int) -> int:
+    """返回 JSON token 的起始位置。"""
+    while index < len(text) and text[index] in " \t\r\n":
+        index += 1
+    return index
+
+
+def _redact_json_value_at(text: str, start: int) -> tuple[str, int]:
+    """重写一个已定位 JSON 值，并保留非敏感 token 的原始格式。"""
+    parsed, value_end = _DOCUMENT_JSON_DECODER.raw_decode(text, start)
+    if isinstance(parsed, dict):
+        return _redact_json_object_at(text, start)
+    if isinstance(parsed, list):
+        return _redact_json_array_at(text, start)
+    return text[start:value_end], value_end
+
+
+def _redact_json_object_at(text: str, start: int) -> tuple[str, int]:
+    """递归扫描 JSON object，仅替换显式凭证键对应的完整值。"""
+    rendered = ["{"]
+    cursor = start + 1
+    while True:
+        token_start = cursor
+        cursor = _skip_json_whitespace(text, cursor)
+        rendered.append(text[token_start:cursor])
+        if cursor >= len(text):
+            raise ValueError("JSON object 未闭合")
+        if text[cursor] == "}":
+            rendered.append("}")
+            return "".join(rendered), cursor + 1
+
+        key, key_end = _DOCUMENT_JSON_DECODER.raw_decode(text, cursor)
+        if not isinstance(key, str):
+            raise ValueError("JSON object key 必须为字符串")
+        rendered.append(text[cursor:key_end])
+        cursor = _skip_json_whitespace(text, key_end)
+        rendered.append(text[key_end:cursor])
+        if cursor >= len(text) or text[cursor] != ":":
+            raise ValueError("JSON object key 后缺少冒号")
+        rendered.append(":")
+        cursor += 1
+        value_start = _skip_json_whitespace(text, cursor)
+        rendered.append(text[cursor:value_start])
+
+        parsed_value, value_end = _DOCUMENT_JSON_DECODER.raw_decode(
+            text,
+            value_start,
+        )
+        if _is_sensitive_key(key):
+            # 复用结构化响应脱敏器决定凭证占位值，JSON 扫描器只负责
+            # 精确定位原始 token 边界，避免针对每种值类型另写规则。
+            safe_value = redact_dating_response(parsed_value, key=key)
+            rendered.append(
+                json.dumps(safe_value, ensure_ascii=False, separators=(",", ":"))
+            )
+        else:
+            safe_child, child_end = _redact_json_value_at(text, value_start)
+            if child_end != value_end:
+                raise ValueError("JSON value 边界不一致")
+            rendered.append(safe_child)
+        cursor = value_end
+
+        token_start = cursor
+        cursor = _skip_json_whitespace(text, cursor)
+        rendered.append(text[token_start:cursor])
+        if cursor >= len(text):
+            raise ValueError("JSON object 未闭合")
+        if text[cursor] == ",":
+            rendered.append(",")
+            cursor += 1
+            continue
+        if text[cursor] == "}":
+            rendered.append("}")
+            return "".join(rendered), cursor + 1
+        raise ValueError("JSON object value 后缺少逗号或右花括号")
+
+
+def _redact_json_array_at(text: str, start: int) -> tuple[str, int]:
+    """递归扫描 JSON array，使其中 object 的凭证键同样受保护。"""
+    rendered = ["["]
+    cursor = start + 1
+    while True:
+        token_start = cursor
+        cursor = _skip_json_whitespace(text, cursor)
+        rendered.append(text[token_start:cursor])
+        if cursor >= len(text):
+            raise ValueError("JSON array 未闭合")
+        if text[cursor] == "]":
+            rendered.append("]")
+            return "".join(rendered), cursor + 1
+
+        safe_child, value_end = _redact_json_value_at(text, cursor)
+        rendered.append(safe_child)
+        cursor = value_end
+        token_start = cursor
+        cursor = _skip_json_whitespace(text, cursor)
+        rendered.append(text[token_start:cursor])
+        if cursor >= len(text):
+            raise ValueError("JSON array 未闭合")
+        if text[cursor] == ",":
+            rendered.append(",")
+            cursor += 1
+            continue
+        if text[cursor] == "]":
+            rendered.append("]")
+            return "".join(rendered), cursor + 1
+        raise ValueError("JSON array value 后缺少逗号或右方括号")
+
+
+def _redact_embedded_json_fragments(document: str) -> str:
+    """用 JSONDecoder 定位有效 object/array；坏 URL 等普通文本安全跳过。"""
+    rendered: list[str] = []
+    cursor = 0
+    while cursor < len(document):
+        if document[cursor] not in "{[":
+            rendered.append(document[cursor])
+            cursor += 1
+            continue
+        try:
+            parsed, value_end = _DOCUMENT_JSON_DECODER.raw_decode(
+                document,
+                cursor,
+            )
+            if not isinstance(parsed, (dict, list)):
+                raise ValueError("仅处理 JSON object/array")
+            safe_value, safe_end = _redact_json_value_at(document, cursor)
+            if safe_end != value_end:
+                raise ValueError("JSON fragment 边界不一致")
+        except (json.JSONDecodeError, ValueError):
+            rendered.append(document[cursor])
+            cursor += 1
+            continue
+        rendered.append(safe_value)
+        cursor = value_end
+    return "".join(rendered)
 
 
 def _redact_document_credentials(document: str) -> str:
-    """统一处理 JSON、Markdown 表格和逐行 header 三种凭证键语法。"""
-    redacted = _DOCUMENT_JSON_PAIR_RE.sub(
-        _redact_document_json_pair, document
-    )
+    """统一扫描有效 JSON、Markdown 表格和逐段 header 凭证语法。"""
+    redacted = _redact_embedded_json_fragments(document)
     lines = []
     for line in redacted.splitlines(keepends=True):
         line = _redact_document_table_line(line)

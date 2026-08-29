@@ -200,6 +200,71 @@ class DatingRedactionTest(unittest.TestCase):
                     expected,
                 )
 
+    def test_document_scanner_preserves_structural_boundaries(self):
+        """结构化边界必须完整脱敏凭证值，同时保留相邻安全内容。"""
+        cases = (
+            (
+                "escaped-table-pipe",
+                r"| Cookie | left\|TABLE_SUFFIX_SECRET | note | keep |",
+                "| Cookie | [REDACTED] | note | keep |",
+                "TABLE_SUFFIX_SECRET",
+            ),
+            (
+                "whole-code-span",
+                "`Authorization=Bearer CODE_PAIR_SECRET`",
+                "`Authorization=[REDACTED]`",
+                "CODE_PAIR_SECRET",
+            ),
+            (
+                "code-span-safe-suffix",
+                "`Authorization=CODE_SUFFIX_SECRET; status=ok`",
+                "`Authorization=[REDACTED]; status=ok`",
+                "CODE_SUFFIX_SECRET",
+            ),
+            (
+                "json-array",
+                '{"apiSecret":["JSON_ARRAY_SECRET"],"status":"ok"}',
+                '{"apiSecret":"[REDACTED]","status":"ok"}',
+                "JSON_ARRAY_SECRET",
+            ),
+            (
+                "json-object",
+                '{"apiSecret":{"value":"JSON_OBJECT_SECRET"},"status":"ok"}',
+                '{"apiSecret":"[REDACTED]","status":"ok"}',
+                "JSON_OBJECT_SECRET",
+            ),
+            (
+                "json-null",
+                '{"apiSecret":null,"status":"ok"}',
+                '{"apiSecret":"[REDACTED]","status":"ok"}',
+                None,
+            ),
+            (
+                "json-number",
+                '{"apiSecret":731,"status":"ok"}',
+                '{"apiSecret":"[REDACTED]","status":"ok"}',
+                "731",
+            ),
+            (
+                "assignment-safe-suffix",
+                "Authorization=HEADER_SECRET; status=ok; count=2",
+                "Authorization=[REDACTED]; status=ok; count=2",
+                "HEADER_SECRET",
+            ),
+        )
+
+        for name, source, expected, leaked_value in cases:
+            with self.subTest(name=name):
+                redacted = dating_log_rules.redact_dating_document(source)
+
+                self.assertEqual(redacted, expected)
+                if leaked_value is not None:
+                    self.assertNotIn(leaked_value, redacted)
+                self.assertEqual(
+                    dating_log_rules.redact_dating_document(redacted),
+                    expected,
+                )
+
     def test_sensitive_keys_signed_urls_and_base64_are_redacted(self):
         data_url = "data:image/png;base64," + "A" * 32
         base64_blob = "B" * 256
