@@ -339,24 +339,51 @@ def build_upload_assets(
             params = _request_params(call)
             data = _response_data(call)
             asset_id = params.get("asset_id", data.get("asset_id"))
-            target = next(
-                (
-                    asset
-                    for asset in reversed(assets)
-                    if asset.get("asset_id") == asset_id
-                    and asset.get("complete_call_id") is None
-                ),
-                None,
-            )
-            if target is None:
+            matching_prepares = [
+                asset
+                for asset in assets
+                if asset.get("asset_id") == asset_id and asset["_prepare_seen"]
+            ]
+            candidates = [
+                asset
+                for asset in matching_prepares
+                if asset["_put_seen"] and asset.get("complete_call_id") is None
+            ]
+            if len(candidates) > 1:
                 warning = _warning(
-                    "ORPHAN_UPLOAD_COMPLETE",
-                    "CompleteMediaUpload 无对应 PrepareMediaUpload。",
+                    "AMBIGUOUS_COMPLETE_ASSOCIATION",
+                    "CompleteMediaUpload 对应多个已关联 PUT 的 Prepare，不能唯一选择。",
+                    asset_id=asset_id,
+                    complete_call_id=call.get("call_id"),
+                    candidate_prepare_call_ids=[
+                        asset.get("prepare_call_id") for asset in candidates
+                    ],
+                    candidate_put_call_ids=[
+                        asset.get("put_call_id") for asset in candidates
+                    ],
+                )
+                warnings.append(warning)
+                continue
+            if not candidates:
+                has_associated_put = any(asset["_put_seen"] for asset in matching_prepares)
+                warning_code = (
+                    "ORPHAN_UPLOAD_COMPLETE"
+                    if has_associated_put or not matching_prepares
+                    else "COMPLETE_WITHOUT_ASSOCIATED_PUT"
+                )
+                warning = _warning(
+                    warning_code,
+                    (
+                        "CompleteMediaUpload 发生时，对应 Prepare 尚未关联 PUT。"
+                        if warning_code == "COMPLETE_WITHOUT_ASSOCIATED_PUT"
+                        else "CompleteMediaUpload 无唯一且尚未关闭的 Prepare+PUT 链路。"
+                    ),
                     asset_id=asset_id,
                     complete_call_id=call.get("call_id"),
                 )
                 warnings.append(warning)
                 continue
+            target = candidates[0]
             target["complete_call_id"] = call.get("call_id")
             target["complete_status"] = data.get("status")
             target["_complete_seen"] = True
@@ -495,8 +522,8 @@ def build_task_snapshot(
         task_id: 已由 :func:`select_dating_task` 选中的任务 ID。
 
     返回:
-        ``(snapshot, warnings)``。Result 仅保留服务端原始 ``data.result``，
-        不在 Task 4 中执行 Schema 字段投影。
+        ``(snapshot, warnings)``。Result 按原类型保留服务端 ``data.result``，
+        并单独记录字段是否存在；不在 Task 4 中执行 Schema 字段投影。
     """
     task_calls = [
         call
@@ -534,8 +561,8 @@ def build_task_snapshot(
     terminal = final_status in _TERMINAL_STATUSES
 
     result_data = _response_data(result_call) if result_call is not None else {}
-    raw_result = result_data.get("result")
-    result_payload = raw_result if isinstance(raw_result, dict) else None
+    result_payload_present = "result" in result_data
+    result_payload = result_data["result"] if result_payload_present else None
     schema_version = result_data.get("schema_version")
     if not isinstance(schema_version, str) and isinstance(result_payload, dict):
         nested_schema = result_payload.get("schema_version")
@@ -566,6 +593,7 @@ def build_task_snapshot(
         "progress_diagnostics": _progress_diagnostics(samples),
         "status_samples": samples,
         "result_payload": result_payload,
+        "result_payload_present": result_payload_present,
         "result_sections": [],
         "result_fields": [],
         "field_health": {},

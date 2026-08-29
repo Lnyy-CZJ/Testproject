@@ -4,7 +4,11 @@ from collections import Counter
 from pathlib import Path
 import unittest
 
-from dating_log_analyzer import analyze_dating_log, build_upload_assets
+from dating_log_analyzer import (
+    analyze_dating_log,
+    build_task_snapshot,
+    build_upload_assets,
+)
 from gateway_log_parser import parse_interface_log
 
 
@@ -342,6 +346,63 @@ class DatingUnfinishedTaskTests(unittest.TestCase):
         self.assertEqual(result["summary"]["result_count"], 0)
 
 
+class DatingRawResultTests(unittest.TestCase):
+    """锁定 Task 4 对 Result 原值的无损保留和字段存在性语义。"""
+
+    def _snapshot_for_result(self, *, present: bool, value=None) -> dict:
+        """构造成功 Result 调用；present=False 表示 data 中没有 result 键。"""
+        task_id = "task_raw_result"
+        result_data = {
+            "task_id": task_id,
+            "task_type": "reply_generation",
+            "schema_version": "dating.reply_generation.v1",
+        }
+        if present:
+            result_data["result"] = value
+        calls = [
+            _gateway_call(
+                "call_0001",
+                "CreateReplyTask",
+                params={"asset_ids": []},
+                data={
+                    "task_id": task_id,
+                    "task_type": "reply_generation",
+                    "status": "queued",
+                    "phase": "queued",
+                },
+            ),
+            _gateway_call(
+                "call_0002",
+                "GetTaskResult",
+                params={"task_id": task_id},
+                data=result_data,
+            ),
+        ]
+        snapshot, _ = build_task_snapshot(calls, [], task_id)
+        return snapshot
+
+    def test_result_payload_preserves_list_scalar_and_null_values(self):
+        """合法的非 dict Result 也必须按原类型和值原样保留。"""
+        raw_values = ([{"item": 1}], "raw-text", 17, False, None)
+
+        for raw_value in raw_values:
+            with self.subTest(raw_value=raw_value):
+                snapshot = self._snapshot_for_result(present=True, value=raw_value)
+                self.assertEqual(snapshot["result_payload"], raw_value)
+                self.assertIs(type(snapshot["result_payload"]), type(raw_value))
+                self.assertIs(snapshot.get("result_payload_present"), True)
+
+    def test_missing_result_is_distinct_from_explicit_null(self):
+        """缺失 result 键与显式 JSON null 都返回 None，但 presence 必须不同。"""
+        missing = self._snapshot_for_result(present=False)
+        explicit_null = self._snapshot_for_result(present=True, value=None)
+
+        self.assertIsNone(missing["result_payload"])
+        self.assertIsNone(explicit_null["result_payload"])
+        self.assertIs(missing.get("result_payload_present"), False)
+        self.assertIs(explicit_null.get("result_payload_present"), True)
+
+
 class DatingUploadAssociationTests(unittest.TestCase):
     """验证上传证据歧义时保留 orphan，绝不猜测 asset_id。"""
 
@@ -414,6 +475,105 @@ class DatingUploadAssociationTests(unittest.TestCase):
         self.assertEqual(orphan["put_call_id"], "call_0003")
         self.assertEqual(orphan["upload_state"], "orphan_put")
         self.assertFalse(orphan["used_by_task"])
+
+    def test_complete_before_put_stays_incomplete_and_warns(self):
+        """Complete 早于 PUT 时不能提前闭合 Prepare→PUT→Complete 链路。"""
+        calls = [
+            _gateway_call(
+                "call_0001",
+                "PrepareMediaUpload",
+                data={
+                    "asset_id": "asset_a",
+                    "status": "pending",
+                    "upload_url": "https://storage.example/uploads/a.png?prepare=1",
+                },
+            ),
+            _gateway_call(
+                "call_0002",
+                "CompleteMediaUpload",
+                params={"asset_id": "asset_a"},
+                data={"asset_id": "asset_a", "status": "uploaded"},
+            ),
+            _put_call(
+                "call_0003", "https://storage.example/uploads/a.png?put=after-complete"
+            ),
+            _gateway_call(
+                "call_0004",
+                "CreateReplyTask",
+                params={"asset_ids": ["asset_a"]},
+                data={"task_id": "task_out_of_order", "task_type": "reply_generation"},
+            ),
+        ]
+
+        assets, warnings = build_upload_assets(calls, "task_out_of_order")
+        asset = next(asset for asset in assets if asset["asset_id"] == "asset_a")
+
+        self.assertEqual(asset["put_call_id"], "call_0003")
+        self.assertIsNone(asset["complete_call_id"])
+        self.assertIsNone(asset["complete_status"])
+        self.assertEqual(asset["upload_state"], "unknown")
+        self.assertIn(
+            "COMPLETE_WITHOUT_ASSOCIATED_PUT",
+            {warning["code"] for warning in warnings},
+        )
+
+    def test_complete_with_duplicate_asset_id_candidates_stays_ambiguous(self):
+        """同 asset_id 的多个 Prepare+PUT 候选不能按“最新记录”猜测 Complete。"""
+        calls = [
+            _gateway_call(
+                "call_0001",
+                "PrepareMediaUpload",
+                data={
+                    "asset_id": "shared_asset",
+                    "status": "pending",
+                    "upload_url": "https://storage.example/uploads/first.png?prepare=1",
+                },
+            ),
+            _gateway_call(
+                "call_0002",
+                "PrepareMediaUpload",
+                data={
+                    "asset_id": "shared_asset",
+                    "status": "pending",
+                    "upload_url": "https://storage.example/uploads/second.png?prepare=2",
+                },
+            ),
+            _put_call(
+                "call_0003", "https://storage.example/uploads/first.png?put=1"
+            ),
+            _put_call(
+                "call_0004", "https://storage.example/uploads/second.png?put=2"
+            ),
+            _gateway_call(
+                "call_0005",
+                "CompleteMediaUpload",
+                params={"asset_id": "shared_asset"},
+                data={"asset_id": "shared_asset", "status": "uploaded"},
+            ),
+            _gateway_call(
+                "call_0006",
+                "CreateReplyTask",
+                params={"asset_ids": ["shared_asset"]},
+                data={"task_id": "task_duplicate", "task_type": "reply_generation"},
+            ),
+        ]
+
+        assets, warnings = build_upload_assets(calls, "task_duplicate")
+        shared_assets = [
+            asset for asset in assets if asset["asset_id"] == "shared_asset"
+        ]
+
+        self.assertEqual(len(shared_assets), 2)
+        self.assertTrue(
+            all(asset["complete_call_id"] is None for asset in shared_assets)
+        )
+        self.assertTrue(
+            all(asset["upload_state"] == "unknown" for asset in shared_assets)
+        )
+        self.assertIn(
+            "AMBIGUOUS_COMPLETE_ASSOCIATION",
+            {warning["code"] for warning in warnings},
+        )
 
     def test_object_path_uniquely_disambiguates_pending_prepares(self):
         """多个待关联 Prepare 中，去查询参数后的唯一同路径允许安全关联。"""
