@@ -12,12 +12,14 @@ from gateway_log_parser import clean_log_line
 
 try:
     from flask import Blueprint, Flask, jsonify, render_template, request
+    from werkzeug.exceptions import RequestEntityTooLarge
 except ImportError:  # Allows core log parsing tests to run before Flask is installed.
     Blueprint = None
     Flask = None
     jsonify = None
     render_template = None
     request = None
+    RequestEntityTooLarge = None
 
 
 ALL_METHOD = "__ALL__"
@@ -375,9 +377,6 @@ def create_app(base_path=None):
     )
     normalized_base_path = normalize_base_path(configured_base_path)
     app = Flask(__name__)
-    # Dating 成功响应由 PRD 规定固定字段顺序；关闭 Flask 默认字母排序后，
-    # jsonify 会保留路由构造字典的确定性插入顺序，其他 JSON 合同不变。
-    app.json.sort_keys = False
     app.config["MAX_FORM_MEMORY_SIZE"] = 20 * 1024 * 1024
     app.config["MAX_CONTENT_LENGTH"] = 25 * 1024 * 1024
     app.config["LOG_EXPORT_DIR"] = os.environ.get(
@@ -400,10 +399,19 @@ def create_app(base_path=None):
     app.config["DATING_STRUCTURED_ANALYZER_ENABLED"] = os.environ.get(
         "DATING_STRUCTURED_ANALYZER_ENABLED", "true"
     ).lower() in ("1", "true", "yes", "on")
+    # PRD canonical 名称优先；旧部署只配置 MAX_BYTES 时继续兼容。canonical
+    # 一旦显式存在即不回落 alias，配置非法则统一使用安全默认值。
+    dating_max_bytes_value = os.environ.get(
+        "DATING_STRUCTURED_MAX_LOG_BYTES"
+    )
+    if dating_max_bytes_value is None:
+        dating_max_bytes_value = os.environ.get(
+            "DATING_STRUCTURED_MAX_BYTES", "10485760"
+        )
     try:
         app.config["DATING_STRUCTURED_MAX_BYTES"] = max(
             1,
-            int(os.environ.get("DATING_STRUCTURED_MAX_BYTES", "10485760")),
+            int(dating_max_bytes_value),
         )
     except ValueError:
         # 环境变量配置错误时回落到 10 MiB，避免应用因可选分析器无法启动。
@@ -632,7 +640,23 @@ def create_app(base_path=None):
                 503,
             )
 
-        payload = request.get_json(silent=True)
+        # Flask 的全局 body 上限可能在 JSON 解析时先抛异常；Dating 路由在
+        # 读取 body 前做可判定的快速拒绝，并把解析期异常映射为同一 JSON。
+        request_limit = app.config.get("MAX_CONTENT_LENGTH")
+        if (
+            isinstance(request_limit, int)
+            and request.content_length is not None
+            and request.content_length > request_limit
+        ):
+            return error_response(
+                "LOG_TOO_LARGE", "日志内容超过允许的字节上限", 413
+            )
+        try:
+            payload = request.get_json(silent=True)
+        except RequestEntityTooLarge:
+            return error_response(
+                "LOG_TOO_LARGE", "日志内容超过允许的字节上限", 413
+            )
         allowed_fields = {"log_text", "task_id"}
         if (
             request.mimetype != "application/json"
@@ -741,8 +765,21 @@ def create_app(base_path=None):
             safe_result["report_markdown"] = render_dating_report(
                 safe_result, safe_result["checks"]
             )
-            return jsonify(safe_result), 200
+            # 仅 Dating 成功响应关闭键排序；People、export、health 等路由
+            # 继续沿用 Flask 默认序列化，避免改变其既有响应字节合同。
+            response_body = app.json.dumps(
+                safe_result,
+                sort_keys=False,
+                separators=(",", ":"),
+            )
+            return app.response_class(
+                response_body + "\n",
+                status=200,
+                mimetype="application/json",
+            )
         except Exception:
+            # 客户端只接收稳定错误码；完整堆栈仅写入服务端日志供排障。
+            app.logger.exception("Dating 结构化分析发生未预期异常")
             return error_response(
                 "ANALYSIS_INTERNAL_ERROR", "Dating 分析失败", 500
             )
@@ -874,20 +911,34 @@ def create_app(base_path=None):
         if export_type in {"dating_analysis_report", "dating_analysis_json"}:
             # Dating 导出在任何 ACL 登记或写盘之前执行同一后端脱敏入口；
             # JSON 必须先解析真实结构，不能把未验证字符串直接保存为 .json。
-            from dating_log_rules import redact_dating_response
+            from dating_log_rules import (
+                redact_dating_document,
+                redact_dating_response,
+            )
 
             if export_type == "dating_analysis_json":
                 try:
                     parsed_content = json.loads(export_content)
                 except json.JSONDecodeError:
                     return jsonify({"message": "Dating JSON 内容格式无效"}), 400
+                safe_content = redact_dating_response(parsed_content)
+                # report_markdown 是完整文档而非普通字段：保留全部正文，仅
+                # 执行文档级内嵌敏感信息扫描；其他 JSON 字段继续遵守 20k。
+                if (
+                    isinstance(parsed_content, dict)
+                    and isinstance(parsed_content.get("report_markdown"), str)
+                    and isinstance(safe_content, dict)
+                ):
+                    safe_content["report_markdown"] = redact_dating_document(
+                        parsed_content["report_markdown"]
+                    )
                 export_content = json.dumps(
-                    redact_dating_response(parsed_content),
+                    safe_content,
                     ensure_ascii=False,
                     indent=2,
                 )
             else:
-                export_content = redact_dating_response(export_content)
+                export_content = redact_dating_document(export_content)
         # 平台模式下必须先得到对象级 create 决策；不能根据浏览器自报 owner、
         # project 或文件名决定导出路径。独立模式保持既有本地导出兼容行为。
         decision = verified_resource_access("export", "export")

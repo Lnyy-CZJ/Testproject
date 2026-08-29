@@ -44,6 +44,78 @@ def _report_section(report: str, heading: str) -> str:
 class DatingRedactionTest(unittest.TestCase):
     """覆盖敏感键、签名 URL、Base64 与长文本递归脱敏。"""
 
+    def test_document_redactor_sanitizes_embedded_markdown_secrets(self):
+        """整篇 Markdown 中的凭证行、签名 URL 和二进制片段均须脱敏。"""
+        standard_blob = "A" * 256
+        padded_blob = "D" * 254 + "=="
+        urlsafe_blob = "B" * 255 + "_"
+        data_url = "data:image/png;base64," + "C" * 300
+        document = (
+            "# Diagnostic report\n\n"
+            "Authorization: Bearer markdown-auth-secret\n"
+            "- Cookie: session=markdown-cookie-secret\n"
+            "> X-Auth-Token: markdown-token-secret\n"
+            "Asset: [image](https://cdn.example/a.png?"
+            "X-Amz-Signature=markdown-signature&x=1)\n"
+            f"Inline data: {data_url}\n"
+            f"Standard blob: {standard_blob}\n"
+            f"Padded blob: {padded_blob}\n"
+            f"URL-safe blob: {urlsafe_blob}\n"
+        )
+        redactor = getattr(dating_log_rules, "redact_dating_document", None)
+
+        self.assertIsNotNone(redactor)
+        redacted = redactor(document)
+
+        for secret in (
+            "markdown-auth-secret",
+            "markdown-cookie-secret",
+            "markdown-token-secret",
+            "markdown-signature",
+            data_url,
+            standard_blob,
+            padded_blob,
+            urlsafe_blob,
+        ):
+            self.assertNotIn(secret, redacted)
+        self.assertIn("Authorization: [REDACTED]", redacted)
+        self.assertIn("- Cookie: [REDACTED]", redacted)
+        self.assertIn("> X-Auth-Token: [REDACTED]", redacted)
+        self.assertIn(
+            "https://cdn.example/a.png?[REDACTED]",
+            redacted,
+        )
+        self.assertIn(
+            f"[REDACTED_BASE64 length={len(data_url)}]", redacted
+        )
+        self.assertIn(
+            f"[REDACTED_BASE64 length={len(standard_blob)}]", redacted
+        )
+        self.assertIn(
+            f"[REDACTED_BASE64 length={len(padded_blob)}]", redacted
+        )
+        self.assertIn(
+            f"[REDACTED_BASE64 length={len(urlsafe_blob)}]", redacted
+        )
+
+    def test_document_redactor_is_idempotent_and_does_not_cap_document(self):
+        """文档可超过 20,000 字符，重复脱敏不得丢失正文或继续变化。"""
+        document = (
+            "# Long report\n"
+            + "ordinary markdown paragraph with spaces and punctuation.\n" * 500
+            + "END-OF-FULL-REPORT\n"
+        )
+        redactor = getattr(dating_log_rules, "redact_dating_document", None)
+
+        self.assertGreater(len(document), 20_000)
+        self.assertIsNotNone(redactor)
+        first = redactor(document)
+        second = redactor(first)
+
+        self.assertEqual(first, document)
+        self.assertEqual(second, first)
+        self.assertTrue(first.endswith("END-OF-FULL-REPORT\n"))
+
     def test_sensitive_keys_signed_urls_and_base64_are_redacted(self):
         data_url = "data:image/png;base64," + "A" * 32
         base64_blob = "B" * 256

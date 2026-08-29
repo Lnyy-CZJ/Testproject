@@ -287,6 +287,63 @@ class LogFilterTests(unittest.TestCase):
                         expected,
                     )
 
+    def test_dating_exports_preserve_full_golden_report_and_response(self):
+        """超过 20k 的 golden 报告及完整 API 对象必须无损通过两种导出。"""
+        app = create_app()
+        app.testing = True
+        fixture = (
+            Path(__file__).parent
+            / "fixtures"
+            / "dating"
+            / "reply_generation_multi_image_success.log"
+        ).read_text(encoding="utf-8")
+
+        with TemporaryDirectory() as export_dir:
+            app.config.update(
+                LOG_EXPORT_DIR=export_dir,
+                LOG_EXPORT_DISPLAY_DIR=export_dir,
+            )
+            client = app.test_client()
+            api_response = client.post(
+                "/dating/analyze", json={"log_text": fixture}
+            )
+            api_payload = api_response.get_json()
+
+            self.assertEqual(api_response.status_code, 200)
+            self.assertGreater(len(api_payload["report_markdown"]), 20_000)
+
+            markdown_response = client.post(
+                "/export",
+                json={
+                    "export_type": "dating_analysis_report",
+                    "content": api_payload["report_markdown"],
+                },
+            )
+            json_response = client.post(
+                "/export",
+                json={
+                    "export_type": "dating_analysis_json",
+                    "content": json.dumps(
+                        api_payload, ensure_ascii=False
+                    ),
+                },
+            )
+
+            self.assertEqual(markdown_response.status_code, 200)
+            self.assertEqual(json_response.status_code, 200)
+            markdown_path = (
+                Path(export_dir) / markdown_response.get_json()["filename"]
+            )
+            json_path = Path(export_dir) / json_response.get_json()["filename"]
+            self.assertEqual(
+                markdown_path.read_text(encoding="utf-8"),
+                api_payload["report_markdown"],
+            )
+            self.assertEqual(
+                json.loads(json_path.read_text(encoding="utf-8")),
+                api_payload,
+            )
+
     def test_export_dating_json_rejects_invalid_json_without_file(self):
         """JSON 语法错误返回 400，且参数校验阶段不留下文件。"""
         app = create_app()

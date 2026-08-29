@@ -55,6 +55,7 @@ class DatingRouteTest(unittest.TestCase):
         """默认开启且限制 10 MiB，非法环境值不能阻止应用启动。"""
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop("DATING_STRUCTURED_ANALYZER_ENABLED", None)
+            os.environ.pop("DATING_STRUCTURED_MAX_LOG_BYTES", None)
             os.environ.pop("DATING_STRUCTURED_MAX_BYTES", None)
             default_app = create_app()
 
@@ -73,6 +74,31 @@ class DatingRouteTest(unittest.TestCase):
         self.assertEqual(
             fallback_app.config["DATING_STRUCTURED_MAX_BYTES"],
             10 * 1024 * 1024,
+        )
+
+    def test_canonical_max_log_env_precedes_supported_alias(self):
+        """PRD canonical 优先；未设置 canonical 时旧 alias 仍兼容。"""
+        with patch.dict(
+            os.environ,
+            {
+                "DATING_STRUCTURED_MAX_LOG_BYTES": "2048",
+                "DATING_STRUCTURED_MAX_BYTES": "1024",
+            },
+            clear=True,
+        ):
+            canonical_app = create_app()
+        with patch.dict(
+            os.environ,
+            {"DATING_STRUCTURED_MAX_BYTES": "3072"},
+            clear=True,
+        ):
+            alias_app = create_app()
+
+        self.assertEqual(
+            canonical_app.config["DATING_STRUCTURED_MAX_BYTES"], 2048
+        )
+        self.assertEqual(
+            alias_app.config["DATING_STRUCTURED_MAX_BYTES"], 3072
         )
 
     def test_disabled_analyzer_returns_503(self):
@@ -143,6 +169,17 @@ class DatingRouteTest(unittest.TestCase):
 
         self.assert_error(response, 413, "LOG_TOO_LARGE")
 
+    def test_request_over_flask_body_limit_returns_dating_json_error(self):
+        """>25 MiB 请求也必须由 Dating 合同返回 JSON，不能落到 Flask HTML。"""
+        response = self.client.post(
+            "/dating/analyze",
+            json={"log_text": "x" * (26 * 1024 * 1024)},
+        )
+
+        self.assertEqual(response.status_code, 413)
+        self.assertTrue(response.is_json)
+        self.assertEqual(response.get_json()["error_code"], "LOG_TOO_LARGE")
+
     def test_unsupported_log_returns_422(self):
         response = self.client.post(
             "/dating/analyze", json={"log_text": "ordinary local text"}
@@ -191,6 +228,7 @@ class DatingRouteTest(unittest.TestCase):
                 payload = response.get_json()
 
                 self.assertEqual(response.status_code, 200)
+                self.assertEqual(len(SUCCESS_KEYS), 16)
                 self.assertEqual(list(payload), SUCCESS_KEYS)
                 self.assertEqual(
                     payload["analyzer_version"], "dating-structured-v1"
@@ -221,6 +259,26 @@ class DatingRouteTest(unittest.TestCase):
                         ),
                     )
 
+    def test_dating_ordering_does_not_change_people_response_bytes(self):
+        """Dating 固定顺序必须局部生效，People 继续使用 Flask 原有键排序。"""
+        people_fixture = (
+            Path(__file__).parent
+            / "fixtures"
+            / "people_search"
+            / "f01_public_figure_local_hit.log"
+        ).read_text(encoding="utf-8")
+
+        response = self.client.post(
+            "/people-search/analyze", json={"log_text": people_fixture}
+        )
+        body = response.get_data(as_text=True)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(body.startswith('{"code":0,"data":'))
+        self.assertGreater(
+            body.rfind('"message":"ok"'), body.find('"data":')
+        )
+
     def test_success_response_and_report_are_redacted_without_input_mutation(self):
         """API 与 report 只读取脱敏副本，不能泄漏 analyzer 内部原值。"""
         source = analyze_dating_log(
@@ -249,16 +307,21 @@ class DatingRouteTest(unittest.TestCase):
         )
 
     def test_internal_exception_returns_sanitized_500(self):
-        with patch(
-            "dating_log_analyzer.analyze_dating_log",
-            side_effect=RuntimeError("private stack detail"),
-        ):
-            response = self.client.post(
-                "/dating/analyze", json={"log_text": "recognized by stub"}
-            )
+        with self.assertLogs(self.app.logger, level="ERROR") as logs:
+            with patch(
+                "dating_log_analyzer.analyze_dating_log",
+                side_effect=RuntimeError("private stack detail"),
+            ):
+                response = self.client.post(
+                    "/dating/analyze",
+                    json={"log_text": "recognized by stub"},
+                )
 
         self.assert_error(response, 500, "ANALYSIS_INTERNAL_ERROR")
         self.assertNotIn("private stack detail", response.get_data(as_text=True))
+        self.assertTrue(
+            any("Dating 结构化分析发生未预期异常" in line for line in logs.output)
+        )
 
 
 if __name__ == "__main__":

@@ -63,6 +63,24 @@ _COMPACT_CREDENTIAL_KEY_ALIASES = {
 }
 _BASE64_CANDIDATE_RE = re.compile(r"[A-Za-z0-9+/]*={0,2}\Z")
 _URLSAFE_BASE64_CANDIDATE_RE = re.compile(r"[A-Za-z0-9_-]*={0,2}\Z")
+_DOCUMENT_HEADER_LINE_RE = re.compile(
+    r"^(?P<leading>[ \t]*(?:(?:[-*+]|>)\s+)?)"
+    r"(?P<quote>[\"'`]?)"
+    r"(?P<key>[A-Za-z][A-Za-z0-9_-]*)"
+    r"(?P=quote)(?P<separator>[ \t]*:[ \t]*)(?P<value>.*)$"
+)
+_DOCUMENT_URL_RE = re.compile(r"https?://[^\s<>\"'`]+", re.IGNORECASE)
+_DOCUMENT_DATA_URL_RE = re.compile(
+    r"data:[^\s<>\"'`,]+?;base64,[A-Za-z0-9+/_=-]+",
+    re.IGNORECASE,
+)
+_DOCUMENT_BASE64_RE = re.compile(
+    r"(?<![A-Za-z0-9+/_=-])"
+    # 长度阈值包含末尾 padding；合法性继续由
+    # ``_is_long_base64_candidate`` 校验，拒绝中间出现 ``=`` 的伪候选。
+    r"(?:[A-Za-z0-9+/_=-]{256,})"
+    r"(?![A-Za-z0-9+/_=-])"
+)
 _TRUNCATION_WARNING_MESSAGE = "字段文本超过 20000 字符，结果仅保留前 20000 字符"
 
 RULE_SPECS = (
@@ -2117,6 +2135,73 @@ def _is_long_base64_candidate(value: str) -> bool:
     )
 
 
+def _redact_document_header_line(line: str) -> str:
+    """脱敏单行 Markdown/HTTP 凭证头，并原样保留行前缀与换行符。"""
+    if line.endswith("\r\n"):
+        body, ending = line[:-2], "\r\n"
+    elif line.endswith(("\r", "\n")):
+        body, ending = line[:-1], line[-1]
+    else:
+        body, ending = line, ""
+    match = _DOCUMENT_HEADER_LINE_RE.match(body)
+    if match is None or not _is_sensitive_key(match.group("key")):
+        return line
+    return (
+        match.group("leading")
+        + match.group("quote")
+        + match.group("key")
+        + match.group("quote")
+        + match.group("separator")
+        + _REDACTED
+        + ending
+    )
+
+
+def _redact_document_url(match: re.Match[str]) -> str:
+    """脱敏文档中的签名 URL，同时保留 Markdown 尾随标点。"""
+    candidate = match.group(0)
+    suffix = ""
+    while candidate and candidate[-1] in ".,;:!?)]}":
+        suffix = candidate[-1] + suffix
+        candidate = candidate[:-1]
+    redacted = _redacted_signed_url(candidate)
+    return (redacted if redacted is not None else candidate) + suffix
+
+
+def _redact_document_base64(match: re.Match[str]) -> str:
+    """用长度占位符替换文档中的连续 Base64 候选片段。"""
+    value = match.group(0)
+    if not _is_long_base64_candidate(value):
+        return value
+    return f"[REDACTED_BASE64 length={len(value)}]"
+
+
+def redact_dating_document(document: str) -> str:
+    """脱敏完整 Markdown/文本且不施加单字段 20,000 字符上限。
+
+    参数:
+        document: 需要写入报告、API 或导出文件的完整文本文档。
+
+    返回:
+        保持原文结构的脱敏副本。凭证头行、内嵌签名 URL、data URL 及
+        连续 256 字符以上的标准/URL-safe Base64 会被稳定占位符替换。
+
+    约束:
+        本入口与单字段递归脱敏共享凭证/签名判定，但绝不截断整篇文档；
+        占位符不会再次命中，因此重复调用结果保持不变。
+    """
+    redacted = "".join(
+        _redact_document_header_line(line)
+        for line in document.splitlines(keepends=True)
+    )
+    redacted = _DOCUMENT_URL_RE.sub(_redact_document_url, redacted)
+    redacted = _DOCUMENT_DATA_URL_RE.sub(
+        lambda match: f"[REDACTED_BASE64 length={len(match.group(0))}]",
+        redacted,
+    )
+    return _DOCUMENT_BASE64_RE.sub(_redact_document_base64, redacted)
+
+
 def _append_truncation_warnings(snapshot: dict, paths: list[str]) -> None:
     """在新建的 task snapshot 上补充去重后的字段截断告警。"""
     if not paths:
@@ -2194,6 +2279,12 @@ def _redact_dating_value(
     if not isinstance(value, str):
         return value
 
+    # 单字段只复用逐行凭证识别；签名 URL、data URL 与 Base64 仍按字段
+    # 整体判定，避免把普通长文本中的连续字母片段误当作内嵌二进制。
+    value = "".join(
+        _redact_document_header_line(line)
+        for line in value.splitlines(keepends=True)
+    )
     signed_url = _redacted_signed_url(value)
     if signed_url is not None:
         return signed_url
@@ -2603,7 +2694,7 @@ def render_dating_report(analysis_result: dict, checks: list[dict]) -> str:
         lines.extend([heading, ""])
         lines.extend(content)
         lines.append("")
-    return "\n".join(lines).rstrip() + "\n"
+    return redact_dating_document("\n".join(lines).rstrip() + "\n")
 
 
 def run_dating_checks(analysis: dict) -> list[dict]:
