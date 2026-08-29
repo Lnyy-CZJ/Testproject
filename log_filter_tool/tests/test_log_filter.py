@@ -353,6 +353,167 @@ class LogFilterTests(unittest.TestCase):
                     if leaked_value is not None:
                         self.assertNotIn(leaked_value, persisted)
 
+    def test_export_dating_report_redacts_rows_without_outer_pipes(self):
+        """Markdown 导出须识别 one-delimiter 两列表格并保留安全列。"""
+        cases = (
+            (
+                "two-columns",
+                "Cookie | NO_OUTER_TABLE_SECRET",
+                "Cookie | [REDACTED]",
+                "NO_OUTER_TABLE_SECRET",
+            ),
+            (
+                "safe-later-cells",
+                "Cookie | OUTER_ROW_SECRET | note | keep",
+                "Cookie | [REDACTED] | note | keep",
+                "OUTER_ROW_SECRET",
+            ),
+        )
+        app = create_app()
+        app.testing = True
+
+        with TemporaryDirectory() as export_dir:
+            app.config.update(
+                LOG_EXPORT_DIR=export_dir,
+                LOG_EXPORT_DISPLAY_DIR=export_dir,
+            )
+            client = app.test_client()
+            for name, source, expected, leaked_value in cases:
+                with self.subTest(name=name):
+                    response = client.post(
+                        "/export",
+                        json={
+                            "export_type": "dating_analysis_report",
+                            "content": source,
+                        },
+                    )
+                    payload = response.get_json()
+                    persisted = (
+                        Path(export_dir) / payload["filename"]
+                    ).read_text(encoding="utf-8")
+
+                    self.assertEqual(response.status_code, 200)
+                    self.assertEqual(persisted, expected)
+                    self.assertNotIn(leaked_value, persisted)
+
+    def test_export_dating_report_respects_quoted_assignment_values(self):
+        """Markdown 导出须完整脱敏 quoted value 并保留外部安全赋值。"""
+        cases = (
+            (
+                "double-quoted",
+                'Authorization="LEFT_SECRET;RIGHT_SECRET"; status=ok',
+                'Authorization="[REDACTED]"; status=ok',
+                ("LEFT_SECRET", "RIGHT_SECRET"),
+            ),
+            (
+                "single-quoted",
+                "Authorization='SINGLE_LEFT_SECRET;SINGLE_RIGHT_SECRET'; status=ok",
+                "Authorization='[REDACTED]'; status=ok",
+                ("SINGLE_LEFT_SECRET", "SINGLE_RIGHT_SECRET"),
+            ),
+            (
+                "escaped-double-quote",
+                'Authorization="LEFT_SECRET\\\"INNER_SECRET;RIGHT_SECRET"; status=ok',
+                'Authorization="[REDACTED]"; status=ok',
+                ("LEFT_SECRET", "INNER_SECRET", "RIGHT_SECRET"),
+            ),
+            (
+                "escaped-single-quote",
+                "Authorization='LEFT_SECRET\\'INNER_SECRET;RIGHT_SECRET'; status=ok",
+                "Authorization='[REDACTED]'; status=ok",
+                ("LEFT_SECRET", "INNER_SECRET", "RIGHT_SECRET"),
+            ),
+            (
+                "escaped-semicolon",
+                r'Authorization="LEFT_SECRET\;RIGHT_SECRET"; status=ok',
+                'Authorization="[REDACTED]"; status=ok',
+                ("LEFT_SECRET", "RIGHT_SECRET"),
+            ),
+        )
+        app = create_app()
+        app.testing = True
+
+        with TemporaryDirectory() as export_dir:
+            app.config.update(
+                LOG_EXPORT_DIR=export_dir,
+                LOG_EXPORT_DISPLAY_DIR=export_dir,
+            )
+            client = app.test_client()
+            for name, source, expected, leaked_values in cases:
+                with self.subTest(name=name):
+                    response = client.post(
+                        "/export",
+                        json={
+                            "export_type": "dating_analysis_report",
+                            "content": source,
+                        },
+                    )
+                    payload = response.get_json()
+                    persisted = (
+                        Path(export_dir) / payload["filename"]
+                    ).read_text(encoding="utf-8")
+
+                    self.assertEqual(response.status_code, 200)
+                    self.assertEqual(persisted, expected)
+                    for leaked_value in leaked_values:
+                        self.assertNotIn(leaked_value, persisted)
+
+    def test_export_dating_report_redacts_near_json_credentials(self):
+        """Markdown 导出须保留 malformed JSON 诊断结构并遮住凭证值。"""
+        cases = (
+            (
+                "trailing-comma",
+                '{"apiSecret":"TRAILING_COMMA_SECRET",}',
+                '{"apiSecret":"[REDACTED]",}',
+                "TRAILING_COMMA_SECRET",
+            ),
+            (
+                "surrounding-text-and-spacing",
+                'before {"apiSecret" : "CONTEXT_SECRET", "status" : "ok",} after',
+                'before {"apiSecret" : "[REDACTED]", "status" : "ok",} after',
+                "CONTEXT_SECRET",
+            ),
+            (
+                "nested-malformed-object",
+                'prefix {"outer":{"apiSecret":"NESTED_NEAR_SECRET",},"status":"ok"} suffix',
+                'prefix {"outer":{"apiSecret":"[REDACTED]",},"status":"ok"} suffix',
+                "NESTED_NEAR_SECRET",
+            ),
+            (
+                "safe-business-key",
+                'prefix {"apiKeyRotationDate":"2026-01-01",} suffix',
+                'prefix {"apiKeyRotationDate":"2026-01-01",} suffix',
+                None,
+            ),
+        )
+        app = create_app()
+        app.testing = True
+
+        with TemporaryDirectory() as export_dir:
+            app.config.update(
+                LOG_EXPORT_DIR=export_dir,
+                LOG_EXPORT_DISPLAY_DIR=export_dir,
+            )
+            client = app.test_client()
+            for name, source, expected, leaked_value in cases:
+                with self.subTest(name=name):
+                    response = client.post(
+                        "/export",
+                        json={
+                            "export_type": "dating_analysis_report",
+                            "content": source,
+                        },
+                    )
+                    payload = response.get_json()
+                    persisted = (
+                        Path(export_dir) / payload["filename"]
+                    ).read_text(encoding="utf-8")
+
+                    self.assertEqual(response.status_code, 200)
+                    self.assertEqual(persisted, expected)
+                    if leaked_value is not None:
+                        self.assertNotIn(leaked_value, persisted)
+
     def test_export_dating_json_redacts_and_dumps_deterministically(self):
         """JSON 导出解析真实结构、递归脱敏，并保持稳定 UTF-8 格式。"""
         app = create_app()

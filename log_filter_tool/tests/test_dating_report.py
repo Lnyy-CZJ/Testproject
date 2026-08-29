@@ -265,6 +265,122 @@ class DatingRedactionTest(unittest.TestCase):
                     expected,
                 )
 
+    def test_document_table_without_outer_pipes_redacts_value_cell(self):
+        """无首尾竖线的两列表格仍须脱敏，并保留后续安全单元格。"""
+        cases = (
+            (
+                "two-columns",
+                "Cookie | NO_OUTER_TABLE_SECRET",
+                "Cookie | [REDACTED]",
+                "NO_OUTER_TABLE_SECRET",
+            ),
+            (
+                "safe-later-cells",
+                "Cookie | OUTER_ROW_SECRET | note | keep",
+                "Cookie | [REDACTED] | note | keep",
+                "OUTER_ROW_SECRET",
+            ),
+        )
+
+        for name, source, expected, leaked_value in cases:
+            with self.subTest(name=name):
+                redacted = dating_log_rules.redact_dating_document(source)
+
+                self.assertEqual(redacted, expected)
+                self.assertNotIn(leaked_value, redacted)
+                self.assertEqual(
+                    dating_log_rules.redact_dating_document(redacted),
+                    expected,
+                )
+
+    def test_document_assignment_scanner_respects_quoted_values(self):
+        """凭证值内的分号不得断句，单双引号与安全后缀必须保留。"""
+        cases = (
+            (
+                "double-quoted",
+                'Authorization="LEFT_SECRET;RIGHT_SECRET"; status=ok',
+                'Authorization="[REDACTED]"; status=ok',
+                ("LEFT_SECRET", "RIGHT_SECRET"),
+            ),
+            (
+                "single-quoted",
+                "Authorization='SINGLE_LEFT_SECRET;SINGLE_RIGHT_SECRET'; status=ok",
+                "Authorization='[REDACTED]'; status=ok",
+                ("SINGLE_LEFT_SECRET", "SINGLE_RIGHT_SECRET"),
+            ),
+            (
+                "escaped-double-quote",
+                'Authorization="LEFT_SECRET\\\"INNER_SECRET;RIGHT_SECRET"; status=ok',
+                'Authorization="[REDACTED]"; status=ok',
+                ("LEFT_SECRET", "INNER_SECRET", "RIGHT_SECRET"),
+            ),
+            (
+                "escaped-single-quote",
+                "Authorization='LEFT_SECRET\\'INNER_SECRET;RIGHT_SECRET'; status=ok",
+                "Authorization='[REDACTED]'; status=ok",
+                ("LEFT_SECRET", "INNER_SECRET", "RIGHT_SECRET"),
+            ),
+            (
+                "escaped-semicolon",
+                r'Authorization="LEFT_SECRET\;RIGHT_SECRET"; status=ok',
+                'Authorization="[REDACTED]"; status=ok',
+                ("LEFT_SECRET", "RIGHT_SECRET"),
+            ),
+        )
+
+        for name, source, expected, leaked_values in cases:
+            with self.subTest(name=name):
+                redacted = dating_log_rules.redact_dating_document(source)
+
+                self.assertEqual(redacted, expected)
+                for leaked_value in leaked_values:
+                    self.assertNotIn(leaked_value, redacted)
+                self.assertEqual(
+                    dating_log_rules.redact_dating_document(redacted),
+                    expected,
+                )
+
+    def test_document_near_json_fallback_redacts_quoted_credentials(self):
+        """JSON 整体损坏时仍须精确遮住 quoted 凭证值并保留诊断标点。"""
+        cases = (
+            (
+                "trailing-comma",
+                '{"apiSecret":"TRAILING_COMMA_SECRET",}',
+                '{"apiSecret":"[REDACTED]",}',
+                "TRAILING_COMMA_SECRET",
+            ),
+            (
+                "surrounding-text-and-spacing",
+                'before {"apiSecret" : "CONTEXT_SECRET", "status" : "ok",} after',
+                'before {"apiSecret" : "[REDACTED]", "status" : "ok",} after',
+                "CONTEXT_SECRET",
+            ),
+            (
+                "nested-malformed-object",
+                'prefix {"outer":{"apiSecret":"NESTED_NEAR_SECRET",},"status":"ok"} suffix',
+                'prefix {"outer":{"apiSecret":"[REDACTED]",},"status":"ok"} suffix',
+                "NESTED_NEAR_SECRET",
+            ),
+            (
+                "safe-business-key",
+                'prefix {"apiKeyRotationDate":"2026-01-01",} suffix',
+                'prefix {"apiKeyRotationDate":"2026-01-01",} suffix',
+                None,
+            ),
+        )
+
+        for name, source, expected, leaked_value in cases:
+            with self.subTest(name=name):
+                redacted = dating_log_rules.redact_dating_document(source)
+
+                self.assertEqual(redacted, expected)
+                if leaked_value is not None:
+                    self.assertNotIn(leaked_value, redacted)
+                self.assertEqual(
+                    dating_log_rules.redact_dating_document(redacted),
+                    expected,
+                )
+
     def test_sensitive_keys_signed_urls_and_base64_are_redacted(self):
         data_url = "data:image/png;base64," + "A" * 32
         base64_blob = "B" * 256

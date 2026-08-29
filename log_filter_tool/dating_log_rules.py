@@ -2170,7 +2170,9 @@ def _markdown_table_cell_spans(body: str) -> list[tuple[int, int]]:
         for index, character in enumerate(body)
         if character == "|" and not _is_escaped_character(body, index)
     ]
-    if len(delimiters) < 2:
+    # 无首尾 outer pipe 的两列表格只有一个分隔符，仍具有明确 key/value
+    # 边界；有 leading outer pipe 而缺少 value 的行会在调用方索引校验退出。
+    if not delimiters:
         return []
     boundaries = [-1, *delimiters, len(body)]
     return [
@@ -2310,6 +2312,25 @@ def _redact_assignment_segment(segment: str) -> str:
     value_start = separator + 1
     while value_start < key_limit and segment[value_start] in " \t":
         value_start += 1
+    if value_start < key_limit and segment[value_start] in "\"'":
+        quote = segment[value_start]
+        closing_quote = next(
+            (
+                index
+                for index in range(value_start + 1, key_limit)
+                if segment[index] == quote
+                and not _is_escaped_character(segment, index)
+            ),
+            None,
+        )
+        if closing_quote is not None:
+            # 引号属于文档语法而不是 secret 本身；只替换内部值可同时保留
+            # closing quote 与外部 ``; status=...``，并使重复脱敏幂等。
+            return (
+                segment[: value_start + 1]
+                + _REDACTED
+                + segment[closing_quote:]
+            )
     value_end = key_limit
     while value_end > value_start and segment[value_end - 1] in " \t":
         value_end -= 1
@@ -2317,10 +2338,19 @@ def _redact_assignment_segment(segment: str) -> str:
 
 
 def _redact_assignment_sequence(text: str) -> str:
-    """按未转义分号拆分赋值序列，并原样保留分隔符。"""
+    """按引号外的未转义分号拆分赋值序列，并原样保留分隔符。"""
     rendered: list[str] = []
     segment_start = 0
+    quote: str | None = None
     for index, character in enumerate(text):
+        if character in "\"'" and not _is_escaped_character(text, index):
+            if quote is None:
+                quote = character
+            elif quote == character:
+                quote = None
+            continue
+        if quote is not None:
+            continue
         if character != ";" or _is_escaped_character(text, index):
             continue
         rendered.append(_redact_assignment_segment(text[segment_start:index]))
@@ -2499,9 +2529,66 @@ def _redact_embedded_json_fragments(document: str) -> str:
     return "".join(rendered)
 
 
+def _quoted_json_token_end(text: str, start: int) -> int | None:
+    """返回完整双引号 JSON token 的 exclusive end；未闭合则返回 None。"""
+    if start >= len(text) or text[start] != '"':
+        return None
+    for index in range(start + 1, len(text)):
+        if text[index] == '"' and not _is_escaped_character(text, index):
+            return index + 1
+    return None
+
+
+def _redact_near_json_credentials(document: str) -> str:
+    """在整体 JSON 损坏时保守扫描 quoted key/value 并保留全部标点。"""
+    rendered: list[str] = []
+    cursor = 0
+    while cursor < len(document):
+        if document[cursor] != '"':
+            rendered.append(document[cursor])
+            cursor += 1
+            continue
+
+        key_end = _quoted_json_token_end(document, cursor)
+        if key_end is None:
+            rendered.append(document[cursor:])
+            break
+        try:
+            key = json.loads(document[cursor:key_end])
+        except json.JSONDecodeError:
+            rendered.append(document[cursor:key_end])
+            cursor = key_end
+            continue
+
+        separator = _skip_json_whitespace(document, key_end)
+        value_start = (
+            _skip_json_whitespace(document, separator + 1)
+            if separator < len(document) and document[separator] == ":"
+            else len(document)
+        )
+        value_end = _quoted_json_token_end(document, value_start)
+        if (
+            not isinstance(key, str)
+            or not _is_sensitive_key(key)
+            or value_end is None
+        ):
+            rendered.append(document[cursor:key_end])
+            cursor = key_end
+            continue
+
+        # 只替换 value 引号内部；trailing comma、嵌套花括号和外层文本
+        # 都不参与解析，因此仍可作为原始故障诊断证据。
+        rendered.append(document[cursor : value_start + 1])
+        rendered.append(_REDACTED)
+        rendered.append('"')
+        cursor = value_end
+    return "".join(rendered)
+
+
 def _redact_document_credentials(document: str) -> str:
-    """统一扫描有效 JSON、Markdown 表格和逐段 header 凭证语法。"""
+    """统一扫描 JSON/near-JSON、Markdown 表格和逐段 header 凭证语法。"""
     redacted = _redact_embedded_json_fragments(document)
+    redacted = _redact_near_json_credentials(redacted)
     lines = []
     for line in redacted.splitlines(keepends=True):
         line = _redact_document_table_line(line)
