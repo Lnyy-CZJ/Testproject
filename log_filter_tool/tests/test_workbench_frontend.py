@@ -354,6 +354,254 @@ class WorkbenchShellTest(unittest.TestCase):
             completed.stderr or completed.stdout,
         )
 
+    def _run_task_three_core_harness(self, scenario):
+        """在最小 DOM 沙箱中验证 Task 3 的共享日志行为。"""
+        node = shutil.which("node")
+        self.assertIsNotNone(node, "需要 Node.js 执行 Task 3 前端行为合同测试")
+        core_path = Path(__file__).resolve().parents[1] / "static/js/workbench-core.js"
+        harness = textwrap.dedent(
+            r"""
+            const fs = require("fs");
+            const vm = require("vm");
+
+            class FakeClassList {
+              constructor() { this.values = new Set(); }
+              toggle(name, force) {
+                const shouldHave = force === undefined ? !this.values.has(name) : force;
+                if (shouldHave) this.values.add(name); else this.values.delete(name);
+                return shouldHave;
+              }
+              contains(name) { return this.values.has(name); }
+            }
+
+            class FakeElement {
+              constructor(id, attributes = {}) {
+                this.id = id;
+                this.attributes = {...attributes};
+                this.dataset = {};
+                this.listeners = Object.create(null);
+                this.classList = new FakeClassList();
+                this.hidden = Boolean(attributes.hidden);
+                this.disabled = false;
+                this.value = attributes.value || "";
+                this.textContent = attributes.textContent || "";
+                this.tabIndex = 0;
+                this.scrollTop = 0;
+                this.selectionStart = 0;
+                this.selectionEnd = 0;
+                this.selectionCalls = [];
+                this.focusCount = 0;
+                this.style = {setProperty() {}};
+              }
+
+              addEventListener(type, listener) {
+                (this.listeners[type] ||= []).push(listener);
+              }
+
+              dispatch(type, event = {}) {
+                (this.listeners[type] || []).slice().forEach(listener => listener(event));
+              }
+
+              getAttribute(name) {
+                return Object.prototype.hasOwnProperty.call(this.attributes, name)
+                  ? String(this.attributes[name]) : null;
+              }
+
+              setAttribute(name, value) { this.attributes[name] = String(value); }
+              removeAttribute(name) { delete this.attributes[name]; }
+              focus() { this.focusCount += 1; }
+              setSelectionRange(start, end) {
+                this.selectionStart = start;
+                this.selectionEnd = end;
+                this.selectionCalls.push([start, end]);
+              }
+              scrollIntoView() {}
+              getBoundingClientRect() { return {left: 0, width: 1000}; }
+            }
+
+            function assert(condition, message) {
+              if (!condition) throw new Error(message);
+            }
+
+            const root = new FakeElement("log-workbench");
+            root.dataset = {
+              indexUrl: "/",
+              exportUrl: "/export",
+              peopleSearchUrl: "/people",
+              datingUrl: "/dating"
+            };
+            root.querySelectorAll = () => [];
+
+            const form = new FakeElement("log-filter-form");
+            let requestSubmitCount = 0;
+            form.requestSubmit = () => { requestSubmitCount += 1; };
+            const modeSelect = new FakeElement("analysis-mode", {value: "general"});
+            const analyzeButton = new FakeElement("analyze-log-btn", {
+              textContent: "分析日志"
+            });
+            const logText = new FakeElement("log_text");
+            logText.value = "zero\nneedle\nline needle\nend";
+            const resultText = new FakeElement("result-text");
+            resultText.value = "filtered needle";
+            const rawView = new FakeElement("raw-log-view");
+            const filteredView = new FakeElement("filtered-log-view", {hidden: true});
+            const rawViewButton = new FakeElement("raw-log-view-btn", {
+              "aria-selected": "true"
+            });
+            const filteredViewButton = new FakeElement("filtered-log-view-btn", {
+              "aria-selected": "false"
+            });
+            const searchInput = new FakeElement("result-search");
+            const searchCount = new FakeElement("search-count");
+            const actionMessage = new FakeElement("action-message", {hidden: true});
+            const toast = new FakeElement("workbench-toast", {hidden: true});
+            const focusStatus = new FakeElement("log-focus-status");
+            const staleStatus = new FakeElement("analysis-stale");
+            const lineCount = new FakeElement("log-line-count");
+            const byteCount = new FakeElement("log-byte-count");
+            const allMethod = new FakeElement("all-method", {checked: true});
+            allMethod.checked = true;
+
+            const elements = {
+              "log-workbench": root,
+              "log-filter-form": form,
+              "log-analysis-form": form,
+              "analysis-mode": modeSelect,
+              "analyze-log-btn": analyzeButton,
+              "log_text": logText,
+              "result-text": resultText,
+              "raw-log-view": rawView,
+              "filtered-log-view": filteredView,
+              "raw-log-view-btn": rawViewButton,
+              "filtered-log-view-btn": filteredViewButton,
+              "result-search": searchInput,
+              "search-count": searchCount,
+              "action-message": actionMessage,
+              "workbench-toast": toast,
+              "log-focus-status": focusStatus,
+              "analysis-stale": staleStatus,
+              "log-line-count": lineCount,
+              "log-byte-count": byteCount,
+              "workbench-loading-mask": new FakeElement("workbench-loading-mask", {hidden: true})
+            };
+            const document = {
+              readyState: "complete",
+              getElementById(id) { return elements[id] || null; },
+              querySelector(selector) {
+                return selector === '#method-dropdown input[data-is-all="1"]'
+                  ? allMethod : null;
+              },
+              addEventListener() {}
+            };
+            const window = {
+              getComputedStyle() { return {lineHeight: "20px"}; }
+            };
+
+            vm.runInNewContext(fs.readFileSync(process.argv[1], "utf8"), {
+              window,
+              document,
+              Promise,
+              Array,
+              Object,
+              String,
+              Number,
+              Math,
+              Set,
+              TypeError,
+              setTimeout,
+              clearTimeout
+            });
+
+            (async function runScenario() {
+              const api = window.LogWorkbench;
+              if (process.argv[2] === "dispatch") {
+              assert(typeof api.analyzeSelectedMode === "function",
+                "核心未暴露 analyzeSelectedMode() ");
+              api.analyzeSelectedMode();
+              assert(requestSubmitCount === 1,
+                "general 模式未通过现有表单 requestSubmit");
+
+              let analyzeCount = 0;
+              let resolveAnalysis;
+              const pending = new Promise(resolve => { resolveAnalysis = resolve; });
+              api.registerAnalysisMode("people", {
+                analyze(context) {
+                  analyzeCount += 1;
+                  assert(context.logText === logText.value, "异步模式未读取当前日志");
+                  return pending;
+                }
+              });
+              modeSelect.value = "people";
+              const run = api.analyzeSelectedMode();
+              api.analyzeSelectedMode();
+              assert(analyzeCount === 1, "loading 期间异步模式被重复调用");
+              assert(api.state.phase === "loading", "异步分析未进入 loading 状态");
+              resolveAnalysis();
+              await run;
+              await Promise.resolve();
+              assert(api.state.phase === "idle", "异步分析完成后状态未恢复 idle");
+            }
+
+              if (process.argv[2] === "search-focus-stale") {
+              assert(typeof api.searchActiveLog === "function",
+                "核心未暴露 searchActiveLog(direction)");
+              searchInput.value = "needle";
+              api.searchActiveLog(1);
+              assert(logText.selectionStart === 5 && logText.selectionEnd === 11,
+                "搜索未选择第一处真实字符串偏移");
+              assert(searchCount.textContent === "1/2",
+                "搜索计数未反映当前匹配");
+              api.searchActiveLog(1);
+              assert(logText.selectionStart === 17 && logText.selectionEnd === 23,
+                "搜索下一项未选择第二处真实字符串偏移");
+              api.searchActiveLog(-1);
+              assert(logText.selectionStart === 5 && logText.selectionEnd === 11,
+                "搜索上一项未回到第一处匹配");
+              searchInput.value = "";
+              api.searchActiveLog(1);
+              assert(searchCount.textContent === "4 行",
+                "空查询未显示当前日志总行数");
+
+              api.focusLogLines(2, 3);
+              assert(!rawView.hidden && filteredView.hidden,
+                "行号定位前未切回原始日志视图");
+              assert(logText.selectionStart === 5 && logText.selectionEnd === 23,
+                "行号定位未使用真实换行偏移");
+              assert(focusStatus.textContent.includes("L2–3"),
+                "状态区未反馈真实定位范围");
+              assert(actionMessage.textContent.includes("L2–3"),
+                "操作反馈未反馈真实定位范围");
+              assert(toast.textContent.includes("L2–3"),
+                "toast 未反馈真实定位范围");
+
+              const beforeResult = resultText.value;
+              logText.value = "changed\nlog";
+              logText.dispatch("input");
+              assert(api.state.dirty === true, "日志修改未标记 stale 状态");
+              assert(resultText.value === beforeResult,
+                "日志修改立即清空了既有过滤结果");
+              assert(staleStatus.textContent.includes("重新分析"),
+                "stale 状态未给出重新分析提示");
+              assert(lineCount.textContent === "2 行", "修改后行数元数据未更新");
+              }
+            })().catch(error => {
+              console.error(error.stack || error.message);
+              process.exitCode = 1;
+            });
+            """
+        )
+        completed = subprocess.run(
+            [node, "-e", harness, str(core_path), scenario],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(
+            0,
+            completed.returncode,
+            completed.stderr or completed.stdout,
+        )
+
     def test_page_uses_single_log_workbench_shell(self):
         """根页面必须交付单日志壳层，且不得残留双日志比较入口。"""
         html = self.client.get("/").get_data(as_text=True)
@@ -647,6 +895,37 @@ class WorkbenchShellTest(unittest.TestCase):
             completed.returncode,
             completed.stderr or completed.stdout,
         )
+
+    def test_task_three_log_pane_keeps_textareas_and_single_dispatch_button(self):
+        """日志窗格只能保留两个 textarea 与一个统一分析按钮。"""
+        html = self.client.get("/").get_data(as_text=True)
+
+        self.assertIn('<textarea id="log_text"', html)
+        self.assertIn('<textarea id="result-text"', html)
+        self.assertRegex(html, r'<textarea[^>]*id="result-text"[^>]*readonly')
+        self.assertEqual(html.count('id="analyze-log-btn"'), 1)
+        self.assertIn('id="log-filter-form"', html)
+        self.assertIn('id="raw-log-view-btn"', html)
+        self.assertIn('id="filtered-log-view-btn"', html)
+        self.assertNotIn('class="log-line"', html)
+        self.assertNotIn("<mark", html)
+
+    def test_task_three_scripts_never_write_untrusted_html(self):
+        """所有工作台静态脚本都不得批量写入 HTML 或插入标记节点。"""
+        scripts = sorted(Path("static/js").glob("workbench-*.js"))
+        self.assertIn(Path("static/js/workbench-filter.js"), scripts)
+        for path in scripts:
+            source = path.read_text(encoding="utf-8")
+            self.assertNotIn("innerHTML", source)
+            self.assertNotIn("insertAdjacentHTML", source)
+
+    def test_task_three_core_dispatches_modes_and_prevents_duplicate_async_runs(self):
+        """通用模式走既有 POST，异步适配器由核心分发且 loading 时去重。"""
+        self._run_task_three_core_harness("dispatch")
+
+    def test_task_three_core_searches_text_and_focuses_real_log_lines(self):
+        """搜索、行号定位和日志编辑 stale 都基于 textarea 的真实文本。"""
+        self._run_task_three_core_harness("search-focus-stale")
 
 
 if __name__ == "__main__":

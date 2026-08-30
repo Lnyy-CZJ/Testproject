@@ -747,7 +747,7 @@ class LogFilterTests(unittest.TestCase):
         self.assertIn("platform_home_url", render.call_args.kwargs)
 
     def test_page_contains_export_search_and_auto_filter_controls(self):
-        """页面应提供两个导出入口、结果搜索和 method 自动提交逻辑。"""
+        """页面应提供 Task 3 的 textarea 日志窗格和通用过滤控件。"""
         app = create_app()
         app.testing = True
 
@@ -755,14 +755,21 @@ class LogFilterTests(unittest.TestCase):
         html = response.get_data(as_text=True)
 
         self.assertEqual(response.status_code, 200)
+        self.assertIn('<textarea id="log_text"', html)
+        self.assertIn('<textarea id="result-text"', html)
+        self.assertRegex(html, r'<textarea[^>]*id="result-text"[^>]*readonly')
+        self.assertEqual(html.count('id="analyze-log-btn"'), 1)
+        self.assertIn('id="log-filter-form"', html)
+        self.assertIn('data-is-all="1"', html)
+        self.assertIn('name="method"', html)
+        self.assertIn('workbench-filter.js', html)
         self.assertIn('id="export-log-content-btn"', html)
         self.assertIn('id="export-filtered-result-btn"', html)
         self.assertIn('id="result-search"', html)
         self.assertIn('id="search-prev-btn"', html)
         self.assertIn('id="search-next-btn"', html)
-        self.assertIn("form.requestSubmit()", html)
         self.assertIn('id="action-message" role="status"', html)
-        self.assertIn("}, 3000);", html)
+        self.assertNotIn("<mark", html)
 
     def test_extracts_request_and_trace_ids_from_common_formats(self):
         text = 'request_id: abc123 trace_id=trace456 "request_id": "json789"'
@@ -935,7 +942,7 @@ class LogFilterTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn('action="/log-filter/"', html)
-        self.assertIn('var exportUrl = "/log-filter/export"', html)
+        self.assertIn('data-export-url="/log-filter/export"', html)
         self.assertEqual(client.get("/log-filter/sample").status_code, 200)
         self.assertEqual(client.get("/").status_code, 404)
 

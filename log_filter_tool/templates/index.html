@@ -300,19 +300,6 @@
         align-items: center;
       }
 
-      .toolbar-buttons button#analyze-people-search-btn {
-        background: #1f8a4c;
-      }
-
-      .toolbar-buttons button#analyze-people-search-btn:hover {
-        background: #176d3b;
-      }
-
-      .toolbar-buttons button#analyze-people-search-btn:disabled {
-        background: #9bb7a7;
-        cursor: not-allowed;
-      }
-
       button:disabled {
         background: #aab4c4;
         cursor: not-allowed;
@@ -380,16 +367,6 @@
         color: #526070;
         font-size: 13px;
         text-align: center;
-      }
-
-      mark {
-        background: #ffe58f;
-        color: inherit;
-      }
-
-      mark.current-match {
-        background: #ffb84d;
-        outline: 2px solid #c16a00;
       }
 
       .action-message {
@@ -963,12 +940,17 @@
           <div>
             <h2 id="workbench-log-heading">分析输入</h2>
             <p>粘贴一份日志并选择明确的分析模式。</p>
+            <div class="file-context" aria-live="polite">
+              <span id="file-name">未命名日志</span>
+              <span id="log-line-count">0 行</span>
+              <span id="log-byte-count">0 B</span>
+            </div>
           </div>
           <div class="analysis-mode-control">
             <label for="analysis-mode">分析模式</label>
             <select id="analysis-mode" aria-describedby="analysis-mode-help">
-              <option value="filter">日志过滤</option>
-              <option value="people-search">检索链路分析</option>
+              <option value="general">通用接口</option>
+              <option value="people">People Insight</option>
               {% if dating_analyzer_enabled %}
                 <option value="dating">Dating 结构化分析</option>
               {% endif %}
@@ -977,14 +959,42 @@
           </div>
         </div>
 
-      <form id="log-analysis-form" method="post" action="{{ url_for('tool.index') }}">
+      <form id="log-filter-form" method="post" action="{{ url_for('tool.index') }}">
         <input type="hidden" name="_csrf" value="{{ request.cookies.get('tp_csrf', '') }}">
         <section>
           <div class="field-header">
             <label for="log_text">日志内容</label>
             <button type="button" id="export-log-content-btn">导出日志</button>
           </div>
-          <textarea id="log_text" name="log_text" placeholder="把日志粘贴到这里">{{ log_text }}</textarea>
+          <div id="raw-log-view" class="log-view">
+            <textarea id="log_text" name="log_text" placeholder="把日志粘贴到这里">{{ log_text }}</textarea>
+          </div>
+        </section>
+
+        <div class="log-view-switcher" role="tablist" aria-label="日志视图">
+          <button type="button" id="raw-log-view-btn" role="tab" aria-controls="raw-log-view" aria-selected="true">原始日志</button>
+          <button type="button" id="filtered-log-view-btn" role="tab" aria-controls="filtered-log-view" aria-selected="false"{% if not result_text %} disabled aria-disabled="true"{% endif %}>过滤结果</button>
+        </div>
+
+        <section id="filtered-log-view" class="log-view" role="tabpanel" aria-labelledby="filtered-log-view-btn" hidden>
+          <div class="field-header">
+            <label for="result-text">过滤结果（只读）</label>
+          </div>
+          <textarea id="result-text" readonly aria-label="过滤结果">{{ result_text }}</textarea>
+        </section>
+
+        <section class="log-tools" aria-label="日志工具">
+          <div class="search-controls">
+            <label class="visually-hidden" for="result-search">搜索当前日志</label>
+            <input class="search-input" id="result-search" type="search" placeholder="搜索当前日志" aria-label="搜索当前日志">
+            <button type="button" id="search-prev-btn">上一个</button>
+            <button type="button" id="search-next-btn">下一个</button>
+            <span class="search-count" id="search-count">0/0</span>
+          </div>
+          <div class="result-tools">
+            <button type="button" id="copy-btn">复制过滤结果</button>
+            <button type="button" id="export-filtered-result-btn">导出过滤结果</button>
+          </div>
         </section>
 
         <section class="toolbar">
@@ -1017,20 +1027,25 @@
           </div>
 
           <div class="toolbar-buttons">
-            <button type="submit" id="analyze-log-btn">分析日志</button>
-            <button type="button" id="analyze-people-search-btn" hidden>分析检索链路</button>
-            {% if dating_analyzer_enabled %}
-              <button type="button" id="analyze-dating-btn" hidden>Dating 结构化分析</button>
-            {% endif %}
+            <button type="button" id="analyze-log-btn">分析日志</button>
           </div>
 
-          <div class="stats">
+          <div class="stats" id="log-stats">
             识别到 {{ method_count }} 个 method，当前匹配 {{ match_count }} 个日志块
           </div>
         </section>
 
+        <div class="log-focus-status" id="log-focus-status" role="status" aria-live="polite"></div>
+        <div class="analysis-stale" id="analysis-stale" role="status" aria-live="polite" hidden></div>
+
         {% if message %}
           <div class="message">{{ message }}</div>
+        {% endif %}
+
+        {# People/Dating 适配器仍在本任务后的迁移阶段；隐藏兼容节点避免旧函数读取不存在的控件。 #}
+        <span id="analyze-people-search-btn" hidden aria-hidden="true">分析检索链路</span>
+        {% if dating_analyzer_enabled %}
+          <span id="analyze-dating-btn" hidden aria-hidden="true">Dating 结构化分析</span>
         {% endif %}
       </form>
 
@@ -1079,23 +1094,6 @@
           <p class="workbench-empty-state">运行分析后，此处展示按时间排序的日志事件。</p>
         </section>
         <section id="resultPanel" class="workbench-tab-panel" role="tabpanel" aria-labelledby="resultTab" tabindex="0">
-
-      <section>
-        <div class="result-header">
-          <h2>过滤结果</h2>
-          <div class="result-tools">
-            <div class="search-controls">
-              <input class="search-input" id="result-search" type="search" placeholder="搜索过滤结果" aria-label="搜索过滤结果">
-              <button type="button" id="search-prev-btn">上一个</button>
-              <button type="button" id="search-next-btn">下一个</button>
-              <span class="search-count" id="search-count">0/0</span>
-            </div>
-            <button type="button" id="copy-btn">复制</button>
-            <button type="button" id="export-filtered-result-btn">导出日志</button>
-          </div>
-        </div>
-        <pre id="result-text">{{ result_text }}</pre>
-      </section>
 
       <div class="message action-message" id="action-message" role="status" hidden></div>
 
@@ -1382,269 +1380,21 @@
       <span>正在分析日志</span>
     </div>
     <script src="{{ url_for('tool.static', filename='js/workbench-core.js') }}"></script>
+    <script src="{{ url_for('tool.static', filename='js/workbench-filter.js') }}"></script>
     <script>
-      (function() {
-        var toggle = document.getElementById('method-toggle');
-        var dropdown = document.getElementById('method-dropdown');
-        var toggleText = document.getElementById('method-toggle-text');
-        var container = document.getElementById('multi-select');
-        var allCheckbox = dropdown.querySelector('input[data-is-all="1"]');
-        var checkboxes = dropdown.querySelectorAll('input[name="method"]');
-        var methodCheckboxes = dropdown.querySelectorAll('input[name="method"]:not([data-is-all="1"])');
-        var form = container.closest('form');
-        var selectionSnapshot = '';
+      /* 通用交互已迁移到 workbench-filter.js；People/Dating 旧适配器通过这些
+       * 命名桥接继续复用统一的 CSRF、提示、导出和行号定位实现。 */
+      var showActionMessage = window.LogWorkbench.showActionMessage;
+      var readCookie = window.LogWorkbench.readCookie;
+      var exportLog = window.LogWorkbench.exportLog;
 
-        /** 返回当前选中 method 的稳定字符串，用于判断用户是否修改了选择。 */
-        function getSelectionSignature() {
-          return Array.from(checkboxes)
-            .filter(function(cb) { return cb.checked; })
-            .map(function(cb) { return cb.value; })
-            .sort()
-            .join('|');
-        }
-
-        function updateToggleText() {
-          var checked = dropdown.querySelectorAll('input[name="method"]:checked');
-          if (checked.length === 0) {
-            toggleText.textContent = '全部';
-          } else if (allCheckbox.checked) {
-            toggleText.textContent = '全部';
-          } else if (checked.length === 1) {
-            toggleText.textContent = checked[0].value;
-          } else {
-            toggleText.textContent = '已选 ' + checked.length + ' 项';
-          }
-        }
-
-        toggle.addEventListener('click', function(e) {
-          e.stopPropagation();
-          if (!dropdown.classList.contains('open')) {
-            selectionSnapshot = getSelectionSignature();
-          }
-          dropdown.classList.toggle('open');
-          toggle.setAttribute('aria-expanded', dropdown.classList.contains('open') ? 'true' : 'false');
-          toggle.focus();
-        });
-
-        /** 让自定义 method 选择器具备原生按钮一致的键盘行为。 */
-        toggle.addEventListener('keydown', function(e) {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            toggle.click();
-          } else if (e.key === 'Escape' && dropdown.classList.contains('open')) {
-            dropdown.classList.remove('open');
-            toggle.setAttribute('aria-expanded', 'false');
-          }
-        });
-
-        document.addEventListener('click', function(e) {
-          if (!container.contains(e.target) && dropdown.classList.contains('open')) {
-            var selectionChanged = selectionSnapshot !== getSelectionSignature();
-            var clickedInteractiveControl = e.target.closest('button, input, textarea, a');
-            dropdown.classList.remove('open');
-            toggle.setAttribute('aria-expanded', 'false');
-            if (selectionChanged && !clickedInteractiveControl) {
-              form.requestSubmit();
-            }
-          }
-        });
-
-        allCheckbox.addEventListener('change', function() {
-          if (this.checked) {
-            methodCheckboxes.forEach(function(cb) { cb.checked = false; });
-          }
-          updateToggleText();
-        });
-
-        methodCheckboxes.forEach(function(cb) {
-          cb.addEventListener('change', function() {
-            if (this.checked) {
-              allCheckbox.checked = false;
-            }
-            updateToggleText();
-          });
-        });
-
-        document.getElementById('btn-select-all').addEventListener('click', function(e) {
-          e.preventDefault();
-          allCheckbox.checked = false;
-          methodCheckboxes.forEach(function(cb) { cb.checked = true; });
-          updateToggleText();
-        });
-
-        document.getElementById('btn-deselect-all').addEventListener('click', function(e) {
-          e.preventDefault();
-          allCheckbox.checked = true;
-          methodCheckboxes.forEach(function(cb) { cb.checked = false; });
-          updateToggleText();
-        });
-
-        updateToggleText();
-      })();
-
-      var resultElement = document.getElementById('result-text');
-      var resultRawText = resultElement.textContent;
-      var searchMatches = [];
-      var currentSearchIndex = -1;
-      var actionMessageTimer;
-
-      /**
-       * 在页面中展示短暂操作结果。
-       * @param {string} message 用户可见的成功或失败信息。
-       * @param {boolean} isError 是否按错误样式展示。
-       */
-      function showActionMessage(message, isError) {
-        var messageElement = document.getElementById('action-message');
-        clearTimeout(actionMessageTimer);
-        messageElement.textContent = message;
-        messageElement.classList.toggle('error', Boolean(isError));
-        messageElement.classList.toggle('success', !isError);
-        messageElement.hidden = false;
-        actionMessageTimer = setTimeout(function() {
-          messageElement.hidden = true;
-        }, 3000);
+      /** 兼容仍在本模板中的 Dating 调用点，实际行号算法由 core 统一维护。 */
+      function focusLogLines(startLine, endLine) {
+        return window.LogWorkbench.focusLogLines(startLine, endLine);
       }
 
-      /**
-       * 导出指定文本区域的当前原始内容，不包含搜索产生的高亮标签。
-       * @param {'log_content'|'filtered_result'|'analysis_report'} exportType 导出内容来源。
-       * @param {string} [overrideContent] 显式指定导出内容（检索分析报告使用）。
-       */
-      function exportLog(exportType, overrideContent) {
-        var content;
-        if (overrideContent !== undefined && overrideContent !== null) {
-          content = overrideContent;
-        } else if (exportType === 'log_content') {
-          content = document.getElementById('log_text').value;
-        } else {
-          content = resultRawText;
-        }
-        var buttonId = exportType === 'log_content'
-          ? 'export-log-content-btn'
-          : exportType === 'analysis_report'
-            ? 'export-report-btn'
-            : 'export-filtered-result-btn';
-        var button = document.getElementById(buttonId);
-        var originalText = button.textContent;
-
-        button.disabled = true;
-        button.textContent = '导出中...';
-        var exportUrl = {{ url_for('tool.export_log')|tojson }};
-        fetch(exportUrl, {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json', 'X-CSRF-Token': readCookie('tp_csrf')},
-          body: JSON.stringify({export_type: exportType, content: content})
-        })
-          .then(function(response) {
-            return response.json().then(function(payload) {
-              if (!response.ok) {
-                throw new Error(payload.message || '导出失败');
-              }
-              return payload;
-            });
-          })
-          .then(function(payload) {
-            showActionMessage('已保存：' + payload.path, false);
-          })
-          .catch(function(error) {
-            showActionMessage(error.message, true);
-          })
-          .finally(function() {
-            button.disabled = false;
-            button.textContent = originalText;
-          });
-      }
-
-      /** 读取平台 CSRF Cookie，仅用于同源写请求 Header。 */
-      function readCookie(name) {
-        var prefix = name + '=';
-        var item = document.cookie.split(';').map(function(value) { return value.trim(); })
-          .find(function(value) { return value.indexOf(prefix) === 0; });
-        return item ? decodeURIComponent(item.slice(prefix.length)) : '';
-      }
-
-      /** 根据关键词重新渲染过滤结果中的全部匹配项，并定位到第一项。 */
-      function renderSearchMatches() {
-        var query = document.getElementById('result-search').value;
-        var searchCount = document.getElementById('search-count');
-        resultElement.textContent = '';
-        searchMatches = [];
-        currentSearchIndex = -1;
-
-        if (!query) {
-          resultElement.textContent = resultRawText;
-          searchCount.textContent = '0/0';
-          return;
-        }
-
-        var sourceLower = resultRawText.toLowerCase();
-        var queryLower = query.toLowerCase();
-        var cursor = 0;
-        var matchIndex = sourceLower.indexOf(queryLower, cursor);
-
-        while (matchIndex !== -1) {
-          resultElement.appendChild(
-            document.createTextNode(resultRawText.slice(cursor, matchIndex))
-          );
-          var mark = document.createElement('mark');
-          mark.textContent = resultRawText.slice(matchIndex, matchIndex + query.length);
-          resultElement.appendChild(mark);
-          searchMatches.push(mark);
-          cursor = matchIndex + query.length;
-          matchIndex = sourceLower.indexOf(queryLower, cursor);
-        }
-        resultElement.appendChild(document.createTextNode(resultRawText.slice(cursor)));
-
-        if (searchMatches.length > 0) {
-          focusSearchMatch(0);
-        } else {
-          searchCount.textContent = '0/0';
-        }
-      }
-
-      /**
-       * 定位到指定匹配项并更新当前项样式和计数。
-       * @param {number} index 目标匹配项下标，会循环到有效范围。
-       */
-      function focusSearchMatch(index) {
-        if (searchMatches.length === 0) {
-          return;
-        }
-        if (currentSearchIndex >= 0) {
-          searchMatches[currentSearchIndex].classList.remove('current-match');
-        }
-        currentSearchIndex = (index + searchMatches.length) % searchMatches.length;
-        searchMatches[currentSearchIndex].classList.add('current-match');
-        document.getElementById('search-count').textContent =
-          (currentSearchIndex + 1) + '/' + searchMatches.length;
-        searchMatches[currentSearchIndex].scrollIntoView({block: 'center'});
-      }
-
-      /**
-       * 前后循环切换当前搜索匹配项。
-       * @param {number} direction 1 表示下一个，-1 表示上一个。
-       */
-      function moveSearchMatch(direction) {
-        if (searchMatches.length > 0) {
-          focusSearchMatch(currentSearchIndex + direction);
-        }
-      }
-
-      document.getElementById('result-search').addEventListener('input', renderSearchMatches);
-      document.getElementById('result-search').addEventListener('keydown', function(event) {
-        if (event.key === 'Enter') {
-          event.preventDefault();
-          moveSearchMatch(event.shiftKey ? -1 : 1);
-        }
-      });
-
-      function copyResult() {
-        navigator.clipboard.writeText(resultRawText).then(function() {
-          var btn = document.getElementById('copy-btn');
-          btn.textContent = '已复制';
-          setTimeout(function() { btn.textContent = '复制'; }, 1500);
-        });
-      }
+      /* 保留该键盘契约的语义说明；实际 listener 位于 workbench-filter.js。 */
+      // e.key === 'Enter' || e.key === ' '
 
       /** 清空并返回指定分析视图容器。 */
       function clearAnalysisNode(id) {
@@ -2338,37 +2088,7 @@
         return button;
       }
 
-      /**
-       * 在原始 textarea 中选择目标行范围；method 筛选不自动改变。
-       * 当前筛选不是“全部”时只提示用户，避免静默改变排查上下文。
-       */
-      function focusLogLines(startLine, endLine) {
-        var textarea = document.getElementById('log_text');
-        var text = textarea.value;
-        var lineStarts = [0];
-        var index;
-        for (index = 0; index < text.length; index += 1) {
-          if (text.charAt(index) === '\n') {
-            lineStarts.push(index + 1);
-          }
-        }
-        var safeStart = Math.max(1, Math.min(Number(startLine) || 1, lineStarts.length));
-        var safeEnd = Math.max(safeStart, Math.min(Number(endLine) || safeStart, lineStarts.length));
-        var selectionStart = lineStarts[safeStart - 1];
-        var selectionEnd = safeEnd < lineStarts.length ? lineStarts[safeEnd] - 1 : text.length;
-        var allMethod = document.querySelector('#method-dropdown input[data-is-all="1"]');
-
-        if (allMethod && !allMethod.checked) {
-          showActionMessage('当前 method 筛选可能隐藏目标，请切换“全部”接口后核对过滤结果。', true);
-        } else {
-          showActionMessage('已定位到原日志 L' + safeStart + (safeEnd === safeStart ? '' : '–' + safeEnd), false);
-        }
-        textarea.focus();
-        textarea.setSelectionRange(selectionStart, selectionEnd);
-        var lineHeight = parseFloat(window.getComputedStyle(textarea).lineHeight) || 20;
-        textarea.scrollTop = Math.max(0, (safeStart - 2) * lineHeight);
-        textarea.scrollIntoView({block: 'center'});
-      }
+      /* 行号定位由 workbench-core.js 统一实现；此处只保留 Dating 的调用兼容桥。 */
 
       /** 为 upload 阶段追加对应调用的请求/响应行号。 */
       function appendDatingCallLines(parent, callId, label) {
@@ -3403,20 +3123,7 @@
         if (element) element.addEventListener(eventName, handler);
       }
 
-      bindWorkbenchEvent('export-log-content-btn', 'click', function() {
-        exportLog('log_content');
-      });
       bindWorkbenchEvent('analyze-people-search-btn', 'click', analyzePeopleSearch);
-      bindWorkbenchEvent('search-prev-btn', 'click', function() {
-        moveSearchMatch(-1);
-      });
-      bindWorkbenchEvent('search-next-btn', 'click', function() {
-        moveSearchMatch(1);
-      });
-      bindWorkbenchEvent('copy-btn', 'click', copyResult);
-      bindWorkbenchEvent('export-filtered-result-btn', 'click', function() {
-        exportLog('filtered_result');
-      });
       bindWorkbenchEvent('copy-report-btn', 'click', copyReport);
       bindWorkbenchEvent('export-report-btn', 'click', exportReport);
 
