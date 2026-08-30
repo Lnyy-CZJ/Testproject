@@ -220,45 +220,56 @@ class AnalysisReportExportTests(unittest.TestCase):
 
 
 class PageRenderingTests(unittest.TestCase):
-    """页面应包含分析按钮、结果区域、复制和导出逻辑。"""
+    """页面应把 People 结果映射到统一工作台，而不是继续依赖模板内联脚本。"""
 
-    def test_page_contains_analysis_controls_and_loading_state(self):
+    def test_people_mode_is_registered_without_inline_script(self):
+        """People 模式由独立静态适配器注册，并占用四个真实工作台 surface。"""
         app = create_app()
         app.testing = True
 
         html = app.test_client().get("/").get_data(as_text=True)
+        source = Path("static/js/workbench-people.js").read_text(encoding="utf-8")
 
-        # 按钮
-        self.assertIn('id="analyze-people-search-btn"', html)
-        self.assertIn("分析检索链路", html)
-        # 结果区域
-        self.assertIn('id="people-search-analysis"', html)
-        self.assertIn('id="people-search-report"', html)
-        self.assertIn('id="people-search-status"', html)
-        self.assertIn('id="people-verdict-panel"', html)
-        self.assertIn('id="people-ai-status"', html)
-        self.assertIn('id="people-coverage-list"', html)
-        self.assertIn('id="people-issue-list"', html)
-        self.assertIn('id="people-diagnosis-list"', html)
-        self.assertIn('id="people-timeline"', html)
-        self.assertIn('id="people-cost-summary"', html)
-        # 复制与导出
+        self.assertIn('<option value="people">People Insight</option>', html)
+        self.assertIn('data-people-url="/people-search/analyze"', html)
+        self.assertIn("workbench-people.js", html)
+        self.assertIn("registerAnalysisMode('people'", source)
+        for key in ("data.coverage", "data.timeline", "data.diagnosis", "data.checks", "data.cost"):
+            self.assertIn(key, source)
+        self.assertNotIn("innerHTML", source)
+        self.assertNotIn("insertAdjacentHTML", source)
+
+        for marker in (
+            'id="people-verdict-panel"',
+            'id="people-task-summary"',
+            'id="people-ai-status"',
+            'id="people-coverage-list"',
+            'id="people-issue-list"',
+            'id="people-timeline"',
+            'id="people-diagnosis-list"',
+            'id="people-cost-summary"',
+            'id="people-search-report"',
+            'id="people-check-list"',
+            'id="copy-report-btn"',
+            'id="export-report-btn"',
+        ):
+            self.assertIn(marker, html)
+
+        # People 不再在模板中声明旧分析函数或隐藏的第二个分析入口。
+        for inline_marker in (
+            "function renderPeopleSearchAnalysis(data)",
+            "function analyzePeopleSearch()",
+            "function copyReport()",
+            "function exportReport()",
+            'id="analyze-people-search-btn"',
+        ):
+            self.assertNotIn(inline_marker, html)
+
+        # 统一入口仍是唯一可见分析按钮，People 的复制/导出按钮只服务结果面板。
+        self.assertEqual(html.count('id="analyze-log-btn"'), 1)
         self.assertIn('id="copy-report-btn"', html)
         self.assertIn('id="export-report-btn"', html)
-        self.assertIn("导出Markdown", html)
-        # 加载状态与交互函数
-        self.assertIn("分析中...", html)
-        self.assertIn("function analyzePeopleSearch()", html)
-        self.assertIn("function copyReport()", html)
-        self.assertIn("function exportReport()", html)
-        # 使用 textContent 写入报告，不渲染任意 HTML
-        self.assertIn("reportEl.textContent", html)
-        self.assertIn("function renderPeopleSearchAnalysis(data)", html)
-        # method 自定义选择器必须可由键盘操作并暴露展开状态。
-        self.assertIn('aria-expanded="false"', html)
-        self.assertIn("e.key === 'Enter' || e.key === ' '", html)
-        # 导出复用 /export 且传 analysis_report
-        self.assertIn("exportLog('analysis_report'", html)
+        self.assertIn("analysis_report", source)
 
 
 class RedactForResponseTests(unittest.TestCase):

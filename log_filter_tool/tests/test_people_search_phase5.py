@@ -180,8 +180,10 @@ class ExistingFeatureRegressionTests(unittest.TestCase):
         # 现有控件仍在
         self.assertIn('id="export-log-content-btn"', html)
         self.assertIn('id="result-search"', html)
-        # 新增分析入口共存
-        self.assertIn('id="analyze-people-search-btn"', html)
+        # People 入口已并入统一工作台，页面只保留统一分析按钮与适配器挂载点。
+        self.assertIn('id="analyze-log-btn"', html)
+        self.assertIn('data-people-url=', html)
+        self.assertIn('workbench-people.js', html)
 
     def test_existing_log_exports_still_use_log_extension(self):
         from tempfile import TemporaryDirectory

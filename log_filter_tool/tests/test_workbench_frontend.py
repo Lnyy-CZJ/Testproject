@@ -1191,7 +1191,7 @@ class WorkbenchShellTest(unittest.TestCase):
         self.assertEqual([], parser.inline_event_attributes)
 
     def test_core_script_loads_before_business_adapter(self):
-        """核心命名空间必须先建立，业务脚本才能注册 People/Dating 模式。"""
+        """核心命名空间必须先建立，People 适配器才能注册工作台模式。"""
         parser = _WorkbenchMarkupParser()
         parser.feed(self.client.get("/").get_data(as_text=True))
 
@@ -1203,10 +1203,22 @@ class WorkbenchShellTest(unittest.TestCase):
         business_index = next(
             index
             for index, script in enumerate(parser.scripts)
-            if "function analyzePeopleSearch" in "".join(script["content"])
+            if (script["src"] or "").endswith("/static/js/workbench-people.js")
         )
 
         self.assertLess(core_index, business_index)
+
+        filter_index = next(
+            index
+            for index, script in enumerate(parser.scripts)
+            if (script["src"] or "").endswith("/static/js/workbench-filter.js")
+        )
+        self.assertLess(filter_index, business_index)
+        self.assertFalse(
+            any("function analyzePeopleSearch" in "".join(script["content"])
+                for script in parser.scripts),
+            "People 分析函数不应继续内联在模板中",
+        )
 
     def test_async_modes_share_busy_lock_loading_and_result_panel_lifecycle(self):
         """People/Dating 连续提交只运行一次，并在完成后恢复统一入口和结果页。"""
@@ -1441,6 +1453,227 @@ class WorkbenchShellTest(unittest.TestCase):
 
         self.assertNotIn('data-dating-url="', html)
         self.assertNotIn('value="dating"', html)
+
+    def test_people_adapter_requests_and_renders_only_people_workbench_surfaces(self):
+        """People 适配器应保留确定性结论、真实证据和报告的面板边界。"""
+        node = shutil.which("node")
+        self.assertIsNotNone(node, "需要 Node.js 执行 People 适配器行为测试")
+        adapter_path = Path(__file__).resolve().parents[1] / "static/js/workbench-people.js"
+        harness = textwrap.dedent(
+            r"""
+            const fs = require("fs");
+            const vm = require("vm");
+
+            class FakeClassList {
+              constructor() { this.values = new Set(); }
+              add(name) { this.values.add(name); }
+              remove(name) { this.values.delete(name); }
+              toggle(name, force) {
+                const shouldHave = force === undefined ? !this.values.has(name) : force;
+                if (shouldHave) this.values.add(name); else this.values.delete(name);
+                return shouldHave;
+              }
+            }
+
+            class FakeElement {
+              constructor(tagName, id = "") {
+                this.tagName = tagName.toUpperCase();
+                this.id = id;
+                this.attributes = Object.create(null);
+                this.children = [];
+                this.listeners = Object.create(null);
+                this.classList = new FakeClassList();
+                this.dataset = Object.create(null);
+                this.textContent = "";
+                this.value = "";
+                this.hidden = false;
+                this.disabled = false;
+              }
+              appendChild(child) { this.children.push(child); return child; }
+              addEventListener(type, listener) {
+                (this.listeners[type] ||= []).push(listener);
+              }
+              dispatch(type, event = {}) {
+                if (!event.target) event.target = this;
+                return Promise.all((this.listeners[type] || []).map(listener => listener(event)));
+              }
+              setAttribute(name, value) { this.attributes[name] = String(value); }
+              getAttribute(name) {
+                return Object.prototype.hasOwnProperty.call(this.attributes, name)
+                  ? this.attributes[name] : null;
+              }
+              querySelectorAll(selector) {
+                const found = [];
+                const visit = node => {
+                  (node.children || []).forEach(child => {
+                    if (selector === "button" && child.tagName === "BUTTON") found.push(child);
+                    visit(child);
+                  });
+                };
+                visit(this);
+                return found;
+              }
+              focus() {}
+            }
+
+            function assert(condition, message) {
+              if (!condition) throw new Error(message);
+            }
+
+            function textOf(node) {
+              return String(node.textContent || "") + (node.children || []).map(textOf).join(" ");
+            }
+
+            const elements = Object.create(null);
+            const add = (tag, id) => {
+              const element = new FakeElement(tag, id);
+              elements[id] = element;
+              return element;
+            };
+
+            const root = add("main", "log-workbench");
+            root.dataset.peopleUrl = "/people-search/analyze";
+            const logText = add("textarea", "log_text");
+            logText.value = "first\nsecond\nthird";
+            add("h2", "workbench-result-heading");
+            add("p", "workbench-result-subheading");
+            ["overviewPanel", "interfacesPanel", "timelinePanel", "resultPanel", "checksPanel"].forEach(id => add("section", id));
+            ["overviewTab", "interfacesTab", "timelineTab", "resultTab", "checksTab"].forEach(id => add("button", id));
+            const overview = add("div", "people-overview");
+            const verdictPanel = add("section", "people-verdict-panel");
+            const verdictTitle = add("h3", "people-verdict-title");
+            const taskSummary = add("p", "people-task-summary");
+            const aiStatus = add("p", "people-ai-status");
+            const coverage = add("div", "people-coverage-list");
+            const issueList = add("ul", "people-issue-list");
+            const timeline = add("div", "people-timeline");
+            const diagnosis = add("dl", "people-diagnosis-list");
+            const cost = add("div", "people-cost-summary");
+            const report = add("pre", "people-search-report");
+            const checks = add("ol", "people-check-list");
+            const copyButton = add("button", "copy-report-btn");
+            const exportButton = add("button", "export-report-btn");
+
+            const data = {
+              verdict: "ISSUES_FOUND",
+              task: {
+                full_name: "<Alice>", task_id: "task-1", final_status: "FAILED",
+                candidate_count: 0, result_type: "NO_RESULT", no_result_reason: "NO_MATCH",
+                clue_types: ["FULL_NAME"]
+              },
+              coverage: {create_task: true, get_task: true, candidate_list: false,
+                candidate_detail: false, debug: true, cost_summary: true},
+              ai: {status: "SUCCESS"},
+              timeline: [{provider: "provider-1", operation: "lookup", status: "no_result",
+                no_result_reason: "NO_MATCH", result_details: {safe: "<detail>"},
+                http_status: 200, cache_hit: false, cost_status: "CALCULATED",
+                estimated_cost_microunit: 12}],
+              diagnosis: {stop_reason: "PROVIDERS_EXHAUSTED", final_status: "FAILED"},
+              cost: {total_estimated_cost_microunit: 12},
+              checks: [
+                {outcome: "PASS", rule_id: "R-PASS", title: "ok", actual: "a", expected: "e", evidence: []},
+                {outcome: "NOT_APPLICABLE", rule_id: "R-NA", title: "na", actual: "a", expected: "", evidence: []},
+                {outcome: "UNKNOWN", rule_id: "R-UNKNOWN", title: "unknown", actual: "a", expected: "", evidence: [{method: "GetTask", json_path: "missing"}]},
+                {outcome: "WARN", rule_id: "R-WARN", title: "warn", actual: "a", expected: "", evidence: [{method: "GetTask", json_path: "path"}]},
+                {outcome: "FAIL", rule_id: "R-FAIL", title: "<unsafe>", actual: "<actual>", expected: "expected", evidence: [{method: "GetTask", json_path: "status", line_start: 2, line_end: 3}]}
+              ],
+              report_markdown: "# report <not-html>"
+            };
+
+            const registered = Object.create(null);
+            const requestCalls = [];
+            const availableTabs = [];
+            const focusCalls = [];
+            const exports = [];
+            let copied = "";
+            const api = {
+              state: {},
+              registerAnalysisMode(name, definition) { registered[name] = definition; },
+              getMode(name) { return registered[name] || null; },
+              requestJson(url, options) {
+                requestCalls.push({url, options});
+                return Promise.resolve({data});
+              },
+              setAvailableTabs(ids) {
+                availableTabs.push(ids.slice());
+                ["overviewPanel", "interfacesPanel", "resultPanel", "checksPanel"].forEach(id => {
+                  elements[id].hidden = !ids.includes(id);
+                });
+                elements.timelinePanel.hidden = !ids.includes("timelinePanel");
+              },
+              activateTab() {},
+              focusLogLines(start, end) { focusCalls.push([start, end]); },
+              showActionMessage() {},
+              showToast() {},
+              exportLog(type, content) { exports.push([type, content]); return Promise.resolve({}); }
+            };
+            const document = {
+              readyState: "complete",
+              getElementById(id) { return elements[id] || null; },
+              createElement(tag) { return new FakeElement(tag); },
+              createTextNode(value) { return {tagName: "#text", textContent: String(value), children: []}; },
+              addEventListener() {}
+            };
+            const window = {
+              LogWorkbench: api,
+              navigator: {clipboard: {writeText(value) { copied = value; return Promise.resolve(); }}}
+            };
+            vm.runInNewContext(fs.readFileSync(process.argv[1], "utf8"), {
+              window, document, Promise, Array, Object, String, Number, Math, JSON, Set,
+              console, setTimeout, clearTimeout
+            });
+
+            (async () => {
+              const adapter = registered.people || registered["people-search"];
+              assert(adapter && typeof adapter.analyze === "function", "People 模式未注册");
+              await adapter.analyze({root, logText: "request body", signal: null});
+              assert(requestCalls.length === 1, "People 未发起一次 JSON 请求");
+              assert(requestCalls[0].url === "/people-search/analyze", "People 未使用 root.dataset.peopleUrl");
+              assert(requestCalls[0].options.method === "POST", "People 请求未使用 POST");
+              assert(requestCalls[0].options.body.log_text === "request body", "People 请求未携带当前日志");
+              assert(availableTabs.length === 1 && availableTabs[0].join(",") === "overviewPanel,interfacesPanel,resultPanel,checksPanel",
+                "People 未声明四个工作台 panel");
+              assert(elements.timelinePanel.hidden, "People 不应显示任务时间线 panel");
+              assert(verdictTitle.textContent === "发现已确认异常", "header 未使用确定性 verdict label");
+              assert(elements["workbench-result-heading"].textContent === "发现已确认异常", "统一 header 标题错误");
+              assert(textOf(elements["workbench-result-subheading"]).includes("<Alice>") &&
+                textOf(elements["workbench-result-subheading"]).includes("task-1") &&
+                textOf(elements["workbench-result-subheading"]).includes("candidate_count=0") &&
+                textOf(elements["workbench-result-subheading"]).includes("no_result_reason=NO_MATCH"),
+                "统一 header 副标题缺少真实任务字段");
+              assert(textOf(timeline).includes("provider-1") && textOf(timeline).includes("lookup"),
+                "Provider timeline 未写入 interfacesPanel");
+              assert(textOf(diagnosis).includes("PROVIDERS_EXHAUSTED") && textOf(cost).includes("12"),
+                "diagnosis/cost 未写入 resultPanel");
+              assert(report.textContent === "# report <not-html>", "完整 Markdown 未以纯文本保留");
+              const order = checks.children.map(textOf);
+              assert(order[0].includes("FAIL") && order[1].includes("WARN") && order[2].includes("UNKNOWN") &&
+                order[3].includes("PASS") && order[4].includes("NA"), "checks 未按 outcome 排序或映射 NA");
+              const validButton = checks.querySelectorAll("button")[0];
+              await validButton.dispatch("click");
+              assert(focusCalls.length === 1 && focusCalls[0][0] === 2 && focusCalls[0][1] === 3,
+                "有效 evidence 未定位真实行号");
+              const unknownItem = checks.children.find(item => textOf(item).includes("R-UNKNOWN"));
+              assert(unknownItem.querySelectorAll("button").length === 0 && textOf(unknownItem).includes("日志证据不足"),
+                "缺失 evidence 未降级为不可点击提示");
+              await copyButton.dispatch("click");
+              assert(copied === "# report <not-html>", "复制未读取完整 Markdown 文本");
+              await exportButton.dispatch("click");
+              assert(exports.length === 1 && exports[0][0] === "analysis_report" && exports[0][1] === "# report <not-html>",
+                "导出未复用 analysis_report 文本契约");
+            })().catch(error => {
+              console.error(error.stack || error.message);
+              process.exitCode = 1;
+            });
+            """
+        )
+        completed = subprocess.run(
+            [node, "-e", harness, str(adapter_path)],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(0, completed.returncode, completed.stderr or completed.stdout)
 
 
 if __name__ == "__main__":
