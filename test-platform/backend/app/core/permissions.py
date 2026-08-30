@@ -46,7 +46,9 @@ READ_ROUTE_REGISTRY: dict[str, tuple[tuple[re.Pattern[str], str], ...]] = {
         (re.compile(r"^/truthy-search/(?:runs|candidates|processes|reports|downloads|evaluations|api/(?:raw|runs|processes|field-schemas))(?:/.*)?$"), "tool.result.view"),
     ),
     "api-autotest": (
-        (re.compile(r"^/api-autotest/(?:|health|static/.*|catalog|api/(?:catalog|credentials/status))$"), "tool.view"),
+        (re.compile(r"^/api-autotest/(?:|health|static/.*|catalog|projects(?:/.*)?|api/(?:catalog|credentials/status|projects(?:/.*)?))$"), "tool.view"),
+        # 创建页本身不改状态，但只有具备执行权限的用户才应看到提交入口。
+        (re.compile(r"^/api-autotest/tasks/new/(?:single|flow)$"), "tool.execute"),
         (re.compile(r"^/api-autotest/(?:tasks|reports|api/(?:tasks|report))(?:/.*)?$"), "tool.result.view"),
     ),
     "functional-test-agent": (
@@ -88,6 +90,14 @@ def required_tool_permission(tool_id: str, method: str, original_uri: str) -> st
     """
 
     path = urlsplit(original_uri).path
+    if (
+        tool_id == "api-autotest"
+        and method.upper() == "POST"
+        and path == "/api-autotest/api/preflight"
+    ):
+        # 预检只读取当前授权 Scope 和测试资产，不创建任务；页面概览和提交区
+        # 共用该状态模型，因此保持 tool.view，真正提交仍要求 tool.execute。
+        return "tool.view"
     if tool_id == "api-test-agent":
         write_method = method.upper() in {"POST", "PUT", "PATCH", "DELETE"}
         # V2.4 的组合确认在网关先校验阶段三生成权限，Agent 再叠加校验 case.review，

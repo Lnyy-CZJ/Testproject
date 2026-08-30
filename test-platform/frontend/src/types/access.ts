@@ -25,6 +25,8 @@ export interface ProjectRecord extends ProjectSummary {
 
 export interface ProjectMember {
   id: string;
+  /** 后端稳定用户标识；与兼容字段 id 同值，但权限恢复判断只依赖显式 user_id。 */
+  user_id: string;
   username: string;
   display_name: string;
   role: PlatformRole;

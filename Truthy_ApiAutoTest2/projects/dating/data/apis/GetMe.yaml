@@ -1,0 +1,6 @@
+id: GetMe
+name: 获取当前用户
+credential_profile: anonymous_session
+request:
+  service_name: tool.identity.IdentityService
+  method_name: GetMe

@@ -1,0 +1,38 @@
+name: Dating Analysis Result 未就绪后成功恢复
+tags: [dating, analysis, media, stateful, explicit]
+steps:
+  - id: get_upload_config
+    api: GetMediaUploadConfig
+  - id: prepare_upload
+    api: PrepareMediaUpload
+    extract:
+      asset_id: $.asset_id
+      upload_url: $.upload_url
+      required_headers: $.required_headers
+  - id: upload_binary
+    action:
+      type: signed_binary_upload
+      url: "{{upload_url}}"
+      headers: "{{required_headers}}"
+      fixture: chat-sample.png
+      method: PUT
+      success_statuses: [200, 204]
+  - id: complete_upload
+    api: CompleteMediaUpload
+  - id: create_analysis
+    api: CreateAnalysisTask
+    extract:
+      task_id: $.task_id
+  - id: get_result_before_ready
+    api: GetAnalysisResult
+  - id: poll_analysis
+    api: GetAnalysisTask
+    until:
+      path: $.status
+      equals: succeeded
+      terminate_on: [rejected, failed]
+      fail_on_termination: true
+      interval_seconds: "{{analysis_poll_interval_seconds}}"
+      timeout_seconds: "{{analysis_timeout_seconds}}"
+  - id: get_result_after_success
+    api: GetAnalysisResult

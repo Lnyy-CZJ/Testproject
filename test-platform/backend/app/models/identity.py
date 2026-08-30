@@ -117,7 +117,7 @@ class PlatformSession(Base):
 
 
 class LoginThrottle(Base):
-    """持久化用户名/IP 登录失败窗口，避免重启绕过限速。"""
+    """持久化认证防滥用桶；登录与注册通过 key namespace 严格隔离。"""
 
     __tablename__ = "login_throttles"
     __table_args__ = (UniqueConstraint("key_type", "key_hash", name="uq_login_throttle_key"),)
@@ -192,6 +192,11 @@ class RuntimeContext(Base):
     )
     environment_id: Mapped[str] = mapped_column(
         ForeignKey("environments.id"), nullable=False
+    )
+    # Runtime Context 必须固化解析时的 Scope；后续快照与会话写回只能使用该值，
+    # 不能再次按可变项目状态猜测，从而防止任务创建后漂移到其他项目。
+    runtime_scope_id: Mapped[str | None] = mapped_column(
+        ForeignKey("tool_project_scopes.id", ondelete="RESTRICT")
     )
     permission_version: Mapped[int] = mapped_column(Integer, nullable=False)
     project_id_snapshot: Mapped[str | None] = mapped_column(String(64))

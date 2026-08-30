@@ -1,0 +1,25 @@
+name: Dating 匿名会话完整刷新成功
+variables: {}
+step_data:
+  create_session:
+    params:
+      consent_policy_version: "{{consent_policy_version}}"
+    assert:
+      http_status: 200
+      gateway: {message: ok}
+  get_me_before_refresh:
+    params: {}
+    assert:
+      http_status: 200
+      gateway: {message: ok}
+  refresh_session:
+    params:
+      refresh_token: "{{refresh_token}}"
+    assert:
+      http_status: 200
+      gateway: {message: ok}
+  get_me_after_refresh:
+    params: {}
+    assert:
+      http_status: 200
+      gateway: {message: ok}

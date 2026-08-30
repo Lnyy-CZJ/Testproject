@@ -18,6 +18,9 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 
 PASSWORD_HASHER = PasswordHasher(time_cost=3, memory_cost=65536, parallelism=4)
+PASSWORD_MIN_LENGTH = 6
+PASSWORD_MAX_LENGTH = 18
+LEGACY_PASSWORD_MAX_LENGTH = 256
 
 
 def normalize_username(value: str) -> str:
@@ -38,16 +41,31 @@ def hash_password(password: str) -> str:
     使用 Argon2id 生成不可逆密码哈希。
 
     参数说明:
-        password: 12 到 256 字符的明文密码。
+        password: 6 到 18 个 Unicode 字符的新密码，内容不会被裁剪。
     返回值:
         str: 可安全落库的 Argon2 哈希。
     异常说明:
         ValueError: 密码长度不满足要求。
     """
 
-    if not 12 <= len(password) <= 256:
-        raise ValueError("密码长度必须为 12 到 256 个字符")
+    validate_new_password(password)
     return PASSWORD_HASHER.hash(password)
+
+
+def validate_new_password(password: str) -> str:
+    """校验所有“新设置密码”入口共用的 6-18 字符规则。
+
+    参数说明:
+        password: 用户原样输入的密码；空格和其他 Unicode 字符均参与计数。
+    返回值:
+        str: 未做 trim 或规范化的原密码，便于调用方继续哈希。
+    异常说明:
+        ValueError: 字符数量不在闭区间 6-18 时抛出。
+    """
+
+    if not PASSWORD_MIN_LENGTH <= len(password) <= PASSWORD_MAX_LENGTH:
+        raise ValueError("密码长度必须为 6 到 18 个字符")
+    return password
 
 
 def verify_password(password_hash: str, password: str) -> bool:

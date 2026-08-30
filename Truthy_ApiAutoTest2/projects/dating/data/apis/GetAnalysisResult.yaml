@@ -1,0 +1,6 @@
+id: GetAnalysisResult
+name: 获取关系分析结果
+credential_profile: anonymous_session
+request:
+  service_name: tool.dating.DatingAssistantService
+  method_name: GetAnalysisResult

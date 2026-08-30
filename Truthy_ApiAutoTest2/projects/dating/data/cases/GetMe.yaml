@@ -1,0 +1,10 @@
+api: GetMe
+cases:
+  - id: get_me_success
+    name: 校验 Dating 匿名会话
+    tags: [dating, smoke, identity]
+    request:
+      params: {}
+    assert:
+      http_status: 200
+      gateway: {message: ok}

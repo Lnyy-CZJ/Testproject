@@ -1,0 +1,53 @@
+name: 同请求 ID 同参数复用任务、改参数返回冲突
+variables:
+  media_file: fixtures/chat-sample.png
+step_data:
+  get_upload_config:
+    params: {}
+    assert:
+      http_status: 200
+      gateway: {message: ok}
+  prepare_upload:
+    params:
+      client_request_id: "{{flow_run_id}}-prepare-analysis-idempotency"
+      content_type: image/png
+      size_bytes: "{{media_size_bytes}}"
+      purpose: chat_screenshot
+    assert:
+      http_status: 200
+      gateway: {message: ok}
+  complete_upload:
+    params: {asset_id: "{{asset_id}}"}
+    assert:
+      http_status: 200
+      gateway: {message: ok}
+  create_analysis_first:
+    params:
+      client_request_id: "{{flow_run_id}}-analysis"
+      asset_ids: ["{{asset_id}}"]
+      locale: en-US
+      background: Analysis idempotency contract.
+    assert:
+      http_status: 200
+      gateway: {message: ok}
+  create_analysis_retry:
+    params:
+      client_request_id: "{{flow_run_id}}-analysis"
+      asset_ids: ["{{asset_id}}"]
+      locale: en-US
+      background: Analysis idempotency contract.
+    assert:
+      http_status: 200
+      gateway: {message: ok}
+      # 只比较本 Flow 已提取的动态 ID，不绑定其他仍在演进的返回字段。
+      data_equals: {task_id: "{{original_task_id}}"}
+  create_analysis_conflict:
+    params:
+      client_request_id: "{{flow_run_id}}-analysis"
+      asset_ids: ["{{asset_id}}"]
+      locale: en-US
+      background: Changed parameters must conflict.
+    assert:
+      http_status: 200
+      gateway: {message: ok}
+      response: {id: req_0, success: false, business_error_code: IDEMPOTENCY_CONFLICT}

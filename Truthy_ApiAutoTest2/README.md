@@ -1,9 +1,9 @@
-# Gateway 接口自动化 V1.3
+# Gateway 通用接口自动化（多项目）
 
 这是一个基于 Python、pytest、requests 和 PyYAML 的轻量接口自动化框架。
 HTTP 地址固定为 Gateway，业务接口通过 `service_name` 和 `method_name` 区分。
 
-V1.3 将接口定义与测试数据彻底拆开：
+框架以 `projects/<project_id>/` 为测试资产边界，将接口定义与测试数据彻底拆开：
 
 ```text
 接口定义 APIs
@@ -27,10 +27,20 @@ source .venv/bin/activate
 python3 -m pip install -r requirements.txt
 ```
 
-## 2. 配置环境与会话
+## 2. 配置、环境与会话
 
-非敏感环境配置位于 `config/env/<环境>.yaml`。本地 `.env` 保存凭证和可复用
-会话状态，禁止提交到仓库：
+平台任务与本地调试使用互斥配置源：
+
+- 平台模式：平台 Runtime Scope、Release、Secret/Credential 和任务快照是唯一
+  配置来源；工具不会回退根 YAML、项目 YAML、`.env` 或继承的配置环境变量。
+- 本地模式：仅供开发调试，可读取 `config/env/<环境>.yaml`；根 `.env` 只保留给
+  Truthy 兼容入口，Dating 不读取它，避免跨项目继承 Truthy/Admin 凭证。这些
+  本地值不会被 Web、平台任务或正式 Jenkins 使用。
+- dev 平台固定解析为接口 `test`；prod 平台固定解析为接口 `prod`。工具页面和
+  任务请求都不能覆盖 `target_env`，项目包也不得保存环境、Gateway 地址或
+  Secret；`data/api/` 中只保留协议级本地默认路径，平台任务始终由 Release 覆盖。
+
+Truthy 兼容模式的本地 `.env` 可保存调试凭证和可复用会话状态，禁止提交到仓库：
 
 ```bash
 AUTH_TOKEN=your_access_token
@@ -44,30 +54,33 @@ ADMIN_OPERATOR_ID=your_admin_operator_id
 ADMIN_OPERATOR_NAME=your_admin_operator_name
 ```
 
-启动时优先复用未临期的 access token。token 距过期不足配置的安全窗口时，
-框架使用 `RefreshSession` API 定义刷新；刷新失败或 refresh token 已过期时，
-使用 `CreateAnonymousSession` API 定义重建会话。
+启动时按两小时边界处理 access token：剩余时间大于两小时直接复用；未过期且
+剩余时间小于或等于两小时才调用 `RefreshSession`；已经过期、缺少 token 或
+过期时间无效时直接调用 `CreateAnonymousSession`。临期刷新失败或 refresh token
+不可用时，仅回退调用一次 `CreateAnonymousSession`。
 
-创建或刷新成功后，token、用户 ID 和过期时间会更新到 `.env`。终端显式设置的
-同名环境变量优先于 `.env`。
-`AnonymousSessionMediaSearch` 的两个 Admin 审计步骤使用三个 `ADMIN_*` 字段访问
-独立的 Admin Gateway；pytest 真实 Flow 在任一字段缺失时会跳过，并提示对应变量名。
+Truthy 本地兼容运行创建或刷新成功后，会把 token、用户 ID 和过期时间更新到
+`.env`；Dating 本地调试只在当前进程内使用会话。平台模式统一通过当前 Scope 的
+Credential CAS 写回，不写 `.env`。Truthy 本地模式下终端同名变量优先于 `.env`。
+工具只校验所选 API/Case/Flow 实际声明的逻辑 Profile。例如 Dating 匿名链路只
+依赖 `anonymous_session`，不会因为 Truthy 的 `admin_session` 未配置而被阻塞。
 
 ## 3. 目录职责
 
 | 目录 | 职责 |
 | --- | --- |
-| `config/` | 默认配置和按环境变化的 Gateway 地址 |
-| `data/api/` | Gateway 固定 HTTP 方法、路径和请求头 |
-| `data/apis/` | 业务 API ID、`service_name` 和 `method_name` |
-| `data/cases/` | 单接口多 case 的参数、标签、断言和可选提取 |
-| `data/flows/` | 多接口步骤顺序、提取、等待、轮询和特殊 action |
-| `data/scenarios/` | Flow 各接口步骤的完整参数和断言 |
+| `projects/<project_id>/project.yaml` | 项目标识、能力、配置与凭证契约；不保存运行配置 |
+| `projects/<project_id>/data/api/` | Gateway 固定 HTTP 方法、路径和请求头 |
+| `projects/<project_id>/data/apis/` | 业务 API ID、逻辑 Profile、`service_name` 和 `method_name` |
+| `projects/<project_id>/data/cases/` | 单接口多 case 的参数、标签、断言和可选提取 |
+| `projects/<project_id>/data/flows/` | 多接口步骤顺序、提取、等待、轮询和特殊 action |
+| `projects/<project_id>/data/scenarios/` | Flow 各接口步骤的完整参数和断言 |
+| `projects/<project_id>/fixtures/` | 仅供当前项目引用的固定测试素材 |
 | `api/` | Gateway 请求信封构造和调用入口 |
 | `utils/custom/` | 配置、HTTP、日志、断言及 YAML 加载工具 |
 | `utils/third_party/` | Allure、Jenkins、飞书等第三方集成预留层 |
 | `test_cases/` | pytest 框架测试和真实接口测试入口 |
-| `logs/` | 每次执行产生的脱敏请求、响应和异常日志 |
+| `logs/` | 每次执行产生的原始请求、响应和异常日志；仅受任务访问权限与保留期约束 |
 | `reports/` | 测试报告和运行产物预留目录 |
 
 ## 4. 运行测试
@@ -75,26 +88,32 @@ ADMIN_OPERATOR_NAME=your_admin_operator_name
 统一通过根目录 `runtest.py` 执行：
 
 ```bash
-# 收集全部测试，不发送请求
-python3 runtest.py --env test -- --collect-only
+# 静态校验全部项目包，不发送请求
+python3 runtest.py --validate-projects
+
+# 收集 Truthy 全部测试，不发送请求
+python3 runtest.py --project truthy --target-env test -- --collect-only
 
 # 按 pytest 关键字筛选
-python3 runtest.py --env test --module single_api
+python3 runtest.py --project truthy --target-env test --module single_api
 
 # 按 Case 或 Flow 中的 tags 筛选
-python3 runtest.py --env test --tag smoke
+python3 runtest.py --project truthy --target-env test --tag smoke
 
-# 收集或执行指定 Flow
-python3 runtest.py --env test --flow AnonymousSessionMediaSearch -- --collect-only
-python3 runtest.py --env test --flow AnonymousSessionMediaSearch
+# 本地只做资产收集，不发送请求
+python3 runtest.py --project dating --target-env test \
+  --config-source local --flow single_image_analysis_happy_path -- --collect-only
 
-# 直接调试指定 Flow，并在终端显示请求和响应日志
-python3 test_cases/test_gateway_flow.py \
-  --env test \
-  --flow AnonymousSessionMediaSearch
+# 真实 Dating Flow 使用任务专属平台快照；快照必须是 0600 普通文件，且其中
+# task/project/scope/target_env 身份必须与命令一致。平台 TaskManager/Jenkins 会
+# 自动注入该路径，以下仅用于受控联调。
+API_AUTOTEST_RUNTIME_SNAPSHOT_FILE=/secure/runtime/dating/20260827-120000-a1b2/snapshot.json \
+python3 runtest.py --project dating --target-env test --config-source platform \
+  --task-id 20260827-120000-a1b2 --runtime-scope-id tps_dating_dev_test \
+  --flow single_image_analysis_happy_path -- -s --log-cli-level=INFO
 
 # 透传其他 pytest 参数
-python3 runtest.py --env test --tag smoke -- -x -vv
+python3 runtest.py --project truthy --target-env test --tag smoke -- -x -vv
 ```
 
 只运行不发送真实请求的框架回归：
@@ -106,26 +125,17 @@ python3 -m pytest -q -k "not gateway_flow and not single_gateway_api"
 直接调试单接口时，请运行通用入口：
 
 ```bash
-python3 test_cases/test_single_api.py --env test
+python3 runtest.py --project dating --target-env test \
+  --config-source local --api GetMe --case GetMe::get_me_success \
+  -- -s --log-cli-level=INFO
 ```
 
-该入口保留 `-s --log-cli-level=INFO`，终端会实时显示脱敏后的请求和响应。
+该入口保留 `-s --log-cli-level=INFO`，终端会实时显示未经脱敏的请求和响应。
 
 ### 精确调试一条 Case
 
-在 `test_cases/test_single_api.py` 中临时设置完整 Case ID：
-
-```python
-RUN_CASE_IDS: tuple[str, ...] = ("GetMe::get_me_success",)
-```
-
-正式代码应保持为空元组：
-
-```python
-RUN_CASE_IDS: tuple[str, ...] = ()
-```
-
-框架当前不增加 `--case` 参数。完整 ID 格式固定为：
+使用 `--api` 或完整 `--case ApiId::case_id` 筛选，不需要修改测试入口源码。
+完整 ID 格式固定为：
 
 ```text
 ApiId::case_id
@@ -133,12 +143,13 @@ ApiId::case_id
 
 ## 5. 新增 API 定义
 
-每个业务接口在 `data/apis/` 中维护一份定义，文件名必须等于 API ID：
+每个业务接口在 `projects/<project_id>/data/apis/` 中维护一份定义，文件名必须等于 API ID：
 
 ```yaml
-# data/apis/GetTask.yaml
+# projects/truthy/data/apis/GetTask.yaml
 id: GetTask
 name: 获取搜索任务状态
+credential_profile: anonymous_session
 request:
   service_name: tool.people_insight.SearchService
   method_name: GetTask
@@ -154,7 +165,7 @@ Case 文件名必须与引用的 API ID 一致。一个文件可以配置成功�
 独立用例：
 
 ```yaml
-# data/cases/GetTask.yaml
+# projects/truthy/data/cases/GetTask.yaml
 api: GetTask
 cases:
   - id: get_task_success
@@ -204,17 +215,17 @@ extract:
 
 ## 7. 新增标准多接口 Flow
 
-在 `data/flows/` 和 `data/scenarios/` 中创建同名文件：
+在同一项目的 `data/flows/` 和 `data/scenarios/` 中创建同名文件：
 
 ```text
-data/flows/DemoFlow.yaml
-data/scenarios/DemoFlow.yaml
+projects/<project_id>/data/flows/DemoFlow.yaml
+projects/<project_id>/data/scenarios/DemoFlow.yaml
 ```
 
 Flow 直接引用 API ID，只保存控制信息：
 
 ```yaml
-# data/flows/DemoFlow.yaml
+# projects/<project_id>/data/flows/DemoFlow.yaml
 name: 搜索流程
 tags: [flow, search]
 steps:
@@ -235,7 +246,7 @@ steps:
 Scenario 为每个 API 步骤提供完整参数和断言：
 
 ```yaml
-# data/scenarios/DemoFlow.yaml
+# projects/<project_id>/data/scenarios/DemoFlow.yaml
 name: 搜索成功场景
 step_data:
   create_task:
@@ -272,7 +283,7 @@ Flow 规则：
 - 固定等待使用 `wait.seconds`。
 - 特殊对象存储上传使用 `action: prepared_media_upload`。
 - 不同 Flow 的运行时上下文相互隔离。
-- Flow 不读取或合并 `data/cases`。
+- Flow 不读取或合并当前项目的 `data/cases`，也不能跨项目引用资产。
 
 ### 本地筛选多个 Flow
 
@@ -288,17 +299,19 @@ RUN_FLOW_IDS: tuple[str, ...] = (
 正式代码应保持为空元组以收集全部 Flow。命令行 `--flow` 优先于
 `RUN_FLOW_IDS`，适合临时执行一个指定 Flow。
 
-## 8. 日志与脱敏
+## 8. 日志与原文输出
 
-每次 pytest 执行会在 `logs/YYYY-MM-DD/` 生成独立 UTF-8 日志文件，记录请求、
-响应、HTTP 状态和耗时。首次创建当天目录时，框架会清理超过 7 天的日期日志目录；
-非日期目录不会被删除。以下敏感信息会脱敏：
+每次 pytest 执行会在
+`logs/<project_id>/<target_env>/<YYYY-MM-DD>/<timestamp>_<target_env>_<pid>.log`
+生成独立 UTF-8 日志文件。日志直接位于当日目录，不再增加任务 ID 目录；任务记录
+通过 `log_file` 关联本次进程的唯一日志文件。首次创建当天目录时，框架会清理超过
+7 天的日期日志目录，非日期目录不会被删除。
 
-- `auth_token`、refresh token 等 token 字段。
-- `Authorization` 请求头。
-- 预签名上传 URL 的查询参数。
-
-日志中的敏感值显示为 `***`。新增日志字段时应同步补充脱敏测试。
+根据当前排障要求，框架文件日志、终端、Web 日志接口、任务失败摘要、JUnit 与
+Allure 附件均保留原始请求、响应、Header、Token、签名 URL、异常消息和业务结果，
+不执行字段脱敏。二进制上传内容仍不写入日志或报告，只记录长度等元数据。原始日志
+可能包含凭证，只能通过已授权的任务详情访问，不得公开分发；新增输出通道时应同步
+补充“内容不被改写、访问权限不放宽、长度上限仍生效”的回归测试。
 
 ## 9. 配置校验
 
@@ -342,35 +355,36 @@ allure --version
 
 ```bash
 .venv/bin/python runtest.py \
-  --env test \
+  --project truthy \
+  --target-env test \
+  --task-id 20260827-120000-a1b2 \
   -- \
-  --alluredir=allure-results \
   --clean-alluredir \
   --allure-no-capture
 ```
 
-仅执行指定 Flow 时，在 `--env test` 后增加
+仅执行指定 Flow 时增加
 `--flow AnonymousSessionMediaSearch`。`--allure-no-capture` 用于避免重复附加
 stdout、stderr 和日志。
 
 使用 Allure 3 内置 Awesome 报告生成并打开 HTML：
 
 ```bash
-allure awesome allure-results \
+allure awesome reports/task-reports/truthy/20260827-120000-a1b2/allure-results \
   --output allure-report \
   --group-by parentSuite,suite,feature,story
 allure open allure-report
 ```
 
-`allure-results/` 和 `allure-report/` 都是本地运行产物，不提交到仓库。首次或
+任务 Allure 原始结果和 `allure-report/` 都是本地运行产物，不提交到仓库。首次或
 希望清空旧结果时使用 `--clean-alluredir`；需要合并多批结果时，后续执行不要
-使用该参数。报告附件会脱敏 token 和签名 URL，不保存非 JSON 响应正文或媒体
-二进制，但仍不应将结果目录对外公开。
+使用该参数。报告附件保留原始 token、签名 URL、Header、JSON 与非 JSON 响应正文；
+媒体二进制仍不保存。结果目录包含敏感原文，不得对外公开。
 
 ## 12. 报告发布与同步
 
-平台报告按根任务保存到
-`reports/task-reports/<task_id>/versions/<版本>/`。每个任务拥有独立的
+平台报告按项目和根任务保存到
+`reports/task-reports/<project_id>/<task_id>/versions/<版本>/`。每个任务拥有独立的
 `current` 指针，发布其他任务不会覆盖或删除已有报告；Web 路由还会再次校验
 报告元数据中的 `task_id` 与已授权任务一致。
 
@@ -378,6 +392,7 @@ allure open allure-report
 
 ```bash
 PUBLISH_TASK_ID=20260824-120000-a1b2 \
+PUBLISH_PROJECT_ID=truthy \
   scripts/publish_allure_report.sh allure-report
 ```
 
@@ -386,6 +401,7 @@ PUBLISH_TASK_ID=20260824-120000-a1b2 \
 
 ```bash
 PUBLISH_TASK_ID=<平台根任务ID> \
+PUBLISH_PROJECT_ID=<工具项目ID> \
 JENKINS_USER=<用户名> JENKINS_TOKEN=<API令牌> \
   scripts/fetch_jenkins_report.sh
 ```
@@ -395,6 +411,11 @@ Pipeline 会把任务 ID、构建号和 Job 名写入归档内
 `platform-task-meta.json`；拉取脚本只有在 Jenkins API 构建参数、归档元数据
 和本次 `PUBLISH_TASK_ID` 三者完全一致时才会发布。
 
+Jenkins 不提供接口环境选择参数。部署侧固定设置 `PLATFORM_ENVIRONMENT`：
+`dev` 只映射 `test`，`prod` 只映射 `prod`；快照平台环境不一致时在 pytest
+执行前失败。正式 Job 还必须通过 Jenkins Secret File 绑定注入
+`API_AUTOTEST_RUNTIME_SNAPSHOT_FILE`，缺失或契约无效时不会回退本地配置。
+
 可选环境变量：`JENKINS_URL`（默认 http://10.0.30.33:8081）、`JOB_NAME`
 （默认 truthy-api-autotest）、`BUILD_NUMBER`（指定构建号，缺省自动选取）。
 Jenkins 侧的 HTML 归档由 `Jenkinsfile` post 阶段的
@@ -403,7 +424,7 @@ Jenkins 侧的 HTML 归档由 `Jenkinsfile` post 阶段的
 ## 13. Web 壳服务与平台接入
 
 壳服务（`web/`）在既有框架外包一层薄 Web：接收任务提交、以子进程驱动
-`pytest`，并提供任务结果、脱敏日志、用例库与报告查看，不重写框架逻辑。
+`pytest`，并提供任务结果、原始日志、用例库与报告查看，不重写框架逻辑。
 
 ### 独立模式
 
@@ -417,22 +438,23 @@ Jenkins 侧的 HTML 归档由 `Jenkinsfile` post 阶段的
 `test-platform/docker-compose.yml` 构建并运行 `api-autotest` 服务，网关在
 `/api-autotest/` 路径反代：
 
-- `.env.platform` 挂载为容器内 `.env`，与独立模式的 `.env` 隔离；凭证缺失
-  或不完整时任务提交被拒绝（错误码列出缺失字段）；
-- `data/` 只读挂载；`logs/`、`reports/`、`tasks/` 运行时产物写回本项目目录；
+- 浏览器只提交项目和资产标识；服务端向平台创建 Runtime Context 并物化不可变
+  快照。任务专属快照文件权限为 `0600`，终态删除，Scope API 不可用时 fail-closed；
+- `projects/` 只读挂载；`logs/`、`reports/`、`runtime/`、`tasks/` 运行时产物按项目隔离；
 - 服务端口 5003 仅在 Docker 内网暴露，宿主机统一经网关访问。
 
 ### 任务契约
 
-`POST /api-autotest/api/tasks`，参数：`env`（必填）、`run_type`
-（`all`/`single`/`flow`）、`flow`（run_type=flow 时必填）、`tag`
-（可选 pytest -m 表达式）：
+`POST /api-autotest/api/tasks` 只接收 `project_id`、`run_type`
+（`single`/`flow`）、对应的 `api_id + case_id` 或 `flow_id`，以及可选 `tag`。
+请求若包含 `target_env`、Gateway、Release、timeout、轮询或 Secret 覆盖值会被拒绝：
 
 - 单槽位串行执行，运行中再次提交返回 409 `SLOT_BUSY`；
 - 退出码语义透传：0 成功；5 为"未收集到任何用例"；超时强制终止并标记
   `TASK_TIMEOUT`（默认 1800 秒，可用 `API_AUTOTEST_TASK_TIMEOUT_SECONDS` 调整）；
 - 取消后 `result_available=false`、`reason_code=JUNIT_NOT_GENERATED`；
-- `/api/tasks/<id>/logs` 返回的日志经二次脱敏，凭证值不进入响应。
+- `/api/tasks/<id>/logs` 在任务权限校验通过后返回原始日志，仅按响应长度上限截断，
+  不改写凭证、Header、签名 URL、异常或业务结果。
 
 ### 排障
 
@@ -441,8 +463,8 @@ Jenkins 侧的 HTML 归档由 `Jenkinsfile` post 阶段的
 | 网关显示"工具暂时不可用" | `docker compose ps api-autotest`，查看容器健康检查与日志 |
 | 409 `SLOT_BUSY` | 上一任务未结束；在任务详情页等待或取消 |
 | `TASK_TIMEOUT` | 默认 1800 秒；按上表环境变量调整或拆分任务 |
-| 页面显示"暂无报告" | 检查对应 `reports/task-reports/<task_id>/current` 及元数据绑定；按第 12 节发布 |
-| `ADMIN_CREDENTIALS_MISSING` | `.env.platform` 缺少三个 `ADMIN_*` 字段 |
+| 页面显示"暂无报告" | 检查对应 `reports/task-reports/<project_id>/<task_id>/current` 及元数据绑定；按第 12 节发布 |
+| `PROJECT_CREDENTIAL_MISSING` | 只检查当前资产声明的逻辑 Profile；使用提示中的平台配置中心深链补齐 |
 | 发布后页面仍显示旧报告/暂无报告 | Docker Desktop 挂载缓存：`docker compose restart api-autotest` 刷新视图 |
 
 ### 回滚

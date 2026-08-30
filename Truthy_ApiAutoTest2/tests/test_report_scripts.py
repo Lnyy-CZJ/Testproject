@@ -12,6 +12,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import shutil
 import signal
 import subprocess
 import threading
@@ -27,6 +28,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PUBLISH_SCRIPT = PROJECT_ROOT / "scripts" / "publish_allure_report.sh"
 FETCH_SCRIPT = PROJECT_ROOT / "scripts" / "fetch_jenkins_report.sh"
 DEFAULT_TASK_ID = "20260824-120000-a1b2"
+DEFAULT_PROJECT_ID = "truthy"
 
 
 def make_report_source(tmp_path: Path, name: str = "src") -> Path:
@@ -263,21 +265,21 @@ def test_legacy_real_directory_current_is_migrated(tmp_path: Path) -> None:
 
 def test_publish_fails_fast_when_lock_is_held(tmp_path: Path) -> None:
     report_root = tmp_path / "reports"
-    report_root.mkdir(parents=True)
-    lock = report_root / ".publish.lock"
-    lock.mkdir()
+    lock = report_root / "task-reports" / DEFAULT_TASK_ID / ".publish.lock"
+    lock.mkdir(parents=True)
 
     result = run_publish(make_report_source(tmp_path), report_root)
 
     assert result.returncode == 3
+    # 未持有锁的竞争进程退出时，不得误删当前发布者的任务锁。
+    assert lock.is_dir()
     assert not (report_root / "task-reports" / DEFAULT_TASK_ID / "current").exists()
 
 
 def test_stale_lock_is_reclaimed(tmp_path: Path) -> None:
     report_root = tmp_path / "reports"
-    report_root.mkdir(parents=True)
-    lock = report_root / ".publish.lock"
-    lock.mkdir()
+    lock = report_root / "task-reports" / DEFAULT_TASK_ID / ".publish.lock"
+    lock.mkdir(parents=True)
     # 残留锁超过安全时间（600s）后允许回收。
     stale = time.time() - 700
     os.utime(lock, (stale, stale))
@@ -286,6 +288,82 @@ def test_stale_lock_is_reclaimed(tmp_path: Path) -> None:
 
     assert result.returncode == 0, result.stderr
     assert not lock.exists()
+
+
+def test_different_tasks_can_publish_while_each_copy_is_in_progress(
+    tmp_path: Path,
+) -> None:
+    """一个任务持锁并发布时，另一个任务仍应能完成独立发布。"""
+
+    report_root = tmp_path / "reports"
+    copy_marker = tmp_path / "copy-started"
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    real_cp = shutil.which("cp")
+    assert real_cp is not None
+
+    # 第一个任务拿锁后进入 cp 包装器；包装器暂停其父 shell，让任务锁稳定保持，
+    # 同时自身完成复制。此时启动第二个任务即可确定它是否仍受全局锁阻塞。
+    fake_cp = fake_bin / "cp"
+    fake_cp.write_text(
+        """#!/usr/bin/env bash
+set -euo pipefail
+kill -STOP "$PPID"
+touch "$TEST_CP_MARKER"
+exec "$TEST_REAL_CP" "$@"
+""",
+        encoding="utf-8",
+    )
+    fake_cp.chmod(0o755)
+
+    first_task = "20260830-101530-a1b2"
+    second_task = "20260830-101531-b2c3"
+    first_env = os.environ.copy()
+    first_env.update(
+        {
+            "PATH": f"{fake_bin}{os.pathsep}{first_env['PATH']}",
+            "PUBLISH_TASK_ID": first_task,
+            "TEST_CP_MARKER": str(copy_marker),
+            "TEST_REAL_CP": real_cp,
+        }
+    )
+    first_env.pop("PUBLISH_PROJECT_ID", None)
+    first = subprocess.Popen(
+        [
+            str(PUBLISH_SCRIPT),
+            str(make_report_source(tmp_path, "first-concurrent")),
+            str(report_root),
+            "manual",
+        ],
+        env=first_env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+    deadline = time.monotonic() + 5
+    while not copy_marker.is_file() and first.poll() is None and time.monotonic() < deadline:
+        time.sleep(0.02)
+    second: subprocess.CompletedProcess[str] | None = None
+    try:
+        if copy_marker.is_file():
+            second = run_publish(
+                make_report_source(tmp_path, "second-concurrent"),
+                report_root,
+                env={"PUBLISH_TASK_ID": second_task, "PUBLISH_PROJECT_ID": ""},
+            )
+    finally:
+        # 无论第二个任务结果如何都恢复第一个发布进程，避免遗留暂停进程。
+        if first.poll() is None:
+            first.send_signal(signal.SIGCONT)
+        first_stdout, first_stderr = first.communicate(timeout=10)
+
+    assert copy_marker.is_file(), first_stderr
+    assert first.returncode == 0, first_stderr
+    assert second is not None
+    assert second.returncode == 0, second.stderr
+    assert first_stdout.strip().startswith("manual-")
+    assert second.stdout.strip().startswith("manual-")
 
 
 def test_concurrent_publish_keeps_current_consistent(tmp_path: Path) -> None:
@@ -309,6 +387,23 @@ def test_concurrent_publish_keeps_current_consistent(tmp_path: Path) -> None:
     assert (current_target(report_root) / "index.html").is_file()
     # 无论谁赢，最终只保留一份版本目录。
     assert len(list((report_root / "task-reports" / DEFAULT_TASK_ID / "versions").iterdir())) == 1
+
+
+def test_publish_v2_report_isolated_by_project_and_task(tmp_path: Path) -> None:
+    """新版任务报告必须同时绑定 project_id 与 task_id，且元数据包含双身份。"""
+
+    report_root = tmp_path / "reports"
+    result = run_publish(
+        make_report_source(tmp_path),
+        report_root,
+        env={"PUBLISH_PROJECT_ID": "dating"},
+    )
+
+    assert result.returncode == 0, result.stderr
+    current = report_root / "task-reports/dating" / DEFAULT_TASK_ID / "current"
+    assert current.is_symlink()
+    meta = json.loads((current / "report-meta.json").read_text(encoding="utf-8"))
+    assert (meta["project_id"], meta["task_id"]) == ("dating", DEFAULT_TASK_ID)
 
 
 # ---------------- 发布脚本：中断残留清理 ----------------
@@ -368,7 +463,7 @@ def test_interrupted_publish_never_breaks_existing_current(
     third = run_publish(make_report_source(tmp_path, "src3"), report_root)
     if third.returncode == 3:
         # 极端情况：SIGTERM 时锁尚未释放且未超龄；人为回收后重试。
-        lock = report_root / ".publish.lock"
+        lock = report_root / "task-reports" / DEFAULT_TASK_ID / ".publish.lock"
         stale = time.time() - 700
         os.utime(lock, (stale, stale))
         third = run_publish(make_report_source(tmp_path, "src3"), report_root)
@@ -396,6 +491,10 @@ def build_report_zip(build_number: int, build: dict) -> bytes:
                 {
                     "task_id": build.get(
                         "artifact_task_id", build.get("task_id", DEFAULT_TASK_ID)
+                    ),
+                    "project_id": build.get(
+                        "artifact_project_id",
+                        build.get("project_id", DEFAULT_PROJECT_ID),
                     ),
                     "build_number": build_number,
                     "job_name": "truthy-api-autotest",
@@ -478,7 +577,11 @@ class FakeJenkinsHandler(BaseHTTPRequestHandler):
                                     {
                                         "name": "PLATFORM_TASK_ID",
                                         "value": info.get("task_id", DEFAULT_TASK_ID),
-                                    }
+                                    },
+                                    {
+                                        "name": "PROJECT_ID",
+                                        "value": info.get("project_id", DEFAULT_PROJECT_ID),
+                                    },
                                 ]
                             }
                         ],
@@ -551,6 +654,7 @@ def run_fetch(
         merged_env["PUBLISH_TASK_ID"] = DEFAULT_TASK_ID
     else:
         merged_env.pop("PUBLISH_TASK_ID", None)
+    merged_env.setdefault("PUBLISH_PROJECT_ID", DEFAULT_PROJECT_ID)
     if env:
         merged_env.update(env)
     return subprocess.run(
@@ -577,14 +681,47 @@ def test_fetch_selects_newest_completed_build_with_artifact(
 
     assert result.returncode == 0, result.stderr
     meta_path = (
-        tmp_path / "reports" / "task-reports" / DEFAULT_TASK_ID / "versions" / "jenkins-truthy-api-autotest-14"
+        tmp_path / "reports" / "task-reports" / DEFAULT_PROJECT_ID / DEFAULT_TASK_ID
+        / "versions" / "jenkins-truthy-api-autotest-14"
         / "report-meta.json"
     )
     meta = json.loads(meta_path.read_text(encoding="utf-8"))
     # 不按 SUCCESS/FAILURE 过滤：失败构建的报告同样应被选中。
     assert meta["build_number"] == 14
     assert meta["build_result"] == "FAILURE"
-    assert (tmp_path / "reports" / "task-reports" / DEFAULT_TASK_ID / "current" / "index.html").is_file()
+    assert (
+        tmp_path / "reports" / "task-reports" / DEFAULT_PROJECT_ID
+        / DEFAULT_TASK_ID / "current" / "index.html"
+    ).is_file()
+
+
+def test_fetch_dating_report_keeps_project_identity_end_to_end(
+    tmp_path: Path, fake_jenkins
+) -> None:
+    """Jenkins 参数、归档元数据、发布目录三处项目身份必须完全一致。"""
+
+    base_url, handler = fake_jenkins
+    handler.builds = {
+        31: {
+            "result": "SUCCESS",
+            "has_report": True,
+            "project_id": "dating",
+            "artifact_project_id": "dating",
+        }
+    }
+    result = run_fetch(
+        base_url,
+        tmp_path / "reports",
+        env={"BUILD_NUMBER": "31", "PUBLISH_PROJECT_ID": "dating"},
+    )
+
+    assert result.returncode == 0, result.stderr
+    current = (
+        tmp_path / "reports/task-reports/dating" / DEFAULT_TASK_ID / "current"
+    )
+    assert (current / "index.html").is_file()
+    meta = json.loads((current / "report-meta.json").read_text(encoding="utf-8"))
+    assert meta["project_id"] == "dating"
 
 
 def test_fetch_requires_explicit_root_task_id(tmp_path: Path, fake_jenkins) -> None:
@@ -613,7 +750,8 @@ def test_fetch_skips_builds_without_report_artifact(tmp_path: Path, fake_jenkins
     assert result.returncode == 0, result.stderr
     meta = json.loads(
         (
-            tmp_path / "reports" / "task-reports" / DEFAULT_TASK_ID / "versions"
+            tmp_path / "reports" / "task-reports" / DEFAULT_PROJECT_ID
+            / DEFAULT_TASK_ID / "versions"
             / "jenkins-truthy-api-autotest-19" / "report-meta.json"
         ).read_text(encoding="utf-8")
     )
@@ -633,7 +771,8 @@ def test_fetch_explicit_build_number_overrides_scan(tmp_path: Path, fake_jenkins
     assert result.returncode == 0, result.stderr
     meta = json.loads(
         (
-            tmp_path / "reports" / "task-reports" / DEFAULT_TASK_ID / "versions"
+            tmp_path / "reports" / "task-reports" / DEFAULT_PROJECT_ID
+            / DEFAULT_TASK_ID / "versions"
             / "jenkins-truthy-api-autotest-13" / "report-meta.json"
         ).read_text(encoding="utf-8")
     )
@@ -660,7 +799,9 @@ def test_fetch_rejects_build_parameter_owned_by_another_task(
     )
 
     assert result.returncode == 5
-    assert not (tmp_path / "reports" / "task-reports" / DEFAULT_TASK_ID).exists()
+    assert not (
+        tmp_path / "reports" / "task-reports" / DEFAULT_PROJECT_ID / DEFAULT_TASK_ID
+    ).exists()
 
 
 def test_fetch_rejects_artifact_metadata_owned_by_another_task(
@@ -684,7 +825,9 @@ def test_fetch_rejects_artifact_metadata_owned_by_another_task(
 
     assert result.returncode == 6
     assert "任务元数据" in result.stderr
-    assert not (tmp_path / "reports" / "task-reports" / DEFAULT_TASK_ID).exists()
+    assert not (
+        tmp_path / "reports" / "task-reports" / DEFAULT_PROJECT_ID / DEFAULT_TASK_ID
+    ).exists()
 
 
 def test_jenkins_pipeline_declares_and_archives_platform_task_identity() -> None:
@@ -695,6 +838,44 @@ def test_jenkins_pipeline_declares_and_archives_platform_task_identity() -> None
     assert "name: 'PLATFORM_TASK_ID'" in pipeline
     assert "platform-task-meta.json" in pipeline
     assert '"task_id": os.environ["PLATFORM_TASK_ID"]' in pipeline
+    assert '"project_id": os.environ.get("PROJECT_ID") or "truthy"' in pipeline
+
+
+def test_jenkins_pipeline_selects_project_and_keeps_legacy_truthy_default() -> None:
+    """Jenkins 新任务显式传项目，旧任务缺参时只兼容映射到 Truthy。"""
+
+    pipeline = (PROJECT_ROOT / "Jenkinsfile").read_text(encoding="utf-8")
+
+    assert "name: 'PROJECT_ID'" in pipeline
+    assert 'PROJECT_ID="${PROJECT_ID:-truthy}"' in pipeline
+    assert "旧任务未提供 PROJECT_ID" in pipeline
+    assert '--project="$PROJECT_ID"' in pipeline
+    assert '--target-env="$TARGET_ENV"' in pipeline
+
+
+def test_jenkins_pipeline_derives_target_env_from_deployment_platform() -> None:
+    """Jenkins 不提供环境选择；dev/test、prod/prod 映射必须固定且失败关闭。"""
+
+    pipeline = (PROJECT_ROOT / "Jenkinsfile").read_text(encoding="utf-8")
+
+    assert "name: 'ENVIRONMENT'" not in pipeline
+    assert "name: 'TARGET_ENV'" not in pipeline
+    assert 'PLATFORM_ENVIRONMENT="${PLATFORM_ENVIRONMENT:-dev}"' in pipeline
+    assert 'dev) TARGET_ENV="test"' in pipeline
+    assert 'prod) TARGET_ENV="prod"' in pipeline
+    assert "不支持的平台环境" in pipeline
+    assert 'runtime_metadata.get("platform_environment") != platform_environment' in pipeline
+
+
+def test_jenkins_pipeline_requires_fail_closed_platform_snapshot() -> None:
+    """正式 Jenkins 任务只能消费平台快照，缺失或无效时必须在 pytest 前失败。"""
+
+    pipeline = (PROJECT_ROOT / "Jenkinsfile").read_text(encoding="utf-8")
+
+    assert "API_AUTOTEST_RUNTIME_SNAPSHOT_FILE" in pipeline
+    assert "validate_settings_contract" in pipeline
+    assert 'config_source="platform"' in pipeline
+    assert '--config-source=platform' in pipeline
 
 
 def test_fetch_fails_when_no_build_has_report(tmp_path: Path, fake_jenkins) -> None:
@@ -706,7 +887,10 @@ def test_fetch_fails_when_no_build_has_report(tmp_path: Path, fake_jenkins) -> N
     result = run_fetch(base_url, tmp_path / "reports")
 
     assert result.returncode == 5
-    assert not (tmp_path / "reports" / "task-reports" / DEFAULT_TASK_ID / "current").exists()
+    assert not (
+        tmp_path / "reports" / "task-reports" / DEFAULT_PROJECT_ID
+        / DEFAULT_TASK_ID / "current"
+    ).exists()
 
 
 def test_fetch_fails_when_credentials_missing(tmp_path: Path, fake_jenkins) -> None:

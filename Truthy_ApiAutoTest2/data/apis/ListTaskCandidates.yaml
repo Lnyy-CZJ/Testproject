@@ -1,5 +1,0 @@
-id: ListTaskCandidates
-name: 查询任务候选集列表
-request:
-  service_name: tool.people_insight.SearchService
-  method_name: ListTaskCandidates

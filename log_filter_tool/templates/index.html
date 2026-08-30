@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Log 过滤工具</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%232457d6'/><text x='50%25' y='50%25' dominant-baseline='central' text-anchor='middle' fill='white' font-family='Arial,sans-serif' font-size='20' font-weight='bold'>L</text></svg>">
+    <link rel="stylesheet" href="{{ url_for('tool.static', filename='css/log-workbench.css') }}">
     <style>
       :root {
         color-scheme: light;
@@ -299,17 +300,20 @@
         align-items: center;
       }
 
-      .toolbar-buttons button#analyze-people-search-btn {
-        background: #1f8a4c;
-      }
-
-      .toolbar-buttons button#analyze-people-search-btn:hover {
-        background: #176d3b;
-      }
-
-      .toolbar-buttons button#analyze-people-search-btn:disabled {
-        background: #9bb7a7;
+      button:disabled {
+        background: #aab4c4;
         cursor: not-allowed;
+        opacity: .78;
+      }
+
+      button:focus-visible,
+      input:focus-visible,
+      select:focus-visible,
+      textarea:focus-visible,
+      summary:focus-visible,
+      [tabindex]:focus-visible {
+        outline: 3px solid rgba(36, 87, 214, .42);
+        outline-offset: 2px;
       }
 
       .message {
@@ -363,16 +367,6 @@
         color: #526070;
         font-size: 13px;
         text-align: center;
-      }
-
-      mark {
-        background: #ffe58f;
-        color: inherit;
-      }
-
-      mark.current-match {
-        background: #ffb84d;
-        outline: 2px solid #c16a00;
       }
 
       .action-message {
@@ -490,6 +484,398 @@
         accent-color: #2457d6;
       }
 
+      /* Dating 结果沿用现有色彩和控件，只为高密度工程信息增加稳定层级。 */
+      .dating-workbench {
+        display: grid;
+        gap: 18px;
+        margin-top: 28px;
+        padding-top: 24px;
+        border-top: 1px solid rgba(0, 0, 0, .12);
+      }
+
+      .dating-workbench[hidden],
+      .dating-content[hidden],
+      .dating-call-detail[hidden] {
+        display: none;
+      }
+
+      .dating-state {
+        padding: 14px 16px;
+        border: 1px solid #d8e0ed;
+        border-radius: 10px;
+        background: #ffffff;
+        color: #526070;
+        line-height: 1.5;
+      }
+
+      .dating-state.loading {
+        border-color: #9eb4ea;
+        color: #1d49b7;
+      }
+
+      .dating-state.success {
+        border-color: #8ac79b;
+        color: #1d6b32;
+      }
+
+      .dating-state.error {
+        border-color: #e19a9a;
+        background: #fff7f7;
+        color: #8a1f1f;
+      }
+
+      .dating-state p {
+        margin: 4px 0 0;
+      }
+
+      .dating-content {
+        display: grid;
+        gap: 22px;
+      }
+
+      .dating-verdict {
+        padding: 18px 20px;
+        border: 1px solid #d8e0ed;
+        border-left: 4px solid #6e6e73;
+        border-radius: 12px;
+        background: #ffffff;
+      }
+
+      .dating-verdict.no-issues { border-left-color: #1f8a4c; }
+      .dating-verdict.warnings { border-left-color: #b26a00; }
+      .dating-verdict.issues { border-left-color: #c9342f; }
+      .dating-verdict.incomplete { border-left-color: #6e6e73; }
+
+      .dating-verdict h3 {
+        margin: 0;
+        font-size: 20px;
+      }
+
+      .dating-verdict p {
+        margin: 7px 0 0;
+        color: #526070;
+      }
+
+      .dating-summary-grid,
+      .dating-result-summary,
+      .dating-lifecycle-metrics {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 0 20px;
+        margin: 0;
+      }
+
+      .dating-summary-item {
+        min-width: 0;
+        padding: 12px 0;
+        border-bottom: 1px solid rgba(0, 0, 0, .09);
+      }
+
+      .dating-summary-item dt {
+        color: #6e6e73;
+        font-size: 12px;
+      }
+
+      .dating-summary-item dd {
+        overflow-wrap: anywhere;
+        margin: 5px 0 0;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 13px;
+        font-weight: 650;
+      }
+
+      .dating-section {
+        padding-top: 18px;
+        border-top: 1px solid rgba(0, 0, 0, .12);
+      }
+
+      .dating-section:first-child {
+        padding-top: 0;
+        border-top: 0;
+      }
+
+      .dating-section-heading {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 16px;
+        margin-bottom: 12px;
+      }
+
+      .dating-section-heading h3,
+      .dating-section-heading p {
+        margin: 0;
+      }
+
+      .dating-section-heading p {
+        color: #6e6e73;
+        font-size: 13px;
+      }
+
+      .dating-upload-list,
+      .dating-check-list,
+      .dating-result-sections {
+        display: grid;
+        gap: 10px;
+      }
+
+      .dating-upload-item,
+      .dating-check,
+      .dating-result-section {
+        border: 1px solid #d8e0ed;
+        border-radius: 10px;
+        background: #ffffff;
+      }
+
+      .dating-upload-item {
+        padding: 13px 15px;
+      }
+
+      .dating-upload-item h4,
+      .dating-upload-item p {
+        margin: 0;
+      }
+
+      .dating-upload-item h4 {
+        overflow-wrap: anywhere;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 13px;
+      }
+
+      .dating-upload-chain {
+        margin-top: 8px !important;
+        color: #34435a;
+        font-size: 13px;
+        line-height: 1.55;
+      }
+
+      .dating-upload-meta,
+      .dating-muted {
+        margin-top: 6px !important;
+        color: #6e6e73;
+        font-size: 12px;
+      }
+
+      .dating-timeline {
+        display: grid;
+        gap: 0;
+        margin: 12px 0 0;
+        padding: 0;
+        list-style: none;
+        border-top: 1px solid rgba(0, 0, 0, .1);
+      }
+
+      .dating-timeline li {
+        display: grid;
+        grid-template-columns: 54px minmax(150px, .9fr) minmax(200px, 1.3fr) minmax(100px, .5fr) auto;
+        gap: 12px;
+        align-items: center;
+        padding: 10px 0;
+        border-bottom: 1px solid rgba(0, 0, 0, .08);
+        font-size: 13px;
+      }
+
+      .dating-timeline-sequence,
+      .dating-mono {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      }
+
+      .dating-details > summary,
+      .dating-check > summary,
+      .dating-result-section > summary {
+        padding: 12px 14px;
+        color: #2457d6;
+        font-weight: 650;
+        cursor: pointer;
+      }
+
+      .dating-details[open] > summary,
+      .dating-check[open] > summary,
+      .dating-result-section[open] > summary {
+        border-bottom: 1px solid rgba(0, 0, 0, .09);
+      }
+
+      .dating-result-section pre,
+      .dating-check-body pre,
+      .dating-call-detail pre {
+        box-sizing: border-box;
+        width: 100%;
+        min-height: 0;
+        height: auto;
+        max-height: 360px;
+        border: 0;
+        border-radius: 0;
+        background: #f8f9fc;
+      }
+
+      .dating-field-controls {
+        display: grid;
+        grid-template-columns: minmax(190px, 240px) minmax(260px, 1fr) auto;
+        gap: 10px;
+        align-items: end;
+        margin-bottom: 12px;
+      }
+
+      .dating-field-controls label {
+        margin-bottom: 5px;
+        color: #526070;
+        font-size: 12px;
+      }
+
+      .dating-field-controls .search-input {
+        width: 100%;
+      }
+
+      .dating-field-tree {
+        margin: 0;
+        padding: 10px 14px 14px 30px;
+        list-style: none;
+      }
+
+      .dating-field-tree ul {
+        margin: 5px 0 0 14px;
+        padding-left: 18px;
+        border-left: 1px solid #d8e0ed;
+        list-style: none;
+      }
+
+      .dating-field-node {
+        padding: 5px 0;
+        font-size: 13px;
+      }
+
+      .dating-field-node-line {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        min-width: 0;
+      }
+
+      .dating-path-button,
+      .dating-line-button,
+      .dating-more-button,
+      .dating-row-toggle {
+        min-height: 28px;
+        padding: 3px 8px;
+        border: 1px solid #c8d1e1;
+        background: #ffffff;
+        color: #2457d6;
+        font-size: 12px;
+      }
+
+      .dating-path-button:hover,
+      .dating-line-button:hover,
+      .dating-more-button:hover,
+      .dating-row-toggle:hover {
+        background: #eef3ff;
+      }
+
+      .dating-path-button {
+        overflow: hidden;
+        max-width: 100%;
+        text-align: left;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .dating-presence {
+        display: inline-block;
+        padding: 2px 6px;
+        border: 1px solid #c8d1e1;
+        border-radius: 999px;
+        color: #526070;
+        font-size: 11px;
+        font-weight: 650;
+        white-space: nowrap;
+      }
+
+      .dating-presence.missing,
+      .dating-presence.null {
+        border-color: #e0bc63;
+        color: #694a00;
+      }
+
+      .dating-presence.unknown {
+        border-color: #b7a6d9;
+        color: #5c3c91;
+      }
+
+      .dating-field-table,
+      .dating-interface-table {
+        min-width: 1120px;
+        font-size: 12px;
+      }
+
+      .dating-field-table td,
+      .dating-interface-table td {
+        vertical-align: top;
+      }
+
+      .dating-value-cell {
+        min-width: 220px;
+        max-width: 420px;
+        overflow-wrap: anywhere;
+        white-space: pre-wrap;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      }
+
+      .dating-call-detail {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+        padding: 12px;
+        background: #f8f9fc;
+      }
+
+      .dating-call-detail h4 {
+        margin: 0 0 5px;
+        font-size: 12px;
+      }
+
+      .dating-check.fail { border-left: 3px solid #c9342f; }
+      .dating-check.warn { border-left: 3px solid #b26a00; }
+      .dating-check.unknown { border-left: 3px solid #6e6e73; }
+      .dating-check.pass { border-left: 3px solid #1f8a4c; }
+
+      .dating-check-body {
+        display: grid;
+        gap: 10px;
+        padding: 12px 14px 14px;
+      }
+
+      .dating-evidence-list,
+      .dating-warning-list {
+        display: grid;
+        gap: 8px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .dating-evidence-item {
+        padding: 9px 10px;
+        border-left: 2px solid #9eb4ea;
+        background: #f8f9fc;
+        font-size: 12px;
+        line-height: 1.5;
+      }
+
+      .dating-report {
+        min-height: 260px;
+        height: 520px;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          scroll-behavior: auto !important;
+          transition-duration: .01ms !important;
+          animation-duration: .01ms !important;
+          animation-iteration-count: 1 !important;
+        }
+      }
+
       @media (max-width: 720px) {
         .toolbar {
           grid-template-columns: 1fr;
@@ -513,25 +899,105 @@
         .search-input {
           width: 100%;
         }
+
+        .dating-summary-grid,
+        .dating-result-summary,
+        .dating-lifecycle-metrics,
+        .dating-call-detail,
+        .dating-field-controls {
+          grid-template-columns: 1fr;
+        }
       }
     </style>
   </head>
   <body>
-    <main>
-      <h1>质量分析 · Log 过滤工具</h1>
+    <header class="app-header">
+      <div class="app-header__inner">
+        <div>
+          <p class="app-header__context">质量分析</p>
+          <h1>Log 过滤工具</h1>
+        </div>
+        {% if platform_home_url %}
+          <a class="app-header__back-link" href="{{ platform_home_url }}">返回测试开发平台</a>
+        {% endif %}
+      </div>
+    </header>
 
-      {% if platform_home_url %}
-        <p><a href="{{ platform_home_url }}">返回测试开发平台</a></p>
+    <main
+      class="workspace"
+      id="log-workbench"
+      data-index-url="{{ url_for('tool.index') }}"
+      data-export-url="{{ url_for('tool.export_log') }}"
+      data-people-url="{{ url_for('tool.analyze_people_search') }}"
+      data-initial-state="{{ 'success' if result_text else 'idle' }}"
+      {% if dating_analyzer_enabled %}
+        data-dating-url="{{ url_for('tool.analyze_dating') }}"
       {% endif %}
+    >
+      <section
+        class="workbench-pane workbench-log-pane"
+        id="workbench-log-pane"
+        aria-labelledby="workbench-log-heading"
+      >
+        <div class="workbench-pane__header">
+          <div>
+            <h2 id="workbench-log-heading">分析输入</h2>
+            <p>粘贴一份日志并选择明确的分析模式。</p>
+            <div class="file-context" aria-live="polite">
+              <span id="file-name">未命名日志</span>
+              <span id="log-line-count">0 行</span>
+              <span id="log-byte-count">0 B</span>
+            </div>
+          </div>
+          <div class="analysis-mode-control">
+            <label for="analysis-mode">分析模式</label>
+            <select id="analysis-mode" aria-describedby="analysis-mode-help">
+              <option value="general">通用接口</option>
+              <option value="people">People Insight</option>
+              {% if dating_analyzer_enabled %}
+                <option value="dating">Dating 结构化分析</option>
+              {% endif %}
+            </select>
+            <span id="analysis-mode-help">同一时间只分析当前这份日志。</span>
+          </div>
+        </div>
 
-      <form method="post" action="{{ url_for('tool.index') }}">
+      <form id="log-filter-form" method="post" action="{{ url_for('tool.index') }}">
         <input type="hidden" name="_csrf" value="{{ request.cookies.get('tp_csrf', '') }}">
         <section>
           <div class="field-header">
             <label for="log_text">日志内容</label>
-            <button type="button" id="export-log-content-btn" onclick="exportLog('log_content')">导出日志</button>
+            <button type="button" id="export-log-content-btn">导出日志</button>
           </div>
-          <textarea id="log_text" name="log_text" placeholder="把日志粘贴到这里">{{ log_text }}</textarea>
+          <div id="raw-log-view" class="log-view">
+            <textarea id="log_text" name="log_text" placeholder="把日志粘贴到这里">{{ log_text }}</textarea>
+          </div>
+        </section>
+
+        <div class="log-view-switcher" role="tablist" aria-label="日志视图">
+          <button type="button" id="raw-log-view-btn" role="tab" aria-controls="raw-log-view" aria-selected="true">原始日志</button>
+          <button type="button" id="filtered-log-view-btn" role="tab" aria-controls="filtered-log-view" aria-selected="false"{% if not result_text %} disabled aria-disabled="true"{% endif %}>过滤结果</button>
+        </div>
+
+        <section id="filtered-log-view" class="log-view" role="tabpanel" aria-labelledby="filtered-log-view-btn" hidden>
+          <div class="field-header">
+            <label for="result-text">过滤结果（只读）</label>
+          </div>
+          <textarea id="result-text" readonly aria-label="过滤结果">{{ result_text }}</textarea>
+        </section>
+
+        <section class="log-tools" aria-label="日志工具">
+          <div class="search-controls">
+            <label class="visually-hidden" for="result-search">搜索当前日志</label>
+            <input class="search-input" id="result-search" type="search" placeholder="搜索当前日志" aria-label="搜索当前日志">
+            <button type="button" id="search-prev-btn">上一个</button>
+            <button type="button" id="search-next-btn">下一个</button>
+            <span class="search-count" id="search-count">0/0</span>
+          </div>
+          <div class="result-tools">
+            <button type="button" id="copy-btn">复制过滤结果</button>
+            <button type="button" id="export-filtered-result-btn"{% if not result_text %} disabled aria-disabled="true"{% endif %}>导出过滤结果</button>
+          </div>
         </section>
 
         <section class="toolbar">
@@ -564,36 +1030,197 @@
           </div>
 
           <div class="toolbar-buttons">
-            <button type="submit">解析日志</button>
-            <button type="button" id="analyze-people-search-btn" onclick="analyzePeopleSearch()">分析检索链路</button>
+            <button type="button" id="analyze-log-btn">分析日志</button>
           </div>
 
-          <div class="stats">
+          <div class="stats" id="log-stats">
             识别到 {{ method_count }} 个 method，当前匹配 {{ match_count }} 个日志块
           </div>
         </section>
 
+        <div class="log-focus-status" id="log-focus-status" role="status" aria-live="polite"></div>
+        <div class="analysis-stale" id="analysis-stale" role="status" aria-live="polite" hidden></div>
+
         {% if message %}
           <div class="message">{{ message }}</div>
         {% endif %}
+
+        {% if dating_analyzer_enabled %}
+          <span id="analyze-dating-btn" hidden aria-hidden="true">Dating 结构化分析</span>
+        {% endif %}
       </form>
 
-      <section>
-        <div class="result-header">
-          <h2>过滤结果</h2>
-          <div class="result-tools">
-            <div class="search-controls">
-              <input class="search-input" id="result-search" type="search" placeholder="搜索过滤结果" aria-label="搜索过滤结果">
-              <button type="button" id="search-prev-btn" onclick="moveSearchMatch(-1)">上一个</button>
-              <button type="button" id="search-next-btn" onclick="moveSearchMatch(1)">下一个</button>
-              <span class="search-count" id="search-count">0/0</span>
-            </div>
-            <button type="button" id="copy-btn" onclick="copyResult()">复制</button>
-            <button type="button" id="export-filtered-result-btn" onclick="exportLog('filtered_result')">导出日志</button>
-          </div>
-        </div>
-        <pre id="result-text">{{ result_text }}</pre>
       </section>
+
+      <div
+        class="workspace-resizer"
+        id="workbench-resizer"
+        role="separator"
+        tabindex="0"
+        aria-label="调整日志输入与分析结果区域宽度"
+        aria-orientation="vertical"
+        aria-controls="workbench-log-pane workbench-result-pane"
+        aria-valuemin="32"
+        aria-valuemax="55"
+        aria-valuenow="39"
+      ></div>
+
+      <section
+        class="workbench-pane workbench-result-pane"
+        id="workbench-result-pane"
+        aria-labelledby="workbench-result-heading"
+      >
+        <div class="workbench-pane__header workbench-result-header">
+          <div>
+            <h2 id="workbench-result-heading" tabindex="-1">分析结果</h2>
+            <p id="workbench-result-subheading">在固定标签中查看概览、调用链路、原始结果和检查项。</p>
+          </div>
+          <span class="analysis-stale" id="workbench-result-stale" role="status" aria-live="polite" hidden>结果已过期</span>
+        </div>
+
+        <section id="workbench-analysis-state" class="workbench-analysis-state state-{{ 'success' if result_text else 'idle' }}" data-state="{{ 'success' if result_text else 'idle' }}" role="status" aria-live="polite">
+          <span id="workbench-analysis-state-message">{{ '分析完成。' if result_text else '等待分析。' }}</span>
+          <div id="workbench-result-loading" class="workbench-result-loading" hidden aria-hidden="true">
+            <span>正在整理日志证据…</span>
+          </div>
+          <p id="workbench-result-empty" class="workbench-result-empty" hidden>没有可展示的分析结果。</p>
+          <section id="workbench-result-error" class="workbench-result-error" role="alert" hidden>
+            <strong id="workbench-result-error-code"></strong>
+            <p id="workbench-result-error-message"></p>
+            <button type="button" id="workbench-retry-btn">重试</button>
+          </section>
+        </section>
+
+        <div class="workbench-loading-mask" id="workbench-loading-mask" role="status" aria-live="polite" aria-busy="false" hidden>
+          <span>正在分析日志</span>
+        </div>
+
+        <div id="analysis-result-tabs" class="workbench-tabs" role="tablist" aria-label="日志分析结果">
+          <button type="button" id="overviewTab" role="tab" aria-controls="overviewPanel" aria-selected="false" tabindex="-1">概览</button>
+          <button type="button" id="interfacesTab" role="tab" aria-controls="interfacesPanel" aria-selected="false" tabindex="-1">接口</button>
+          <button type="button" id="timelineTab" role="tab" aria-controls="timelinePanel" aria-selected="false" tabindex="-1">时间线</button>
+          <button type="button" id="resultTab" role="tab" aria-controls="resultPanel" aria-selected="true">结果</button>
+          <button type="button" id="checksTab" role="tab" aria-controls="checksPanel" aria-selected="false" tabindex="-1">检查项</button>
+        </div>
+
+        <section id="overviewPanel" class="workbench-tab-panel" role="tabpanel" aria-labelledby="overviewTab" tabindex="0" hidden>
+          <div id="people-search-analysis">
+            <section id="people-overview" class="people-analysis-overview" aria-labelledby="people-verdict-title" hidden>
+              <div class="verdict-panel" id="people-verdict-panel" data-verdict="INCOMPLETE_EVIDENCE">
+                <div class="result-header">
+                  <div>
+                    <h3 class="verdict-title" id="people-verdict-title">等待分析</h3>
+                    <p class="verdict-detail" id="people-task-summary">尚无 People Insight 任务结果。</p>
+                    <p class="ai-status" id="people-ai-status">AI 分析状态：等待分析</p>
+                  </div>
+                  <span class="stats" id="people-search-status">未分析</span>
+                </div>
+              </div>
+              <div class="analysis-grid">
+                <section class="analysis-panel">
+                  <h3>日志覆盖度</h3>
+                  <div class="coverage-list" id="people-coverage-list"></div>
+                </section>
+                <section class="analysis-panel">
+                  <h3>问题摘要</h3>
+                  <ul class="issue-list" id="people-issue-list"></ul>
+                </section>
+              </div>
+            </div>
+            <p class="workbench-empty-state" id="people-overview-empty">运行 People 分析后，此处展示当前日志的关键结论。</p>
+          </div>
+          {% if dating_analyzer_enabled %}
+          <section id="dating-analysis" class="dating-workbench" tabindex="-1" aria-labelledby="dating-heading" hidden>
+            <div class="result-header">
+              <div>
+                <h2 id="dating-heading">Dating 结构化分析</h2>
+                <div class="stats" id="dating-status">未分析</div>
+              </div>
+              <div class="result-tools" aria-label="Dating 报告操作">
+                <button id="copy-dating-report-btn" type="button" disabled>复制报告</button>
+                <button id="export-dating-report-btn" type="button" disabled>导出 Markdown</button>
+                <button id="export-dating-json-btn" type="button" disabled>导出 JSON</button>
+              </div>
+            </div>
+
+            <div id="dating-state" role="status" aria-live="polite" class="dating-state">
+              等待分析。请选择 Dating 模式并点击“分析日志”。
+            </div>
+
+            <div id="dating-content" class="dating-content" hidden>
+              <section id="dating-overview" class="dating-section" aria-labelledby="dating-summary-heading" hidden>
+                <div id="dating-verdict" class="dating-verdict incomplete">
+                  <h3 id="dating-summary-heading">等待分析</h3>
+                  <p id="dating-verdict-detail">尚无可展示的任务状态。</p>
+                  <p id="dating-next-action">下一步：粘贴日志并开始分析。</p>
+                </div>
+                <dl id="dating-summary" class="dating-summary-grid" aria-label="总体摘要"></dl>
+                <div class="dating-section-heading">
+                  <h3>上传摘要</h3>
+                  <p>与接口链路和任务资源保持同一事实来源</p>
+                </div>
+                <div id="dating-upload-list" class="dating-upload-list"></div>
+                <dl id="dating-lifecycle-metrics" class="dating-lifecycle-metrics" aria-label="生命周期指标"></dl>
+              </section>
+            </div>
+          </section>
+          {% endif %}
+        </section>
+        <section id="interfacesPanel" class="workbench-tab-panel" role="tabpanel" aria-labelledby="interfacesTab" tabindex="0" hidden>
+          <section id="people-interfaces" class="analysis-panel" aria-labelledby="people-interfaces-heading" hidden>
+            <h3 id="people-interfaces-heading">Provider 实际调用链</h3>
+            <div class="table-scroll" id="people-timeline"></div>
+          </section>
+          <p class="workbench-empty-state" id="people-interfaces-empty">运行 People 分析后，此处展示 Provider 调用与业务响应摘要。</p>
+          {% if dating_analyzer_enabled %}
+          <section id="dating-interfaces" class="dating-section" aria-labelledby="dating-interfaces-heading" hidden>
+            <div class="dating-section-heading">
+              <h3 id="dating-interfaces-heading">Dating 接口执行链路</h3>
+              <p id="dating-call-count">0 条 · HTTP / Gateway / SubResponse 分层</p>
+            </div>
+            <div class="table-scroll">
+              <table id="dating-interface-table" class="dating-interface-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>请求时间</th>
+                    <th>Service</th>
+                    <th>Method</th>
+                    <th>Transport</th>
+                    <th>HTTP</th>
+                    <th>Gateway</th>
+                    <th>SubResponse</th>
+                    <th>Result</th>
+                    <th>Parse</th>
+                    <th>耗时</th>
+                    <th>任务/资源</th>
+                    <th>行号</th>
+                  </tr>
+                </thead>
+                <tbody id="dating-interface-table-body"></tbody>
+              </table>
+            </div>
+          </section>
+          {% endif %}
+        </section>
+        <section id="timelinePanel" class="workbench-tab-panel" role="tabpanel" aria-labelledby="timelineTab" tabindex="0" hidden>
+          <p class="workbench-empty-state">运行分析后，此处展示按时间排序的日志事件。</p>
+          {% if dating_analyzer_enabled %}
+          <section id="dating-timeline" class="dating-section" aria-labelledby="dating-timeline-heading" hidden>
+            <div class="dating-section-heading">
+              <h3 id="dating-timeline-heading">Dating 任务时间线</h3>
+              <p>保留每一次 Poll；停滞信息只来自 diagnostics</p>
+            </div>
+            <h4>上传链路</h4>
+            <div id="dating-timeline-upload-list" class="dating-upload-list"></div>
+            <h4>Progress diagnostics</h4>
+            <div id="dating-progress-diagnostics" class="dating-result-summary"></div>
+            <h4>完整 Poll 时间线</h4>
+            <ol id="dating-task-timeline" class="dating-timeline"></ol>
+          </section>
+          {% endif %}
+        </section>
+        <section id="resultPanel" class="workbench-tab-panel" role="tabpanel" aria-labelledby="resultTab" tabindex="0">
 
       <div class="message action-message" id="action-message" role="status" hidden></div>
 
@@ -681,558 +1308,154 @@
         </section>
       {% endif %}
 
-      <section id="people-search-analysis" tabindex="-1" hidden>
+      <section id="people-result" class="people-analysis-overview" aria-labelledby="people-result-heading" hidden>
         <div class="result-header">
-          <h2>检索链路分析</h2>
-          <div class="result-tools">
-            <span class="stats" id="people-search-status">未分析</span>
-            <button type="button" id="copy-report-btn" onclick="copyReport()">复制报告</button>
-            <button type="button" id="export-report-btn" onclick="exportReport()">导出Markdown</button>
+          <div>
+            <h3 id="people-result-heading">People Insight 结果</h3>
+            <p>确定性诊断、成本和完整报告。</p>
+          </div>
+          <div class="result-tools" aria-label="People 报告操作">
+            <button type="button" id="copy-report-btn" disabled>复制报告</button>
+            <button type="button" id="export-report-btn" disabled>导出 Markdown</button>
           </div>
         </div>
-        <div class="people-analysis-overview" id="people-analysis-overview">
-          <div class="verdict-panel" id="people-verdict-panel">
-            <h3 class="verdict-title" id="people-verdict-title">等待分析</h3>
-            <p class="verdict-detail" id="people-task-summary"></p>
-            <p class="ai-status" id="people-ai-status">AI 分析状态：等待分析</p>
+        <section class="analysis-panel">
+          <h3>关键诊断</h3>
+          <dl class="diagnosis-list" id="people-diagnosis-list"></dl>
+        </section>
+        <section class="analysis-panel">
+          <h3>成本摘要</h3>
+          <div id="people-cost-summary"></div>
+        </section>
+        <details class="analysis-report-details">
+          <summary>查看完整 Markdown 报告</summary>
+          <pre id="people-search-report"></pre>
+        </details>
+      </section>
+
+      {% if dating_analyzer_enabled %}
+        <section id="dating-result" class="dating-section" aria-labelledby="dating-result-heading" hidden>
+          <div class="dating-section-heading">
+            <h3 id="dating-result-heading">Result 业务摘要</h3>
+            <p id="dating-schema-status">Schema 待识别</p>
           </div>
-          <div class="analysis-grid">
-            <section class="analysis-panel">
-              <h3>日志覆盖度</h3>
-              <div class="coverage-list" id="people-coverage-list"></div>
-            </section>
-            <section class="analysis-panel">
-              <h3>问题与待确认项</h3>
-              <ul class="issue-list" id="people-issue-list"></ul>
-            </section>
-          </div>
-          <section class="analysis-panel">
-            <h3>任务结果与关键诊断</h3>
-            <dl class="diagnosis-list" id="people-diagnosis-list"></dl>
-          </section>
-          <section class="analysis-panel">
-            <h3>实际调用时间线</h3>
-            <div class="table-scroll" id="people-timeline"></div>
-          </section>
-          <section class="analysis-panel">
-            <h3>成本摘要</h3>
-            <div id="people-cost-summary"></div>
-          </section>
-          <details class="analysis-report-details">
-            <summary>查看完整 Markdown 报告</summary>
-            <pre id="people-search-report"></pre>
+          <dl id="dating-result-summary" class="dating-result-summary"></dl>
+          <div id="dating-result-sections" class="dating-result-sections"></div>
+          <details id="dating-raw-result-details" class="dating-details">
+            <summary>查看原始脱敏 JSON</summary>
+            <pre id="dating-raw-result-json" class="dating-report"></pre>
           </details>
-        </div>
+          <details id="dating-field-tree-details" class="dating-details">
+            <summary>查看原始字段树</summary>
+            <div id="dating-field-tree" aria-label="Result 原始字段树"></div>
+          </details>
+          <section class="dating-section" aria-labelledby="dating-field-heading">
+            <div class="dating-section-heading">
+              <h4 id="dating-field-heading">Result 字段索引</h4>
+              <p id="dating-field-count" aria-live="polite">0 个字段</p>
+            </div>
+            <div class="dating-field-controls">
+              <div>
+                <label for="dating-field-filter">Presence</label>
+                <select id="dating-field-filter">
+                  <option value="ALL">全部</option>
+                  <option value="PRESENT">PRESENT</option>
+                  <option value="NULL">NULL</option>
+                  <option value="EMPTY_STRING">EMPTY_STRING</option>
+                  <option value="EMPTY_ARRAY">EMPTY_ARRAY</option>
+                  <option value="EMPTY_OBJECT">EMPTY_OBJECT</option>
+                  <option value="MISSING">MISSING</option>
+                  <option value="UNKNOWN_SCHEMA_FIELD">未知 Schema 字段</option>
+                </select>
+              </div>
+              <div>
+                <label for="dating-field-search">Path / Value 搜索</label>
+                <input id="dating-field-search" class="search-input" type="search" placeholder="输入字段路径或值">
+              </div>
+              <button id="dating-field-more" class="dating-more-button" type="button" hidden>显示更多字段</button>
+            </div>
+            <div class="table-scroll">
+              <table id="dating-field-table" class="dating-field-table">
+                <thead>
+                  <tr>
+                    <th>Path</th>
+                    <th>Type</th>
+                    <th>Presence</th>
+                    <th>Value</th>
+                    <th>Source</th>
+                  </tr>
+                </thead>
+                <tbody id="dating-field-table-body"></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+      {% endif %}
+        </section>
+
+        <section id="checksPanel" class="workbench-tab-panel" role="tabpanel" aria-labelledby="checksTab" tabindex="0" hidden>
+          <section id="people-checks" class="analysis-panel" aria-labelledby="people-checks-heading" hidden>
+            <h3 id="people-checks-heading">People 规则检查</h3>
+            <div id="people-check-filter" class="check-filter" role="group" aria-label="People 检查结果筛选">
+              <button type="button" data-outcome="ALL" aria-pressed="true">全部 0</button>
+              <button type="button" data-outcome="FAIL" aria-pressed="false">FAIL 0</button>
+              <button type="button" data-outcome="WARN" aria-pressed="false">WARN 0</button>
+              <button type="button" data-outcome="UNKNOWN" aria-pressed="false">UNKNOWN 0</button>
+              <button type="button" data-outcome="PASS" aria-pressed="false">PASS 0</button>
+              <button type="button" data-outcome="NA" aria-pressed="false">NA 0</button>
+            </div>
+            <ol class="issue-list" id="people-check-list"></ol>
+          </section>
+          <p class="workbench-empty-state" id="people-checks-empty">运行 People 分析后，此处展示一致性检查与可追溯证据。</p>
+          {% if dating_analyzer_enabled %}
+          <section id="dating-checks" class="dating-section" aria-labelledby="dating-check-heading" hidden>
+            <div class="dating-section-heading">
+              <h3 id="dating-check-heading">Dating 一致性检查与证据</h3>
+              <p>FAIL → WARN → UNKNOWN → PASS → NA</p>
+            </div>
+            <div class="dating-field-controls">
+              <div>
+                <label for="dating-check-filter">检查筛选</label>
+                <select id="dating-check-filter">
+                  <option value="ALL">全部</option>
+                  <option value="FAIL">FAIL</option>
+                  <option value="WARN">WARN</option>
+                  <option value="UNKNOWN">UNKNOWN</option>
+                  <option value="PASS">PASS</option>
+                  <option value="NA">NA</option>
+                </select>
+              </div>
+            </div>
+            <div id="dating-check-list" class="dating-check-list"></div>
+            <details id="dating-parse-warning-details" class="dating-details">
+              <summary>解析警告 <span id="dating-warning-count"></span></summary>
+              <ul id="dating-parse-warnings" class="dating-warning-list"></ul>
+            </details>
+            <details id="dating-report-details" class="dating-details">
+              <summary>固定 Markdown 报告</summary>
+              <pre id="dating-report" class="dating-report"></pre>
+            </details>
+          </section>
+          {% endif %}
+        </section>
       </section>
     </main>
-    <script>
-      (function() {
-        var toggle = document.getElementById('method-toggle');
-        var dropdown = document.getElementById('method-dropdown');
-        var toggleText = document.getElementById('method-toggle-text');
-        var container = document.getElementById('multi-select');
-        var allCheckbox = dropdown.querySelector('input[data-is-all="1"]');
-        var checkboxes = dropdown.querySelectorAll('input[name="method"]');
-        var methodCheckboxes = dropdown.querySelectorAll('input[name="method"]:not([data-is-all="1"])');
-        var form = container.closest('form');
-        var selectionSnapshot = '';
 
-        /** 返回当前选中 method 的稳定字符串，用于判断用户是否修改了选择。 */
-        function getSelectionSignature() {
-          return Array.from(checkboxes)
-            .filter(function(cb) { return cb.checked; })
-            .map(function(cb) { return cb.value; })
-            .sort()
-            .join('|');
-        }
-
-        function updateToggleText() {
-          var checked = dropdown.querySelectorAll('input[name="method"]:checked');
-          if (checked.length === 0) {
-            toggleText.textContent = '全部';
-          } else if (allCheckbox.checked) {
-            toggleText.textContent = '全部';
-          } else if (checked.length === 1) {
-            toggleText.textContent = checked[0].value;
-          } else {
-            toggleText.textContent = '已选 ' + checked.length + ' 项';
-          }
-        }
-
-        toggle.addEventListener('click', function(e) {
-          e.stopPropagation();
-          if (!dropdown.classList.contains('open')) {
-            selectionSnapshot = getSelectionSignature();
-          }
-          dropdown.classList.toggle('open');
-          toggle.setAttribute('aria-expanded', dropdown.classList.contains('open') ? 'true' : 'false');
-          toggle.focus();
-        });
-
-        /** 让自定义 method 选择器具备原生按钮一致的键盘行为。 */
-        toggle.addEventListener('keydown', function(e) {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            toggle.click();
-          } else if (e.key === 'Escape' && dropdown.classList.contains('open')) {
-            dropdown.classList.remove('open');
-            toggle.setAttribute('aria-expanded', 'false');
-          }
-        });
-
-        document.addEventListener('click', function(e) {
-          if (!container.contains(e.target) && dropdown.classList.contains('open')) {
-            var selectionChanged = selectionSnapshot !== getSelectionSignature();
-            var clickedInteractiveControl = e.target.closest('button, input, textarea, a');
-            dropdown.classList.remove('open');
-            toggle.setAttribute('aria-expanded', 'false');
-            if (selectionChanged && !clickedInteractiveControl) {
-              form.requestSubmit();
-            }
-          }
-        });
-
-        allCheckbox.addEventListener('change', function() {
-          if (this.checked) {
-            methodCheckboxes.forEach(function(cb) { cb.checked = false; });
-          }
-          updateToggleText();
-        });
-
-        methodCheckboxes.forEach(function(cb) {
-          cb.addEventListener('change', function() {
-            if (this.checked) {
-              allCheckbox.checked = false;
-            }
-            updateToggleText();
-          });
-        });
-
-        document.getElementById('btn-select-all').addEventListener('click', function(e) {
-          e.preventDefault();
-          allCheckbox.checked = false;
-          methodCheckboxes.forEach(function(cb) { cb.checked = true; });
-          updateToggleText();
-        });
-
-        document.getElementById('btn-deselect-all').addEventListener('click', function(e) {
-          e.preventDefault();
-          allCheckbox.checked = true;
-          methodCheckboxes.forEach(function(cb) { cb.checked = false; });
-          updateToggleText();
-        });
-
-        updateToggleText();
-      })();
-
-      var resultElement = document.getElementById('result-text');
-      var resultRawText = resultElement.textContent;
-      var searchMatches = [];
-      var currentSearchIndex = -1;
-      var actionMessageTimer;
-
-      /**
-       * 在页面中展示短暂操作结果。
-       * @param {string} message 用户可见的成功或失败信息。
-       * @param {boolean} isError 是否按错误样式展示。
-       */
-      function showActionMessage(message, isError) {
-        var messageElement = document.getElementById('action-message');
-        clearTimeout(actionMessageTimer);
-        messageElement.textContent = message;
-        messageElement.classList.toggle('error', Boolean(isError));
-        messageElement.classList.toggle('success', !isError);
-        messageElement.hidden = false;
-        actionMessageTimer = setTimeout(function() {
-          messageElement.hidden = true;
-        }, 3000);
-      }
-
-      /**
-       * 导出指定文本区域的当前原始内容，不包含搜索产生的高亮标签。
-       * @param {'log_content'|'filtered_result'|'analysis_report'} exportType 导出内容来源。
-       * @param {string} [overrideContent] 显式指定导出内容（检索分析报告使用）。
-       */
-      function exportLog(exportType, overrideContent) {
-        var content;
-        if (overrideContent !== undefined && overrideContent !== null) {
-          content = overrideContent;
-        } else if (exportType === 'log_content') {
-          content = document.getElementById('log_text').value;
-        } else {
-          content = resultRawText;
-        }
-        var buttonId = exportType === 'log_content'
-          ? 'export-log-content-btn'
-          : exportType === 'analysis_report'
-            ? 'export-report-btn'
-            : 'export-filtered-result-btn';
-        var button = document.getElementById(buttonId);
-        var originalText = button.textContent;
-
-        button.disabled = true;
-        button.textContent = '导出中...';
-        var exportUrl = {{ url_for('tool.export_log')|tojson }};
-        fetch(exportUrl, {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json', 'X-CSRF-Token': readCookie('tp_csrf')},
-          body: JSON.stringify({export_type: exportType, content: content})
-        })
-          .then(function(response) {
-            return response.json().then(function(payload) {
-              if (!response.ok) {
-                throw new Error(payload.message || '导出失败');
-              }
-              return payload;
-            });
-          })
-          .then(function(payload) {
-            showActionMessage('已保存：' + payload.path, false);
-          })
-          .catch(function(error) {
-            showActionMessage(error.message, true);
-          })
-          .finally(function() {
-            button.disabled = false;
-            button.textContent = originalText;
-          });
-      }
-
-      /** 读取平台 CSRF Cookie，仅用于同源写请求 Header。 */
-      function readCookie(name) {
-        var prefix = name + '=';
-        var item = document.cookie.split(';').map(function(value) { return value.trim(); })
-          .find(function(value) { return value.indexOf(prefix) === 0; });
-        return item ? decodeURIComponent(item.slice(prefix.length)) : '';
-      }
-
-      /** 根据关键词重新渲染过滤结果中的全部匹配项，并定位到第一项。 */
-      function renderSearchMatches() {
-        var query = document.getElementById('result-search').value;
-        var searchCount = document.getElementById('search-count');
-        resultElement.textContent = '';
-        searchMatches = [];
-        currentSearchIndex = -1;
-
-        if (!query) {
-          resultElement.textContent = resultRawText;
-          searchCount.textContent = '0/0';
-          return;
-        }
-
-        var sourceLower = resultRawText.toLowerCase();
-        var queryLower = query.toLowerCase();
-        var cursor = 0;
-        var matchIndex = sourceLower.indexOf(queryLower, cursor);
-
-        while (matchIndex !== -1) {
-          resultElement.appendChild(
-            document.createTextNode(resultRawText.slice(cursor, matchIndex))
-          );
-          var mark = document.createElement('mark');
-          mark.textContent = resultRawText.slice(matchIndex, matchIndex + query.length);
-          resultElement.appendChild(mark);
-          searchMatches.push(mark);
-          cursor = matchIndex + query.length;
-          matchIndex = sourceLower.indexOf(queryLower, cursor);
-        }
-        resultElement.appendChild(document.createTextNode(resultRawText.slice(cursor)));
-
-        if (searchMatches.length > 0) {
-          focusSearchMatch(0);
-        } else {
-          searchCount.textContent = '0/0';
-        }
-      }
-
-      /**
-       * 定位到指定匹配项并更新当前项样式和计数。
-       * @param {number} index 目标匹配项下标，会循环到有效范围。
-       */
-      function focusSearchMatch(index) {
-        if (searchMatches.length === 0) {
-          return;
-        }
-        if (currentSearchIndex >= 0) {
-          searchMatches[currentSearchIndex].classList.remove('current-match');
-        }
-        currentSearchIndex = (index + searchMatches.length) % searchMatches.length;
-        searchMatches[currentSearchIndex].classList.add('current-match');
-        document.getElementById('search-count').textContent =
-          (currentSearchIndex + 1) + '/' + searchMatches.length;
-        searchMatches[currentSearchIndex].scrollIntoView({block: 'center'});
-      }
-
-      /**
-       * 前后循环切换当前搜索匹配项。
-       * @param {number} direction 1 表示下一个，-1 表示上一个。
-       */
-      function moveSearchMatch(direction) {
-        if (searchMatches.length > 0) {
-          focusSearchMatch(currentSearchIndex + direction);
-        }
-      }
-
-      document.getElementById('result-search').addEventListener('input', renderSearchMatches);
-      document.getElementById('result-search').addEventListener('keydown', function(event) {
-        if (event.key === 'Enter') {
-          event.preventDefault();
-          moveSearchMatch(event.shiftKey ? -1 : 1);
-        }
-      });
-
-      function copyResult() {
-        navigator.clipboard.writeText(resultRawText).then(function() {
-          var btn = document.getElementById('copy-btn');
-          btn.textContent = '已复制';
-          setTimeout(function() { btn.textContent = '复制'; }, 1500);
-        });
-      }
-
-      /** 清空并返回指定分析视图容器。 */
-      function clearAnalysisNode(id) {
-        var node = document.getElementById(id);
-        node.textContent = '';
-        return node;
-      }
-
-      /** 使用纯 DOM/textContent 渲染结构化结果，避免日志字段被当作 HTML 执行。 */
-      function renderPeopleSearchAnalysis(data) {
-        var verdictLabels = {
-          NORMAL: '未发现异常',
-          ISSUES_FOUND: '发现已确认异常',
-          NEEDS_CONFIRMATION: '需要后端确认',
-          INCOMPLETE_EVIDENCE: '日志证据不足'
-        };
-        var verdict = data.verdict || 'INCOMPLETE_EVIDENCE';
-        var verdictPanel = document.getElementById('people-verdict-panel');
-        verdictPanel.setAttribute('data-verdict', verdict);
-        document.getElementById('people-verdict-title').textContent = verdictLabels[verdict] || verdict;
-
-        var task = data.task || {};
-        var clues = Array.isArray(task.clue_types) ? task.clue_types.join('、') : '未知';
-        document.getElementById('people-task-summary').textContent =
-          (task.full_name || '未提取姓名') + ' · task_id=' + (task.task_id || '未知') +
-          ' · 线索=' + clues + ' · 终态=' + (task.final_status || '未知') +
-          ' · 候选=' + (task.candidate_count === undefined ? '未知' : task.candidate_count) +
-          ' · result_type=' + (task.result_type || '—') +
-          ' · no_result_reason=' + (task.no_result_reason || '—');
-
-        var aiStatus = (data.ai || {}).status || 'DISABLED';
-        var aiStatusEl = document.getElementById('people-ai-status');
-        var aiLabels = {
-          SUCCESS: 'AI 分析状态：已生成独立解释',
-          DISABLED: 'AI 分析状态：未启用，当前内容来自确定性规则',
-          FAILED: 'AI 分析状态：调用失败，已降级为确定性规则报告'
-        };
-        aiStatusEl.className = 'ai-status ' + (aiStatus === 'SUCCESS' ? 'success' :
-          (aiStatus === 'FAILED' ? 'failed' : ''));
-        aiStatusEl.textContent = aiLabels[aiStatus] || ('AI 分析状态：' + aiStatus);
-
-        var coverageLabels = {
-          create_task: '创建任务', get_task: '任务终态', candidate_list: '候选列表',
-          candidate_detail: '候选详情', debug: '调试链路', cost_summary: '成本汇总'
-        };
-        var coverageList = clearAnalysisNode('people-coverage-list');
-        Object.keys(coverageLabels).forEach(function(key) {
-          var item = document.createElement('div');
-          item.className = 'coverage-item';
-          var label = document.createElement('span');
-          label.textContent = coverageLabels[key];
-          var state = document.createElement('span');
-          var present = Boolean((data.coverage || {})[key]);
-          state.className = present ? 'present' : 'missing';
-          state.textContent = present ? '已包含' : '缺失';
-          item.appendChild(label);
-          item.appendChild(state);
-          coverageList.appendChild(item);
-        });
-
-        var issueList = clearAnalysisNode('people-issue-list');
-        var issues = (data.checks || []).filter(function(check) {
-          return ['FAIL', 'WARN', 'UNKNOWN'].indexOf(check.outcome) !== -1;
-        });
-        if (!issues.length) {
-          var emptyIssue = document.createElement('li');
-          emptyIssue.className = 'issue-item';
-          emptyIssue.textContent = '当前规则范围内没有异常或待确认项。';
-          issueList.appendChild(emptyIssue);
-        } else {
-          issues.forEach(function(check) {
-            var item = document.createElement('li');
-            item.className = 'issue-item ' + (check.outcome === 'FAIL' ? 'fail' : 'warn');
-            item.textContent = check.rule_id + ' · ' + check.title + ' — ' + (check.actual || check.outcome);
-            issueList.appendChild(item);
-          });
-        }
-
-        var diagnosisList = clearAnalysisNode('people-diagnosis-list');
-        var diagnosis = data.diagnosis || {};
-        var diagnosisFields = [
-          ['业务停止原因', diagnosis.stop_reason],
-          ['状态自检', diagnosis.status_consistent],
-          ['LLM 输出', diagnosis.llm_output_status || diagnosis.llm_result_status],
-          ['LLM 截断', diagnosis.llm_truncation_detected],
-          ['PDL Identify / Search', String(diagnosis.pdl_identify_call_count || 0) + ' / ' + String(diagnosis.pdl_person_search_call_count || 0)],
-          ['PDL 返回 / 可用', String(diagnosis.pdl_person_search_returned_profile_count || 0) + ' / ' + String(diagnosis.pdl_usable_candidate_count || 0)],
-          ['图片反查', diagnosis.reverse_image_status],
-          ['图片停止原因', diagnosis.reverse_image_stop_reason],
-          ['图片主工具 → 最终工具', (diagnosis.reverse_image_primary_provider || '—') + ' → ' + (diagnosis.reverse_image_final_provider || '—')],
-          ['Social Profile', diagnosis.social_profile_status],
-          ['Face Comparison', diagnosis.face_comparison_status],
-          ['PDL 前阶段成本', diagnosis.pre_pdl_estimated_cost_microunit]
-        ];
-        diagnosisFields.forEach(function(entry) {
-          var group = document.createElement('div');
-          var term = document.createElement('dt');
-          var description = document.createElement('dd');
-          term.textContent = entry[0];
-          description.textContent = entry[1] === null || entry[1] === undefined || entry[1] === ''
-            ? '—' : String(entry[1]);
-          group.appendChild(term);
-          group.appendChild(description);
-          diagnosisList.appendChild(group);
-        });
-
-        var timelineContainer = clearAnalysisNode('people-timeline');
-        var timeline = data.timeline || [];
-        if (!timeline.length) {
-          timelineContainer.textContent = '缺少 agent_tool_calls，Provider 顺序无法判断。';
-        } else {
-          var table = document.createElement('table');
-          table.className = 'analysis-table';
-          var header = document.createElement('tr');
-          ['#', 'Provider', 'Operation', '状态', '业务结果', '关键诊断', 'HTTP', '缓存', '成本'].forEach(function(text) {
-            var th = document.createElement('th');
-            th.textContent = text;
-            header.appendChild(th);
-          });
-          var thead = document.createElement('thead');
-          thead.appendChild(header);
-          table.appendChild(thead);
-          var tbody = document.createElement('tbody');
-          timeline.forEach(function(call, index) {
-            var row = document.createElement('tr');
-            var businessResult = [call.no_result_reason, call.decision_reason,
-              call.found === null || call.found === undefined ? '' : 'found=' + String(call.found),
-              call.candidate_count === null || call.candidate_count === undefined ? '' : 'candidates=' + String(call.candidate_count)]
-              .filter(Boolean).join(' · ');
-            var diagnosticText = Object.keys(call.result_details || {}).map(function(key) {
-              var value = call.result_details[key];
-              return key + '=' + (typeof value === 'object' ? JSON.stringify(value) : String(value));
-            }).join(' · ');
-            var callCost = [call.cost_status,
-              call.estimated_cost_microunit === null || call.estimated_cost_microunit === undefined
-                ? '' : call.estimated_cost_microunit]
-              .filter(function(value) { return value !== '' && value !== null && value !== undefined; })
-              .join(' · ');
-            [index + 1, call.provider, call.operation, call.status, businessResult,
-             diagnosticText, call.http_status, call.cache_hit ? '是' : '否', callCost].forEach(function(value, cellIndex) {
-              var td = document.createElement('td');
-              if (cellIndex === 5) td.className = 'diagnostic-cell';
-              td.textContent = value === null || value === undefined ? '' : String(value);
-              row.appendChild(td);
-            });
-            tbody.appendChild(row);
-          });
-          table.appendChild(tbody);
-          timelineContainer.appendChild(table);
-        }
-
-        var costContainer = clearAnalysisNode('people-cost-summary');
-        var cost = data.cost || {};
-        var totals = Array.isArray(cost.totals) ? cost.totals : [];
-        if (totals.length) {
-          totals.forEach(function(total) {
-            var line = document.createElement('p');
-            line.textContent = (total.currency || 'UNSPECIFIED') + ': ' +
-              (total.total_cost_microunit || 0) + ' microunit · 完整=' +
-              (total.cost_complete ? '是' : '否') + ' · 未定价=' +
-              (total.unpriced_call_count || 0);
-            costContainer.appendChild(line);
-          });
-        } else {
-          var totalLine = document.createElement('p');
-          totalLine.textContent = cost.total_estimated_cost_microunit === undefined
-            ? '缺少可核对的成本总计。'
-            : '任务总成本：' + cost.total_estimated_cost_microunit + ' microunit';
-          costContainer.appendChild(totalLine);
-        }
-      }
-
-      /**
-       * 调用检索链路分析接口，用 textContent 写入报告，不渲染任意 HTML。
-       * 失败时保留原日志和现有过滤结果，仅展示错误信息。
-       */
-      function analyzePeopleSearch() {
-        var logText = document.getElementById('log_text').value;
-        var button = document.getElementById('analyze-people-search-btn');
-        var statusEl = document.getElementById('people-search-status');
-        var reportEl = document.getElementById('people-search-report');
-        var section = document.getElementById('people-search-analysis');
-        var originalText = button.textContent;
-
-        if (!logText.trim()) {
-          showActionMessage('日志内容为空，请先粘贴日志再分析', true);
-          return;
-        }
-
-        button.disabled = true;
-        button.textContent = '分析中...';
-        statusEl.textContent = '分析中';
-        section.hidden = false;
-
-        var analyzeUrl = {{ url_for('tool.analyze_people_search')|tojson }};
-        fetch(analyzeUrl, {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json', 'X-CSRF-Token': readCookie('tp_csrf')},
-          body: JSON.stringify({log_text: logText})
-        })
-          .then(function(response) {
-            return response.json().then(function(payload) {
-              if (!response.ok) {
-                var taskIds = payload.detected_task_ids || [];
-                var detail = taskIds.length ? '：' + taskIds.join('、') : '';
-                throw new Error((payload.message || '分析失败') + detail);
-              }
-              return payload;
-            });
-          })
-          .then(function(payload) {
-            var data = payload.data || {};
-            renderPeopleSearchAnalysis(data);
-            reportEl.textContent = data.report_markdown || '';
-            statusEl.textContent = data.verdict || '完成';
-            section.scrollIntoView({block: 'start'});
-            section.focus({preventScroll: true});
-            showActionMessage('分析完成：' + (data.verdict || ''), false);
-          })
-          .catch(function(error) {
-            reportEl.textContent = '';
-            statusEl.textContent = '失败';
-            showActionMessage(error.message, true);
-          })
-          .finally(function() {
-            button.disabled = false;
-            button.textContent = originalText;
-          });
-      }
-
-      /** 复制检索链路分析报告纯文本。 */
-      function copyReport() {
-        var reportText = document.getElementById('people-search-report').textContent;
-        navigator.clipboard.writeText(reportText).then(function() {
-          var btn = document.getElementById('copy-report-btn');
-          btn.textContent = '已复制';
-          setTimeout(function() { btn.textContent = '复制报告'; }, 1500);
-        });
-      }
-
-      /** 将检索链路分析报告导出为 .md 文件，复用服务端固定导出目录。 */
-      function exportReport() {
-        var reportText = document.getElementById('people-search-report').textContent;
-        exportLog('analysis_report', reportText);
-      }
-    </script>
+    <div class="workbench-drawer-backdrop" id="workbench-drawer-backdrop" hidden></div>
+    <aside class="workbench-drawer drawer" id="workbench-drawer" role="dialog" aria-modal="true" aria-labelledby="workbench-drawer-title" tabindex="-1" hidden>
+      <div class="workbench-drawer__header">
+        <h2 id="workbench-drawer-title">日志详情</h2>
+        <button type="button" id="workbench-drawer-close" aria-label="关闭日志详情">关闭</button>
+      </div>
+      <p class="workbench-drawer__description">选择分析结果中的记录后，可在此查看完整上下文。</p>
+      <div id="workbench-drawer-content" class="workbench-drawer__content"></div>
+    </aside>
+    <div class="workbench-toast toast" id="workbench-toast" role="status" aria-live="polite" hidden></div>
+    <script src="{{ url_for('tool.static', filename='js/workbench-core.js') }}"></script>
+    <script src="{{ url_for('tool.static', filename='js/workbench-filter.js') }}"></script>
+    <script src="{{ url_for('tool.static', filename='js/workbench-people.js') }}"></script>
+    {% if dating_analyzer_enabled %}
+    <script src="{{ url_for('tool.static', filename='js/workbench-dating.js') }}"></script>
+    {% endif %}
   </body>
 </html>

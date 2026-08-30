@@ -1,0 +1,10 @@
+api: GetMediaUploadConfig
+cases:
+  - id: get_media_upload_config_success
+    name: 获取 Dating 实时上传约束
+    tags: [dating, smoke, media]
+    request:
+      params: {}
+    assert:
+      http_status: 200
+      gateway: {message: ok}

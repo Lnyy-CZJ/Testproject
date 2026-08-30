@@ -19,3 +19,4 @@ allure-report/
 
 # 壳服务任务记录与 console 输出
 tasks/
+runtime/

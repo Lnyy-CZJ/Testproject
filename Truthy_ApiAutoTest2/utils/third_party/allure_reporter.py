@@ -13,10 +13,75 @@ from utils.custom.logger import get_logger
 
 LOGGER = get_logger(__name__)
 
+# 运行报告只允许携带这些不可变追溯字段。Gateway、Secret、Profile 内容和
+# runtime_variables 不在白名单内，避免 JUnit/Allure 变成第二份配置副本。
+_RUNTIME_METADATA_KEYS = (
+    "task_id",
+    "platform_environment",
+    "runtime_scope_id",
+    "config_release_id",
+    "config_release_version",
+)
+
 
 def _log_reporter_failure(operation: str, exc: Exception) -> None:
-    """仅记录报告异常类型，避免原始业务数据通过异常消息泄露。"""
-    LOGGER.warning("Allure %s失败: %s", operation, type(exc).__name__)
+    """记录报告异常类型与原始消息，保持所有排障通道信息一致。"""
+    LOGGER.warning(
+        "Allure %s失败: %s: %s",
+        operation,
+        type(exc).__name__,
+        exc,
+    )
+
+
+def build_runtime_report_metadata(
+    *,
+    project_id: str,
+    target_env: str,
+    config_source: str,
+    settings: dict[str, Any],
+) -> dict[str, str]:
+    """构造 JUnit/Allure 共用的非敏感运行身份元数据。
+
+    参数说明:
+        project_id: 当前项目包 ID。
+        target_env: 当前被测环境，由平台实例固定映射。
+        config_source: ``platform`` 或兼容期 ``local``。
+        settings: 已加载的运行配置；仅读取其中 ``runtime_metadata`` 白名单。
+
+    返回值:
+        可直接写入报告属性的字符串字典。空字段会被省略，本函数绝不复制
+        Gateway 地址、Secret、Credential 或任意业务配置值。
+    """
+    metadata: dict[str, str] = {
+        "project_id": str(project_id),
+        "target_env": str(target_env),
+        "config_source": str(config_source),
+    }
+    runtime_metadata = settings.get("runtime_metadata")
+    if not isinstance(runtime_metadata, dict):
+        return metadata
+    for key in _RUNTIME_METADATA_KEYS:
+        value = runtime_metadata.get(key)
+        # 白名单字段均应为标量；拒绝容器可防止未来字段形态变化时意外把
+        # Credential/Profile 详情序列化进报告。
+        if value in (None, "") or isinstance(value, (dict, list, tuple, set)):
+            continue
+        metadata[key] = str(value)
+    return metadata
+
+
+def set_runtime_report_metadata(metadata: dict[str, str]) -> None:
+    """把非敏感 Scope/Release 身份写入当前 Allure 用例参数区。
+
+    Allure 属于观察层；报告插件不可用时记录异常类型与原始消息，不得改变真实接口
+    测试结果。调用方同时使用 pytest ``record_property`` 写入 JUnit。
+    """
+    try:
+        for name, value in metadata.items():
+            allure.dynamic.parameter(name, value)
+    except Exception as exc:
+        _log_reporter_failure("设置运行上下文元数据", exc)
 
 
 def set_single_case_metadata(single_case: dict[str, Any]) -> None:
@@ -82,7 +147,7 @@ def step(title: str) -> Iterator[None]:
         可用于 ``with`` 的上下文管理器。
 
     异常说明:
-        Allure 创建或关闭步骤失败时仅记录异常类型；测试体自身异常始终原样传播。
+        Allure 创建或关闭步骤失败时记录异常类型与原始消息；测试体自身异常始终原样传播。
     """
     try:
         manager = allure.step(title)
@@ -117,13 +182,13 @@ def attach_json(name: str, data: Any) -> None:
 
     参数说明:
         name: 附件名称。
-        data: 已由调用方完成脱敏的 JSON 兼容对象。
+        data: 需要按原文写入报告的 JSON 兼容对象。
 
     返回值:
         无。
 
     异常说明:
-        序列化或 Allure 写入失败时仅记录异常类型，不回退保存原始数据。
+        序列化或 Allure 写入失败时记录异常类型和原始异常消息。
     """
     try:
         content = json.dumps(
@@ -152,7 +217,7 @@ def attach_text(name: str, content: Any) -> None:
         无。
 
     异常说明:
-        Allure 写入失败时仅记录异常类型，不回退保存原始数据。
+        Allure 写入失败时记录异常类型与原始消息，不回退到其他存储通道。
     """
     try:
         allure.attach(

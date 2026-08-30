@@ -16,6 +16,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -31,6 +32,83 @@ class Environment(Base):
     name: Mapped[str] = mapped_column(String(64), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
+class ToolProjectScope(Base):
+    """定义工具项目在平台项目和固定目标环境中的唯一运行边界。
+
+    Scope 是 Release、Secret 与 Credential 的共同所有权锚点。数据库同时约束
+    固定环境映射和默认项唯一性，避免应用遗漏校验时跨项目读取运行材料。
+    """
+
+    __tablename__ = "tool_project_scopes"
+    __table_args__ = (
+        UniqueConstraint(
+            "environment_id", "tool_id", "platform_project_id", "project_id",
+            "target_env", name="uq_tool_project_scope_identity",
+        ),
+        CheckConstraint(
+            "(environment_id = 'dev' AND target_env = 'test') OR "
+            "(environment_id = 'prod' AND target_env = 'prod')",
+            name="ck_tool_project_scopes_environment_mapping",
+        ),
+        CheckConstraint(
+            "status IN ('active', 'disabled')",
+            name="ck_tool_project_scopes_status",
+        ),
+        CheckConstraint(
+            "length(project_id) BETWEEN 2 AND 32 AND "
+            "project_id = lower(project_id) AND "
+            "substr(project_id, 1, 1) BETWEEN 'a' AND 'z'",
+            name="ck_tool_project_scopes_project_id",
+        ),
+        CheckConstraint(
+            "project_id GLOB '[a-z][a-z0-9-]*' AND "
+            "project_id NOT GLOB '*[^a-z0-9-]*'",
+            name="ck_tool_project_scopes_project_id_sqlite",
+        ).ddl_if(dialect="sqlite"),
+        CheckConstraint(
+            "project_id ~ '^[a-z][a-z0-9-]{1,31}$'",
+            name="ck_tool_project_scopes_project_id_postgresql",
+        ).ddl_if(dialect="postgresql"),
+        Index(
+            "uq_tool_project_scopes_default_context",
+            "environment_id", "tool_id", "platform_project_id",
+            unique=True,
+            sqlite_where=text("is_default = 1"),
+            postgresql_where=text("is_default = true"),
+        ),
+        Index(
+            "ix_tool_project_scopes_lookup",
+            "tool_id", "environment_id", "platform_project_id", "status",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    environment_id: Mapped[str] = mapped_column(
+        ForeignKey("environments.id"), nullable=False
+    )
+    tool_id: Mapped[str] = mapped_column(
+        ForeignKey("tools.id", ondelete="RESTRICT"), nullable=False
+    )
+    platform_project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False
+    )
+    project_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    target_env: Mapped[str] = mapped_column(String(16), nullable=False)
+    display_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="active")
+    is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_by: Mapped[str] = mapped_column(String(64), nullable=False)
+    updated_by: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(),
+        onupdate=func.now(),
+    )
 
 
 class ConfigDefinition(Base):
@@ -162,11 +240,25 @@ class Credential(Base):
     """聚合一组会话 Secret 的状态、版本和刷新租约。"""
 
     __tablename__ = "credentials"
-    __table_args__ = (UniqueConstraint("tool_id", "environment_id", "provider_type", name="uq_credential_scope"),)
+    __table_args__ = (
+        Index(
+            "uq_credentials_legacy_scope", "tool_id", "environment_id", "provider_type",
+            unique=True, sqlite_where=text("runtime_scope_id IS NULL"),
+            postgresql_where=text("runtime_scope_id IS NULL"),
+        ),
+        Index(
+            "uq_credentials_runtime_scope", "runtime_scope_id", "provider_type",
+            unique=True, sqlite_where=text("runtime_scope_id IS NOT NULL"),
+            postgresql_where=text("runtime_scope_id IS NOT NULL"),
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     tool_id: Mapped[str] = mapped_column(ForeignKey("tools.id"), nullable=False)
     environment_id: Mapped[str] = mapped_column(ForeignKey("environments.id"), nullable=False)
+    runtime_scope_id: Mapped[str | None] = mapped_column(
+        ForeignKey("tool_project_scopes.id", ondelete="RESTRICT")
+    )
     provider_type: Mapped[str] = mapped_column(String(64), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="missing")
     current_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -203,9 +295,19 @@ class UserCredential(Base):
 
     __tablename__ = "user_credentials"
     __table_args__ = (
-        UniqueConstraint(
+        Index(
+            "uq_user_credentials_legacy_scope",
             "user_id", "tool_id", "environment_id", "provider_type",
-            name="uq_user_credential_scope",
+            unique=True,
+            sqlite_where=text("runtime_scope_id IS NULL"),
+            postgresql_where=text("runtime_scope_id IS NULL"),
+        ),
+        Index(
+            "uq_user_credentials_runtime_scope",
+            "user_id", "runtime_scope_id", "provider_type",
+            unique=True,
+            sqlite_where=text("runtime_scope_id IS NOT NULL"),
+            postgresql_where=text("runtime_scope_id IS NOT NULL"),
         ),
         Index(
             "ix_user_credentials_environment_status_expires",
@@ -230,6 +332,9 @@ class UserCredential(Base):
     )
     environment_id: Mapped[str] = mapped_column(
         ForeignKey("environments.id"), nullable=False
+    )
+    runtime_scope_id: Mapped[str | None] = mapped_column(
+        ForeignKey("tool_project_scopes.id", ondelete="RESTRICT")
     )
     provider_type: Mapped[str] = mapped_column(String(64), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="missing")

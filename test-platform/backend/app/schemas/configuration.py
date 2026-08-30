@@ -39,7 +39,7 @@ class ReleaseCreateRequest(BaseModel):
     """创建指定工具和环境的配置草稿。"""
 
     environment_id: str = Field(pattern="^[a-z][a-z0-9-]{1,31}$")
-    owner_type: str = Field(pattern="^(platform|tool|llm_profile|llm_binding)$")
+    owner_type: str = Field(pattern="^(platform|tool|tool_project_scope|llm_profile|llm_binding)$")
     owner_id: str = Field(min_length=1, max_length=64)
 
 
@@ -71,7 +71,7 @@ class SecretReplaceRequest(BaseModel):
     """Secret 新版本输入；明文只允许出现在请求体。"""
 
     environment_id: str
-    owner_type: str = Field(pattern="^(platform|tool|llm_profile|llm_binding)$")
+    owner_type: str = Field(pattern="^(platform|tool|tool_project_scope|llm_profile|llm_binding)$")
     owner_id: str
     definition_id: str
     value: str = Field(min_length=1, max_length=65536)
@@ -98,6 +98,7 @@ class CredentialCreateRequest(BaseModel):
 
     tool_id: str = Field(min_length=1, max_length=64)
     environment_id: str = Field(pattern="^[a-z][a-z0-9-]{1,31}$")
+    runtime_scope_id: str | None = Field(default=None, min_length=1, max_length=64)
     provider_type: str = Field(pattern="^(gateway_session|admin_login)$")
 
 
@@ -107,6 +108,7 @@ class CredentialResponse(BaseModel):
     id: str
     tool_id: str
     environment_id: str
+    runtime_scope_id: str | None
     provider_type: str
     status: str
     current_version: int
@@ -126,6 +128,7 @@ class PersonalCredentialPutRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     environment_id: str = Field(pattern="^[a-z][a-z0-9-]{1,31}$")
+    runtime_scope_id: str | None = Field(default=None, min_length=1, max_length=64)
     expected_version: int = Field(ge=0)
     values: dict[str, Any] = Field(min_length=1, max_length=100)
 
@@ -145,6 +148,7 @@ class PersonalCredentialResponse(BaseModel):
     id: str
     tool_id: str
     environment_id: str
+    runtime_scope_id: str | None
     provider_type: str
     status: str
     current_version: int
@@ -162,3 +166,48 @@ class PersonalCredentialValidationResponse(BaseModel):
     validation_state: str
     status: str
     current_version: int
+
+
+class RuntimeScopeCreateRequest(BaseModel):
+    """创建不可变五元组 Scope；环境映射由服务端和数据库双重校验。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    environment_id: str = Field(pattern="^(dev|prod)$")
+    tool_id: str = Field(min_length=1, max_length=64)
+    platform_project_id: str = Field(min_length=1, max_length=64)
+    project_id: str = Field(pattern=r"^[a-z][a-z0-9-]{1,31}$")
+    target_env: str = Field(pattern="^(test|prod)$")
+    display_name: str = Field(min_length=1, max_length=128)
+    is_default: bool = False
+
+
+class RuntimeScopePatchRequest(BaseModel):
+    """仅更新展示/启停/默认状态，并使用 revision 防止覆盖并发修改。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    display_name: str | None = Field(default=None, min_length=1, max_length=128)
+    status: str | None = Field(default=None, pattern="^(active|disabled)$")
+    is_default: bool | None = None
+    revision: int = Field(ge=1)
+
+
+class RuntimeScopeResponse(BaseModel):
+    """管理端可见的 Scope 元数据；不包含配置或 Secret 值。"""
+
+    id: str
+    environment_id: str
+    platform_environment: str
+    tool_id: str
+    platform_project_id: str
+    project_id: str
+    target_env: str
+    display_name: str
+    status: str
+    is_default: bool
+    revision: int
+    created_by: str
+    updated_by: str
+    created_at: datetime
+    updated_at: datetime

@@ -11,6 +11,9 @@ services:
       # People Insight 专项分析：默认开启规则分析，AI 默认关闭（评审确认配置完成后再开启）。
       PEOPLE_SEARCH_ANALYZER_ENABLED: "true"
       PEOPLE_SEARCH_ANALYZER_AI_ENABLED: "false"
+      # Dating 结构化分析只运行本地确定性解析；显式固定开关和 10 MiB 输入上限。
+      DATING_STRUCTURED_ANALYZER_ENABLED: "true"
+      DATING_STRUCTURED_MAX_LOG_BYTES: "10485760"
       # API Key 不写明文，使用只读 secret 文件挂载。
       PEOPLE_SEARCH_ANALYZER_LLM_API_KEY_FILE: /run/secrets/log-analyzer-key
     volumes:

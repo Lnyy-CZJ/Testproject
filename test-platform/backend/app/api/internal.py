@@ -34,6 +34,7 @@ from app.models.configuration import (
     CredentialItem,
     Secret,
     SecretVersion,
+    ToolProjectScope,
     UserCredential,
     UserCredentialItem,
 )
@@ -52,6 +53,10 @@ from app.schemas.internal import (
     RuntimeConfigMaterializeRequest,
     RuntimeConfigResponse,
     RuntimeSnapshotSelector,
+    InternalRuntimeScope,
+    InternalRuntimeScopeItem,
+    InternalRuntimeScopeListResponse,
+    ActiveReleaseMetadata,
     SessionWriteRequest,
     ToolAuditEventRequest,
     UserCredentialSessionWriteRequest,
@@ -398,6 +403,156 @@ def _runtime_context_rejection(
     return PlatformError(status_code, code, message)
 
 
+def _fixed_target_env(environment_id: str) -> str:
+    """把平台部署环境映射为唯一目标环境，未知环境一律失败关闭。"""
+
+    target_env = {"dev": "test", "prod": "prod"}.get(environment_id)
+    if target_env is None:
+        raise PlatformError(
+            422, "RUNTIME_SCOPE_MAPPING_INVALID", "平台环境没有受支持的目标环境映射"
+        )
+    return target_env
+
+
+def _resolve_runtime_scope(
+    database: Session,
+    *,
+    tool_id: str,
+    environment_id: str,
+    platform_project_id: str | None,
+    project_id: str | None,
+    require_active: bool = True,
+) -> ToolProjectScope:
+    """按完整五元组解析唯一 Scope，并区分缺失与禁用状态。
+
+    参数说明:
+        platform_project_id: 只能来自服务端授权决策，不能来自请求体。
+        project_id: 工具请求唯一允许选择的项目键。
+        require_active: 执行链路为 True；管理型只读场景可放宽。
+    异常说明:
+        RUNTIME_SCOPE_NOT_FOUND: 任一受控维度无法解析。
+        RUNTIME_SCOPE_DISABLED: Scope 存在但禁止创建新任务或物化。
+    """
+
+    if not platform_project_id or not project_id:
+        raise PlatformError(422, "RUNTIME_SCOPE_REQUIRED", "必须选择工具项目")
+    target_env = _fixed_target_env(environment_id)
+    row = database.scalar(select(ToolProjectScope).where(
+        ToolProjectScope.environment_id == environment_id,
+        ToolProjectScope.tool_id == tool_id,
+        ToolProjectScope.platform_project_id == platform_project_id,
+        ToolProjectScope.project_id == project_id,
+        ToolProjectScope.target_env == target_env,
+    ))
+    if row is None:
+        raise PlatformError(404, "RUNTIME_SCOPE_NOT_FOUND", "当前项目没有可用 Runtime Scope")
+    if require_active and row.status != "active":
+        raise PlatformError(409, "RUNTIME_SCOPE_DISABLED", "当前 Runtime Scope 已禁用")
+    return row
+
+
+def _internal_scope(row: ToolProjectScope) -> InternalRuntimeScope:
+    """构造不含运行配置值的内部 Scope 元数据。"""
+
+    return InternalRuntimeScope(
+        scope_id=row.id, platform_project_id=row.platform_project_id,
+        project_id=row.project_id, display_name=row.display_name,
+        platform_environment=row.environment_id, target_env=row.target_env,
+        status=row.status, is_default=row.is_default,
+    )
+
+
+def _verify_internal_scope_identity(
+    database: Session,
+    settings: Settings,
+    context: ToolClientContext,
+    tool_id: str,
+    signed_context: str | None,
+) -> tuple[User, Tool, str]:
+    """验证 Scope 列表的签名身份，并返回服务端派生的平台项目 ID。"""
+
+    if not signed_context:
+        raise PlatformError(403, "RUNTIME_CONTEXT_REQUIRED", "当前请求缺少可信用户上下文")
+    try:
+        claims = verify_user_context(
+            signed_context,
+            load_user_context_signing_key(settings.user_context_signing_key_file),
+            expected_tool_id=tool_id,
+            expected_environment_id=context.client.environment_id,
+            max_ttl_seconds=settings.user_context_ttl_seconds,
+        )
+    except UserContextTokenExpired:
+        raise PlatformError(401, "RUNTIME_CONTEXT_EXPIRED", "用户上下文已过期，请重新提交") from None
+    except (UserContextTokenError, OSError, ValueError):
+        raise PlatformError(403, "RUNTIME_CONTEXT_INVALID", "用户上下文无效或与工具不匹配") from None
+    now = datetime.now(UTC)
+    session = database.get(PlatformSession, str(claims["sid"]))
+    user = database.get(User, str(claims["uid"]))
+    if (
+        session is None or user is None or session.user_id != user.id
+        or session.revoked_at is not None or as_utc(session.idle_expires_at) <= now
+        or as_utc(session.absolute_expires_at) <= now or user.status != "active"
+        or user.permission_version != claims["pv"]
+        or not has_tool_permission(database, user.id, "tool.execute", tool_id)
+    ):
+        raise PlatformError(403, "RUNTIME_CONTEXT_INVALID", "用户上下文无效或与工具不匹配")
+    tool = database.get(Tool, tool_id)
+    if tool is None:
+        raise PlatformError(404, "NOT_FOUND", "请求的资源不存在")
+    decision = decide_tool_access(database, user, tool) if user.platform_role is not None else None
+    platform_project_id = decision.project_id if decision is not None else tool.project_id
+    if not platform_project_id:
+        raise PlatformError(403, "RUNTIME_SCOPE_FORBIDDEN", "当前身份没有平台项目运行权限")
+    return user, tool, platform_project_id
+
+
+@router.get(
+    "/tools/{tool_id}/runtime-scopes",
+    response_model=InternalRuntimeScopeListResponse,
+)
+def list_internal_runtime_scopes(
+    tool_id: str,
+    context: Annotated[ToolClientContext, Depends(current_tool_client)],
+    database: Annotated[Session, Depends(get_db)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    signed_context: Annotated[str | None, Header(alias="X-Platform-User-Context")] = None,
+) -> InternalRuntimeScopeListResponse:
+    """返回当前工具客户端、签名用户及平台项目共同授权的 Scope 列表。"""
+
+    _assert_client_scope(context, tool_id)
+    _require_capability(context, "runtime.context.create")
+    _user, _tool, platform_project_id = _verify_internal_scope_identity(
+        database, settings, context, tool_id, signed_context
+    )
+    rows = database.scalars(select(ToolProjectScope).where(
+        ToolProjectScope.tool_id == tool_id,
+        ToolProjectScope.environment_id == context.client.environment_id,
+        ToolProjectScope.platform_project_id == platform_project_id,
+        ToolProjectScope.status == "active",
+    ).order_by(ToolProjectScope.is_default.desc(), ToolProjectScope.project_id)).all()
+    items: list[InternalRuntimeScopeItem] = []
+    for row in rows:
+        activation = database.scalar(select(ConfigActivation).where(
+            ConfigActivation.environment_id == row.environment_id,
+            ConfigActivation.owner_type == "tool_project_scope",
+            ConfigActivation.owner_id == row.id,
+        ))
+        release = database.get(ConfigRelease, activation.active_release_id) if activation else None
+        if release is not None and (
+            release.environment_id, release.owner_type, release.owner_id, release.status
+        ) != (row.environment_id, "tool_project_scope", row.id, "active"):
+            # 列表不能把损坏或跨 Scope 的 Activation 当作可运行状态展示。
+            raise _runtime_snapshot_invalid()
+        items.append(InternalRuntimeScopeItem(
+            **_internal_scope(row).model_dump(),
+            active_release=(ActiveReleaseMetadata(
+                id=release.id, version=release.version, status=release.status
+            ) if release is not None else None),
+            management_url=f"/settings/config?scope_id={quote(row.id, safe='')}",
+        ))
+    return InternalRuntimeScopeListResponse(items=items)
+
+
 @router.post(
     "/tools/{tool_id}/runtime-contexts",
     response_model=RuntimeContextResponse,
@@ -481,6 +636,18 @@ def create_runtime_context(
         # Execution Lease 会赋予后台任务继续执行的能力；公共来源在统一出口代理
         # 接入前一律不签发，避免 real_execution_enabled=false 沦为展示字段。
         raise PlatformError(403, "PUBLIC_REAL_EXECUTION_DISABLED", "公共工具暂未开放真实执行")
+    runtime_scope = None
+    if tool_id == "api-autotest":
+        platform_project_id = (
+            access_decision.project_id if access_decision is not None else tool.project_id
+        )
+        runtime_scope = _resolve_runtime_scope(
+            database,
+            tool_id=tool_id,
+            environment_id=context.client.environment_id,
+            platform_project_id=platform_project_id,
+            project_id=payload.project_id,
+        )
     ttl_seconds = min(settings.runtime_context_ttl_seconds, 86400)
     if ttl_seconds <= 0:
         raise PlatformError(
@@ -492,8 +659,11 @@ def create_runtime_context(
         session_id=session.id,
         tool_id=tool_id,
         environment_id=context.client.environment_id,
+        runtime_scope_id=runtime_scope.id if runtime_scope is not None else None,
         permission_version=user.permission_version,
-        project_id_snapshot=tool.project_id,
+        project_id_snapshot=(
+            runtime_scope.platform_project_id if runtime_scope is not None else tool.project_id
+        ),
         authorization_source_snapshot=(
             access_decision.source if access_decision is not None else "legacy"
         ),
@@ -520,7 +690,9 @@ def create_runtime_context(
             tool_id=tool_id,
             environment_id=context.client.environment_id,
             owner_user_id=user.id,
-            project_id_snapshot=tool.project_id,
+            project_id_snapshot=(
+                runtime_scope.platform_project_id if runtime_scope is not None else tool.project_id
+            ),
             authorization_source_snapshot=(
                 access_decision.source if access_decision is not None else "legacy"
             ),
@@ -546,6 +718,34 @@ def create_runtime_context(
             "resource_type": row.resource_type,
         },
     )
+    selector = None
+    if runtime_scope is not None:
+        release = _current_tool_release(
+            database, context.client.environment_id, tool_id, runtime_scope.id
+        )
+        if release is None:
+            raise PlatformError(409, "CONFIG_RELEASE_NOT_ACTIVE", "Runtime Scope 没有激活的配置版本")
+        _normal, _secrets, _configured, system_secret_versions = _system_runtime_snapshot(
+            database, settings, tool_id, context.client.environment_id, release,
+            include_secrets=False, runtime_scope_id=runtime_scope.id,
+        )
+        (
+            _personal_values, _personal_configured, _metadata,
+            credential_versions, credential_secret_versions,
+        ) = _personal_credential_runtime_snapshot(
+            database, settings, user.id, tool_id, context.client.environment_id,
+            include_secrets=False, runtime_scope_id=runtime_scope.id,
+            allow_incomplete_profiles=True,
+        )
+        selector = RuntimeSnapshotSelector(
+            runtime_scope_id=runtime_scope.id, release_id=release.id,
+            system_secret_versions=system_secret_versions,
+            credential_versions=credential_versions,
+            credential_secret_versions=credential_secret_versions,
+        )
+        # 选择器必须随 Context 一次固化；物化接口只接受逐字段完全一致的副本，
+        # 防止调用方把同 Scope 的其他历史 Release 或 Credential 版本替换进来。
+        row.allowed_config_refs = [selector.model_dump(mode="json")]
     database.commit()
     return RuntimeContextResponse(
         runtime_context_id=row.id,
@@ -556,9 +756,11 @@ def create_runtime_context(
             "owner_user_id": user.id,
             "environment_id": context.client.environment_id,
             "access_scope_snapshot": tool.access_scope,
-            "project_id_snapshot": tool.project_id,
+            "project_id_snapshot": row.project_id_snapshot,
             "authorization_source_snapshot": row.authorization_source_snapshot,
         },
+        runtime_scope=_internal_scope(runtime_scope) if runtime_scope is not None else None,
+        snapshot_selector=selector,
     )
 
 
@@ -578,12 +780,30 @@ def _system_runtime_snapshot(
     release: ConfigRelease | None,
     *,
     include_secrets: bool,
+    runtime_scope_id: str | None = None,
 ) -> tuple[dict[str, Any], dict[str, str], set[str], dict[str, str]]:
     """展开全局 Release 中仅 ``value_scope=system`` 的配置。
 
     被迁移为用户级的 legacy Release Item 会在定义过滤阶段直接忽略，因此即使
     global Secret 仍保留作回滚材料，也不会进入 configured keys 或解密路径。
     """
+
+    runtime_scope = (
+        database.get(ToolProjectScope, runtime_scope_id)
+        if runtime_scope_id is not None else None
+    )
+
+    def applies_to_runtime_project(definition: ConfigDefinition) -> bool:
+        """按 Definition 的项目白名单过滤历史 Release 中已不适用的配置项。"""
+
+        project_ids = (definition.validation_schema or {}).get("project_ids")
+        if project_ids is None:
+            return True
+        return (
+            runtime_scope is not None
+            and isinstance(project_ids, list)
+            and runtime_scope.project_id in project_ids
+        )
 
     definitions = {
         row.id: row
@@ -592,6 +812,7 @@ def _system_runtime_snapshot(
             ConfigDefinition.owner_id == tool_id,
             ConfigDefinition.value_scope == "system",
         )).all()
+        if applies_to_runtime_project(row)
     }
     normal = {
         row.key: row.default_value
@@ -617,12 +838,16 @@ def _system_runtime_snapshot(
             continue
         version = database.get(SecretVersion, item.secret_version_id)
         secret = database.get(Secret, version.secret_id) if version else None
+        expected_owner = (
+            ("tool_project_scope", runtime_scope_id)
+            if runtime_scope_id is not None else ("tool", tool_id)
+        )
         if secret is None or (
             secret.environment_id,
             secret.owner_type,
             secret.owner_id,
             secret.definition_id,
-        ) != (environment_id, "tool", tool_id, definition.id):
+        ) != (environment_id, *expected_owner, definition.id):
             raise _runtime_snapshot_invalid()
         configured.add(definition.key)
         secret_versions[definition.key] = version.id
@@ -650,6 +875,8 @@ def _personal_credential_runtime_snapshot(
     include_secrets: bool,
     selected_versions: dict[str, int] | None = None,
     expected_secret_versions: dict[str, dict[str, str]] | None = None,
+    runtime_scope_id: str | None = None,
+    allow_incomplete_profiles: bool = False,
 ) -> tuple[
     dict[str, str],
     set[str],
@@ -662,6 +889,11 @@ def _personal_credential_runtime_snapshot(
     ``selected_versions=None`` 表示规划当前版本；传入版本字典表示物化历史版本。
     后一种模式下所有错误统一映射为 ``RUNTIME_SNAPSHOT_INVALID``，且查询始终先
     过滤 ``user_id``，不能借选择器探测他人 Credential。
+
+    Scope 化的接口自动化允许 Profile 不完整：平台负责冻结当前已配置版本，
+    工具再按选中 API/Flow 的声明检查实际所需 Profile。这样 Dating 匿名链路
+    不会因为同一 Tool 下未配置 Truthy Admin Profile 而在创建 Context 时被
+    全局拦截；legacy 工具仍维持原有“必需 Provider 全部就绪”的行为。
     """
 
     definitions = list(database.scalars(select(ConfigDefinition).where(
@@ -675,12 +907,39 @@ def _personal_credential_runtime_snapshot(
         by_provider.setdefault(str(definition.credential_provider_type), {})[
             definition.key
         ] = definition
+
+    def participates_in_runtime(definition: ConfigDefinition) -> bool:
+        """判断个人凭证字段是否仍属于运行时契约。
+
+        已迁移到项目 Release 的静态字段会保留 Definition 与历史 Secret，便于
+        审计和旧快照校验，但新快照不得再把这些值下发给工具，否则会重新覆盖
+        ``gateway.comm`` 中按项目发布的静态参数。
+        """
+
+        return not bool(
+            (definition.validation_schema or {}).get("runtime_config_excluded")
+        )
+
     if not by_provider:
         if selected_versions or expected_secret_versions:
             raise _runtime_snapshot_invalid()
         return {}, set(), {}, {}, {}
 
     materializing = selected_versions is not None
+
+    def credential_is_ready(credential: UserCredential) -> bool:
+        """判断 Credential 是否允许进入本次运行快照。
+
+        项目 Scope 已经具备完整的 Credential 生命周期，因此必须 fail-closed：
+        只有 Agent 明确标记为 ``healthy`` 的版本才可被冻结和物化。验证中、
+        刷新中或未来新增的未知状态都只能作为诊断信息返回，不能意外下发
+        Secret。尚未迁移到 Runtime Scope 的旧工具继续沿用原有拒绝列表，避免
+        本次接口自动化修复改变其它工具的兼容行为。
+        """
+
+        if runtime_scope_id is not None:
+            return credential.status == "healthy"
+        return credential.status not in {"missing", "expired", "action_required"}
 
     def fail() -> PlatformError:
         if materializing:
@@ -697,6 +956,7 @@ def _personal_credential_runtime_snapshot(
             UserCredential.user_id == user_id,
             UserCredential.tool_id == tool_id,
             UserCredential.environment_id == environment_id,
+            UserCredential.runtime_scope_id == runtime_scope_id,
             UserCredential.current_version > 0,
         ).order_by(UserCredential.provider_type)).all())
         credentials = [(row, row.current_version) for row in rows]
@@ -709,15 +969,34 @@ def _personal_credential_runtime_snapshot(
                 UserCredential.id == credential_id,
                 UserCredential.tool_id == tool_id,
                 UserCredential.environment_id == environment_id,
+                UserCredential.runtime_scope_id == runtime_scope_id,
             ))
             if row is None:
                 raise fail()
             credentials.append((row, version))
+
+    # 规划态要同时保留未就绪 Credential 的非敏感诊断元数据。它们随后仍会从
+    # selector 与 Secret 物化链路中过滤掉；否则工具只能看到“Profile 缺失”，
+    # 无法区分真实未配置、已过期或自动刷新失败。
+    planning_credentials = list(credentials)
+    if allow_incomplete_profiles and not materializing:
+        # Scope 规划阶段只冻结当前可用的 Profile。已失效的可选 Credential
+        # 仍应在平台配置中心显示其真实状态，但不能污染一个与它无关的 API/Flow
+        # 快照；工具会依据资产声明对真正需要的 Profile 做严格预检。
+        # 物化阶段绝不执行此过滤：选择器若被替换为失效版本必须 fail-closed。
+        credentials = [
+            (row, version)
+            for row, version in credentials
+            if credential_is_ready(row)
+        ]
     credential_by_provider = {row.provider_type: (row, version) for row, version in credentials}
-    required_providers = {
+    required_providers = set() if allow_incomplete_profiles else {
         provider
         for provider, provider_definitions in by_provider.items()
-        if any(definition.required for definition in provider_definitions.values())
+        if any(
+            definition.required and participates_in_runtime(definition)
+            for definition in provider_definitions.values()
+        )
     }
     if not required_providers.issubset(credential_by_provider):
         raise fail()
@@ -726,13 +1005,46 @@ def _personal_credential_runtime_snapshot(
 
     values: dict[str, str] = {}
     configured: set[str] = set()
-    providers: dict[str, Any] = {}
+    def provider_metadata(
+        credential: UserCredential,
+        version_number: int,
+    ) -> dict[str, Any]:
+        """返回可安全展示的 Profile 状态，不包含字段值或 Secret 指纹。"""
+
+        def iso_timestamp(value: datetime | None) -> str | None:
+            # SQLite 测试库会丢失 timezone 标记；对外契约始终补成 UTC，避免
+            # dev/prod 因数据库方言不同而返回两种时间格式。
+            if value is None:
+                return None
+            aware = value.replace(tzinfo=UTC) if value.tzinfo is None else value
+            return aware.astimezone(UTC).isoformat()
+
+        return {
+            "credential_id": credential.id,
+            "credential_version": version_number,
+            "status": credential.status,
+            "expires_at": iso_timestamp(credential.expires_at),
+            "refresh_expires_at": iso_timestamp(credential.refresh_expires_at),
+            "last_checked_at": iso_timestamp(credential.last_checked_at),
+            "last_error_code": credential.last_error_code,
+        }
+
+    providers: dict[str, Any] = (
+        {
+            credential.provider_type: provider_metadata(
+                credential, version_number
+            )
+            for credential, version_number in planning_credentials
+        }
+        if allow_incomplete_profiles and not materializing
+        else {}
+    )
     versions: dict[str, int] = {}
     secret_versions: dict[str, dict[str, str]] = {}
     primary_metadata: dict[str, Any] = {}
     cipher = None
     for provider, (credential, version_number) in sorted(credential_by_provider.items()):
-        if credential.status in {"missing", "expired", "action_required"}:
+        if not credential_is_ready(credential):
             raise fail()
         provider_definitions = by_provider[provider]
         items = list(database.scalars(select(UserCredentialItem).where(
@@ -741,7 +1053,9 @@ def _personal_credential_runtime_snapshot(
         )).all())
         items_by_key = {item.key: item for item in items}
         if any(
-            definition.required and definition.key not in items_by_key
+            definition.required
+            and participates_in_runtime(definition)
+            and definition.key not in items_by_key
             for definition in provider_definitions.values()
         ):
             raise fail()
@@ -750,6 +1064,19 @@ def _personal_credential_runtime_snapshot(
             definition = provider_definitions.get(key)
             if definition is None:
                 raise fail()
+            if not participates_in_runtime(definition):
+                # 新快照完全忽略已项目化字段。物化历史任务时，仅校验并保留旧
+                # selector 中的版本引用，使既有任务可重放；明文仍不再下发。
+                expected_version_id = (
+                    (expected_secret_versions or {})
+                    .get(credential.id, {})
+                    .get(key)
+                )
+                if expected_version_id is not None:
+                    if item.secret_version_id != expected_version_id:
+                        raise fail()
+                    selected_secret_versions[key] = expected_version_id
+                continue
             if item.secret_version_id:
                 version = database.get(SecretVersion, item.secret_version_id)
                 secret = database.get(Secret, version.secret_id) if version else None
@@ -788,16 +1115,7 @@ def _personal_credential_runtime_snapshot(
                 raise fail()
         versions[credential.id] = version_number
         secret_versions[credential.id] = selected_secret_versions
-        providers[provider] = {
-            "credential_id": credential.id,
-            "credential_version": version_number,
-            "status": credential.status,
-            "expires_at": credential.expires_at.isoformat() if credential.expires_at else None,
-            "refresh_expires_at": (
-                credential.refresh_expires_at.isoformat()
-                if credential.refresh_expires_at else None
-            ),
-        }
+        providers[provider] = provider_metadata(credential, version_number)
         if provider == "gateway_session":
             primary_metadata.update({
                 "credential_id": credential.id,
@@ -815,14 +1133,19 @@ def _personal_credential_runtime_snapshot(
 
 
 def _current_tool_release(
-    database: Session, environment_id: str, tool_id: str
+    database: Session,
+    environment_id: str,
+    tool_id: str,
+    runtime_scope_id: str | None = None,
 ) -> ConfigRelease | None:
     """返回工具当前全局 Release；该身份只承载 system 配置。"""
 
+    owner_type = "tool_project_scope" if runtime_scope_id is not None else "tool"
+    owner_id = runtime_scope_id or tool_id
     activation = database.scalar(select(ConfigActivation).where(
         ConfigActivation.environment_id == environment_id,
-        ConfigActivation.owner_type == "tool",
-        ConfigActivation.owner_id == tool_id,
+        ConfigActivation.owner_type == owner_type,
+        ConfigActivation.owner_id == owner_id,
     ))
     return database.get(ConfigRelease, activation.active_release_id) if activation else None
 
@@ -840,7 +1163,7 @@ def _personal_runtime_config(
 ) -> RuntimeConfigResponse:
     """规划当前版本，或为同步调用物化当前用户的最新个人快照。"""
 
-    requires_context = include_secrets or bool(llm_capability)
+    requires_context = include_secrets or bool(llm_capability) or tool_id == "api-autotest"
     if requires_context and not runtime_context_id:
         raise PlatformError(403, "RUNTIME_CONTEXT_REQUIRED", "当前请求缺少可信用户上下文")
     runtime_context = None
@@ -848,7 +1171,26 @@ def _personal_runtime_config(
         runtime_context = validate_runtime_context(
             database, runtime_context_id, context.client, tool_id
         )
-    release = _current_tool_release(database, context.client.environment_id, tool_id)
+    runtime_scope = None
+    if tool_id == "api-autotest":
+        if runtime_context is None or not runtime_context.runtime_scope_id:
+            raise PlatformError(403, "RUNTIME_CONTEXT_REQUIRED", "当前请求缺少可信 Runtime Scope")
+        runtime_scope = database.get(ToolProjectScope, runtime_context.runtime_scope_id)
+        if runtime_scope is None or (
+            runtime_scope.tool_id, runtime_scope.environment_id,
+            runtime_scope.platform_project_id,
+        ) != (
+            tool_id, context.client.environment_id, runtime_context.project_id_snapshot,
+        ):
+            raise _runtime_snapshot_invalid()
+        if runtime_scope.status != "active":
+            raise PlatformError(409, "RUNTIME_SCOPE_DISABLED", "当前 Runtime Scope 已禁用")
+    release = _current_tool_release(
+        database, context.client.environment_id, tool_id,
+        runtime_scope.id if runtime_scope is not None else None,
+    )
+    if tool_id == "api-autotest" and release is None:
+        raise PlatformError(409, "CONFIG_RELEASE_NOT_ACTIVE", "Runtime Scope 没有激活的配置版本")
     normal, system_secrets, configured, system_secret_versions = _system_runtime_snapshot(
         database,
         settings,
@@ -856,8 +1198,10 @@ def _personal_runtime_config(
         context.client.environment_id,
         release,
         include_secrets=include_secrets,
+        runtime_scope_id=runtime_scope.id if runtime_scope is not None else None,
     )
     selector = RuntimeSnapshotSelector(
+        runtime_scope_id=runtime_scope.id if runtime_scope is not None else None,
         release_id=release.id if release else None,
         system_secret_versions=system_secret_versions,
     )
@@ -878,6 +1222,8 @@ def _personal_runtime_config(
             tool_id,
             context.client.environment_id,
             include_secrets=include_secrets,
+            runtime_scope_id=runtime_scope.id if runtime_scope is not None else None,
+            allow_incomplete_profiles=runtime_scope is not None,
         )
         configured.update(personal_configured)
         if llm_capability:
@@ -898,6 +1244,12 @@ def _personal_runtime_config(
     context.client.last_used_at = datetime.now(UTC)
     if set(system_secrets) & set(personal_values):
         raise _runtime_snapshot_invalid()
+    if (
+        runtime_scope is not None
+        and runtime_context is not None
+        and runtime_context.allowed_config_refs != [selector.model_dump(mode="json")]
+    ):
+        raise _runtime_snapshot_invalid()
     database.commit()
     response.headers["Cache-Control"] = "no-store"
     return RuntimeConfigResponse(
@@ -913,6 +1265,12 @@ def _personal_runtime_config(
         subject_user_id=runtime_context.user_id if runtime_context else None,
         runtime_context_expires_at=(runtime_context.expires_at if runtime_context else None),
         snapshot_selector=selector,
+        runtime_scope_id=runtime_scope.id if runtime_scope is not None else None,
+        platform_environment=(runtime_scope.environment_id if runtime_scope is not None else None),
+        platform_project_id=(runtime_scope.platform_project_id if runtime_scope is not None else None),
+        project_id=(runtime_scope.project_id if runtime_scope is not None else None),
+        target_env=(runtime_scope.target_env if runtime_scope is not None else None),
+        config_source="platform" if runtime_scope is not None else None,
     )
 
 
@@ -1090,14 +1448,37 @@ def materialize_runtime_config(
         database, payload.runtime_context_id, context.client, tool_id
     )
     selector = payload.snapshot_selector
+    runtime_scope = None
+    if tool_id == "api-autotest":
+        if (
+            not runtime_context.runtime_scope_id
+            or selector.runtime_scope_id != runtime_context.runtime_scope_id
+        ):
+            raise _runtime_snapshot_invalid()
+        runtime_scope = database.get(ToolProjectScope, runtime_context.runtime_scope_id)
+        if runtime_scope is None or (
+            runtime_scope.tool_id, runtime_scope.environment_id,
+            runtime_scope.platform_project_id,
+        ) != (
+            tool_id, context.client.environment_id, runtime_context.project_id_snapshot,
+        ):
+            raise _runtime_snapshot_invalid()
+        if runtime_scope.status != "active":
+            raise PlatformError(409, "RUNTIME_SCOPE_DISABLED", "当前 Runtime Scope 已禁用")
+        if runtime_context.allowed_config_refs != [selector.model_dump(mode="json")]:
+            raise _runtime_snapshot_invalid()
     release = None
     if selector.release_id is not None:
         release = database.get(ConfigRelease, selector.release_id)
-        if release is None or (
+        expected_owner = (
+            ("tool_project_scope", runtime_scope.id)
+            if runtime_scope is not None else ("tool", tool_id)
+        )
+        if release is None or release.status not in {"active", "superseded"} or (
             release.environment_id,
             release.owner_type,
             release.owner_id,
-        ) != (context.client.environment_id, "tool", tool_id):
+        ) != (context.client.environment_id, *expected_owner):
             raise _runtime_snapshot_invalid()
     normal, system_secrets, configured, system_secret_versions = _system_runtime_snapshot(
         database,
@@ -1106,6 +1487,7 @@ def materialize_runtime_config(
         context.client.environment_id,
         release,
         include_secrets=True,
+        runtime_scope_id=runtime_scope.id if runtime_scope is not None else None,
     )
     if system_secret_versions != selector.system_secret_versions:
         raise _runtime_snapshot_invalid()
@@ -1124,6 +1506,8 @@ def materialize_runtime_config(
         include_secrets=True,
         selected_versions=selector.credential_versions,
         expected_secret_versions=selector.credential_secret_versions,
+        runtime_scope_id=runtime_scope.id if runtime_scope is not None else None,
+        allow_incomplete_profiles=runtime_scope is not None,
     )
     if credential_versions != selector.credential_versions:
         raise _runtime_snapshot_invalid()
@@ -1186,6 +1570,287 @@ def materialize_runtime_config(
         subject_user_id=runtime_context.user_id,
         runtime_context_expires_at=runtime_context.expires_at,
         snapshot_selector=selector,
+        runtime_scope_id=runtime_scope.id if runtime_scope is not None else None,
+        platform_environment=(runtime_scope.environment_id if runtime_scope is not None else None),
+        platform_project_id=(runtime_scope.platform_project_id if runtime_scope is not None else None),
+        project_id=(runtime_scope.project_id if runtime_scope is not None else None),
+        target_env=(runtime_scope.target_env if runtime_scope is not None else None),
+        config_source="platform" if runtime_scope is not None else None,
+    )
+
+
+def _validate_dispatch_runtime_context(
+    database: Session,
+    runtime_context_id: str,
+    context: ToolClientContext,
+) -> RuntimeContext:
+    """在任务真正入队前重新校验并锁定浏览器身份租约。
+
+    普通物化允许已派发任务继续使用既有 Execution Lease；dispatch 则是能力
+    真正交付给后台任务的最后边界，必须额外确认原 Session、用户权限版本和
+    ``tool.execute`` 仍然有效。锁顺序固定为 RuntimeContext → Tool → User →
+    Session，避免与授权变更及用户禁用事务形成循环等待；所有行在同一事务
+    中锁定，避免校验通过后、快照提交前发生撤销竞态。
+
+    参数说明:
+        database: 当前请求的数据库事务。
+        runtime_context_id: 创建任务时签发的不透明 Runtime Context ID。
+        context: 已认证的 api-autotest Tool Client 上下文。
+    返回值:
+        已锁定且通过 dispatch 级身份校验的 RuntimeContext。
+    异常说明:
+        Context TTL 过期沿用 ``RUNTIME_CONTEXT_EXPIRED``；其余身份、会话或
+        权限失效统一返回 ``RUNTIME_CONTEXT_INVALID``，避免暴露具体撤销来源。
+    """
+
+    runtime_context = validate_runtime_context(
+        database,
+        runtime_context_id,
+        context.client,
+        "api-autotest",
+        for_update=True,
+    )
+    # 全平台授权写路径采用 Tool → User，用户禁用采用 User → Session。
+    # dispatch 因此固定使用 Context → Tool → User → Session，既兼容两条既有
+    # 写路径，也避免 PostgreSQL 在并发撤销时形成循环锁等待。
+    tool = database.scalar(select(Tool).where(
+        Tool.id == "api-autotest",
+    ).with_for_update().execution_options(populate_existing=True))
+    user = database.scalar(select(User).where(
+        User.id == runtime_context.user_id,
+    ).with_for_update().execution_options(populate_existing=True))
+    session = database.scalar(select(PlatformSession).where(
+        PlatformSession.id == runtime_context.session_id,
+    ).with_for_update().execution_options(populate_existing=True))
+    now = datetime.now(UTC)
+    access_decision = (
+        decide_tool_access(database, user, tool)
+        if user is not None and tool is not None
+        else None
+    )
+    invalid_identity = (
+        session is None
+        or session.user_id != runtime_context.user_id
+        or session.revoked_at is not None
+        or as_utc(session.idle_expires_at) <= now
+        or as_utc(session.absolute_expires_at) <= now
+        or user is None
+        or user.status != "active"
+        or user.permission_version != runtime_context.permission_version
+        or tool is None
+        or access_decision is None
+        or not access_decision.allowed
+        or access_decision.source == "public"
+        or access_decision.project_id != runtime_context.project_id_snapshot
+        or not has_tool_permission(
+            database, runtime_context.user_id, "tool.execute", "api-autotest"
+        )
+    )
+    if invalid_identity:
+        raise PlatformError(
+            403,
+            "RUNTIME_CONTEXT_INVALID",
+            "用户上下文无效或与工具不匹配",
+        )
+    return runtime_context
+
+
+def _runtime_dispatch_credential_unavailable() -> PlatformError:
+    """返回排队期间原 Credential 无法继续派发的稳定错误。"""
+
+    return PlatformError(
+        409,
+        "RUNTIME_DISPATCH_CREDENTIAL_UNAVAILABLE",
+        "任务排队期间凭证已失效或版本不可用，请重新提交任务",
+    )
+
+
+def _dispatch_selector_matches_allowed(
+    selector: RuntimeSnapshotSelector,
+    allowed_config_refs: list[dict[str, Any]] | None,
+) -> bool:
+    """判断 dispatch 重试是否仍属于 Context 当前冻结的配置身份。
+
+    首次 dispatch 会把 ``allowed_config_refs`` 中的个人 Credential 版本提升到
+    当前健康版本。如果响应在工具落盘前丢失，工具只能拿创建任务时的旧
+    selector 重试。这里允许旧、当前 selector 的 Credential *版本*不同，但
+    Credential ID 集合必须完全相同；Scope、Release、系统 Secret 与 LLM
+    选择器仍逐字段等于 Context 当前值。
+
+    参数说明:
+        selector: 工具本次提交的旧或当前 selector。
+        allowed_config_refs: Runtime Context 当前唯一允许的 selector 列表。
+    返回值:
+        ``True`` 表示只存在可安全忽略的个人 Credential 版本差异；存储结构
+        异常、Credential ID 集合变化或任何非 Credential 字段漂移均返回
+        ``False``，由调用方统一失败关闭。
+    """
+
+    if not isinstance(allowed_config_refs, list) or len(allowed_config_refs) != 1:
+        return False
+    try:
+        allowed_selector = RuntimeSnapshotSelector.model_validate(
+            allowed_config_refs[0]
+        )
+    except (TypeError, ValueError):
+        return False
+
+    submitted = selector.model_dump(mode="json")
+    allowed = allowed_selector.model_dump(mode="json")
+    submitted_credential_ids = set(submitted["credential_versions"])
+    allowed_credential_ids = set(allowed["credential_versions"])
+    if (
+        set(submitted["credential_secret_versions"])
+        != submitted_credential_ids
+        or set(allowed["credential_secret_versions"])
+        != allowed_credential_ids
+        or submitted_credential_ids != allowed_credential_ids
+    ):
+        return False
+
+    # 个人版本字段由 dispatch 根据数据库当前健康版本重新计算，因此不会信任
+    # 调用方的旧值。除此之外的快照身份必须和 Context 当前值完全一致。
+    for credential_field in (
+        "credential_versions",
+        "credential_secret_versions",
+    ):
+        submitted.pop(credential_field)
+        allowed.pop(credential_field)
+    return submitted == allowed
+
+
+@router.post(
+    "/tools/api-autotest/runtime-config/dispatch-materialize",
+    response_model=RuntimeConfigResponse,
+)
+def dispatch_materialize_api_autotest_runtime_config(
+    payload: RuntimeConfigMaterializeRequest,
+    request: Request,
+    response: Response,
+    context: Annotated[ToolClientContext, Depends(current_tool_client)],
+    database: Annotated[Session, Depends(get_db)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> RuntimeConfigResponse:
+    """在任务派发边界刷新原 Credential 集合并原子物化运行快照。
+
+    该入口只把原选择器中已有 Credential ID 提升到各自 ``current_version``；
+    Scope、Release、系统 Secret 和 LLM 版本全部保持不变，同 Scope 后来新增的
+    Profile 不会进入任务。新选择器仅在完整物化成功后随同审计记录一起提交，
+    任一身份、Scope、凭据或 Secret 校验失败都会回滚，Context TTL 也不延长。
+    """
+
+    _assert_client_scope(context, "api-autotest")
+    _require_capability(context, "config.read")
+    if not settings.personal_credentials_enabled:
+        raise PlatformError(
+            503, "PERSONAL_CONFIG_DISABLED", "个人运行配置尚未启用"
+        )
+    runtime_context = _validate_dispatch_runtime_context(
+        database, payload.runtime_context_id, context
+    )
+    original_selector = payload.snapshot_selector
+    if not _dispatch_selector_matches_allowed(
+        original_selector,
+        runtime_context.allowed_config_refs,
+    ):
+        raise _runtime_snapshot_invalid()
+    if (
+        not runtime_context.runtime_scope_id
+        or original_selector.runtime_scope_id != runtime_context.runtime_scope_id
+    ):
+        raise _runtime_snapshot_invalid()
+
+    runtime_scope = database.scalar(select(ToolProjectScope).where(
+        ToolProjectScope.id == runtime_context.runtime_scope_id,
+    ).with_for_update())
+    if runtime_scope is None or (
+        runtime_scope.tool_id,
+        runtime_scope.environment_id,
+        runtime_scope.platform_project_id,
+    ) != (
+        "api-autotest",
+        context.client.environment_id,
+        runtime_context.project_id_snapshot,
+    ):
+        raise _runtime_snapshot_invalid()
+    if runtime_scope.status != "active":
+        raise PlatformError(
+            409, "RUNTIME_SCOPE_DISABLED", "当前 Runtime Scope 已禁用"
+        )
+
+    selected_credential_ids = set(original_selector.credential_versions)
+    if set(original_selector.credential_secret_versions) != selected_credential_ids:
+        raise _runtime_snapshot_invalid()
+    credentials = (
+        list(database.scalars(select(UserCredential).where(
+            UserCredential.id.in_(selected_credential_ids),
+            UserCredential.user_id == runtime_context.user_id,
+            UserCredential.tool_id == "api-autotest",
+            UserCredential.environment_id == context.client.environment_id,
+            UserCredential.runtime_scope_id == runtime_scope.id,
+        ).with_for_update()).all())
+        if selected_credential_ids
+        else []
+    )
+    if (
+        {credential.id for credential in credentials} != selected_credential_ids
+        or any(
+            credential.status != "healthy" or credential.current_version < 1
+            for credential in credentials
+        )
+    ):
+        raise _runtime_dispatch_credential_unavailable()
+    refreshed_credential_versions = {
+        credential.id: credential.current_version for credential in credentials
+    }
+    try:
+        (
+            _personal_values,
+            _personal_configured,
+            _metadata,
+            resolved_credential_versions,
+            refreshed_credential_secret_versions,
+        ) = _personal_credential_runtime_snapshot(
+            database,
+            settings,
+            runtime_context.user_id,
+            "api-autotest",
+            context.client.environment_id,
+            include_secrets=False,
+            selected_versions=refreshed_credential_versions,
+            runtime_scope_id=runtime_scope.id,
+            allow_incomplete_profiles=True,
+        )
+    except PlatformError as exc:
+        if exc.code == "RUNTIME_SNAPSHOT_INVALID":
+            raise _runtime_dispatch_credential_unavailable() from exc
+        raise
+    if resolved_credential_versions != refreshed_credential_versions:
+        raise _runtime_dispatch_credential_unavailable()
+
+    refreshed_selector = original_selector.model_copy(
+        deep=True,
+        update={
+            "credential_versions": refreshed_credential_versions,
+            "credential_secret_versions": refreshed_credential_secret_versions,
+        },
+    )
+    runtime_context.allowed_config_refs = [
+        refreshed_selector.model_dump(mode="json")
+    ]
+    # 复用普通精确物化路径完成 Release/System Secret/LLM 校验、Secret 解密、
+    # 审计及单次 commit。若其中任一步抛错，本请求事务会整体回滚选择器更新。
+    return materialize_runtime_config(
+        "api-autotest",
+        RuntimeConfigMaterializeRequest(
+            runtime_context_id=runtime_context.id,
+            snapshot_selector=refreshed_selector,
+        ),
+        request,
+        response,
+        context,
+        database,
+        settings,
     )
 
 
@@ -1200,10 +1865,22 @@ def config_ack(
 
     _assert_client_scope(context, tool_id)
     _require_capability(context, "config.ack")
+    owner_type = "tool"
+    owner_id = tool_id
+    if tool_id == "api-autotest":
+        if not payload.runtime_context_id:
+            raise PlatformError(403, "RUNTIME_CONTEXT_REQUIRED", "确认配置需要 Runtime Context")
+        runtime_context = validate_runtime_context(
+            database, payload.runtime_context_id, context.client, tool_id
+        )
+        scope = database.get(ToolProjectScope, runtime_context.runtime_scope_id)
+        if scope is None or scope.status != "active":
+            raise PlatformError(409, "RUNTIME_SCOPE_DISABLED", "当前 Runtime Scope 不可执行")
+        owner_type, owner_id = "tool_project_scope", scope.id
     activation = database.scalar(select(ConfigActivation).where(
         ConfigActivation.environment_id == context.client.environment_id,
-        ConfigActivation.owner_type == "tool",
-        ConfigActivation.owner_id == tool_id,
+        ConfigActivation.owner_type == owner_type,
+        ConfigActivation.owner_id == owner_id,
         ConfigActivation.active_release_id == payload.release_id,
     ))
     if activation is None:
@@ -1267,12 +1944,17 @@ def credential_status(
         runtime_context = validate_runtime_context(
             database, payload.runtime_context_id, context.client, tool_id
         )
+        if tool_id == "api-autotest":
+            scope = database.get(ToolProjectScope, runtime_context.runtime_scope_id)
+            if scope is None or scope.status != "active":
+                raise PlatformError(409, "RUNTIME_SCOPE_DISABLED", "当前 Runtime Scope 不可执行")
         # 所有权是查询的首要条件；跨用户 Provider 与本用户未配置采用同一错误，
         # 不把其他用户的凭证存在性泄露给工具调用方。
         personal_credential = database.scalar(select(UserCredential).where(
             UserCredential.user_id == runtime_context.user_id,
             UserCredential.tool_id == tool_id,
             UserCredential.environment_id == context.client.environment_id,
+            UserCredential.runtime_scope_id == runtime_context.runtime_scope_id,
             UserCredential.provider_type == payload.provider_type,
         ).with_for_update())
         if personal_credential is None:
@@ -1307,15 +1989,27 @@ def credential_status(
         database.commit()
         return MessageResponse(message="个人凭证状态已更新")
 
+    runtime_scope_id = None
+    if tool_id == "api-autotest":
+        if not payload.runtime_context_id:
+            raise PlatformError(403, "RUNTIME_CONTEXT_REQUIRED", "当前请求缺少可信用户上下文")
+        scoped_context = validate_runtime_context(
+            database, payload.runtime_context_id, context.client, tool_id
+        )
+        runtime_scope_id = scoped_context.runtime_scope_id
+        scope = database.get(ToolProjectScope, runtime_scope_id)
+        if scope is None or scope.status != "active":
+            raise PlatformError(409, "RUNTIME_SCOPE_DISABLED", "当前 Runtime Scope 不可执行")
     row = database.scalar(select(Credential).where(
         Credential.tool_id == tool_id,
         Credential.environment_id == context.client.environment_id,
         Credential.provider_type == payload.provider_type,
+        Credential.runtime_scope_id == runtime_scope_id,
     ))
     if row is None:
         row = Credential(
             id=new_id("cred"), tool_id=tool_id, environment_id=context.client.environment_id,
-            provider_type=payload.provider_type,
+            runtime_scope_id=runtime_scope_id, provider_type=payload.provider_type,
         )
         database.add(row)
     row.status = payload.status
@@ -1358,8 +2052,18 @@ def write_credential_session(
             "旧凭证写入接口已停用，请升级工具",
         )
     credential = database.get(Credential, credential_id)
-    if credential is None or (credential.tool_id, credential.environment_id) != (
-        tool_id, context.client.environment_id,
+    runtime_scope_id = None
+    if tool_id == "api-autotest":
+        if not payload.runtime_context_id:
+            raise PlatformError(403, "RUNTIME_CONTEXT_REQUIRED", "当前请求缺少可信用户上下文")
+        scoped_context = validate_runtime_context(
+            database, payload.runtime_context_id, context.client, tool_id
+        )
+        runtime_scope_id = scoped_context.runtime_scope_id
+    if credential is None or (
+        credential.tool_id, credential.environment_id, credential.runtime_scope_id
+    ) != (
+        tool_id, context.client.environment_id, runtime_scope_id,
     ):
         raise PlatformError(404, "NOT_FOUND", "凭证不存在")
     if credential.current_version != payload.expected_version:
@@ -1387,15 +2091,19 @@ def write_credential_session(
         if not isinstance(value, str) or not value:
             raise PlatformError(422, "CONFIG_VALIDATION_FAILED", "凭证 Secret 必须是非空字符串")
         definition = definitions[key]
+        secret_owner_type = "tool_project_scope" if runtime_scope_id else "tool"
+        secret_owner_id = runtime_scope_id or tool_id
         secret = database.scalar(select(Secret).where(
             Secret.environment_id == credential.environment_id,
-            Secret.owner_type == "tool", Secret.owner_id == tool_id,
+            Secret.owner_type == secret_owner_type,
+            Secret.owner_id == secret_owner_id,
             Secret.definition_id == definition.id,
         ))
         if secret is None:
             secret = Secret(
                 id=new_id("sec"), environment_id=credential.environment_id,
-                owner_type="tool", owner_id=tool_id, definition_id=definition.id,
+                owner_type=secret_owner_type, owner_id=secret_owner_id,
+                definition_id=definition.id,
                 status="missing",
             )
             database.add(secret)
@@ -1463,12 +2171,17 @@ def write_user_credential_session(
     runtime_context = validate_runtime_context(
         database, payload.runtime_context_id, context.client, tool_id
     )
+    if tool_id == "api-autotest":
+        scope = database.get(ToolProjectScope, runtime_context.runtime_scope_id)
+        if scope is None or scope.status != "active":
+            raise PlatformError(409, "RUNTIME_SCOPE_DISABLED", "当前 Runtime Scope 不可执行")
     # 先限定 Context 用户，再匹配客户端传入 ID，形成统一的 IDOR 防线。
     credential = database.scalar(select(UserCredential).where(
         UserCredential.user_id == runtime_context.user_id,
         UserCredential.id == credential_id,
         UserCredential.tool_id == tool_id,
         UserCredential.environment_id == context.client.environment_id,
+        UserCredential.runtime_scope_id == runtime_context.runtime_scope_id,
     ).with_for_update())
     if credential is None:
         raise PlatformError(404, "NOT_FOUND", "个人凭证不存在")
@@ -1483,6 +2196,9 @@ def write_user_credential_session(
             ConfigDefinition.value_scope == "user",
             ConfigDefinition.credential_provider_type == credential.provider_type,
         )).all()
+        if not bool(
+            (row.validation_schema or {}).get("runtime_config_excluded")
+        )
     }
     if not definitions or set(payload.values) - set(definitions):
         raise PlatformError(

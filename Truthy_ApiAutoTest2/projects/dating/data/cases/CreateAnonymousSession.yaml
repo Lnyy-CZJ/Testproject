@@ -1,0 +1,17 @@
+api: CreateAnonymousSession
+cases:
+  - id: create_anonymous_session_success
+    name: 创建匿名会话成功
+    tags: [dating, smoke, identity]
+    request:
+      params:
+        consent_policy_version: "{{consent_policy_version}}"
+    assert:
+      http_status: 200
+      gateway: {message: ok}
+    extract:
+      access_token: $.access_token
+      expires_time: $.expires_time
+      refresh_token: $.refresh_token
+      refresh_expires_time: $.refresh_expires_time
+      user_id: $.user_id

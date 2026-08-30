@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 import os
 from datetime import date
 from pathlib import Path
@@ -13,11 +14,48 @@ import requests
 from api.gateway_api import GatewayApi
 from utils.custom.api_loader import load_api_definitions
 from utils.custom.case_loader import load_single_cases
-from utils.custom.config_loader import ConfigError, load_settings, load_yaml
+from utils.custom.config_loader import (
+    ConfigError,
+    load_settings,
+    load_yaml,
+    validate_settings_contract,
+)
 from utils.custom.logger import configure_logging
+from utils.custom.project_registry import ProjectPackage, ProjectRegistry
 from utils.custom.runtime_context import RuntimeContext
+from utils.custom.runtime_overrides import (
+    RuntimeOverrideError,
+    load_execution_asset_from_environment,
+)
+from utils.third_party.allure_reporter import (
+    build_runtime_report_metadata,
+    set_runtime_report_metadata,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _execution_asset(config: pytest.Config) -> dict[str, Any] | None:
+    """读取并缓存本次 pytest 会话唯一的执行资产。
+
+    未设置内部环境变量时返回 None，普通 CLI 继续读取 YAML；设置后任何
+    缺失、越界或篡改都转换为 UsageError，使收集阶段直接非零退出。
+    """
+
+    cache_name = "_api_autotest_execution_asset"
+    if hasattr(config, cache_name):
+        return getattr(config, cache_name)
+    try:
+        document = load_execution_asset_from_environment(
+            runtime_root=PROJECT_ROOT / "runtime",
+            project_id=str(config.getoption("--project")),
+            task_id=str(config.getoption("--task-id") or ""),
+            environ=os.environ,
+        )
+    except RuntimeOverrideError as exc:
+        raise pytest.UsageError(f"执行资产不可用: {exc.message}") from exc
+    setattr(config, cache_name, document)
+    return document
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -30,16 +68,59 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         无。参数可通过 ``request.config.getoption`` 读取。
     """
     parser.addoption(
+        "--project",
+        action="store",
+        default="truthy",
+        help="选择 projects 下的标准项目包，默认 truthy",
+    )
+    parser.addoption(
+        "--target-env",
+        action="store",
+        default=None,
+        help="选择被测系统环境，默认 test",
+    )
+    parser.addoption(
+        "--config-source",
+        action="store",
+        choices=("platform", "local"),
+        default="local",
+        help="选择互斥配置来源",
+    )
+    parser.addoption(
         "--env",
         action="store",
-        default="test",
-        help="选择 config/env 下的运行环境，默认 test",
+        default=None,
+        help="已弃用：truthy 的 target-env 兼容别名",
+    )
+    parser.addoption(
+        "--api",
+        action="store",
+        default=None,
+        help="按当前项目 API ID 筛选单接口用例",
+    )
+    parser.addoption(
+        "--case",
+        action="store",
+        default=None,
+        help="按当前项目完整 ApiId::case_id 筛选单接口用例",
     )
     parser.addoption(
         "--flow",
         action="store",
         default=None,
         help="按 data/flows 下的 YAML 文件名筛选流程",
+    )
+    parser.addoption(
+        "--task-id",
+        action="store",
+        default=None,
+        help="平台内部任务身份，仅用于快照一致性校验",
+    )
+    parser.addoption(
+        "--runtime-scope-id",
+        action="store",
+        default=None,
+        help="平台内部 Runtime Scope 身份，仅用于快照一致性校验",
     )
 
 
@@ -49,48 +130,190 @@ def pytest_configure(config: pytest.Config) -> None:
     动态注册让新增普通用例时只需修改 YAML，不需要同步维护 pytest.ini。
     无法解析的 YAML 会在正式收集用例时给出明确错误，这里不吞掉该错误。
     """
+    direct_project_root = PROJECT_ROOT if (PROJECT_ROOT / "data").is_dir() else None
+    if direct_project_root is not None:
+        project_id = "truthy"
+        project_root = direct_project_root
+        target_env = str(config.getoption("--env"))
+        flows_dir = project_root / "data" / "flows"
+    else:
+        project_id = str(config.getoption("--project"))
+        package = ProjectRegistry(PROJECT_ROOT / "projects").get(project_id)
+        project_root = package.root
+        target_env = _target_env(config)
+        flows_dir = package.flows_dir
     logging_config = load_yaml(PROJECT_ROOT / "config" / "settings.yaml").get(
         "logging"
     ) or {}
-    log_directory = PROJECT_ROOT / str(logging_config.get("directory", "logs"))
+    log_directory = (
+        PROJECT_ROOT
+        / str(logging_config.get("directory", "logs"))
+        / project_id
+        / target_env
+    )
+    # configure_logging 在项目/环境目录下直接追加日期层。任务记录会在终态按
+    # PID 关联唯一文件，因此无需再创建 task_id 子目录，日志保留策略也能直接
+    # 扫描 ``YYYY-MM-DD`` 一级目录。
     configure_logging(
         level=logging_config.get("level", "INFO"),
         log_directory=log_directory,
-        env=str(config.getoption("--env")),
+        env=target_env,
         console=bool(logging_config.get("console", True)),
         file=bool(logging_config.get("file", True)),
     )
-    # CaseLoader 负责解析 V1.3 嵌套 cases；集合去重避免相同标签重复注册。
-    case_tags = {
-        tag
-        for single_case in load_single_cases(PROJECT_ROOT)
-        for tag in single_case["tags"]
-    }
+    execution_asset = _execution_asset(config)
+    if execution_asset is None:
+        # 普通 CLI 继续从当前项目 YAML 注册全部标签。
+        case_tags = {
+            tag
+            for single_case in load_single_cases(project_root)
+            for tag in single_case["tags"]
+        }
+        flow_tags = {
+            str(tag)
+            for flow_path in sorted(flows_dir.glob("*.yaml"))
+            for tag in (load_yaml(flow_path).get("tags") or [])
+        }
+    elif execution_asset.get("asset_type") == "case":
+        selected = execution_asset["resolved_execution_asset"]["single_case"]
+        case_tags = {str(tag) for tag in selected.get("tags") or []}
+        flow_tags = set()
+    elif execution_asset.get("asset_type") == "batch":
+        batch = execution_asset["resolved_execution_asset"]
+        items = batch["items"]
+        if batch.get("batch_type") == "cases":
+            case_tags = {
+                str(tag)
+                for item in items
+                for tag in (
+                    item["resolved_execution_asset"]["single_case"].get(
+                        "tags"
+                    )
+                    or []
+                )
+            }
+            flow_tags = set()
+        else:
+            case_tags = set()
+            flow_tags = {
+                str(tag)
+                for item in items
+                for tag in (
+                    item["resolved_execution_asset"]["flow_case"].get("tags")
+                    or []
+                )
+            }
+    else:
+        selected = execution_asset["resolved_execution_asset"]["flow_case"]
+        case_tags = set()
+        flow_tags = {str(tag) for tag in selected.get("tags") or []}
+
     for tag in sorted(case_tags):
         config.addinivalue_line("markers", f"{tag}: YAML 用例标签")
-    for flow_path in sorted((PROJECT_ROOT / "data" / "flows").glob("*.yaml")):
-        flow = load_yaml(flow_path)
-        for tag in flow.get("tags") or []:
-            config.addinivalue_line("markers", f"{tag}: Flow YAML 标签")
+    for tag in sorted(flow_tags):
+        config.addinivalue_line("markers", f"{tag}: Flow YAML 标签")
+
+
+def _target_env(config: pytest.Config) -> str:
+    """解析新旧环境参数，并拒绝旧参数跨项目或覆盖新参数。"""
+    target_env = config.getoption("--target-env")
+    legacy_env = config.getoption("--env")
+    project_id = config.getoption("--project")
+    if legacy_env:
+        if project_id != "truthy":
+            raise pytest.UsageError("--env 仅兼容 truthy 项目")
+        if target_env and target_env != legacy_env:
+            raise pytest.UsageError("--env 与 --target-env 不一致")
+        return str(legacy_env)
+    return str(target_env or "test")
 
 
 @pytest.fixture(scope="session")
-def gateway_settings(request: pytest.FixtureRequest) -> dict[str, Any]:
+def project_package(request: pytest.FixtureRequest) -> ProjectPackage:
+    """返回本次 pytest 会话唯一的标准项目包。"""
+    project_id = str(request.config.getoption("--project"))
+    return ProjectRegistry(PROJECT_ROOT / "projects").get(project_id)
+
+
+@pytest.fixture(scope="session")
+def gateway_settings(
+    request: pytest.FixtureRequest,
+    project_package: ProjectPackage,
+) -> dict[str, Any]:
     """加载本次测试会话的环境配置。
 
     缺少真实凭证时跳过真实接口用例，框架单元测试仍可正常执行。
     """
-    env = request.config.getoption("--env")
+    env = _target_env(request.config)
+    config_source = str(request.config.getoption("--config-source"))
     try:
-        return load_settings(env, project_root=PROJECT_ROOT)
+        settings = load_settings(
+            env,
+            project_root=PROJECT_ROOT,
+            config_source=config_source,
+            project_id=project_package.project_id,
+            task_id=request.config.getoption("--task-id")
+            or os.getenv("API_AUTOTEST_TASK_ID")
+            or None,
+            runtime_scope_id=request.config.getoption("--runtime-scope-id")
+            or os.getenv("API_AUTOTEST_RUNTIME_SCOPE_ID")
+            or None,
+        )
+        if config_source == "platform":
+            validate_settings_contract(
+                settings,
+                project_package.manifest.config_contract.required_keys,
+            )
+        return settings
     except ConfigError as exc:
+        if config_source == "platform":
+            # 平台快照是发布后的唯一配置源；缺失、篡改或契约不完整均属于
+            # 执行失败。这里必须让直接 pytest/Jenkins 返回非零，不能依赖
+            # Web TaskManager 事后把 all-skipped 修正为 failed。
+            pytest.fail(f"平台运行快照不可用: {exc}", pytrace=False)
         pytest.skip(f"真实 Gateway 用例未执行: {exc}")
 
 
+@pytest.fixture
+def runtime_report_metadata(
+    request: pytest.FixtureRequest,
+    project_package: ProjectPackage,
+    gateway_settings: dict[str, Any],
+    record_property: Any,
+) -> dict[str, str]:
+    """将同一组非敏感运行身份写入 JUnit 与 Allure。
+
+    该 fixture 只注入两个真实 Gateway 测试入口，不影响框架单元测试收集。
+    平台快照中的配置和凭证内容均不进入报告；报告仅保留项目、环境、Scope、
+    Release 与任务身份，便于从历史报告回溯到平台唯一真源。
+    """
+    metadata = build_runtime_report_metadata(
+        project_id=project_package.project_id,
+        target_env=_target_env(request.config),
+        config_source=str(request.config.getoption("--config-source")),
+        settings=gateway_settings,
+    )
+    for name, value in metadata.items():
+        record_property(name, value)
+    set_runtime_report_metadata(metadata)
+    return metadata
+
+
 @pytest.fixture(scope="session")
-def gateway_endpoint() -> dict[str, Any]:
-    """返回 Gateway 固定 HTTP 接口配置。"""
-    return load_yaml(PROJECT_ROOT / "data" / "api" / "gateway_invoke.yaml")
+def gateway_endpoint(
+    project_package: ProjectPackage,
+    gateway_settings: dict[str, Any],
+) -> dict[str, Any]:
+    """返回当前快照固化的 Gateway 入口，项目 YAML 只提供 local 默认结构。"""
+    endpoint = load_yaml(project_package.api_dir / "gateway_invoke.yaml")
+    for settings_key, endpoint_key in (
+        ("gateway_path", "path"),
+        ("gateway_method", "method"),
+        ("gateway_headers", "headers"),
+    ):
+        if settings_key in gateway_settings:
+            endpoint[endpoint_key] = gateway_settings[settings_key]
+    return endpoint
 
 
 @pytest.fixture(scope="session")
@@ -111,16 +334,24 @@ def gateway_runtime(gateway_settings: dict[str, Any]) -> RuntimeContext:
 
 @pytest.fixture(scope="session")
 def gateway_api(
+    request: pytest.FixtureRequest,
     gateway_settings: dict[str, Any],
     gateway_endpoint: dict[str, Any],
     gateway_runtime: RuntimeContext,
+    project_package: ProjectPackage,
 ) -> GatewayApi:
     """返回具备自动创建/刷新匿名会话能力的 Gateway 调用对象。
 
     自动会话只使用 API 定义中的路由；请求参数、断言和提取规则由
     ``GatewayApi`` 的内部会话协议统一管理，不依赖单接口 Cases。
     """
-    session_path: Path | None = PROJECT_ROOT / ".env"
+    config_source = str(request.config.getoption("--config-source"))
+    # 仅 Truthy local 兼容入口可读写旧根 .env；Dating 与后续项目从不继承它。
+    session_path: Path | None = (
+        PROJECT_ROOT / ".env"
+        if project_package.project_id == "truthy" and config_source == "local"
+        else None
+    )
     session_writer = None
     if os.getenv("API_AUTOTEST_SESSION_PROVIDER", "dotenv") == "platform":
         platform_api_url = os.getenv("PLATFORM_API_URL", "").rstrip("/")
@@ -144,7 +375,7 @@ def gateway_api(
                 env_key: values[runtime_key]
                 for runtime_key, env_key in {
                     "access_token": "AUTH_TOKEN", "refresh_token": "REFRESH_TOKEN",
-                    "user_id": "USER_ID", "device_id": "DEVICE_ID",
+                    "user_id": "USER_ID",
                     "expires_time": "EXPIRES_TIME", "refresh_expires_time": "REFRESH_EXPIRES_TIME",
                 }.items()
                 if values.get(runtime_key) not in (None, "")
@@ -165,11 +396,20 @@ def gateway_api(
         session_path = None
         session_writer = write_platform_session
 
+    execution_asset = _execution_asset(request.config)
+    api_definitions = (
+        deepcopy(
+            execution_asset["resolved_execution_asset"]["api_definitions"]
+        )
+        if execution_asset is not None
+        else load_api_definitions(project_package.root)
+    )
     return GatewayApi(
         gateway_settings,
         gateway_endpoint,
         runtime_context=gateway_runtime,
-        api_definitions=load_api_definitions(PROJECT_ROOT),
+        # 当前任务固化的注册表优先，确保自动会话依赖与所选资产同时冻结。
+        api_definitions=api_definitions,
         session_env_path=session_path,
         session_state_writer=session_writer,
     )

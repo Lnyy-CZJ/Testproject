@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from web.catalog import build_catalog
@@ -83,3 +84,42 @@ class TestErrorIsolation:
         assert all(flow["name"] != "Broken" for flow in snapshot["flows"])
         for error in snapshot["errors"]:
             assert error["message"]
+
+
+def test_catalog_exposes_runtime_inputs_without_internal_targets(
+    multi_project_root: Path,
+) -> None:
+    """Catalog 只公开字段描述、数量和稳定资产版本。"""
+    catalog = build_catalog(multi_project_root, "dating")
+    case = next(
+        item
+        for item in catalog["cases"]
+        if item["api"] == "GetMe" and item["id"] == "get_me_success"
+    )
+    flow = next(
+        item for item in catalog["flows"] if item["id"] == "dating_demo_flow"
+    )
+    for asset in (case, flow):
+        assert asset["asset_revision"].startswith("sha256:")
+        assert asset["runtime_input_count"] == 1
+        assert asset["runtime_inputs"][0]["default_value"] == "en-US"
+        serialized = json.dumps(asset, ensure_ascii=False)
+        assert '"target"' not in serialized
+        assert "resolved_execution_asset" not in serialized
+
+
+def test_isolated_dating_flows_do_not_require_shared_credential(
+    project_root: Path,
+) -> None:
+    """自建会话的隔离 Flow 不应被共享 anonymous_session 预检拦截。"""
+
+    catalog = build_catalog(project_root, "dating")
+    flows = {item["id"]: item for item in catalog["flows"]}
+
+    assert flows["delete_account_contract"]["credential_profiles"] == []
+    assert flows["delete_user_data_contract"]["credential_profiles"] == []
+    assert flows["reply_preferences_lifecycle"]["credential_profiles"] == []
+    # 普通 Flow 继续使用当前 Scope 的共享会话，不得因隔离修正而放宽。
+    assert flows["multi_image_analysis"]["credential_profiles"] == [
+        "anonymous_session"
+    ]

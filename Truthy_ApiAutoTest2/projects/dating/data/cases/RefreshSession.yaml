@@ -1,0 +1,32 @@
+api: RefreshSession
+cases:
+  - id: refresh_session_success
+    name: 使用当前 refresh token 刷新匿名会话
+    tags: [dating, smoke, identity, session]
+    request:
+      params:
+        refresh_token: "{{refresh_token}}"
+    assert:
+      http_status: 200
+      gateway: {message: ok}
+    # 刷新后必须提取整套会话状态，单接口执行器会在全部断言通过后写回
+    # 当前 Dating Scope 的 anonymous_session Credential。
+    extract:
+      access_token: $.access_token
+      expires_time: $.expires_time
+      refresh_token: $.refresh_token
+      refresh_expires_time: $.refresh_expires_time
+      user_id: $.user_id
+  - id: refresh_session_invalid_token
+    name: 无效 refresh token 被拒绝
+    tags: [dating, negative, identity, session]
+    request:
+      params:
+        refresh_token: invalid-refresh-token-for-contract-test
+    assert:
+      http_status: 200
+      gateway: {message: ok}
+      response:
+        id: req_0
+        success: false
+        business_error_code: UNAUTHENTICATED

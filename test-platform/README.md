@@ -67,12 +67,15 @@ cat /Users/admin/Testproject/test-platform/.runtime-secrets/initial-admin-passwo
 
 | 项目 | 默认值 |
 |---|---|
-| Session 空闲有效期 | 8 小时 |
-| Session 绝对有效期 | 24 小时 |
+| 新 Session 空闲有效期 | 168 小时（7 天） |
+| 新 Session 绝对有效期 | 168 小时（7 天） |
+| 新密码 | 6–18 个 Unicode 字符；登录继续兼容 1–256 位存量密码 |
+| 自助注册 | `REGISTRATION_MODE=open`；新账号固定为 active tester，无项目或额外授权 |
+| 注册防滥用 | 来源 5 次/15 分钟；全局 100 次/15 分钟；请求体最大 64 KiB |
 | 登录锁定 | 15 分钟内失败 5 次，锁定 15 分钟 |
 | Cookie | `tp_session` HttpOnly；`tp_csrf` 双提交 |
 | dev Cookie Secure | 可关闭，仅限受控内网 HTTP |
-| prod Cookie Secure | 当前 HTTP 部署明确设为 `false`；传输风险已接受 |
+| prod Cookie Secure | HTTP 关闭 Secure 时必须提供 `SESSION_COOKIE_RISK_ACCEPTANCE_ID`；HTTPS 应设为 `true` |
 | Secret 加密 | AES-256-GCM 信封加密，每版本独立 DEK |
 | 审计保留目标 | 180 天 |
 | 凭证提前刷新 | 60 分钟 |
@@ -80,6 +83,8 @@ cat /Users/admin/Testproject/test-platform/.runtime-secrets/initial-admin-passwo
 | Runtime Context | 最长 24 小时，可因 Session、用户或权限变化提前失效 |
 
 Nginx 对全部六个工具前缀执行 `auth_request`。匿名页面请求重定向 `/login`，API 请求返回 401；无权限返回 403；身份服务异常返回 503。浏览器提供的 `X-Platform-*` 会被清除，只有授权成功后由网关注入可信身份和权限。
+
+发布前已存在的 Session 继续按数据库中原到期时间判断；配置改为 168 小时只影响新签发 Session。紧急停止新注册时设置 `REGISTRATION_MODE=disabled` 并重启平台 API/网关，不删除已创建用户。
 
 ## 共享配置与用户级凭证
 

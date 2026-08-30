@@ -94,6 +94,27 @@ export interface ConfigRelease {
   items: ConfigReleaseItem[];
 }
 
+/**
+ * Runtime Scope 是平台配置控制面的唯一归属单位。
+ *
+ * 浏览器只消费不含敏感值的身份、状态和版本摘要；Release、Secret、Credential
+ * 的明文与可推断信息始终由后端按该 scope 的 RBAC 规则保护。
+ */
+export interface RuntimeScope {
+  id: string;
+  environment_id: string;
+  tool_id: string;
+  platform_project_id: string;
+  platform_project_name?: string | null;
+  project_id: string;
+  display_name: string;
+  target_env: string;
+  status: "active" | "disabled" | string;
+  is_default: boolean;
+  revision: number;
+  active_release?: { id: string; version: number; status: string } | null;
+}
+
 export interface PermissionDefinition {
   code: string;
   name: string;
@@ -118,6 +139,8 @@ export interface CredentialMetadata {
   id: string;
   tool_id: string;
   environment_id: string;
+  /** 为空表示历史工具级凭证；非空时必须与当前 Runtime Scope 精确匹配。 */
+  runtime_scope_id: string | null;
   provider_type: string;
   status: string;
   current_version: number;
@@ -139,6 +162,8 @@ export interface PersonalCredential {
   id: string;
   tool_id: string;
   environment_id: string;
+  /** 多项目工具绑定的 Runtime Scope；旧工具级凭证为 null。 */
+  runtime_scope_id: string | null;
   provider_type: string;
   status: string;
   current_version: number;

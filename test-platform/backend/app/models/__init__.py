@@ -15,6 +15,7 @@ from app.models.configuration import (
     Environment,
     Secret,
     SecretVersion,
+    ToolProjectScope,
     UserCredential,
     UserCredentialItem,
 )
@@ -56,6 +57,7 @@ __all__ = [
     "Secret",
     "SecretVersion",
     "Tool",
+    "ToolProjectScope",
     "ToolClient",
     "ToolLlmBinding",
     "User",

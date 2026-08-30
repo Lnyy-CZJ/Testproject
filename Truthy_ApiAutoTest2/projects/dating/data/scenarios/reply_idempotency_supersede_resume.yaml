@@ -1,0 +1,68 @@
+name: 同参数复用 Reply、变更背景替换旧任务并恢复新结果
+variables: {}
+step_data:
+  create_session:
+    params: {consent_policy_version: "{{consent_policy_version}}"}
+    assert: {http_status: 200, gateway: {message: ok}}
+  get_preferences:
+    params: {}
+    assert: {http_status: 200, gateway: {message: ok}}
+  update_preferences:
+    params:
+      client_request_id: "{{flow_run_id}}-reply-preferences"
+      dating_goal: serious_relationship
+      your_voice: warm_direct
+      expected_version: "{{preferences_version}}"
+    assert: {http_status: 200, gateway: {message: ok}}
+  get_upload_config:
+    params: {}
+    assert: {http_status: 200, gateway: {message: ok}}
+  prepare_upload:
+    params:
+      client_request_id: "{{client_request_id}}"
+      content_type: "{{media_file.content_type}}"
+      size_bytes: "{{media_file.size_bytes}}"
+      purpose: chat_screenshot
+    assert: {http_status: 200, gateway: {message: ok}}
+  complete_upload:
+    params: {asset_id: "{{asset_id}}"}
+    assert: {http_status: 200, gateway: {message: ok}}
+  create_reply_first:
+    params:
+      client_request_id: "{{flow_run_id}}-reply-a"
+      asset_ids: "{{asset_ids}}"
+      requested_intent: flirt
+      background: Reply idempotency contract A.
+      locale: en-US
+    assert: {http_status: 200, gateway: {message: ok}}
+  create_reply_retry:
+    params:
+      client_request_id: "{{flow_run_id}}-reply-a"
+      asset_ids: "{{asset_ids}}"
+      requested_intent: flirt
+      background: Reply idempotency contract A.
+      locale: en-US
+    assert:
+      http_status: 200
+      gateway: {message: ok}
+      data_equals: {task_id: "{{reply_task_a}}"}
+  create_reply_replacement:
+    params:
+      client_request_id: "{{flow_run_id}}-reply-b"
+      asset_ids: "{{asset_ids}}"
+      requested_intent: flirt
+      background: Reply replacement contract B.
+      locale: en-US
+    assert:
+      http_status: 200
+      gateway: {message: ok}
+      data_not_equals: {task_id: "{{reply_task_a}}"}
+  poll_superseded_reply:
+    params: {task_id: "{{reply_task_a}}"}
+    assert: {http_status: 200, gateway: {message: ok}}
+  poll_replacement_reply:
+    params: {task_id: "{{reply_task_b}}"}
+    assert: {http_status: 200, gateway: {message: ok}}
+  get_replacement_result:
+    params: {task_id: "{{reply_task_b}}"}
+    assert: {http_status: 200, gateway: {message: ok}}

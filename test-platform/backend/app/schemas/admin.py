@@ -3,8 +3,9 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
+from app.core.security import PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH
 from app.schemas.auth import ProjectSummary, ToolGrantSummary
 
 
@@ -13,10 +14,13 @@ class UserCreateRequest(BaseModel):
 
     username: str = Field(min_length=3, max_length=128)
     display_name: str = Field(min_length=1, max_length=128)
-    password: str = Field(min_length=12, max_length=256)
-    role: Literal["platform_admin", "admin", "tester"] | None = None
-    role_ids: list[str] = Field(default_factory=list, max_length=20)
+    password: str = Field(min_length=PASSWORD_MIN_LENGTH, max_length=PASSWORD_MAX_LENGTH)
+    # 新权限模型的账号只能拥有一个固定角色；旧 role_ids 仅保留响应兼容，
+    # 不允许客户端省略固定角色后再通过旧 RBAC 创建空角色用户。
+    role: Literal["platform_admin", "admin", "tester"]
     must_change_password: bool = True
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class UserUpdateRequest(BaseModel):
@@ -25,13 +29,17 @@ class UserUpdateRequest(BaseModel):
     display_name: str | None = Field(default=None, min_length=1, max_length=128)
     status: str | None = Field(default=None, pattern="^(active|disabled)$")
     role: Literal["platform_admin", "admin", "tester"] | None = None
-    role_ids: list[str] | None = Field(default=None, max_length=20)
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class ResetPasswordRequest(BaseModel):
     """管理员重置用户密码请求。"""
 
-    new_password: str = Field(min_length=12, max_length=256)
+    new_password: str = Field(
+        min_length=PASSWORD_MIN_LENGTH,
+        max_length=PASSWORD_MAX_LENGTH,
+    )
 
 
 class UserAdminResponse(BaseModel):

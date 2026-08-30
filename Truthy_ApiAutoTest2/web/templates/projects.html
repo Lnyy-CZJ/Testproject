@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}切换项目 · 接口自动化{% endblock %}
+{% block page_id %}projects{% endblock %}
+{% block content %}
+<header class="page-header">
+  <p class="eyebrow">API AUTOMATION</p>
+  <h1>切换项目</h1>
+  <p>平台会自动加载当前项目对应的 Runtime Scope。</p>
+</header>
+
+<div class="toolbar" role="search">
+  <label class="search-field"><span class="sr-only">搜索项目</span><input id="project-search" type="search" placeholder="搜索项目"></label>
+  <button class="button secondary compact" id="project-clear" type="button">全部项目</button>
+</div>
+
+<div class="split-layout projects-layout">
+  <section class="panel list-panel" aria-labelledby="project-list-heading">
+    <div class="panel-heading"><div><h2 id="project-list-heading">项目列表</h2><p id="project-count">加载中…</p></div></div>
+    <div id="project-list" class="project-list" aria-live="polite"><p class="empty-state">正在读取授权 Scope…</p></div>
+  </section>
+  <section class="panel detail-panel" aria-labelledby="project-context-heading">
+    <div class="panel-heading"><div><h2 id="project-context-heading">项目运行上下文</h2><p>仅展示平台已确认的非敏感元数据。</p></div></div>
+    <div id="project-context"><p class="empty-state">选择左侧项目查看详情。</p></div>
+  </section>
+</div>
+{% endblock %}

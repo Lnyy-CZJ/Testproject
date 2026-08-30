@@ -6,8 +6,8 @@ logging:
   console: true
   file: true
 session:
-  # access token 距过期不足一天（毫秒）时主动刷新。
-  refresh_before_ms: 86400000
+  # access token 尚未过期且剩余时间不超过两小时（毫秒）时主动刷新。
+  refresh_before_ms: 7200000
 comm:
   platform: ios
   app_version: 1.0.3

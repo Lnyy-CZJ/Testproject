@@ -8,14 +8,18 @@ from http.cookies import SimpleCookie
 from pathlib import Path
 from urllib import request as urlrequest
 
+from gateway_log_parser import clean_log_line
+
 try:
     from flask import Blueprint, Flask, jsonify, render_template, request
+    from werkzeug.exceptions import RequestEntityTooLarge
 except ImportError:  # Allows core log parsing tests to run before Flask is installed.
     Blueprint = None
     Flask = None
     jsonify = None
     render_template = None
     request = None
+    RequestEntityTooLarge = None
 
 
 ALL_METHOD = "__ALL__"
@@ -23,7 +27,6 @@ METHOD_PATTERNS = (
     re.compile(r"method=([A-Za-z0-9_]+)"),
     re.compile(r'"method_name"\s*:\s*"([A-Za-z0-9_]+)"'),
 )
-CONSOLE_PREFIX_PATTERN = re.compile(r"^.*?\bflutter:\s?")
 REQUEST_ID_PATTERN = re.compile(
     r'(?<![A-Za-z0-9_])"?request_id"?\s*[:=]\s*"?([^"\s,}]+)',
     re.IGNORECASE,
@@ -41,7 +44,10 @@ EXPORT_FILE_TYPES = {
     "log_content": ("log_content", ".log"),
     "filtered_result": ("filtered_result", ".log"),
     "analysis_report": ("people_search_analysis", ".md"),
+    "dating_analysis_report": ("dating_structured_analysis", ".md"),
+    "dating_analysis_json": ("dating_structured_analysis", ".json"),
 }
+DATING_RULESET_VERSION = "2026-08-29"
 DEFAULT_EXPORT_DIR = "/Users/admin/Documents/log"
 # 导出文件名使用用户所在的上海时区，避免 Docker 默认 UTC 造成时间偏差。
 EXPORT_TIMEZONE = timezone(timedelta(hours=8))
@@ -292,18 +298,6 @@ def filter_log_text(log_text, methods):
     return format_result_text(filtered_blocks), len(filtered_blocks)
 
 
-def clean_log_line(line):
-    line = CONSOLE_PREFIX_PATTERN.sub("", line, count=1)
-    stripped_line = line.lstrip()
-    if stripped_line.startswith(("┌", "└")):
-        return ""
-    if line.startswith("│ "):
-        return line[2:]
-    if line.startswith("│"):
-        return line[1:]
-    return line.replace("│", "")
-
-
 def format_result_text(blocks):
     cleaned_blocks = []
     for block in blocks:
@@ -317,7 +311,7 @@ def format_result_text(blocks):
 
 
 def save_exported_log(content, export_type, export_dir):
-    """将页面中的日志文本安全保存为不覆盖已有文件的 .log 文件。
+    """将页面文本安全保存为不覆盖已有文件的已批准导出类型。
 
     功能说明:
         根据导出来源生成带时间戳的文件名，并使用独占创建模式避免覆盖
@@ -325,7 +319,7 @@ def save_exported_log(content, export_type, export_dir):
 
     参数说明:
         content (str): 需要导出的当前文本框内容，不能为空或仅包含空白。
-        export_type (str): 导出来源，支持 log_content、filtered_result 和 analysis_report。
+        export_type (str): ``EXPORT_FILE_TYPES`` 中的固定导出类型。
         export_dir (str | Path): 服务端实际写入的目录。
 
     返回值:
@@ -402,7 +396,34 @@ def create_app(base_path=None):
     app.config["PEOPLE_SEARCH_ANALYZER_AI_ENABLED"] = os.environ.get(
         "PEOPLE_SEARCH_ANALYZER_AI_ENABLED", "false"
     ).lower() in ("1", "true", "yes", "on")
-    tool = Blueprint("tool", __name__)
+    app.config["DATING_STRUCTURED_ANALYZER_ENABLED"] = os.environ.get(
+        "DATING_STRUCTURED_ANALYZER_ENABLED", "true"
+    ).lower() in ("1", "true", "yes", "on")
+    # PRD canonical 名称优先；旧部署只配置 MAX_BYTES 时继续兼容。canonical
+    # 一旦显式存在即不回落 alias，配置非法则统一使用安全默认值。
+    dating_max_bytes_value = os.environ.get(
+        "DATING_STRUCTURED_MAX_LOG_BYTES"
+    )
+    if dating_max_bytes_value is None:
+        dating_max_bytes_value = os.environ.get(
+            "DATING_STRUCTURED_MAX_BYTES", "10485760"
+        )
+    try:
+        app.config["DATING_STRUCTURED_MAX_BYTES"] = max(
+            1,
+            int(dating_max_bytes_value),
+        )
+    except ValueError:
+        # 环境变量配置错误时回落到 10 MiB，避免应用因可选分析器无法启动。
+        app.config["DATING_STRUCTURED_MAX_BYTES"] = 10 * 1024 * 1024
+    # 静态资源由同一 Blueprint 提供，使根路径部署与平台子路径部署共享
+    # ``url_prefix``，避免模板硬编码路径后在 ``/log-tool`` 下产生 404。
+    tool = Blueprint(
+        "tool",
+        __name__,
+        static_folder="static",
+        static_url_path="/static",
+    )
 
     def client_token():
         """读取只读 Client Token，缺失时仅跳过审计上报。"""
@@ -593,12 +614,182 @@ def create_app(base_path=None):
             selected_analysis=selected_analysis,
             overall_analysis=overall_analysis,
             platform_home_url=app.config["PLATFORM_HOME_URL"],
+            dating_analyzer_enabled=app.config[
+                "DATING_STRUCTURED_ANALYZER_ENABLED"
+            ],
         )
 
     @tool.route("/sample", methods=["GET"])
     def sample_log():
         sample_path = Path(__file__).with_name("log_default.log")
         return sample_path.read_text(encoding="utf-8") if sample_path.exists() else ""
+
+    @tool.route("/dating/analyze", methods=["POST"])
+    def analyze_dating():
+        """编排本地 Dating 分析、规则、脱敏和固定报告。
+
+        请求只接受 ``application/json`` 对象，其中 ``log_text`` 为必填
+        字符串，``task_id`` 为可选字符串或 null。解析、规则和报告实现均
+        保留在各自模块；本路由只负责校验、错误映射和响应结构组装。
+        """
+
+        def error_response(error_code, message, status_code, task_ids=None):
+            """构造不含堆栈或原日志的稳定 Dating 错误响应。"""
+            payload = {"error_code": error_code, "message": message}
+            if task_ids is not None:
+                payload["task_ids"] = task_ids
+            return jsonify(payload), status_code
+
+        if not app.config["DATING_STRUCTURED_ANALYZER_ENABLED"]:
+            return error_response(
+                "ANALYZER_DISABLED",
+                "Dating 结构化分析功能未启用",
+                503,
+            )
+
+        # Flask 的全局 body 上限可能在 JSON 解析时先抛异常；Dating 路由在
+        # 读取 body 前做可判定的快速拒绝，并把解析期异常映射为同一 JSON。
+        request_limit = app.config.get("MAX_CONTENT_LENGTH")
+        if (
+            isinstance(request_limit, int)
+            and request.content_length is not None
+            and request.content_length > request_limit
+        ):
+            return error_response(
+                "LOG_TOO_LARGE", "日志内容超过允许的字节上限", 413
+            )
+        try:
+            payload = request.get_json(silent=True)
+        except RequestEntityTooLarge:
+            return error_response(
+                "LOG_TOO_LARGE", "日志内容超过允许的字节上限", 413
+            )
+        allowed_fields = {"log_text", "task_id"}
+        if (
+            request.mimetype != "application/json"
+            or not isinstance(payload, dict)
+            or "log_text" not in payload
+            or not set(payload).issubset(allowed_fields)
+            or not isinstance(payload.get("log_text"), str)
+            or (
+                payload.get("task_id") is not None
+                and not isinstance(payload.get("task_id"), str)
+            )
+        ):
+            return error_response(
+                "INVALID_REQUEST",
+                "请求必须是仅包含 log_text 和可选 task_id 的 JSON 对象",
+                400,
+            )
+
+        log_text = payload["log_text"]
+        task_id = payload.get("task_id")
+        if not log_text.strip():
+            return error_response("EMPTY_LOG", "日志内容为空", 400)
+        try:
+            log_size = len(log_text.encode("utf-8"))
+        except UnicodeEncodeError:
+            return error_response(
+                "INVALID_REQUEST", "log_text 必须是有效 UTF-8 文本", 400
+            )
+        if log_size > app.config["DATING_STRUCTURED_MAX_BYTES"]:
+            return error_response(
+                "LOG_TOO_LARGE", "日志内容超过允许的字节上限", 413
+            )
+
+        try:
+            # 延迟导入保持 app 核心过滤函数在 Flask/Dating 可选场景下可导入。
+            from dating_log_analyzer import analyze_dating_log
+            from dating_log_rules import (
+                compute_dating_verdict,
+                redact_dating_response,
+                render_dating_report,
+                run_dating_checks,
+            )
+
+            analysis = analyze_dating_log(
+                log_text, requested_task_id=task_id
+            )
+            if not analysis["supported"]:
+                return error_response(
+                    "UNSUPPORTED_LOG",
+                    "未识别到 Dating Gateway/PUT 日志",
+                    422,
+                )
+            if analysis["selection_error"]:
+                selection_error = analysis["selection_error"]
+                selection_messages = {
+                    "MULTIPLE_TASKS_FOUND": (
+                        "日志包含多个 Dating 任务，请指定 task_id"
+                    ),
+                    "TASK_NOT_FOUND": "指定的 task_id 不存在",
+                }
+                if selection_error not in selection_messages:
+                    raise ValueError("未知 Dating 任务选择错误")
+                return error_response(
+                    selection_error,
+                    selection_messages[selection_error],
+                    422,
+                    task_ids=analysis["task_ids"],
+                )
+
+            checks = run_dating_checks(analysis)
+            verdict = compute_dating_verdict(checks)
+            summary = dict(analysis["summary"])
+            summary.update(
+                {
+                    "check_fail_count": sum(
+                        check["outcome"] == "FAIL" for check in checks
+                    ),
+                    "check_warn_count": sum(
+                        check["outcome"] == "WARN" for check in checks
+                    ),
+                    "check_unknown_count": sum(
+                        check["outcome"] == "UNKNOWN" for check in checks
+                    ),
+                }
+            )
+            # 明确重建顶层对象，既锁定 PRD 字段集合/顺序，也不修改 analyzer
+            # 返回值，便于后续调用方复用同一分析结果。
+            result = {
+                "analyzer_version": analysis["analyzer_version"],
+                "parser_version": analysis["parser_version"],
+                "ruleset_version": DATING_RULESET_VERSION,
+                "supported": analysis["supported"],
+                "detected_domain": analysis["detected_domain"],
+                "verdict": verdict,
+                "selection_error": analysis["selection_error"],
+                "task_ids": analysis["task_ids"],
+                "summary": summary,
+                "interface_statistics": analysis["interface_statistics"],
+                "flow_steps": analysis["flow_steps"],
+                "calls": analysis["calls"],
+                "task_snapshot": analysis["task_snapshot"],
+                "checks": checks,
+                "parse_warnings": analysis["parse_warnings"],
+            }
+            safe_result = redact_dating_response(result)
+            safe_result["report_markdown"] = render_dating_report(
+                safe_result, safe_result["checks"]
+            )
+            # 仅 Dating 成功响应关闭键排序；People、export、health 等路由
+            # 继续沿用 Flask 默认序列化，避免改变其既有响应字节合同。
+            response_body = app.json.dumps(
+                safe_result,
+                sort_keys=False,
+                separators=(",", ":"),
+            )
+            return app.response_class(
+                response_body + "\n",
+                status=200,
+                mimetype="application/json",
+            )
+        except Exception:
+            # 客户端只接收稳定错误码；完整堆栈仅写入服务端日志供排障。
+            app.logger.exception("Dating 结构化分析发生未预期异常")
+            return error_response(
+                "ANALYSIS_INTERNAL_ERROR", "Dating 分析失败", 500
+            )
 
     @tool.route("/people-search/analyze", methods=["POST"])
     def analyze_people_search():
@@ -718,10 +909,43 @@ def create_app(base_path=None):
         """
         payload = request.get_json(silent=True) or {}
         # 纯参数校验必须先于平台快照登记，避免 400 请求留下永久孤儿 ACL。
-        if payload.get("export_type") not in EXPORT_FILE_TYPES:
+        export_type = payload.get("export_type")
+        if export_type not in EXPORT_FILE_TYPES:
             return jsonify({"message": "不支持的导出类型"}), 400
         if not isinstance(payload.get("content"), str) or not payload["content"].strip():
             return jsonify({"message": "当前内容为空，无法导出"}), 400
+        export_content = payload["content"]
+        if export_type in {"dating_analysis_report", "dating_analysis_json"}:
+            # Dating 导出在任何 ACL 登记或写盘之前执行同一后端脱敏入口；
+            # JSON 必须先解析真实结构，不能把未验证字符串直接保存为 .json。
+            from dating_log_rules import (
+                redact_dating_document,
+                redact_dating_response,
+            )
+
+            if export_type == "dating_analysis_json":
+                try:
+                    parsed_content = json.loads(export_content)
+                except json.JSONDecodeError:
+                    return jsonify({"message": "Dating JSON 内容格式无效"}), 400
+                safe_content = redact_dating_response(parsed_content)
+                # report_markdown 是完整文档而非普通字段：保留全部正文，仅
+                # 执行文档级内嵌敏感信息扫描；其他 JSON 字段继续遵守 20k。
+                if (
+                    isinstance(parsed_content, dict)
+                    and isinstance(parsed_content.get("report_markdown"), str)
+                    and isinstance(safe_content, dict)
+                ):
+                    safe_content["report_markdown"] = redact_dating_document(
+                        parsed_content["report_markdown"]
+                    )
+                export_content = json.dumps(
+                    safe_content,
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            else:
+                export_content = redact_dating_document(export_content)
         # 平台模式下必须先得到对象级 create 决策；不能根据浏览器自报 owner、
         # project 或文件名决定导出路径。独立模式保持既有本地导出兼容行为。
         decision = verified_resource_access("export", "export")
@@ -740,8 +964,8 @@ def create_app(base_path=None):
             export_dir = Path(export_dir) / owner_user_id / export_root_id
         try:
             saved_path = save_exported_log(
-                payload.get("content"),
-                payload.get("export_type"),
+                export_content,
+                export_type,
                 export_dir,
             )
         except ValueError as error:

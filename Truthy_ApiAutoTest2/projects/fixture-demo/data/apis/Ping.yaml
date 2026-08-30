@@ -1,0 +1,6 @@
+id: Ping
+name: Ping
+credential_profile: public
+request:
+  service_name: fixture.demo.Service
+  method_name: Ping

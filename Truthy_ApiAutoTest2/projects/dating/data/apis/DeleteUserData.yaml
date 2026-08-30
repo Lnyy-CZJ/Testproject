@@ -1,0 +1,6 @@
+id: DeleteUserData
+name: 删除当前用户全部 Dating 数据
+credential_profile: anonymous_session
+request:
+  service_name: tool.dating.DatingAssistantService
+  method_name: DeleteUserData

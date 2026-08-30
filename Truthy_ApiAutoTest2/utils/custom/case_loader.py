@@ -8,10 +8,28 @@ from typing import Any
 
 from utils.custom.api_loader import build_execution_case, load_api_definitions
 from utils.custom.config_loader import ConfigError, load_yaml
+from utils.custom.runtime_overrides import (
+    RuntimeOverrideError,
+    validate_case_runtime_inputs,
+)
 
 
 class CaseConfigError(ValueError):
     """表示单接口 case 集合或具体 case 配置不合法。"""
+
+
+def _safe_case_paths(project_root: Path) -> list[Path]:
+    """只返回当前项目内的普通 Case YAML，防止符号链接跨项目取数。"""
+    boundary = project_root.resolve()
+    paths = sorted((project_root / "data" / "cases").glob("*.yaml"))
+    for path in paths:
+        if path.is_symlink():
+            raise CaseConfigError(f"case 文件禁止使用符号链接: {path.name}")
+        try:
+            path.resolve().relative_to(boundary)
+        except ValueError as exc:
+            raise CaseConfigError(f"case 文件路径越界: {path.name}") from exc
+    return paths
 
 
 _ALLOWED_COLLECTION_FIELDS = {"api", "cases"}
@@ -22,6 +40,7 @@ _ALLOWED_CASE_FIELDS = {
     "request",
     "assert",
     "extract",
+    "runtime_inputs",
 }
 _ALLOWED_REQUEST_FIELDS = {"params"}
 
@@ -177,6 +196,15 @@ def _expand_collection(
         params = request["params"]
         if not isinstance(params, dict):
             raise CaseConfigError(f"{case_scope}.request.params 必须是对象")
+        try:
+            # 运行时参数的可写路径由共享领域层统一解析。Loader 只把其错误
+            # 转成现有 CaseConfigError，保持项目校验和 CLI 的异常契约不变。
+            runtime_inputs = validate_case_runtime_inputs(
+                case,
+                scope=case_scope,
+            )
+        except RuntimeOverrideError as exc:
+            raise CaseConfigError(exc.message) from exc
 
         assertions = case.get("assert")
         if not isinstance(assertions, dict):
@@ -193,6 +221,7 @@ def _expand_collection(
                 "case_id": case_id,
                 "name": name,
                 "tags": tags,
+                "runtime_inputs": runtime_inputs,
                 "execution_case": build_execution_case(
                     api_definitions[api_id],
                     params,
@@ -229,8 +258,7 @@ def load_single_cases(
         CaseConfigError: case YAML、API 引用、具体字段或筛选 ID 不合法时抛出。
     """
     api_definitions = load_api_definitions(project_root)
-    cases_directory = project_root / "data" / "cases"
-    case_paths = sorted(cases_directory.glob("*.yaml"))
+    case_paths = _safe_case_paths(project_root)
 
     expanded: list[dict[str, Any]] = []
     for case_path in case_paths:

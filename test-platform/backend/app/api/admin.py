@@ -145,6 +145,69 @@ def _set_platform_role(database: Session, user: User, platform_role: str, actor_
     )
 
 
+_PROJECT_RELATIONS_BY_ROLE: dict[str, frozenset[str]] = {
+    # 平台管理员拥有全局范围；兼容迁移期允许保留既有关系，但授权不依赖它们。
+    "platform_admin": frozenset({"manager", "member"}),
+    "admin": frozenset({"manager"}),
+    "tester": frozenset({"member"}),
+}
+
+
+def _validate_project_relations_for_role(
+    database: Session,
+    user_id: str,
+    target_role: str,
+) -> None:
+    """拒绝会让既有项目关系失去固定角色语义的角色变更。
+
+    调用方必须先锁定目标用户。成员增删也以目标用户为第一把锁，因此本查询
+    与关系写入互斥，不会在校验后又并发插入一条不兼容关系。
+    """
+
+    allowed_relations = _PROJECT_RELATIONS_BY_ROLE[target_role]
+    incompatible_relation = database.scalar(
+        select(ProjectMembership.relation).where(
+            ProjectMembership.user_id == user_id,
+            ProjectMembership.relation.not_in(allowed_relations),
+        ).limit(1)
+    )
+    if incompatible_relation is not None:
+        raise PlatformError(
+            409,
+            "PROJECT_RELATION_ROLE_CONFLICT",
+            "用户现有项目关系与目标角色不兼容，请先调整项目关系",
+        )
+
+
+def _locked_user_for_admin_update(
+    database: Session,
+    user_id: str,
+    *,
+    serialize_platform_admin_guard: bool,
+) -> tuple[User, list[User]]:
+    """锁定用户修改目标，并保持最后平台管理员检查的稳定锁序。
+
+    涉及状态或角色的修改先按 ID 锁定平台管理员集合，再锁定非平台管理员目标；
+    这样不会因两个管理员互相降级而形成反向锁序。普通成员关系写入只锁目标
+    用户及项目，与平台管理员集合没有交叉锁，因此仍可安全串行。
+    """
+
+    platform_admins: list[User] = []
+    if serialize_platform_admin_guard:
+        platform_admins = list(database.scalars(
+            select(User)
+            .where(User.platform_role == "platform_admin")
+            .order_by(User.id)
+            .with_for_update()
+        ).all())
+    user = next((row for row in platform_admins if row.id == user_id), None)
+    if user is None:
+        user = database.scalar(select(User).where(User.id == user_id).with_for_update())
+    if user is None:
+        raise PlatformError(404, "NOT_FOUND", "用户不存在")
+    return user, platform_admins
+
+
 def _as_utc(value: datetime | None) -> datetime | None:
     """统一数据库时间的时区，兼容 SQLite 测试返回的 naive datetime。"""
 
@@ -488,19 +551,19 @@ def create_user(
     normalized = normalize_username(payload.username)
     if database.scalar(select(User).where(User.username_normalized == normalized)):
         raise PlatformError(409, "USERNAME_EXISTS", "用户名已存在")
-    if payload.role is None:
-        _validate_roles(database, payload.role_ids)
     user = User(
         id=new_id("usr"), username=payload.username.strip(), username_normalized=normalized,
         display_name=payload.display_name.strip(), password_hash=hash_password(payload.password),
         status="active", must_change_password=payload.must_change_password,
+        # 固定角色必须随用户本体一起进入第一次 INSERT；不能等 flush 后再补写。
+        platform_role=payload.role,
     )
     database.add(user)
     database.flush()
-    if payload.role is not None:
-        _set_platform_role(database, user, payload.role, context.user.id)
-    else:
-        _replace_user_roles(database, user, payload.role_ids, context.user.id)
+    _set_platform_role(database, user, payload.role, context.user.id)
+    # autoflush 被全局关闭；审计前主动持久化兼容 UserRole，确保记录的是
+    # 数据库真实关系而不是客户端可能夹带的旧 role_ids 请求值。
+    database.flush()
     add_audit_event(
         database, action="user.create", resource_type="user", resource_id=user.id,
         outcome="success", request=request, actor=context.user,
@@ -508,7 +571,7 @@ def create_user(
             "username": user.username,
             "display_name": user.display_name,
             "role": payload.role,
-            "role_ids": payload.role_ids,
+            "role_ids": _role_ids(database, user.id),
         },
     )
     database.commit()
@@ -553,9 +616,13 @@ def update_user(
 ) -> UserAdminResponse:
     """修改用户显示信息、状态和角色，并在禁用时撤销会话。"""
 
-    user = database.get(User, user_id)
-    if user is None:
-        raise PlatformError(404, "NOT_FOUND", "用户不存在")
+    # 状态/角色会影响授权，必须与项目成员写入共享目标用户锁。显示名更新也锁定
+    # 目标行，但无需额外串行化平台管理员集合。
+    user, platform_admins = _locked_user_for_admin_update(
+        database,
+        user_id,
+        serialize_platform_admin_guard=payload.status is not None or payload.role is not None,
+    )
     removes_active_platform_admin = (
         user.platform_role == "platform_admin"
         and user.status == "active"
@@ -565,14 +632,6 @@ def update_user(
         )
     )
     if removes_active_platform_admin:
-        # 所有降级/禁用请求都按稳定 ID 顺序锁定平台管理员集合。并发事务必须
-        # 等待前一个事务提交后再重读状态，不能分别看到“还有两个管理员”。
-        platform_admins = list(database.scalars(
-            select(User)
-            .where(User.platform_role == "platform_admin")
-            .order_by(User.id)
-            .with_for_update()
-        ).all())
         active_platform_admins = sum(row.status == "active" for row in platform_admins)
         if active_platform_admins <= 1:
             raise PlatformError(
@@ -595,14 +654,15 @@ def update_user(
         if payload.status == "disabled":
             revoke_user_sessions(database, user.id)
     if payload.role is not None:
+        _validate_project_relations_for_role(database, user.id, payload.role)
         _set_platform_role(database, user, payload.role, context.user.id)
-    elif payload.role_ids is not None:
-        _replace_user_roles(database, user, payload.role_ids, context.user.id)
+        # 旧 UserRole 只是兼容镜像；角色修改后先 flush，再从真实关系生成审计。
+        database.flush()
     after = {
         "display_name": user.display_name,
         "status": user.status,
         "role": user.platform_role,
-        "role_ids": payload.role_ids if payload.role_ids is not None else before["role_ids"],
+        "role_ids": _role_ids(database, user.id),
     }
     add_audit_event(
         database, action="user.update", resource_type="user", resource_id=user.id,

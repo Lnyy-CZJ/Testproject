@@ -1,0 +1,6 @@
+id: GetTask
+name: 获取搜索任务状态
+credential_profile: anonymous_session
+request:
+  service_name: tool.people_insight.SearchService
+  method_name: GetTask

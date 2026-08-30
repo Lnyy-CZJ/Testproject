@@ -1,0 +1,6 @@
+id: PrepareMediaUpload
+name: 准备 Dating 媒体上传
+credential_profile: anonymous_session
+request:
+  service_name: tool.dating.DatingMediaService
+  method_name: PrepareMediaUpload

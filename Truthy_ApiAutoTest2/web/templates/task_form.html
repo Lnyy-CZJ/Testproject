@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% set current_mode = task_mode|default(mode|default('single')) %}
+{% block title %}创建任务 · 接口自动化{% endblock %}
+{% block page_id %}task-new{% endblock %}
+{% block body_attributes %}data-mode="{{ current_mode }}"{% endblock %}
+{% block content %}
+<header class="page-header">
+  <p class="eyebrow">API AUTOMATION</p>
+  <h1>创建测试任务</h1>
+  <p>选择精确资产或安全批量范围；环境、Release 与凭证始终由平台上下文决定。</p>
+</header>
+
+<nav class="task-mode-tabs" role="tablist" aria-label="任务模式">
+  <a class="mode-tab{% if current_mode == 'single' %} active{% endif %}" href="{{ base_path }}/tasks/new?mode=single" role="tab" aria-selected="{{ 'true' if current_mode == 'single' else 'false' }}" tabindex="{{ '0' if current_mode == 'single' else '-1' }}">单接口</a>
+  <a class="mode-tab{% if current_mode == 'flow' %} active{% endif %}" href="{{ base_path }}/tasks/new?mode=flow" role="tab" aria-selected="{{ 'true' if current_mode == 'flow' else 'false' }}" tabindex="{{ '0' if current_mode == 'flow' else '-1' }}">Flow</a>
+  <a class="mode-tab{% if current_mode == 'batch' %} active{% endif %}" href="{{ base_path }}/tasks/new?mode=batch" role="tab" aria-selected="{{ 'true' if current_mode == 'batch' else 'false' }}" tabindex="{{ '0' if current_mode == 'batch' else '-1' }}">批量回归</a>
+</nav>
+
+<div class="form-layout" data-task-mode="{{ current_mode }}">
+  <section class="panel">
+    <div class="panel-heading"><div><h2>{% if current_mode == 'batch' %}批量范围{% else %}任务参数{% endif %}</h2><p>测试资产来自当前 YAML；所有运行配置均为只读平台快照。</p></div></div>
+    <form id="task-form" novalidate>
+      <div class="field">
+        <label for="task-project">项目</label>
+        <select id="task-project" name="project_id" required><option value="">正在加载项目…</option></select>
+      </div>
+      <div id="task-single-fields" {% if current_mode != 'single' %}hidden{% endif %}>
+      <div class="field">
+        <label for="task-api">API</label>
+        <select id="task-api" name="api_id" required disabled><option value="">请先选择项目</option></select>
+      </div>
+      <div class="field">
+        <label for="task-case">Case</label>
+        <select id="task-case" name="case_id" required disabled><option value="">请先选择 API</option></select>
+      </div>
+      </div>
+      <div id="task-flow-fields" {% if current_mode != 'flow' %}hidden{% endif %}>
+      <div class="field">
+        <label for="task-flow">Flow</label>
+        <select id="task-flow" name="flow_id" required disabled><option value="">请先选择项目</option></select>
+      </div>
+      </div>
+      <section class="batch-builder" id="task-batch-fields" aria-labelledby="batch-builder-heading" {% if current_mode != 'batch' %}hidden{% endif %}>
+        <h3 id="batch-builder-heading" class="sr-only">批量资产选择</h3>
+        <div class="batch-control-grid">
+          <fieldset class="choice-group">
+            <legend>资产类型</legend>
+            <label><input type="radio" name="batch_type" value="cases" checked> Cases</label>
+            <label><input type="radio" name="batch_type" value="flows"> Flows</label>
+          </fieldset>
+          <fieldset class="choice-group">
+            <legend>选择方式</legend>
+            <label><input type="radio" name="selection_mode" value="selected" checked> 手动选择</label>
+            <label><input type="radio" name="selection_mode" value="all_safe"> 全部安全项</label>
+          </fieldset>
+        </div>
+        <div class="batch-toolbar">
+          <label class="search-field grow" for="batch-search"><span class="sr-only">搜索批量资产</span><input id="batch-search" type="search" placeholder="搜索 ID、名称或 API"></label>
+          <button class="button tertiary compact" id="batch-select-visible" type="button">选择当前结果</button>
+          <button class="button tertiary compact" id="batch-clear-selection" type="button">清空选择</button>
+        </div>
+        <fieldset class="tag-filter" id="batch-tag-filter">
+          <legend>YAML 标签筛选 <span>同时满足所选标签（AND）</span></legend>
+          <div class="tag-filter-options" id="batch-tag-options"><span class="muted">选择项目后读取标签…</span></div>
+        </fieldset>
+        <div class="batch-selection-summary" aria-live="polite"><strong id="batch-selected-count">已选 0 项</strong><span id="batch-result-count">0 项结果</span></div>
+        <div class="batch-results" id="batch-results" role="region" aria-label="可批量执行的测试资产" aria-live="polite"><p class="empty-state">选择项目后展示可执行资产。</p></div>
+        <section class="risk-acknowledgements" id="batch-risk-acknowledgements" aria-labelledby="batch-risk-heading" hidden>
+          <div><h3 id="batch-risk-heading">风险确认</h3><p>仅确认你理解所选资产的 YAML 风险标签；服务端仍会执行最终安全门禁。</p></div>
+          <div id="batch-risk-options"></div>
+        </section>
+      </section>
+      <section class="media-input" id="task-media-input" aria-labelledby="task-media-label" hidden>
+        <div class="media-input-heading">
+          <div>
+            <label id="task-media-label" for="task-media-files">输入图片</label>
+            <p id="task-media-description">按业务顺序选择图片；批量 Flow 仅在输入契约兼容时共享。</p>
+          </div>
+          <button class="text-button" id="task-media-clear" type="button" hidden>清空</button>
+        </div>
+        <input id="task-media-files" name="media_files" type="file" accept="image/jpeg,image/png,image/webp" multiple disabled aria-describedby="task-media-description task-media-error">
+        <div class="media-input-meta"><span id="task-media-count">尚未选择图片</span><span id="task-media-size">总计 0 B</span></div>
+        <ol class="media-file-list" id="task-media-list" aria-label="已选图片顺序"></ol>
+        <p class="field-message" id="task-media-error" aria-live="polite" hidden></p>
+      </section>
+      <section class="runtime-input-panel" id="task-runtime-inputs" aria-labelledby="runtime-input-heading" hidden>
+        <div class="runtime-input-heading">
+          <div>
+            <h3 id="runtime-input-heading">本次运行参数</h3>
+            <p>自动展示安全静态请求参数；只影响当前任务，不会写回 YAML。</p>
+          </div>
+          <button class="text-button" id="runtime-input-reset-all" type="button">全部恢复默认</button>
+        </div>
+        <div class="runtime-input-fields" id="runtime-input-fields"></div>
+        <p class="empty-state" id="runtime-input-empty" hidden>当前测试资产没有可修改的静态请求参数。</p>
+        <p class="runtime-input-notice" id="runtime-input-notice" role="status" hidden></p>
+        <p class="field-message" id="runtime-input-error" aria-live="polite" hidden></p>
+      </section>
+      <div class="inline-status loading" id="task-preflight" aria-live="polite">选择测试资产后执行预检。</div>
+      <div class="button-row">
+        <button class="button primary" id="task-submit" type="submit" disabled>{% if current_mode == 'batch' %}加入执行队列（0）{% else %}提交任务{% endif %}</button>
+        <a class="button secondary" href="{{ base_path }}/tasks">查看任务记录</a>
+      </div>
+    </form>
+  </section>
+
+  <aside class="panel preview-panel" aria-labelledby="preview-heading">
+    <div class="panel-heading"><div><h2 id="preview-heading">提交前校验</h2><p>只读 · 以服务端预检为准</p></div></div>
+    <dl class="summary-list" id="task-preview">
+      <div><dt>平台</dt><dd id="task-preview-platform">—</dd></div>
+      <div><dt>接口环境</dt><dd id="task-preview-target-env">—</dd></div>
+      <div><dt>Runtime Scope</dt><dd id="task-preview-scope">—</dd></div>
+      <div><dt>Release</dt><dd id="task-preview-release">—</dd></div>
+      <div><dt>所需 Profile</dt><dd id="task-preview-profiles">—</dd></div>
+      <div><dt>资产版本</dt><dd id="task-preview-asset-revision">—</dd></div>
+      <div><dt>本次参数</dt><dd id="task-preview-overrides">使用 YAML 默认值</dd></div>
+      <div id="task-input-summary" hidden><dt>输入图片</dt><dd>—</dd></div>
+    </dl>
+    <section class="batch-preview" id="batch-preview" aria-labelledby="batch-preview-heading" {% if current_mode != 'batch' %}hidden{% endif %}>
+      <h3 id="batch-preview-heading">批量解析</h3>
+      <dl class="summary-list dense"><div><dt>解析数量</dt><dd id="batch-preview-count">—</dd></div><div><dt>排除项</dt><dd id="batch-preview-excluded">—</dd></div><div><dt>队列位置</dt><dd id="batch-preview-queue">—</dd></div></dl>
+      <div class="excluded-list" id="batch-excluded-list" hidden></div>
+    </section>
+    <div class="flow-preview" id="flow-preview" {% if current_mode != 'flow' %}hidden{% endif %}><p class="empty-state">选择 Flow 后展示业务步骤。</p></div>
+  </aside>
+</div>
+{% endblock %}

@@ -1,0 +1,50 @@
+name: Dating 反馈附件上传与提交
+tags: [dating, feedback, media, interactive, explicit]
+inputs:
+  media_files:
+    type: files
+    required: true
+    min_items: 1
+    max_items: 5
+    allowed_content_types: [image/jpeg, image/png, image/webp]
+    max_size_bytes: 7000000
+    label: 反馈附件
+    description: 选择 1～5 张反馈图片；不会作为 Reply 或 Analysis 聊天截图
+steps:
+  - id: get_upload_config
+    api: GetMediaUploadConfig
+    extract:
+      upload_allowed_content_types: $.allowed_content_types
+      upload_max_size_bytes: $.max_size_bytes
+  - id: validate_feedback_files
+    action:
+      type: validate_binary_inputs
+      files: "{{media_files}}"
+      allowed_content_types: "{{upload_allowed_content_types}}"
+      min_items: 1
+      max_items: 5
+      max_size_bytes: "{{upload_max_size_bytes}}"
+  - id: upload_feedback_files
+    foreach:
+      items: "{{media_files}}"
+      item: media_file
+      collect: {feedback_asset_ids: "{{asset_id}}"}
+      steps:
+        - id: prepare_feedback_upload
+          api: PrepareMediaUpload
+          extract:
+            asset_id: $.asset_id
+            upload_url: $.upload_url
+            required_headers: $.required_headers
+        - id: upload_feedback_binary
+          action:
+            type: signed_binary_upload
+            url: "{{upload_url}}"
+            headers: "{{required_headers}}"
+            input_file: "{{media_file.relative_path}}"
+            method: PUT
+            success_statuses: [200, 204]
+        - id: complete_feedback_upload
+          api: CompleteMediaUpload
+  - id: submit_feedback
+    api: SubmitFeedback

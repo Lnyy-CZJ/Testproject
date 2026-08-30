@@ -1,0 +1,6 @@
+id: DeleteTaskData
+name: 删除任务私密数据
+credential_profile: anonymous_session
+request:
+  service_name: tool.dating.DatingAssistantService
+  method_name: DeleteTaskData

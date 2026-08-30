@@ -1,0 +1,23 @@
+name: Dating 匿名会话创建与刷新
+tags: [dating, smoke, regression, flow, identity]
+steps:
+  - id: create_session
+    api: CreateAnonymousSession
+    extract:
+      access_token: $.access_token
+      expires_time: $.expires_time
+      refresh_token: $.refresh_token
+      refresh_expires_time: $.refresh_expires_time
+      user_id: $.user_id
+  - id: get_me_before_refresh
+    api: GetMe
+  - id: refresh_session
+    api: RefreshSession
+    extract:
+      access_token: $.access_token
+      expires_time: $.expires_time
+      refresh_token: $.refresh_token
+      refresh_expires_time: $.refresh_expires_time
+      user_id: $.user_id
+  - id: get_me_after_refresh
+    api: GetMe

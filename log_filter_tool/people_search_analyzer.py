@@ -14,11 +14,14 @@ GetProviderCostSummary 响应拼接组成。
 
 from __future__ import annotations
 
-import json
 import re
 from datetime import datetime, timezone
 
-from app import clean_log_line
+from gateway_log_parser import (
+    normalize_log_lines,
+    scan_json_block,
+    unwrap_gateway_envelope,
+)
 
 ANALYZER_VERSION = "people-search-v1"
 RULESET_VERSION = "2026-08-13"
@@ -58,108 +61,6 @@ RE_QCL_EVENT = re.compile(r"^(\w+) 事件:\s*$")
 RE_QCL_REQUEST = re.compile(r"^(\w+) 脱敏请求数据:(?:\s*attempt=(\d+))?\s*$")
 RE_QCL_RESPONSE = re.compile(r"^(\w+) 响应数据:\s*HTTP\s+(\d+|-)\s+elapsed_ms=(\d+|-)\s*$")
 
-# QueryChainLogger 行前缀：`2026-08-11 12:46:07,429 | INFO | search_tool.QueryChainLogger | `。
-RE_LOGGER_PREFIX = re.compile(
-    r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}[,.]\d+)\s*\|\s*(\w+)\s*\|\s*([\w.]+)\s*\|\s*"
-)
-
-# Flutter 行前缀中的时间戳：`默认\t10:01:00.012345+0800\tRunner\tflutter: ...`。
-RE_FLUTTER_TIMESTAMP = re.compile(r"\t(\d{2}:\d{2}:\d{2}(?:\.\d+)?[+-]\d{4})\t")
-
-# 括号平衡扫描的安全上限，防止异常日志导致长时间扫描。
-MAX_SCAN_LINES = 100000
-
-
-def normalize_log_lines(log_text):
-    """行规范化（设计 §6.1）：保留原始行号，只做格式清理。
-
-    每行输出：
-    - line_no: 原始行号（从 1 开始）
-    - raw: 原始行
-    - content: 去除 Flutter 前缀和 QueryChainLogger 行前缀后的行，用于 marker 识别
-    - json_text: 用于 JSON 拼接的行文本
-    - timestamp: 行前缀中提取的时间戳（无则 None）
-    """
-    lines = []
-    for index, raw in enumerate(log_text.splitlines()):
-        cleaned = clean_log_line(raw)
-        timestamp = None
-        logger_match = RE_LOGGER_PREFIX.match(cleaned)
-        if logger_match:
-            timestamp = logger_match.group(1).replace(",", ".")
-            content = cleaned[logger_match.end():]
-        else:
-            content = cleaned
-            flutter_match = RE_FLUTTER_TIMESTAMP.search(raw)
-            if flutter_match:
-                timestamp = flutter_match.group(1)
-        lines.append(
-            {
-                "line_no": index + 1,
-                "raw": raw,
-                "content": content,
-                "json_text": content,
-                "timestamp": timestamp,
-            }
-        )
-    return lines
-
-
-def scan_json_block(lines, start_idx):
-    """从 start_idx 行开始查找第一个 `{`/`[` 并做括号平衡扫描（设计 §6.3）。
-
-    返回 (value, end_idx, start_line, end_line, error)：
-    - 成功：value 为解析结果，end_idx 为 JSON 结束行下标，error 为 None。
-    - 失败：value 为 None，error 描述原因；end_idx 为已消费到的行下标。
-    marker 之后只允许出现空白字符，直到 JSON 开始，避免把后续日志误当 payload。
-    """
-    depth = 0
-    in_string = False
-    escaped = False
-    started = False
-    buffer = []
-    start_line = None
-    limit = min(len(lines), start_idx + MAX_SCAN_LINES)
-    for idx in range(start_idx, limit):
-        text = lines[idx]["json_text"]
-        for ch in text:
-            if not started:
-                if ch in "{[":
-                    started = True
-                    start_line = lines[idx]["line_no"]
-                    depth = 1
-                    buffer.append(ch)
-                elif not ch.isspace():
-                    return None, idx, None, None, "marker 后未找到 JSON 起始"
-                continue
-            buffer.append(ch)
-            if in_string:
-                if escaped:
-                    escaped = False
-                elif ch == "\\":
-                    escaped = True
-                elif ch == '"':
-                    in_string = False
-                continue
-            if ch == '"':
-                in_string = True
-            elif ch in "{[":
-                depth += 1
-            elif ch in "}]":
-                depth -= 1
-                if depth == 0:
-                    raw_text = "".join(buffer)
-                    try:
-                        return json.loads(raw_text), idx, start_line, lines[idx]["line_no"], None
-                    except ValueError as exc:
-                        return None, idx, start_line, lines[idx]["line_no"], str(exc)
-        if started:
-            buffer.append("\n")
-    if started:
-        return None, limit - 1, start_line, None, "JSON 未闭合（可能被截断）"
-    return None, limit - 1, None, None, "未找到 JSON"
-
-
 def _new_record(method, direction, marker_format, marker_line_no, timestamp):
     return {
         "method": method,
@@ -190,17 +91,19 @@ def unwrap_gateway_payload(record):
     - 兼容裸 data 响应体（无信封）与 Gateway 请求体（comm + requests）。
     """
     payload = record["payload"]
+    envelope = unwrap_gateway_envelope(payload)
     if not isinstance(payload, dict):
-        record["data"] = payload
+        record["data"] = envelope["data"]
         return
 
-    if isinstance(payload.get("request_id"), str):
-        record["request_id"] = payload["request_id"]
-    if isinstance(payload.get("trace_id"), str):
-        record["trace_id"] = payload["trace_id"]
+    gateway = envelope["gateway"]
+    if isinstance(gateway.get("request_id"), str):
+        record["request_id"] = gateway["request_id"]
+    if isinstance(gateway.get("trace_id"), str):
+        record["trace_id"] = gateway["trace_id"]
 
-    responses = payload.get("responses")
-    if isinstance(responses, list):
+    responses = envelope["responses"]
+    if isinstance(payload.get("responses"), list):
         sub_requests = []
         datas = []
         for sub in responses:
@@ -216,15 +119,15 @@ def unwrap_gateway_payload(record):
             )
             datas.append(sub.get("data"))
         record["gateway"] = {
-            "code": payload.get("code"),
-            "message": payload.get("message"),
+            "code": gateway.get("code"),
+            "message": gateway.get("message"),
             "sub_requests": sub_requests,
         }
         record["data"] = datas[0] if len(datas) == 1 else datas
         return
 
-    requests = payload.get("requests")
-    if isinstance(requests, list) and "comm" in payload:
+    requests = envelope["requests"]
+    if isinstance(payload.get("requests"), list) and "comm" in payload:
         sub_requests = []
         params_list = []
         for sub in requests:

@@ -1,0 +1,6 @@
+id: RefreshSession
+name: 刷新匿名会话
+credential_profile: anonymous_session
+request:
+  service_name: tool.identity.IdentityService
+  method_name: RefreshSession

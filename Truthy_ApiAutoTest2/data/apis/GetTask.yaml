@@ -1,5 +1,0 @@
-id: GetTask
-name: 获取搜索任务状态
-request:
-  service_name: tool.people_insight.SearchService
-  method_name: GetTask

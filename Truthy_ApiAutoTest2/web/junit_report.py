@@ -17,13 +17,13 @@ from web.redaction import FAILED_MESSAGE_LIMIT, redact_text
 
 
 def _case_message(element: ET.Element) -> str:
-    """提取 failure/error 元素的摘要消息并脱敏截断。
+    """提取 failure/error 元素的原始摘要消息并按展示上限截断。
 
     参数说明:
         element: testcase 下的 failure 或 error 元素。
 
     返回值:
-        优先取 message 属性，其次取元素文本；统一脱敏并截断到
+        优先取 message 属性，其次取元素文本；不修改内容，只截断到
         ``FAILED_MESSAGE_LIMIT`` 字符。
     """
     message = element.get("message") or (element.text or "")
@@ -38,15 +38,15 @@ def parse_junit_file(
 
     功能说明:
         以 testcase 为单位统计 total/passed/failed/errors/skipped，
-        并收集 failed 与 error 用例的名称和脱敏后的失败摘要。
+        并收集 failed 与 error 用例的名称和原始失败摘要。
         pytest 的 JUnit 可能嵌套 testsuite，故直接遍历全部 testcase。
 
     参数说明:
         path: JUnit XML 文件路径。
-        project_root: 项目根目录，用于脱敏容器内绝对路径。
+        project_root: 兼容旧调用签名保留；原始日志模式不改写路径。
 
     返回值:
-        ``{"summary": {...}, "failed_cases": [...]}``；文件不存在或
+        ``{"summary": {...}, "cases": [...], "failed_cases": [...]}``；文件不存在或
         不是合法 XML 时返回 None（视为结果不可用）。
     """
     path = Path(path)
@@ -58,23 +58,44 @@ def parse_junit_file(
         return None
 
     total = failed = errors = skipped = 0
+    cases: list[dict[str, Any]] = []
     failed_cases: list[dict[str, str]] = []
     for case in root.iter("testcase"):
         total += 1
         failure = case.find("failure")
         error = case.find("error")
+        status = "passed"
+        message = ""
         if failure is not None:
             failed += 1
+            status = "failed"
+            message = _case_message(failure)
             failed_cases.append(
-                {"name": case.get("name", ""), "message": _case_message(failure)}
+                {"name": case.get("name", ""), "message": message}
             )
         elif error is not None:
             errors += 1
+            status = "error"
+            message = _case_message(error)
             failed_cases.append(
-                {"name": case.get("name", ""), "message": _case_message(error)}
+                {"name": case.get("name", ""), "message": message}
             )
-        elif case.find("skipped") is not None:
+        elif (skipped_element := case.find("skipped")) is not None:
             skipped += 1
+            status = "skipped"
+            message = redact_text(
+                str(skipped_element.get("message") or "已跳过"),
+                max_length=FAILED_MESSAGE_LIMIT,
+            )
+        cases.append(
+            {
+                "name": case.get("name", ""),
+                "classname": case.get("classname", ""),
+                "status": status,
+                "duration": case.get("time"),
+                "message": message,
+            }
+        )
 
     passed = max(total - failed - errors - skipped, 0)
     return {
@@ -85,5 +106,6 @@ def parse_junit_file(
             "errors": errors,
             "skipped": skipped,
         },
+        "cases": cases,
         "failed_cases": failed_cases,
     }

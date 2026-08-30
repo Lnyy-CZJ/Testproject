@@ -120,6 +120,172 @@ def fake_project(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
+def multi_project_root(fake_project: Path) -> Path:
+    """在旧版临时骨架上增加两个合法项目包，供多项目 Web/任务测试使用。
+
+    这里保留根 ``data/`` 只是为了让旧版兼容测试仍能证明迁移前行为；新增
+    行为必须显式选择 ``projects/<project_id>``，测试会校验目录内容不会被
+    合并扫描。生产仓库完成迁移后不会同时保留两份资产。
+    """
+
+    manifests = {
+        "truthy": ("Truthy Gateway", "truthy_session"),
+        "dating": ("Dating AI Assistant", "anonymous_session"),
+    }
+    for project_id, (display_name, profile_id) in manifests.items():
+        project = fake_project / "projects" / project_id
+        for directory in (
+            "data/api",
+            "data/apis",
+            "data/cases",
+            "data/flows",
+            "data/scenarios",
+            "fixtures",
+        ):
+            (project / directory).mkdir(parents=True, exist_ok=True)
+        required_keys = ["gateway.base_url", "gateway.path", "gateway.comm"]
+        if project_id == "dating":
+            required_keys.extend(
+                [
+                    "flow.analysis.poll_interval_seconds",
+                    "flow.analysis.timeout_seconds",
+                ]
+            )
+        (project / "project.yaml").write_text(
+            "\n".join(
+                [
+                    "schema_version: 1",
+                    f"project_id: {project_id}",
+                    f"display_name: {display_name}",
+                    "capabilities:",
+                    "  - gateway",
+                    "config_contract:",
+                    "  required_keys:",
+                    *[f"    - {key}" for key in required_keys],
+                    "  credential_profiles:",
+                    f"    - {profile_id}",
+                    "redaction:",
+                    "  extra_keys: []",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        api_id = "GetMe"
+        (project / "data" / "apis" / f"{api_id}.yaml").write_text(
+            "\n".join(
+                [
+                    f"id: {api_id}",
+                    f"name: {display_name} 当前用户",
+                    f"credential_profile: {profile_id}",
+                    "request:",
+                    "  service_name: example.IdentityService",
+                    "  method_name: GetMe",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        case_params = (
+            ["      params:", "        locale: en-US"]
+            if project_id == "dating"
+            else ["      params: {}"]
+        )
+        case_runtime_inputs = (
+            [
+                "    runtime_inputs:",
+                "      client_locale:",
+                "        label: 客户端语言",
+                "        description: 仅影响本次 GetMe 请求",
+                "        type: enum",
+                "        options: [en-US, zh-CN]",
+                "        target:",
+                "          scope: case_request",
+                "          path: $.locale",
+                "        required: true",
+            ]
+            if project_id == "dating"
+            else []
+        )
+        (project / "data" / "cases" / f"{api_id}.yaml").write_text(
+            "\n".join(
+                [
+                    f"api: {api_id}",
+                    "cases:",
+                    "  - id: get_me_success",
+                    "    name: 获取当前用户成功",
+                    "    tags: [smoke]",
+                    "    request:",
+                    *case_params,
+                    *case_runtime_inputs,
+                    "    assert:",
+                    "      http_status: 200",
+                    "      gateway: {code: 0}",
+                    "      response: {success: true}",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        flow_id = "dating_demo_flow" if project_id == "dating" else "truthy_demo_flow"
+        (project / "data" / "flows" / f"{flow_id}.yaml").write_text(
+            "\n".join(
+                [
+                    f"name: {display_name} Demo Flow",
+                    "tags: [regression]",
+                    "steps:",
+                    "  - id: get_me",
+                    "    api: GetMe",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        scenario_runtime_inputs = (
+            [
+                "runtime_inputs:",
+                "  client_locale:",
+                "    label: 结果语言",
+                "    description: 仅影响本次 Flow 的 GetMe 步骤",
+                "    type: enum",
+                "    options: [en-US, zh-CN]",
+                "    target:",
+                "      scope: flow_step_request",
+                "      step_id: get_me",
+                "      path: $.locale",
+                "    required: true",
+            ]
+            if project_id == "dating"
+            else []
+        )
+        scenario_params = (
+            ["    params:", "      locale: en-US"]
+            if project_id == "dating"
+            else ["    params: {}"]
+        )
+        (project / "data" / "scenarios" / f"{flow_id}.yaml").write_text(
+            "\n".join(
+                [
+                    f"name: {display_name} Demo Flow 成功",
+                    "variables: {}",
+                    *scenario_runtime_inputs,
+                    "step_data:",
+                    "  get_me:",
+                    *scenario_params,
+                    "    assert:",
+                    "      http_status: 200",
+                    "      gateway: {code: 0}",
+                    "      response: {success: true}",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+    return fake_project
+
+
+@pytest.fixture
 def make_manager():
     """TaskManager 工厂；测试结束统一等待等待线程退出。
 

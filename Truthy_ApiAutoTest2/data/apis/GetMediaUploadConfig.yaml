@@ -1,5 +1,0 @@
-id: GetMediaUploadConfig
-name: 获取媒体上传配置
-request:
-  service_name: tool.people_insight.MediaService
-  method_name: GetMediaUploadConfig

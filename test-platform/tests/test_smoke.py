@@ -81,6 +81,17 @@ class PlatformSmokeTest(unittest.TestCase):
         self.assertTrue(page_headers["Location"].startswith("/login"))
         self.assertEqual(api_status, 401)
 
+    def test_public_registration_status_is_reachable(self):
+        """匿名只读检查注册模式；smoke 不提交注册请求，避免污染共享数据库。"""
+
+        with build_opener().open(
+            f"{BASE_URL}/api/v1/auth/registration-status", timeout=15
+        ) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+            self.assertEqual(response.status, 200)
+            self.assertEqual(response.headers.get("Cache-Control"), "no-store")
+        self.assertIn(payload.get("mode"), {"open", "disabled", "invite"})
+
     def test_platform_home_and_dynamic_tool_catalog_are_available(self):
         status, _, body = request("/")
         api_status, _, api_body = request("/api/v1/tools")

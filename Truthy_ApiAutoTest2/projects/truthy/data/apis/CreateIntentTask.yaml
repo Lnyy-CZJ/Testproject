@@ -1,0 +1,6 @@
+id: CreateIntentTask
+name: 创建并启动线索搜索任务
+credential_profile: anonymous_session
+request:
+  service_name: tool.people_insight.SearchService
+  method_name: CreateIntentTask

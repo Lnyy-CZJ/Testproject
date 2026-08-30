@@ -1,0 +1,6 @@
+id: GetMediaUploadConfig
+name: 获取 Dating 媒体上传配置
+credential_profile: anonymous_session
+request:
+  service_name: tool.dating.DatingMediaService
+  method_name: GetMediaUploadConfig
