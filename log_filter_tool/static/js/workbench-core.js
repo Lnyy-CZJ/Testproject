@@ -665,7 +665,9 @@
         if (!isSuccessfulAnalysisResult(result)) {
           var invalidMessage = result && result.message
             ? result.message : "分析未生成有效结果，请检查日志后重试。";
-          markAnalysisStale(invalidMessage);
+          // 业务失败属于 People/Dating 自己的生命周期；不能把没有改写
+          // result-text 的失败误判成 Filter stale。日志 input 事件才是 Filter
+          // freshness 的 owner，适配器失败只通过自己的面板和错误提示反馈。
           showPersistentError(new Error(invalidMessage));
           activateResultPanel();
           return {ok: false, message: invalidMessage};
@@ -680,11 +682,10 @@
         return result;
       })
       .catch(function handleAnalysisFailure(error) {
-        // Promise reject 同样代表没有生成可用结果；即使日志本身没有再次 input，
-        // 也要保留 stale 并禁用旧结果导出，避免失败请求误用历史结果。
+        // Promise reject 同样只属于异步模式 owner；如果日志没有发生 input，
+        // 必须保留 Filter 原有 freshness，允许用户在同一份日志上重试。
         var failureMessage = error && error.message
           ? error.message : "分析失败，请稍后重试。";
-        markAnalysisStale(failureMessage);
         showPersistentError(error);
         activateResultPanel();
         return null;

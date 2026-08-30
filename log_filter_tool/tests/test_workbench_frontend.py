@@ -907,6 +907,37 @@ class WorkbenchShellTest(unittest.TestCase):
                   assert(fixture.resultText.value === "filtered result",
                     modeName + " 成功时不应改写 Filter result-text");
                 }
+              } else if (scenario === "async-failure-success-keeps-filter-fresh") {
+                const api = fixture.window.LogWorkbench;
+                api.markAnalysisFresh();
+                assert(!api.state.dirty && !fixture.exportFilteredButton.disabled,
+                  "异步失败回归的 Filter fresh 前置状态未建立");
+                for (const modeName of ["people", "dating"]) {
+                  let attempt = 0;
+                  api.registerAnalysisMode(modeName, {
+                    analyze() {
+                      attempt += 1;
+                      if (attempt === 1) {
+                        if (modeName === "people") {
+                          return Promise.reject(new Error("people 请求失败"));
+                        }
+                        return Promise.resolve({ok: false, message: "dating 业务失败"});
+                      }
+                      return Promise.resolve({ok: true, mode: modeName});
+                    }
+                  });
+                  fixture.modeSelect.value = modeName;
+                  await api.analyzeSelectedMode();
+                  assert(!api.state.dirty && !fixture.exportFilteredButton.disabled,
+                    modeName + " 失败时错误污染了 Filter freshness");
+                  assert(fixture.resultText.value === "filtered result",
+                    modeName + " 失败时不应改写 Filter result-text");
+                  await api.analyzeSelectedMode();
+                  assert(!api.state.dirty && !fixture.exportFilteredButton.disabled,
+                    modeName + " 成功重试后未恢复/保持 Filter fresh");
+                  assert(fixture.resultText.value === "filtered result",
+                    modeName + " 成功重试时不应改写 Filter result-text");
+                }
               } else if (scenario === "phase-lock") {
                 const api = fixture.window.LogWorkbench;
                 let analyzeCount = 0;
@@ -1396,6 +1427,10 @@ class WorkbenchShellTest(unittest.TestCase):
     def test_task_three_async_modes_do_not_freshen_filter_result(self):
         """People/Dating 成功也不能清除未更新 result-text 的 Filter stale。"""
         self._run_task_three_review_harness("async-success-keeps-filter-stale")
+
+    def test_task_three_async_failures_do_not_pollute_filter_freshness(self):
+        """Filter fresh 时异步失败及重试不得改写 Filter dirty/stale 或结果。"""
+        self._run_task_three_review_harness("async-failure-success-keeps-filter-fresh")
 
     def test_task_three_disabled_dating_flag_hides_dating_endpoint_capability(self):
         """Dating 关闭时页面不得输出可被核心误读的 Dating endpoint。"""
