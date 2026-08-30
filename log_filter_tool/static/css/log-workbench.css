@@ -1,32 +1,50 @@
 /*
- * 单日志分析工作台的基础视觉令牌与壳层布局。
+ * 单日志分析工作台的固定视觉令牌与双栏布局。
  *
- * 本文件只定义 Task 1 的稳定外壳：桌面双栏、标签页、抽屉、Toast 与加载遮罩。
- * 既有业务结果仍由模板内原样渲染，后续任务可在这些语义槽位内逐步迁移。
+ * 视觉值来自已确认原型；兼容别名继续服务现有壳层样式，避免 Task 2 为替换
+ * token 名称而改动无关组件。页面只支持 1280px 及以上桌面浏览器。
  */
 
 :root {
   color-scheme: light;
 
-  /* 中性色承担主体层级，系统蓝只用于可操作元素和焦点。 */
-  --wb-color-canvas: #f5f5f7;
-  --wb-color-surface: #ffffff;
-  --wb-color-surface-muted: #f7f7f9;
-  --wb-color-text: #1d1d1f;
-  --wb-color-text-secondary: #6e6e73;
-  --wb-color-border: rgb(0 0 0 / 12%);
+  /* 原型固定 token 是后续模块共享的公开视觉合同。 */
+  --page: #f5f5f7;
+  --surface: #ffffff;
+  --surface-subtle: #fafafa;
+  --surface-selected: #f0f7ff;
+  --text: #1d1d1f;
+  --text-secondary: #6e6e73;
+  --line: rgba(0, 0, 0, 0.11);
+  --accent: #0071e3;
+  --success: #147a3d;
+  --warning: #8a5a00;
+  --danger: #c6292e;
+  --radius-control: 9px;
+  --radius-panel: 14px;
+  --left-pane: 39%;
+  --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "SFMono-Regular", Menlo, Monaco, Consolas, monospace;
+
+  /* 兼容 Task 1 已有选择器；值统一回落到上面的公开 token。 */
+  --wb-color-canvas: var(--page);
+  --wb-color-surface: var(--surface);
+  --wb-color-surface-muted: var(--surface-subtle);
+  --wb-color-text: var(--text);
+  --wb-color-text-secondary: var(--text-secondary);
+  --wb-color-border: var(--line);
   --wb-color-border-strong: rgb(0 0 0 / 20%);
-  --wb-color-accent: #0071e3;
+  --wb-color-accent: var(--accent);
   --wb-color-accent-hover: #0068d1;
-  --wb-color-accent-soft: #e8f2ff;
-  --wb-color-success: #237a45;
-  --wb-color-warning: #9a5b00;
-  --wb-color-danger: #c9342f;
+  --wb-color-accent-soft: var(--surface-selected);
+  --wb-color-success: var(--success);
+  --wb-color-warning: var(--warning);
+  --wb-color-danger: var(--danger);
   --wb-color-focus: rgb(0 113 227 / 36%);
 
   /* 日志与技术字段统一使用系统等宽字体，避免额外字体资源。 */
-  --wb-font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
-  --wb-font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  --wb-font-sans: var(--font-ui);
+  --wb-font-mono: var(--font-mono);
 
   /* 8px 网格及其半步值，供紧凑控件和大区块共同复用。 */
   --wb-space-1: 4px;
@@ -38,19 +56,23 @@
   --wb-space-7: 40px;
 
   --wb-control-height: 38px;
-  --wb-radius-control: 9px;
-  --wb-radius-panel: 14px;
+  --wb-radius-control: var(--radius-control);
+  --wb-radius-panel: var(--radius-panel);
   --wb-shadow-floating: 0 18px 48px rgb(24 32 48 / 16%);
   --wb-transition-fast: 160ms ease;
   --wb-layer-header: 10;
   --wb-layer-drawer: 30;
   --wb-layer-toast: 40;
   --wb-layer-mask: 50;
-  --wb-log-pane-width: 44%;
 }
 
 [hidden] {
   display: none !important;
+}
+
+body {
+  overflow: hidden;
+  background: var(--page);
 }
 
 .app-header {
@@ -98,18 +120,19 @@
 
 /*
  * 工作台仅面向 1280px 及以上桌面浏览器。日志栏宽度由可访问 resizer
- * 写入 --wb-log-pane-width，结果栏自动占据剩余空间。
+ * 写入 --left-pane；固定视口高度让左右 pane 各自承担滚动，不产生页面级滚动。
  */
 .workspace {
+  box-sizing: border-box;
   display: grid;
-  grid-template-columns: minmax(420px, var(--wb-log-pane-width)) 12px minmax(520px, 1fr);
-  width: min(100% - 48px, 1400px);
-  max-width: none;
-  min-width: 1180px;
-  height: calc(100dvh - 96px);
-  min-height: 680px;
+  grid-template-columns: minmax(360px, var(--left-pane)) 8px minmax(620px, 1fr);
+  width: 100%;
+  max-width: 1440px;
+  min-width: 1280px;
+  height: calc(100vh - 72px);
+  min-height: 0;
   margin: 0 auto;
-  padding: var(--wb-space-5) 0;
+  padding: var(--wb-space-5);
   color: var(--wb-color-text);
   font-family: var(--wb-font-sans);
 }
@@ -218,7 +241,7 @@
 
 .workspace-resizer {
   position: relative;
-  width: 12px;
+  width: 8px;
   height: 100%;
   cursor: col-resize;
   touch-action: none;
@@ -229,7 +252,7 @@
   position: absolute;
   top: 16px;
   bottom: 16px;
-  left: 5px;
+  left: 3px;
   width: 2px;
   border-radius: 2px;
   background: var(--wb-color-border);

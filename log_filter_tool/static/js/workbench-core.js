@@ -14,6 +14,7 @@
 
   var namespace = global.LogWorkbench || {};
   var modes = namespace.modes || Object.create(null);
+  var state = namespace.state || {activeTab: "overview"};
 
   /**
    * 注册一个显式分析模式。
@@ -61,60 +62,165 @@
     }
   }
 
+  /** 返回工作台中按 DOM 顺序排列的全部结果标签。 */
+  function tabButtons(root) {
+    return Array.from(root.querySelectorAll('[role="tab"][aria-controls]'));
+  }
+
   /**
-   * 切换到目标 tab，并同步 aria-selected、tabindex 与 panel.hidden。
-   *
-   * @param {HTMLElement} selectedTab 要激活的 role=tab 元素。
-   * @param {HTMLElement} root 当前工作台根节点。
+   * 返回当前模式允许展示的标签。
+   * ``hidden`` 标签不会进入方向键/Home/End 序列，避免焦点落到不可见能力上。
    */
-  function activateTab(selectedTab, root) {
-    var tabs = Array.from(root.querySelectorAll('[role="tab"][aria-controls]'));
-    tabs.forEach(function updateTab(tab) {
-      var selected = tab === selectedTab;
-      var panel = document.getElementById(tab.getAttribute("aria-controls"));
-      tab.setAttribute("aria-selected", selected ? "true" : "false");
-      tab.tabIndex = selected ? 0 : -1;
+  function visibleTabButtons(root) {
+    return tabButtons(root).filter(function isVisible(button) {
+      return !button.hidden;
+    });
+  }
+
+  /**
+   * 激活一个可见 panel，并原子同步标签与 panel 的可访问状态。
+   *
+   * @param {string} panelId ``aria-controls`` 指向的 panel ID。
+   * @param {boolean} focusTab 是否把键盘焦点移动到对应标签。
+   * @returns {boolean} 目标存在且当前可见时返回 true，否则保持原选择并返回 false。
+   */
+  function activateTab(panelId, focusTab) {
+    var root = document.getElementById("log-workbench");
+    if (!root) return false;
+
+    var normalizedPanelId = String(panelId || "");
+    var visibleTabs = visibleTabButtons(root);
+    var selectedTab = visibleTabs.find(function findTarget(button) {
+      return button.getAttribute("aria-controls") === normalizedPanelId;
+    });
+    if (!selectedTab) return false;
+
+    tabButtons(root).forEach(function updateTab(button) {
+      var selected = !button.hidden && button === selectedTab;
+      var panel = document.getElementById(button.getAttribute("aria-controls"));
+      button.setAttribute("aria-selected", String(selected));
+      button.tabIndex = selected ? 0 : -1;
       if (panel) panel.hidden = !selected;
     });
-  }
 
-  /** 为五个标准结果标签绑定鼠标与方向键操作。 */
-  function initializeTabs(root) {
-    var tabs = Array.from(root.querySelectorAll('[role="tab"][aria-controls]'));
-    if (!tabs.length) return;
-
-    tabs.forEach(function bindTab(tab, index) {
-      tab.addEventListener("click", function handleTabClick() {
-        activateTab(tab, root);
-      });
-      tab.addEventListener("keydown", function handleTabKeydown(event) {
-        var targetIndex = null;
-        if (event.key === "ArrowLeft") targetIndex = (index - 1 + tabs.length) % tabs.length;
-        if (event.key === "ArrowRight") targetIndex = (index + 1) % tabs.length;
-        if (event.key === "Home") targetIndex = 0;
-        if (event.key === "End") targetIndex = tabs.length - 1;
-        if (targetIndex === null) return;
-        event.preventDefault();
-        activateTab(tabs[targetIndex], root);
-        tabs[targetIndex].focus();
-      });
-    });
-
-    var selected = tabs.find(function findSelected(tab) {
-      return tab.getAttribute("aria-selected") === "true";
-    }) || tabs[0];
-    activateTab(selected, root);
+    state.activeTab = normalizedPanelId.replace(/Panel$/, "");
+    if (focusTab) selectedTab.focus();
+    return true;
   }
 
   /**
-   * 将日志栏宽度限制在 ARIA 声明的 30%-70%，确保两栏都保留可用空间。
+   * 按当前分析模式声明可用 panel；未知 ID 被忽略。
+   * 若当前标签被移除，则回退到 DOM 中第一个可见标签，确保始终只有一个
+   * ``aria-selected=true`` 和一个 ``tabindex=0``。
+   *
+   * @param {string[]} panelIds 当前模式可展示的 panel ID。
+   * @returns {boolean} 至少存在一个可见标签时返回 true。
+   */
+  function setAvailableTabs(panelIds) {
+    var root = document.getElementById("log-workbench");
+    if (!root) return false;
+
+    var availableIds = new Set(
+      Array.isArray(panelIds) ? panelIds.map(String) : []
+    );
+    tabButtons(root).forEach(function updateAvailability(button) {
+      var panel = document.getElementById(button.getAttribute("aria-controls"));
+      var available = availableIds.has(button.getAttribute("aria-controls"));
+      button.hidden = !available;
+      if (!available) {
+        button.setAttribute("aria-selected", "false");
+        button.tabIndex = -1;
+        if (panel) panel.hidden = true;
+      }
+    });
+
+    var visibleTabs = visibleTabButtons(root);
+    var selectedTab = visibleTabs.find(function findSelected(button) {
+      return button.getAttribute("aria-selected") === "true";
+    }) || visibleTabs[0];
+    if (!selectedTab) {
+      state.activeTab = "";
+      return false;
+    }
+    return activateTab(selectedTab.getAttribute("aria-controls"), false);
+  }
+
+  /** 为五个标准结果标签绑定鼠标与仅包含可见标签的键盘导航。 */
+  function initializeTabs(root) {
+    var tabs = tabButtons(root);
+    if (!tabs.length) return;
+
+    tabs.forEach(function bindTab(tab) {
+      tab.addEventListener("click", function handleTabClick() {
+        activateTab(tab.getAttribute("aria-controls"), false);
+      });
+      tab.addEventListener("keydown", function handleTabKeydown(event) {
+        var visibleTabs = visibleTabButtons(root);
+        var currentIndex = visibleTabs.indexOf(tab);
+        if (currentIndex < 0) return;
+
+        var targetIndex = null;
+        if (event.key === "ArrowLeft") {
+          targetIndex = (currentIndex - 1 + visibleTabs.length) % visibleTabs.length;
+        }
+        if (event.key === "ArrowRight") {
+          targetIndex = (currentIndex + 1) % visibleTabs.length;
+        }
+        if (event.key === "Home") targetIndex = 0;
+        if (event.key === "End") targetIndex = visibleTabs.length - 1;
+        if (targetIndex === null) return;
+        event.preventDefault();
+        activateTab(
+          visibleTabs[targetIndex].getAttribute("aria-controls"),
+          true
+        );
+      });
+    });
+
+    var visibleTabs = visibleTabButtons(root);
+    var selected = visibleTabs.find(function findSelected(tab) {
+      return tab.getAttribute("aria-selected") === "true";
+    }) || visibleTabs[0];
+    if (selected) activateTab(selected.getAttribute("aria-controls"), false);
+  }
+
+  /**
+   * 返回 CSS Grid 实际分配轨道的内容区域。
+   * ``getBoundingClientRect`` 包含工作台的 padding/border，百分比轨道却基于内容盒；
+   * 换算时扣除这些尺寸，才能保证键盘每次真实移动 16px 且拖动不会发生跳变。
+   */
+  function workspaceTrackMetrics(root) {
+    var bounds = root.getBoundingClientRect();
+    var styles = typeof global.getComputedStyle === "function"
+      ? global.getComputedStyle(root) : {};
+    var borderLeft = Number.parseFloat(styles.borderLeftWidth) || 0;
+    var borderRight = Number.parseFloat(styles.borderRightWidth) || 0;
+    var paddingLeft = Number.parseFloat(styles.paddingLeft) || 0;
+    var paddingRight = Number.parseFloat(styles.paddingRight) || 0;
+    return {
+      left: bounds.left + borderLeft + paddingLeft,
+      width: Math.max(
+        0,
+        bounds.width - borderLeft - borderRight - paddingLeft - paddingRight
+      )
+    };
+  }
+
+  /**
+   * 将日志栏宽度限制在 ARIA 声明的 32%–55%，确保两栏都保留可用空间。
+   * 保留四位小数可将百分比回写误差控制在远小于一个 CSS 像素的范围内。
    */
   function setLogPaneWidth(root, resizer, requestedValue) {
-    var minimum = Number(resizer.getAttribute("aria-valuemin")) || 30;
-    var maximum = Number(resizer.getAttribute("aria-valuemax")) || 70;
-    var value = Math.min(maximum, Math.max(minimum, Math.round(requestedValue)));
-    root.style.setProperty("--wb-log-pane-width", value + "%");
+    var minimum = Number(resizer.getAttribute("aria-valuemin")) || 32;
+    var maximum = Number(resizer.getAttribute("aria-valuemax")) || 55;
+    var numericValue = Number(requestedValue);
+    if (!Number.isFinite(numericValue)) return null;
+
+    var clampedValue = Math.min(maximum, Math.max(minimum, numericValue));
+    var value = Math.round(clampedValue * 10000) / 10000;
+    root.style.setProperty("--left-pane", String(value) + "%");
     resizer.setAttribute("aria-valuenow", String(value));
+    return value;
   }
 
   /** 初始化键盘和指针均可操作的栏宽调整器。 */
@@ -123,10 +229,12 @@
     if (!resizer) return;
 
     resizer.addEventListener("keydown", function handleResizeKeydown(event) {
-      var current = Number(resizer.getAttribute("aria-valuenow")) || 44;
+      var current = Number(resizer.getAttribute("aria-valuenow")) || 39;
+      var metrics = workspaceTrackMetrics(root);
+      var keyboardStep = metrics.width > 0 ? (16 / metrics.width) * 100 : 0;
       var next = null;
-      if (event.key === "ArrowLeft") next = current - 2;
-      if (event.key === "ArrowRight") next = current + 2;
+      if (event.key === "ArrowLeft") next = current - keyboardStep;
+      if (event.key === "ArrowRight") next = current + keyboardStep;
       if (event.key === "Home") next = Number(resizer.getAttribute("aria-valuemin"));
       if (event.key === "End") next = Number(resizer.getAttribute("aria-valuemax"));
       if (next === null) return;
@@ -139,23 +247,28 @@
       resizer.setPointerCapture(event.pointerId);
 
       function handlePointerMove(moveEvent) {
-        var bounds = root.getBoundingClientRect();
-        var requested = ((moveEvent.clientX - bounds.left) / bounds.width) * 100;
+        var metrics = workspaceTrackMetrics(root);
+        if (metrics.width <= 0) return;
+        var requested = ((moveEvent.clientX - metrics.left) / metrics.width) * 100;
         setLogPaneWidth(root, resizer, requested);
       }
 
       function stopPointerResize(endEvent) {
-        resizer.removeEventListener("pointermove", handlePointerMove);
-        resizer.removeEventListener("pointerup", stopPointerResize);
-        resizer.removeEventListener("pointercancel", stopPointerResize);
+        document.removeEventListener("pointermove", handlePointerMove);
+        document.removeEventListener("pointerup", stopPointerResize);
+        document.removeEventListener("pointercancel", stopPointerResize);
         if (resizer.hasPointerCapture(endEvent.pointerId)) {
           resizer.releasePointerCapture(endEvent.pointerId);
         }
       }
 
-      resizer.addEventListener("pointermove", handlePointerMove);
-      resizer.addEventListener("pointerup", stopPointerResize);
-      resizer.addEventListener("pointercancel", stopPointerResize);
+      /*
+       * move/up 监听放在 document：即使浏览器或自动化环境没有持续派发
+       * pointer capture，指针离开 8px 分隔条后仍能连续调整并可靠清理监听器。
+       */
+      document.addEventListener("pointermove", handlePointerMove);
+      document.addEventListener("pointerup", stopPointerResize);
+      document.addEventListener("pointercancel", stopPointerResize);
     });
   }
 
@@ -178,9 +291,9 @@
   }
 
   /** People/Dating 完成后统一激活结果标签，保证错误或成功信息都可立即看到。 */
-  function activateResultPanel(root) {
+  function activateResultPanel() {
     var resultTab = document.getElementById("resultTab");
-    if (resultTab) activateTab(resultTab, root);
+    if (resultTab) activateTab("resultPanel", false);
   }
 
   /**
@@ -223,7 +336,7 @@
           showToast(error && error.message ? error.message : "分析失败，请稍后重试。");
         })
         .then(function showAnalysisResult() {
-          activateResultPanel(root);
+          activateResultPanel();
         })
         .finally(function restoreAnalysisControls() {
           analysisInFlight = false;
@@ -258,9 +371,11 @@
   }
 
   registerDefaultModes();
+  namespace.state = state;
   namespace.modes = modes;
   namespace.registerMode = registerMode;
   namespace.getMode = getMode;
+  namespace.setAvailableTabs = setAvailableTabs;
   namespace.activateTab = activateTab;
   namespace.activateResultPanel = activateResultPanel;
   namespace.showToast = showToast;
