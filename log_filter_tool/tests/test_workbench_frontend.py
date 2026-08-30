@@ -2553,6 +2553,25 @@ class WorkbenchShellTest(unittest.TestCase):
         self.assertNotIn("outline: none", css)
 
 
+    def test_task_six_review_layout_and_success_focus_contracts(self):
+        """复审回归：loading 只覆盖结果区，成功后结果标题可被聚焦。"""
+        html = self.client.get("/").get_data(as_text=True)
+        core = Path("static/js/workbench-core.js").read_text(encoding="utf-8")
+        css = Path("static/css/log-workbench.css").read_text(encoding="utf-8")
+
+        self.assertIn('id="workbench-result-heading" tabindex="-1"', html)
+        self.assertEqual(html.count('id="workbench-loading-mask"'), 1)
+        result_pane_index = html.index('id="workbench-result-pane"')
+        loading_mask_index = html.index('id="workbench-loading-mask"')
+        tabs_index = html.index('class="workbench-tabs"')
+        self.assertGreater(loading_mask_index, result_pane_index)
+        self.assertLess(loading_mask_index, tabs_index)
+        self.assertRegex(css, r"\.workbench-result-pane\s*\{[^}]*position:\s*relative;")
+        self.assertRegex(css, r"\.workbench-loading-mask\s*\{[^}]*position:\s*absolute;")
+        self.assertIn("activateResultPanel(true)", core)
+        self.assertIn("heading.focus", core)
+
+
     def _run_task_six_core_harness(self, scenario):
         """在最小但可交互 DOM 中验证 drawer 与异步状态机的真实副作用。"""
         node = shutil.which("node")
@@ -2698,10 +2717,12 @@ class WorkbenchShellTest(unittest.TestCase):
             add("span", "log-byte-count");
             add("div", "workbench-result-heading", {textContent: "分析结果"});
             add("div", "workbench-result-subheading");
+            const resultStale = add("span", "workbench-result-stale", {hidden: true});
             const state = add("div", "workbench-analysis-state", {hidden: false});
             const stateMessage = add("span", "workbench-analysis-state-message");
             state.appendChild(stateMessage);
             const stateSkeleton = add("div", "workbench-result-loading", {hidden: true});
+            const emptyState = add("p", "workbench-result-empty", {hidden: true});
             const errorPanel = add("section", "workbench-result-error", {hidden: true});
             const errorCode = add("strong", "workbench-result-error-code");
             const errorMessage = add("p", "workbench-result-error-message");
@@ -2813,6 +2834,11 @@ class WorkbenchShellTest(unittest.TestCase):
                 await logText.dispatch("input");
                 assert(api.state.dirty === true && api.state.phase === "idle",
                   "编辑日志未取消/标记旧异步请求");
+                assert(!resultStale.hidden && resultStale.textContent.includes("过期"),
+                  "日志 stale 后右侧结果 header 未同步显示过期标记");
+                api.markAnalysisFresh();
+                assert(resultStale.hidden && resultStale.textContent === "",
+                  "fresh 后右侧结果 header 未清理过期标记");
                 resolveOld();
                 await Promise.resolve();
                 await Promise.resolve();
@@ -2827,6 +2853,21 @@ class WorkbenchShellTest(unittest.TestCase):
                 await retryButton.dispatch("click");
                 assert(state.getAttribute("data-state") === "error",
                   "失败后重试不应伪造成功状态");
+              } else if (process.argv[2] === "empty") {
+                api.registerAnalysisMode("people", {
+                  analyze() {
+                    return Promise.resolve({ok: false, empty: true,
+                      message: "日志内容为空，请先粘贴日志再分析", error: {
+                        error_code: "EMPTY_LOG", message: "日志内容为空，请先粘贴日志再分析"
+                      }});
+                  }
+                });
+                await api.analyzeSelectedMode();
+                assert(state.getAttribute("data-state") === "empty",
+                  "空日志未进入统一 empty 状态");
+                assert(errorPanel.hidden, "empty 状态错误面板不应显示");
+                assert(!emptyState.hidden && stateMessage.textContent.includes("日志内容为空"),
+                  "empty 状态未保留真实空态文案");
               } else {
                 throw new Error("未知 Task 6 core 场景: " + process.argv[2]);
               }
@@ -2849,6 +2890,7 @@ class WorkbenchShellTest(unittest.TestCase):
         """共享 drawer 与旧请求隔离必须由 core 的真实 DOM 副作用保证。"""
         self._run_task_six_core_harness("drawer")
         self._run_task_six_core_harness("async")
+        self._run_task_six_core_harness("empty")
 
 
     def test_task_six_people_drawer_and_outcome_filter(self):
@@ -2922,10 +2964,13 @@ class WorkbenchShellTest(unittest.TestCase):
               id => add("button", id)
             );
             add("div", "people-overview");
+            const peopleOverviewEmpty = add("p", "people-overview-empty");
+            peopleOverviewEmpty.hidden = true;
             add("section", "people-verdict-panel");
             add("h3", "people-verdict-title");
             add("p", "people-task-summary");
             add("p", "people-ai-status");
+            const peopleStatus = add("p", "people-search-status");
             add("div", "people-coverage-list");
             add("ul", "people-issue-list");
             add("div", "people-timeline");
@@ -3001,6 +3046,14 @@ class WorkbenchShellTest(unittest.TestCase):
               assert(textOf(checkList).includes("暂无规则检查结果") ||
                 textOf(checkList).includes("当前筛选条件下没有规则检查"),
                 "无匹配检查项未显示 empty 状态");
+              assert(warnFilterButton.getAttribute("aria-pressed") === "false",
+                "无匹配检查项时未同步 outcome 筛选按钮 aria-pressed");
+              const emptyResult = await api.definition.analyze({root, logText: "   "});
+              assert(emptyResult && emptyResult.ok === false && emptyResult.empty === true &&
+                emptyResult.error && emptyResult.error.error_code === "EMPTY_LOG",
+                "People 空日志未返回 empty/EMPTY_LOG 状态");
+              assert(!peopleOverviewEmpty.hidden && textOf(peopleOverviewEmpty).includes("日志内容为空"),
+                "People 空日志未保留真实空态文案");
             })().catch(error => {
               console.error(error.stack || error.message);
               process.exitCode = 1;

@@ -150,6 +150,10 @@ body {
   box-shadow: none;
 }
 
+.workbench-result-pane {
+  position: relative;
+}
+
 .workbench-pane__header {
   display: flex;
   min-height: 78px;
@@ -559,12 +563,13 @@ body {
 }
 
 .workbench-loading-mask {
-  position: fixed;
+  position: absolute;
   inset: 0;
   z-index: var(--wb-layer-mask);
   display: grid;
   place-items: center;
   background: rgb(245 245 247 / 82%);
+  border-radius: var(--wb-radius-panel);
 }
 
 .workbench-loading-mask span {

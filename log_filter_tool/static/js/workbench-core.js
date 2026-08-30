@@ -213,7 +213,12 @@
       stateMessage.textContent = String(details.message || messages[normalized]);
     }
     if (loadingElement) loadingElement.hidden = normalized !== "loading";
-    if (emptyElement) emptyElement.hidden = normalized !== "empty";
+    if (emptyElement) {
+      emptyElement.hidden = normalized !== "empty";
+      if (normalized === "empty") {
+        emptyElement.textContent = String(details.message || "没有可展示的分析结果。");
+      }
+    }
     if (errorElement) errorElement.hidden = normalized !== "error";
     if (errorCodeElement) {
       errorCodeElement.textContent = normalized === "error"
@@ -522,6 +527,11 @@
       stale.textContent = text;
       stale.hidden = false;
     }
+    var resultStale = getElement("workbench-result-stale");
+    if (resultStale) {
+      resultStale.textContent = "结果已过期：" + text;
+      resultStale.hidden = false;
+    }
     setAnalysisExportsDisabled(true);
     setAnalysisState("stale", {message: text});
   }
@@ -549,6 +559,7 @@
   /** 分析完成后清除 stale，并按结果是否为空恢复过滤结果导出。 */
   function markAnalysisFresh() {
     var stale = getElement("analysis-stale");
+    var resultStale = getElement("workbench-result-stale");
     var result = getElement("result-text");
     var exportButton = getElement("export-filtered-result-btn");
     var filteredButton = getElement("filtered-log-view-btn");
@@ -556,6 +567,10 @@
     if (stale) {
       stale.textContent = "";
       stale.hidden = true;
+    }
+    if (resultStale) {
+      resultStale.textContent = "";
+      resultStale.hidden = true;
     }
     var hasResult = Boolean(result && String(result.value || ""));
     if (exportButton) exportButton.disabled = !hasResult;
@@ -869,10 +884,19 @@
     });
   }
 
-  /** People/Dating 成功后统一激活结果标签。 */
-  function activateResultPanel() {
+  /** People/Dating 成功后统一激活结果标签；成功结果标题承担焦点落点。 */
+  function activateResultPanel(focusTitle) {
     var resultTab = getElement("resultTab");
     if (resultTab) activateTab("resultPanel", false);
+    if (!focusTitle) return;
+    var heading = getElement("workbench-result-heading");
+    if (!heading) return;
+    // 兼容旧模板：标题没有 tabindex 时临时补成程序可聚焦的结果锚点。
+    if (typeof heading.getAttribute === "function" &&
+        heading.getAttribute("tabindex") === null) {
+      heading.setAttribute("tabindex", "-1");
+    }
+    if (typeof heading.focus === "function") heading.focus({preventScroll: true});
   }
 
   /**
@@ -1030,15 +1054,19 @@
         if (!isSuccessfulAnalysisResult(result)) {
           var invalidDetails = analysisErrorDetails(result);
           var invalidMessage = invalidDetails.errorMessage || "分析未生成有效结果，请检查日志后重试。";
-          setAnalysisState(isEmptyAnalysisResult(result) ? "empty" : "error", {
+          var emptyResult = isEmptyAnalysisResult(result);
+          setAnalysisState(emptyResult ? "empty" : "error", {
             errorCode: invalidDetails.errorCode,
             errorMessage: invalidMessage,
             message: invalidMessage
           });
-          showPersistentError(new Error(invalidMessage));
-          activateAnalysisFailurePanel(mode);
+          if (!emptyResult) {
+            showPersistentError(new Error(invalidMessage));
+            activateAnalysisFailurePanel(mode);
+          }
           return {
             ok: false,
+            empty: emptyResult,
             message: invalidMessage,
             error: {error_code: invalidDetails.errorCode, message: invalidMessage}
           };
@@ -1049,7 +1077,7 @@
           return {ok: false, stale: true};
         }
         setAnalysisState("success");
-        activateResultPanel();
+        activateResultPanel(true);
         return result;
       })
       .catch(function handleAnalysisFailure(error) {

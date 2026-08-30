@@ -448,6 +448,8 @@
     }).filter(function filterCheck(entry) {
       return peopleOutcomeMatches(normalizeOutcome(entry.check.outcome), filter);
     });
+    // 即使当前筛选没有命中，也要先同步按钮计数和 aria-pressed，再展示空态。
+    renderPeopleCheckFilter();
     if (!ordered.length) {
       container.appendChild(createElement("li", "issue-item", "暂无规则检查结果。"));
       return;
@@ -465,7 +467,6 @@
       item.appendChild(evidenceContainer);
       container.appendChild(item);
     });
-    renderPeopleCheckFilter();
   }
 
   function renderChecks(data, lineCount) {
@@ -568,6 +569,19 @@
     if (typeof api.showActionMessage === "function") api.showActionMessage(message, true, true);
   }
 
+  /** 空日志是可解释的业务空态，不应伪装成后端故障或覆盖其他模式结果。 */
+  function renderPeopleEmpty(message) {
+    clearPeopleSurfaces();
+    var empty = getElement("people-overview-empty");
+    if (empty) {
+      empty.textContent = String(message || "日志内容为空，请先粘贴日志再分析");
+      empty.hidden = false;
+    }
+    var status = getElement("people-search-status");
+    if (status) status.textContent = "空日志";
+    setPeopleResultHeader("People 等待日志", message);
+  }
+
   /**
    * 通过统一核心请求 People API。
    *
@@ -584,8 +598,10 @@
     clearPeopleSurfaces();
     if (!String(logText).trim()) {
       var emptyMessage = "日志内容为空，请先粘贴日志再分析";
-      renderPeopleError(emptyMessage);
-      return Promise.resolve({ok: false, message: emptyMessage});
+      var emptyError = new Error(emptyMessage);
+      emptyError.error_code = "EMPTY_LOG";
+      renderPeopleEmpty(emptyMessage);
+      return Promise.resolve({ok: false, empty: true, message: emptyMessage, error: emptyError});
     }
     if (!root || !root.dataset || !root.dataset.peopleUrl || typeof api.requestJson !== "function") {
       var endpointMessage = "People 分析地址不可用。";

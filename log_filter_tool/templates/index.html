@@ -1072,7 +1072,7 @@
       >
         <div class="workbench-pane__header workbench-result-header">
           <div>
-            <h2 id="workbench-result-heading">分析结果</h2>
+            <h2 id="workbench-result-heading" tabindex="-1">分析结果</h2>
             <p id="workbench-result-subheading">在固定标签中查看概览、调用链路、原始结果和检查项。</p>
           </div>
           <span class="analysis-stale" id="workbench-result-stale" role="status" aria-live="polite" hidden>结果已过期</span>
@@ -1090,6 +1090,10 @@
             <button type="button" id="workbench-retry-btn">重试</button>
           </section>
         </section>
+
+        <div class="workbench-loading-mask" id="workbench-loading-mask" role="status" aria-live="polite" aria-busy="false" hidden>
+          <span>正在分析日志</span>
+        </div>
 
         <div class="workbench-tabs" role="tablist" aria-label="日志分析结果">
           <button type="button" id="overviewTab" role="tab" aria-controls="overviewPanel" aria-selected="false" tabindex="-1">概览</button>
@@ -1447,9 +1451,6 @@
       <div id="workbench-drawer-content" class="workbench-drawer__content"></div>
     </aside>
     <div class="workbench-toast toast" id="workbench-toast" role="status" aria-live="polite" hidden></div>
-    <div class="workbench-loading-mask" id="workbench-loading-mask" role="status" aria-live="polite" aria-busy="false" hidden>
-      <span>正在分析日志</span>
-    </div>
     <script src="{{ url_for('tool.static', filename='js/workbench-core.js') }}"></script>
     <script src="{{ url_for('tool.static', filename='js/workbench-filter.js') }}"></script>
     <script src="{{ url_for('tool.static', filename='js/workbench-people.js') }}"></script>
