@@ -392,8 +392,15 @@ fi
 alembic_target="$("${compose[@]}" config --format json | python3 -c 'import json,sys; print(json.load(sys.stdin)["services"]["platform-migrate"]["command"][-1])')"
 if [[ "$alembic_target" != "20260824_0019" ]]; then
   project_access_manifest="${PROJECT_ACCESS_MANIFEST:-}"
+  # 发布包不携带生产业务数据清单；默认使用服务器受控状态目录中的清单。
+  # 只有显式传入 PROJECT_ACCESS_MANIFEST 时才覆盖该默认路径，便于停机窗口
+  # 内使用经过审计的一次性清单，同时避免因 GitHub Actions 环境变量缺失而
+  # 意外跳过 Contract 迁移门禁。
+  if [[ -z "$project_access_manifest" && -f "$state_dir/project-access-manifest.json" ]]; then
+    project_access_manifest="$state_dir/project-access-manifest.json"
+  fi
   if [[ -z "$project_access_manifest" || ! -f "$project_access_manifest" ]]; then
-    echo 'Contract 发布必须通过 PROJECT_ACCESS_MANIFEST 提供完整角色、工具、成员、源端计数和资源清单' >&2
+    echo "Contract 发布必须提供项目权限 manifest（显式 PROJECT_ACCESS_MANIFEST 或 $state_dir/project-access-manifest.json）" >&2
     exit 1
   fi
   manifest_path="$(cd "$(dirname "$project_access_manifest")" && pwd)/$(basename "$project_access_manifest")"
