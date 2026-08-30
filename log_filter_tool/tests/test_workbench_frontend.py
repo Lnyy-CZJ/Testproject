@@ -2703,6 +2703,7 @@ class WorkbenchShellTest(unittest.TestCase):
             const logText = add("textarea", "log_text");
             logText.value = "old log";
             add("textarea", "result-text", {value: "existing result"});
+            const filterExport = add("button", "export-filtered-result-btn");
             add("div", "raw-log-view");
             add("div", "filtered-log-view", {hidden: true});
             add("button", "raw-log-view-btn");
@@ -2868,6 +2869,33 @@ class WorkbenchShellTest(unittest.TestCase):
                 assert(errorPanel.hidden, "empty 状态错误面板不应显示");
                 assert(!emptyState.hidden && stateMessage.textContent.includes("日志内容为空"),
                   "empty 状态未保留真实空态文案");
+              } else if (process.argv[2] === "owner-freshness") {
+                let calls = 0;
+                for (const owner of ["people", "dating"]) {
+                  api.registerAnalysisMode(owner, {
+                    analyze() {
+                      calls += 1;
+                      return Promise.resolve({ok: true, owner, calls});
+                    }
+                  });
+                  // 先建立一个可用的 Filter 结果，再验证异步 owner 成功不会把它误恢复。
+                  api.markAnalysisFresh("general");
+                  api.markAnalysisFresh(owner);
+                  modeSelect.value = owner;
+                  await api.analyzeSelectedMode();
+                  assert(resultStale.hidden, owner + " 首次成功不应显示 stale");
+
+                  logText.value = "new log " + owner;
+                  await logText.dispatch("input");
+                  assert(!resultStale.hidden, owner + " 结果失效后未显示 stale");
+                  assert(filterExport.disabled, owner + " 日志修改后旧 Filter 导出未禁用");
+
+                  await api.analyzeSelectedMode();
+                  assert(resultStale.hidden,
+                    owner + " 在当前日志上重新成功后仍显示全局 stale");
+                  assert(api.state.dirty === true && filterExport.disabled,
+                    owner + " 成功错误清除了旧 Filter 的 stale 状态");
+                }
               } else {
                 throw new Error("未知 Task 6 core 场景: " + process.argv[2]);
               }
@@ -2891,6 +2919,11 @@ class WorkbenchShellTest(unittest.TestCase):
         self._run_task_six_core_harness("drawer")
         self._run_task_six_core_harness("async")
         self._run_task_six_core_harness("empty")
+
+
+    def test_task_six_mode_owner_freshness_isolated(self):
+        """People/Dating 成功只能恢复自己的结果，不能清除 Filter stale。"""
+        self._run_task_six_core_harness("owner-freshness")
 
 
     def test_task_six_people_drawer_and_outcome_filter(self):

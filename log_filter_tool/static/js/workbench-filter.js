@@ -102,7 +102,8 @@
    * @returns {Promise<object>|undefined} 请求 Promise；无控件或 stale 时返回已完成 Promise。
    */
   function exportLog(exportType, overrideContent) {
-    if (exportType === "filtered_result" && api.state && api.state.dirty) {
+    if (exportType === "filtered_result" && api.state &&
+        (api.state.filterDirty !== undefined ? api.state.filterDirty : api.state.dirty)) {
       if (typeof api.showActionMessage === "function") {
         api.showActionMessage("日志已修改，过滤结果可能已过期，请重新分析后再导出。", true, true);
       }
@@ -147,7 +148,8 @@
         var result = getElement("result-text");
         var hasResult = Boolean(result && String(result.value || ""));
         var stale = exportType === "filtered_result" && api.state &&
-          (api.state.dirty || Number(api.state.inputRevision) !== revisionAtStart);
+          ((api.state.filterDirty !== undefined ? api.state.filterDirty : api.state.dirty) ||
+            Number(api.state.inputRevision) !== revisionAtStart);
         button.disabled = Boolean(stale || (exportType === "filtered_result" && !hasResult));
         button.textContent = originalText;
       }

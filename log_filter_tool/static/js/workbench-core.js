@@ -41,6 +41,11 @@
     "export-dating-report-btn",
     "export-dating-json-btn"
   ];
+  var ownerExportIds = {
+    general: ["copy-btn", "export-filtered-result-btn"],
+    people: ["copy-report-btn", "export-report-btn"],
+    dating: ["copy-dating-report-btn", "export-dating-report-btn", "export-dating-json-btn"]
+  };
   // requestSubmit 会同步触发表单 submit 事件；用短生命周期标记区分统一入口
   // 自己发起的那一次提交与用户在 submitting 状态下的重复提交。
   var nativeSubmitInProgress = false;
@@ -61,6 +66,13 @@
   state.dirty = Boolean(state.dirty);
   state.inputRevision = Number(state.inputRevision) || 0;
   state.lastFocusedElement = state.lastFocusedElement || null;
+  // 结果不是单一来源：Filter、People、Dating 都可能保留自己的旧结果。
+  // ownerFreshness 让异步分析恢复自身结果时，不会误清除另一个模式的 stale。
+  state.ownerFreshness = state.ownerFreshness || Object.create(null);
+  ["general", "people", "dating"].forEach(function initializeOwnerFreshness(owner) {
+    if (state.ownerFreshness[owner] === undefined) state.ownerFreshness[owner] = true;
+  });
+  state.filterDirty = Boolean(state.filterDirty);
 
   function getElement(id) {
     return document.getElementById(id);
@@ -243,6 +255,49 @@
       button.disabled = Boolean(disabled);
       button.setAttribute("aria-disabled", String(Boolean(disabled)));
     });
+  }
+
+  /** 只冻结指定分析模式拥有的导出按钮，避免跨模式互相覆盖状态。 */
+  function setOwnerExportsDisabled(owner, disabled) {
+    var ids = ownerExportIds[canonicalModeName(owner)] || [];
+    ids.forEach(function updateOwnerExportButton(id) {
+      var button = getElement(id);
+      if (!button) return;
+      button.disabled = Boolean(disabled);
+      button.setAttribute("aria-disabled", String(Boolean(disabled)));
+    });
+  }
+
+  /** 当前 owner 的结果是否过期；未知模式按通用 Filter 处理。 */
+  function isOwnerStale(owner) {
+    var normalizedOwner = canonicalModeName(owner) || "general";
+    return state.ownerFreshness[normalizedOwner] === false;
+  }
+
+  /**
+   * 同步左右两侧 stale 指示器。
+   *
+   * 左侧提示只代表 Filter 结果，右侧提示只代表当前分析 owner。这样 People
+   * 成功时可以隐藏自己的 stale，同时保留已经被日志修改影响的 Filter 导出禁用态。
+   */
+  function refreshStaleIndicators(message) {
+    var activeOwner = canonicalModeName(state.activeMode) || "general";
+    var filterStale = Boolean(state.filterDirty || isOwnerStale("general"));
+    var activeStale = isOwnerStale(activeOwner);
+    var staleText = message || "日志已修改，当前结果可能已过期，请重新分析。";
+    var stale = getElement("analysis-stale");
+    if (stale) {
+      stale.textContent = staleText;
+      stale.hidden = !(filterStale || activeStale);
+    }
+    var resultStale = getElement("workbench-result-stale");
+    if (resultStale) {
+      resultStale.textContent = activeStale ? "结果已过期：" + staleText : "";
+      resultStale.hidden = !activeStale;
+    }
+    // state.dirty 保留旧调用方需要的全局兼容语义；Filter 导出使用更精确的
+    // state.filterDirty，避免 People/Dating stale 单独阻断仍然新鲜的 Filter。
+    state.dirty = Boolean(filterStale || activeStale);
   }
 
   function safeDrawerValue(value) {
@@ -515,24 +570,23 @@
     return {text: text, lineCount: lineCount, byteCount: utf8ByteLength(text)};
   }
 
-  /** 标记分析结果可能过期；旧结果保留用于核对，但禁止继续导出。 */
+  /** 标记当前 owner 和已有 Filter 结果可能过期；旧结果保留用于核对。 */
   function markAnalysisStale(message) {
-    var stale = getElement("analysis-stale");
     var text = message || "日志已修改，过滤结果可能已过期，请重新分析。";
-    state.dirty = true;
+    var owner = canonicalModeName(state.activeMode) || "general";
+    var result = getElement("result-text");
+    var filterHasResult = Boolean(result && String(result.value || ""));
+    state.ownerFreshness[owner] = false;
+    if (owner === "general" || filterHasResult || state.filterDirty) {
+      state.ownerFreshness.general = false;
+      state.filterDirty = true;
+      setOwnerExportsDisabled("general", true);
+    }
     if (activeAnalysis && activeAnalysis.revision !== state.inputRevision) {
       cancelActiveAnalysis();
     }
-    if (stale) {
-      stale.textContent = text;
-      stale.hidden = false;
-    }
-    var resultStale = getElement("workbench-result-stale");
-    if (resultStale) {
-      resultStale.textContent = "结果已过期：" + text;
-      resultStale.hidden = false;
-    }
-    setAnalysisExportsDisabled(true);
+    setOwnerExportsDisabled(owner, true);
+    refreshStaleIndicators(text);
     setAnalysisState("stale", {message: text});
   }
 
@@ -556,29 +610,34 @@
     }
   }
 
-  /** 分析完成后清除 stale，并按结果是否为空恢复过滤结果导出。 */
-  function markAnalysisFresh() {
-    var stale = getElement("analysis-stale");
-    var resultStale = getElement("workbench-result-stale");
+  /**
+   * 分析完成后只清除指定 owner 的 stale。
+   *
+   * @param {string} mode 可选模式名；省略时使用当前 activeMode。
+   * Filter 会恢复自己的导出按钮，People/Dating 的导出由各自适配器依据真实报告
+   * 内容控制，因此这里不会跨模式启用按钮。
+   */
+  function markAnalysisFresh(mode) {
+    var owner = canonicalModeName(mode || state.activeMode) || "general";
     var result = getElement("result-text");
-    var exportButton = getElement("export-filtered-result-btn");
-    var filteredButton = getElement("filtered-log-view-btn");
-    state.dirty = false;
-    if (stale) {
-      stale.textContent = "";
-      stale.hidden = true;
+    state.ownerFreshness[owner] = true;
+    if (owner === "general") {
+      state.ownerFreshness.general = true;
+      state.filterDirty = false;
+      var exportButton = getElement("export-filtered-result-btn");
+      var filteredButton = getElement("filtered-log-view-btn");
+      var hasResult = Boolean(result && String(result.value || ""));
+      if (exportButton) exportButton.disabled = !hasResult;
+      if (filteredButton) {
+        filteredButton.disabled = !hasResult;
+        filteredButton.setAttribute("aria-disabled", String(!hasResult));
+      }
     }
-    if (resultStale) {
-      resultStale.textContent = "";
-      resultStale.hidden = true;
+    refreshStaleIndicators();
+    if (canonicalModeName(state.activeMode) === owner) {
+      var hasFilterResult = Boolean(result && String(result.value || ""));
+      setAnalysisState(owner === "general" && !hasFilterResult ? "empty" : "success");
     }
-    var hasResult = Boolean(result && String(result.value || ""));
-    if (exportButton) exportButton.disabled = !hasResult;
-    if (filteredButton) {
-      filteredButton.disabled = !hasResult;
-      filteredButton.setAttribute("aria-disabled", String(!hasResult));
-    }
-    setAnalysisState(hasResult ? "success" : "empty");
   }
 
   /**
@@ -1076,7 +1135,8 @@
           notifyActiveModeInputRevision(mode);
           return {ok: false, stale: true};
         }
-        setAnalysisState("success");
+        // 异步模式的成功只恢复当前 owner；Filter 若已因编辑失效，必须继续保持 stale。
+        markAnalysisFresh(state.activeMode);
         activateResultPanel(true);
         return result;
       })
