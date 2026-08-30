@@ -90,8 +90,18 @@ def client(database_factory: sessionmaker[Session]) -> Generator[TestClient, Non
             )
             return AuthContext(session=session, user=user)
 
+    # 注册 middleware 使用独立事务，必须显式指向当前测试数据库。provider 在
+    # 每次请求时动态读取该 state，测试结束后恢复原工厂，绝不回退到真实数据库。
+    original_factory = getattr(app.state, "registration_session_factory", None)
+    app.state.registration_session_factory = database_factory
     app.dependency_overrides[get_db] = override_database
     app.dependency_overrides[current_auth_context] = override_authentication
-    with TestClient(app, raise_server_exceptions=False) as test_client:
-        yield test_client
-    app.dependency_overrides.clear()
+    try:
+        with TestClient(app, raise_server_exceptions=False) as test_client:
+            yield test_client
+    finally:
+        app.dependency_overrides.clear()
+        if original_factory is None:
+            delattr(app.state, "registration_session_factory")
+        else:
+            app.state.registration_session_factory = original_factory

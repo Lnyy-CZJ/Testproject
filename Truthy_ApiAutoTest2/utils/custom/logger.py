@@ -80,7 +80,9 @@ def configure_logging(
     参数说明:
         level: Python logging 日志级别或名称。
         log_directory: 日志目录；启用文件日志时必须提供。
-        env: 当前运行环境，用于日志文件名。
+        env: 当前运行环境，用于日志文件名；当运行环境同时提供
+            ``API_AUTOTEST_TASK_ID`` 时，文件名会追加平台任务 ID，便于任务记录
+            精确定位本次业务日志。
         console: 是否输出到终端。
         file: 是否输出到日志文件。
         now: 可选当前时间；未提供时使用系统时间，主要用于稳定测试日期目录和
@@ -127,7 +129,15 @@ def configure_logging(
         )
         timestamp = current_time.strftime("%Y%m%d_%H%M%S_%f")
         safe_env = "".join(char for char in env if char.isalnum() or char in "-_")
-        log_path = directory / f"{timestamp}_{safe_env}_{os.getpid()}.log"
+        task_id = os.getenv("API_AUTOTEST_TASK_ID")
+        if task_id:
+            # 平台任务 ID 由任务运行器生成并已遵循固定安全格式；此处保留原值，
+            # 仅把它加入文件名，不增加任务目录，也不改变业务日志内容。
+            filename = f"{timestamp}_{safe_env}_{task_id}_{os.getpid()}.log"
+        else:
+            # CLI 等非平台入口继续使用历史命名，避免影响既有日志消费方。
+            filename = f"{timestamp}_{safe_env}_{os.getpid()}.log"
+        log_path = directory / filename
         file_handler = logging.FileHandler(log_path, encoding="utf-8")
         file_handler.setFormatter(formatter)
         file_handler._truthy_managed = True  # type: ignore[attr-defined]

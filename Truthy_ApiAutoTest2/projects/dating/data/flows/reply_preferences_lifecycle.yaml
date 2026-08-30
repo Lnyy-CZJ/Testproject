@@ -1,0 +1,23 @@
+name: Dating Reply 偏好版本生命周期
+tags: [dating, reply, preferences, stateful, isolated, explicit]
+steps:
+  - id: create_session
+    api: CreateAnonymousSession
+    extract:
+      access_token: $.access_token
+      expires_time: $.expires_time
+      refresh_token: $.refresh_token
+      refresh_expires_time: $.refresh_expires_time
+      user_id: $.user_id
+  - id: get_preferences_before
+    api: GetUserPreferences
+    extract:
+      original_preferences_version: $.version
+  - id: update_preferences
+    api: UpdateUserPreferences
+    extract:
+      updated_preferences_version: $.version
+  - id: get_preferences_after
+    api: GetUserPreferences
+  - id: update_preferences_with_stale_version
+    api: UpdateUserPreferences

@@ -5,14 +5,19 @@ from __future__ import annotations
 import os
 import re
 import time
+import uuid
 from collections.abc import Callable, Mapping
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit, urlunsplit
 
 from utils.custom.api_loader import build_execution_case
-from utils.custom.assertions import assert_data_equals, assert_gateway_response
+from utils.custom.assertions import (
+    GatewayBusinessResponseError,
+    assert_data_equals,
+    assert_data_not_equals,
+    assert_gateway_response,
+)
 from utils.custom.logger import get_logger
 from utils.custom.runtime_context import RuntimeContext, RuntimeContextError
 from utils.third_party.allure_reporter import attach_json, step as report_step
@@ -40,6 +45,7 @@ class FlowRunner:
         monotonic: Callable[[], float] = time.monotonic,
         environ: Mapping[str, str] | None = None,
         runtime_variables: Mapping[str, Any] | None = None,
+        task_input_root: Path | None = None,
     ) -> None:
         """保存执行依赖，不在初始化阶段创建运行时上下文。
 
@@ -50,6 +56,8 @@ class FlowRunner:
             sleep: 等待函数，允许单元测试注入替身。
             monotonic: 单调时钟，允许测试轮询超时而不真实等待。
             environ: 环境变量映射；为空时使用当前进程环境。
+            task_input_root: 当前任务 ``inputs/`` 目录；仅 ``input_file`` 动作
+                可读取，未提供时任何任务文件读取都会 fail-closed。
         """
         self.project_root = project_root
         self.gateway_factory = gateway_factory
@@ -57,6 +65,9 @@ class FlowRunner:
         self.monotonic = monotonic
         self.environ = environ if environ is not None else os.environ
         self.runtime_variables = deepcopy(dict(runtime_variables or {}))
+        self.task_input_root = (
+            Path(task_input_root).resolve() if task_input_root is not None else None
+        )
 
     def run(self, flow_case: dict[str, Any]) -> RuntimeContext:
         """执行一条 Flow/Scenario 配对并返回独立运行时上下文。
@@ -78,6 +89,11 @@ class FlowRunner:
             **self.runtime_variables,
             **self._resolve_environment(scenario.get("variables") or {}),
         }
+        # 业务 params.client_request_id 要在同一 Flow 内稳定复用，而 Gateway
+        # comm.client_request_id 仍由每次 HTTP 请求单独生成。平台可注入 task id；
+        # CLI 未提供时只在当前 Flow 内存中生成一次 UUID。
+        if not initial.get("flow_run_id"):
+            initial["flow_run_id"] = f"flow_{uuid.uuid4().hex}"
         context = RuntimeContext(initial)
         self._prepare_media_metadata(context)
         gateway = self.gateway_factory(context)
@@ -107,23 +123,16 @@ class FlowRunner:
                 position,
                 len(steps),
             )
+            should_terminate = False
             try:
                 with report_step(step_title):
-                    if "wait" in step:
-                        self.sleep(float(context.resolve(step["wait"]["seconds"])))
-                    elif "action" in step:
-                        self._execute_action(step["action"], gateway, context)
-                    elif "api" in step:
-                        step_data = (scenario.get("step_data") or {}).get(step_id) or {}
-                        should_terminate = self._execute_api(
-                            step,
-                            step_data,
-                            api_definitions,
-                            gateway,
-                            context,
-                        )
-                    else:
-                        raise FlowExecutionError(f"步骤 {step_id} 没有可执行动作")
+                    should_terminate = self._execute_step(
+                        step,
+                        scenario,
+                        api_definitions,
+                        gateway,
+                        context,
+                    )
             except Exception as exc:
                 # Gateway 分层断言、变量解析、网络异常与公共动作错误都可能发生
                 # 在已创建远端私密数据之后。任何普通执行异常都先进入终止清理，
@@ -132,10 +141,34 @@ class FlowRunner:
                 if pending_error is None:
                     pending_error = exc
                 flow_terminated = True
-                LOGGER.error("Flow 步骤失败，进入终止清理: step=%s error=%s", step_id, exc)
+                # 只有当前失败步骤之后实际存在 ``run_on_termination`` 步骤时，
+                # 才能宣称“进入终止清理”。保留远端任务的交互 Flow 没有这类
+                # 步骤，若继续使用旧文案会让用户误以为调用了 DeleteTaskData。
+                remaining_cleanup_steps = [
+                    str(candidate.get("id") or f"step_{candidate_position}")
+                    for candidate_position, candidate in enumerate(
+                        steps[position:],
+                        start=position + 1,
+                    )
+                    if candidate.get("run_on_termination", False)
+                ]
+                if remaining_cleanup_steps:
+                    LOGGER.error(
+                        "Flow 步骤失败，进入终止清理: step=%s cleanup_steps=%s error=%s",
+                        step_id,
+                        ",".join(remaining_cleanup_steps),
+                        exc,
+                    )
+                else:
+                    LOGGER.error(
+                        "Flow 步骤失败；当前 Flow 未配置可继续执行的终止清理步骤，"
+                        "远端任务数据保持不变: step=%s error=%s",
+                        step_id,
+                        exc,
+                    )
                 continue
             LOGGER.info("完成 Flow 步骤: step=%s", step_id)
-            if "api" in step and should_terminate:
+            if should_terminate:
                 flow_terminated = True
                 LOGGER.info(
                     "Flow 命中轮询终态: step=%s；仅继续执行标记 run_on_termination 的步骤",
@@ -144,6 +177,124 @@ class FlowRunner:
         if pending_error is not None:
             raise pending_error
         return context
+
+    def _execute_step(
+        self,
+        step: dict[str, Any],
+        scenario: dict[str, Any],
+        api_definitions: dict[str, dict[str, Any]],
+        gateway: Any,
+        context: RuntimeContext,
+    ) -> bool:
+        """执行一个已静态校验的步骤并返回是否命中流程终态。"""
+
+        step_id = str(step.get("id") or "unknown")
+        if "wait" in step:
+            self.sleep(float(context.resolve(step["wait"]["seconds"])))
+            return False
+        if "action" in step:
+            self._execute_action(step["action"], gateway, context)
+            return False
+        if "api" in step:
+            step_data = (scenario.get("step_data") or {}).get(step_id) or {}
+            return self._execute_api(
+                step,
+                step_data,
+                api_definitions,
+                gateway,
+                context,
+            )
+        if "foreach" in step:
+            return self._execute_foreach(
+                step,
+                scenario,
+                api_definitions,
+                gateway,
+                context,
+            )
+        raise FlowExecutionError(f"步骤 {step_id} 没有可执行动作")
+
+    def _execute_foreach(
+        self,
+        step: dict[str, Any],
+        scenario: dict[str, Any],
+        api_definitions: dict[str, dict[str, Any]],
+        gateway: Any,
+        context: RuntimeContext,
+    ) -> bool:
+        """按输入顺序执行一层 foreach，并在全部成功后原子写回 collect 列表。"""
+
+        foreach = step.get("foreach")
+        if not isinstance(foreach, dict):
+            raise FlowExecutionError("foreach 配置无效")
+        items = context.resolve(foreach.get("items"))
+        if not isinstance(items, list) or not items:
+            raise FlowExecutionError("foreach.items 必须解析为非空列表")
+        item_name = str(foreach.get("item") or "")
+        child_steps = foreach.get("steps") or []
+        if not item_name or not isinstance(child_steps, list) or not child_steps:
+            raise FlowExecutionError("foreach.item/steps 配置无效")
+        if any(isinstance(child, dict) and "foreach" in child for child in child_steps):
+            raise FlowExecutionError("不支持嵌套 foreach")
+
+        collect = foreach.get("collect") or {}
+        collected: dict[str, list[Any]] = {str(key): [] for key in collect}
+        had_previous = context.contains(item_name)
+        previous = deepcopy(context.get(item_name)) if had_previous else None
+        try:
+            for index, item in enumerate(items, start=1):
+                context.set(item_name, item)
+                iteration_terminated = False
+                with report_step(f"第 {index}/{len(items)} 项"):
+                    for position, child in enumerate(child_steps, start=1):
+                        if not isinstance(child, dict):
+                            raise FlowExecutionError("foreach 子步骤必须是对象")
+                        child_id = str(child.get("id") or f"step_{position}")
+                        if iteration_terminated and not child.get(
+                            "run_on_termination", False
+                        ):
+                            LOGGER.info(
+                                "foreach 迭代命中终态，跳过子步骤: iteration=%s step=%s",
+                                index,
+                                child_id,
+                            )
+                            continue
+                        if self._should_skip_step(child, context):
+                            LOGGER.info(
+                                "foreach 条件跳过子步骤: iteration=%s step=%s",
+                                index,
+                                child_id,
+                            )
+                            continue
+                        with report_step(
+                            self._build_step_title(
+                                child,
+                                child_id,
+                                position,
+                                len(child_steps),
+                            )
+                        ):
+                            child_terminated = self._execute_step(
+                                child,
+                                scenario,
+                                api_definitions,
+                                gateway,
+                                context,
+                            )
+                        if child_terminated:
+                            iteration_terminated = True
+                if iteration_terminated:
+                    return True
+                for variable_name, expression in collect.items():
+                    collected[str(variable_name)].append(context.resolve(expression))
+            for variable_name, values in collected.items():
+                context.set(variable_name, values)
+            return False
+        finally:
+            if had_previous:
+                context.set(item_name, previous)
+            else:
+                context.unset(item_name)
 
     @staticmethod
     def _should_skip_step(step: dict[str, Any], context: RuntimeContext) -> bool:
@@ -199,7 +350,11 @@ class FlowRunner:
         if "wait" in step:
             return f"{prefix}等待 {step['wait']['seconds']}s"
         if "action" in step:
-            return f"{prefix}{step['action']}"
+            action = step["action"]
+            action_name = action.get("type") if isinstance(action, dict) else action
+            return f"{prefix}{action_name}"
+        if "foreach" in step:
+            return f"{prefix}逐项执行"
         return f"{prefix}未知动作"
 
     def _execute_api(
@@ -257,9 +412,20 @@ class FlowRunner:
             data, should_terminate = self._poll(step, case, gateway, context)
         else:
             response = gateway.invoke(case)
-            data = assert_gateway_response(response, case["assert"])
+            data = self._assert_flow_gateway_response(
+                response,
+                case,
+                step_id=step_id,
+                api_id=api_id,
+            )
             should_terminate = False
         if should_terminate:
+            if bool((step.get("until") or {}).get("fail_on_termination")):
+                path = str(step["until"]["path"])
+                actual = RuntimeContext.read_path(data, path)
+                raise FlowExecutionError(
+                    f"FLOW_TERMINATED: 步骤 {step_id} 进入失败终态 {actual!r}"
+                )
             # 终态响应已通过 Gateway 协议断言；跳过成功态数据断言和提取，
             # 防止 NO_RESULT 被按 SUCCEEDED 的场景断言误判为失败。
             return True
@@ -271,6 +437,28 @@ class FlowRunner:
         if callable(persist_session):
             persist_session(case)
         return False
+
+    @staticmethod
+    def _assert_flow_gateway_response(
+        response: Any,
+        case: dict[str, Any],
+        *,
+        step_id: str,
+        api_id: str,
+    ) -> dict[str, Any]:
+        """断言 Flow 响应，并为未预期的业务失败补充步骤与 API 上下文。
+
+        成功场景仍可只声明 HTTP 200 与顶层 ``message=ok``；若 Gateway 子响应
+        明确返回 ``success=false``，这里会在读取动态字段前终止，并保留服务端
+        ``business_error_code`` 与 ``message``，避免误报为 task_id 等路径缺失。
+        """
+
+        try:
+            return assert_gateway_response(response, case["assert"])
+        except GatewayBusinessResponseError as exc:
+            raise FlowExecutionError(
+                f"步骤 {step_id} ({api_id}) 执行业务失败: {exc}"
+            ) from exc
 
     def _poll(
         self,
@@ -296,7 +484,12 @@ class FlowRunner:
             attempts += 1
             with report_step(f"第 {attempts} 次轮询"):
                 response = gateway.invoke(case)
-                data = assert_gateway_response(response, case["assert"])
+                data = self._assert_flow_gateway_response(
+                    response,
+                    case,
+                    step_id=str(step.get("id") or "unknown"),
+                    api_id=str(step.get("api") or "unknown"),
+                )
                 last_value = RuntimeContext.read_path(data, path)
                 matched = last_value == expected
                 terminated = not matched and last_value in terminal_values
@@ -335,6 +528,8 @@ class FlowRunner:
         """执行已解析的场景值断言和 Flow step 响应提取。"""
         expected_values = (case.get("assert") or {}).get("data_equals") or {}
         assert_data_equals(data, expected_values)
+        forbidden_values = (case.get("assert") or {}).get("data_not_equals") or {}
+        assert_data_not_equals(data, forbidden_values)
         extract_rules = step.get("extract") or {}
         if extract_rules:
             context.extract(data, extract_rules)
@@ -348,7 +543,10 @@ class FlowRunner:
         gateway: Any,
         context: RuntimeContext,
     ) -> None:
-        """执行通用签名二进制上传；旧动作名仅映射参数，不保留业务实现。"""
+        """执行通用输入校验或签名二进制上传。"""
+        if isinstance(action, dict) and action.get("type") == "validate_binary_inputs":
+            self._validate_binary_inputs(action, context)
+            return
         if action == "prepared_media_upload":
             media_value = context.get("media_file")
             if isinstance(media_value, str) and media_value.startswith("fixtures/"):
@@ -367,10 +565,22 @@ class FlowRunner:
         else:
             raise FlowExecutionError(f"不支持的 Flow action: {action}")
 
-        fixture_value = context.resolve(action_config.get("fixture"))
-        if not isinstance(fixture_value, str) or not fixture_value:
-            raise FlowEnvironmentError("signed_binary_upload fixture 未配置")
-        media_path = self._resolve_fixture_path(fixture_value)
+        fixture_configured = action_config.get("fixture") not in (None, "")
+        input_configured = action_config.get("input_file") not in (None, "")
+        if fixture_configured == input_configured:
+            raise FlowEnvironmentError(
+                "signed_binary_upload fixture 与 input_file 必须二选一"
+            )
+        if input_configured:
+            input_value = context.resolve(action_config.get("input_file"))
+            if not isinstance(input_value, str) or not input_value:
+                raise FlowEnvironmentError("signed_binary_upload input_file 未配置")
+            media_path = self._resolve_task_input_path(input_value)
+        else:
+            fixture_value = context.resolve(action_config.get("fixture"))
+            if not isinstance(fixture_value, str) or not fixture_value:
+                raise FlowEnvironmentError("signed_binary_upload fixture 未配置")
+            media_path = self._resolve_fixture_path(fixture_value)
         content = media_path.read_bytes()
         upload_url = context.resolve(action_config.get("url"))
         upload_headers = context.resolve(action_config.get("headers"))
@@ -384,8 +594,11 @@ class FlowRunner:
         declared_length = upload_headers.get("Content-Length")
         if declared_length is not None and int(declared_length) != len(content):
             raise FlowExecutionError("上传请求头 Content-Length 与媒体文件大小不一致")
-        safe_url = self._redact_signed_url(upload_url)
-        LOGGER.info("签名二进制上传开始: method=PUT url=%s bytes=%s", safe_url, len(content))
+        LOGGER.info(
+            "签名二进制上传开始: method=PUT url=%s bytes=%s",
+            upload_url,
+            len(content),
+        )
         try:
             response = gateway.http_client.put_bytes(
                 url=upload_url,
@@ -395,25 +608,113 @@ class FlowRunner:
             )
         except Exception as exc:
             raise FlowExecutionError(
-                f"EXTERNAL_UPLOAD_FAILED: NETWORK_ERROR url={safe_url}"
+                "EXTERNAL_UPLOAD_FAILED: "
+                f"NETWORK_ERROR url={upload_url} "
+                f"exception={type(exc).__name__}: {exc}"
             ) from exc
         success_statuses = context.resolve(
             action_config.get("success_statuses", [200, 201, 202, 204])
         )
         if response.status_code not in success_statuses:
             raise FlowExecutionError(
-                f"EXTERNAL_UPLOAD_FAILED: HTTP_{response.status_code} url={safe_url}"
+                f"EXTERNAL_UPLOAD_FAILED: HTTP_{response.status_code} url={upload_url}"
             )
-        LOGGER.info("签名二进制上传完成: url=%s status=%s", safe_url, response.status_code)
+        LOGGER.info(
+            "签名二进制上传完成: url=%s status=%s",
+            upload_url,
+            response.status_code,
+        )
         output_variable = action_config.get("output")
         if isinstance(output_variable, str) and output_variable:
             context.set(output_variable, response.status_code)
 
     @staticmethod
-    def _redact_signed_url(url: str) -> str:
-        """保留域名与对象路径，统一移除全部查询签名。"""
-        parts = urlsplit(url)
-        return urlunsplit((parts.scheme, parts.netloc, parts.path, "<redacted>" if parts.query else "", ""))
+    def _constraint_integer(value: Any, field: str) -> int:
+        """把实时媒体配置规范为正整数，并输出稳定的约束失败错误。"""
+
+        if isinstance(value, bool):
+            raise FlowExecutionError(
+                f"FLOW_INPUT_CONSTRAINT_FAILED: {field} 必须是正整数"
+            )
+        try:
+            normalized = int(value)
+        except (TypeError, ValueError) as exc:
+            raise FlowExecutionError(
+                f"FLOW_INPUT_CONSTRAINT_FAILED: {field} 必须是正整数"
+            ) from exc
+        if normalized <= 0:
+            raise FlowExecutionError(
+                f"FLOW_INPUT_CONSTRAINT_FAILED: {field} 必须是正整数"
+            )
+        return normalized
+
+    def _validate_binary_inputs(
+        self,
+        action: dict[str, Any],
+        context: RuntimeContext,
+    ) -> None:
+        """使用接口实时返回的数量、类型和大小限制校验完整任务输入。"""
+
+        files = context.resolve(action.get("files"))
+        allowed_types = context.resolve(action.get("allowed_content_types"))
+        min_items = self._constraint_integer(
+            context.resolve(action.get("min_items")), "min_items"
+        )
+        max_items = self._constraint_integer(
+            context.resolve(action.get("max_items")), "max_items"
+        )
+        max_size_bytes = self._constraint_integer(
+            context.resolve(action.get("max_size_bytes")), "max_size_bytes"
+        )
+        if not isinstance(files, list) or not isinstance(allowed_types, list):
+            raise FlowExecutionError(
+                "FLOW_INPUT_CONSTRAINT_FAILED: files/allowed_content_types 类型无效"
+            )
+        normalized_types = {str(item) for item in allowed_types if str(item)}
+        if not normalized_types or min_items > max_items or not min_items <= len(files) <= max_items:
+            raise FlowExecutionError(
+                "FLOW_INPUT_CONSTRAINT_FAILED: "
+                f"图片数量 {len(files)} 不在 {min_items}～{max_items} 范围内"
+            )
+        for index, item in enumerate(files, start=1):
+            if not isinstance(item, dict):
+                raise FlowExecutionError(
+                    f"FLOW_INPUT_CONSTRAINT_FAILED: 第 {index} 个图片元数据无效"
+                )
+            content_type = str(item.get("content_type") or "")
+            size_bytes = item.get("size_bytes")
+            if content_type not in normalized_types:
+                raise FlowExecutionError(
+                    "FLOW_INPUT_CONSTRAINT_FAILED: "
+                    f"第 {index} 张图片类型 {content_type or 'unknown'} 不被允许"
+                )
+            if isinstance(size_bytes, bool) or not isinstance(size_bytes, int):
+                raise FlowExecutionError(
+                    f"FLOW_INPUT_CONSTRAINT_FAILED: 第 {index} 张图片大小无效"
+                )
+            if size_bytes <= 0 or size_bytes > max_size_bytes:
+                raise FlowExecutionError(
+                    "FLOW_INPUT_CONSTRAINT_FAILED: "
+                    f"第 {index} 张图片大小 {size_bytes} 超过限制 {max_size_bytes}"
+                )
+
+    def _resolve_task_input_path(self, input_file: str) -> Path:
+        """仅从当前任务 inputs 根读取普通文件，拒绝绝对路径、越界与符号链接。"""
+
+        requested = Path(input_file)
+        if requested.is_absolute() or self.task_input_root is None:
+            raise FlowEnvironmentError(f"input_file 路径越界或任务输入未初始化: {input_file}")
+        candidate = self.task_input_root / requested
+        if candidate.is_symlink():
+            raise FlowEnvironmentError(f"input_file 禁止使用符号链接: {input_file}")
+        resolved = candidate.resolve(strict=False)
+        try:
+            resolved.relative_to(self.task_input_root)
+        except ValueError as exc:
+            raise FlowEnvironmentError(f"input_file 路径越界: {input_file}") from exc
+        if not resolved.is_file():
+            raise FlowEnvironmentError(f"input_file 文件不存在: {input_file}")
+        return resolved
 
     def _resolve_fixture_path(self, fixture: str) -> Path:
         """仅从当前项目 fixtures 读取普通文件，并拒绝符号链接越界。"""

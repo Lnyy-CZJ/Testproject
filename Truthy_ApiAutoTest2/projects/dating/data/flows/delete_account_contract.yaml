@@ -1,0 +1,31 @@
+name: Dating 注销账号与同设备新身份契约
+tags: [dating, identity, account-deletion, destructive, isolated, explicit]
+steps:
+  - id: create_session_before_delete
+    api: CreateAnonymousSession
+    extract:
+      access_token: $.access_token
+      expires_time: $.expires_time
+      deleted_refresh_token: $.refresh_token
+      refresh_token: $.refresh_token
+      refresh_expires_time: $.refresh_expires_time
+      deleted_user_id: $.user_id
+      user_id: $.user_id
+  - id: get_me_before_delete
+    api: GetMe
+  - id: delete_account
+    api: DeleteAccount
+  - id: verify_old_access_token_rejected
+    api: GetMe
+  - id: verify_old_refresh_token_rejected
+    api: RefreshSession
+  - id: create_session_after_delete
+    api: CreateAnonymousSession
+    extract:
+      access_token: $.access_token
+      expires_time: $.expires_time
+      refresh_token: $.refresh_token
+      refresh_expires_time: $.refresh_expires_time
+      user_id: $.user_id
+  - id: get_me_after_recreate
+    api: GetMe

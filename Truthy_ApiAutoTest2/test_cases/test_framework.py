@@ -233,6 +233,33 @@ def test_build_payload_creates_single_gateway_request() -> None:
     ]
 
 
+def test_build_payload_ignores_dynamic_fields_from_static_comm_config() -> None:
+    """平台静态 comm 即使混入会话字段，也不能越过运行时变量来源。"""
+
+    settings = {
+        "comm": {
+            "device_id": "dating-device",
+            "auth_token": "configured-token",
+            "user_id": "configured-user",
+            "client_request_id": "configured-request-id",
+        }
+    }
+    case = {
+        "request": {
+            "service_name": "tool.identity.IdentityService",
+            "method_name": "GetMe",
+            "params": {},
+        }
+    }
+
+    payload = build_payload(settings, case, include_runtime_session=False)
+
+    assert payload["comm"]["device_id"] == "dating-device"
+    assert "auth_token" not in payload["comm"]
+    assert "user_id" not in payload["comm"]
+    assert payload["comm"]["client_request_id"] != "configured-request-id"
+
+
 def test_gateway_api_uses_admin_target_without_user_session() -> None:
     """Admin API 应使用独立 URL、Web comm，且不得触发用户会话创建。"""
 
@@ -349,8 +376,10 @@ def test_assert_gateway_response_reports_business_failure() -> None:
         assert_gateway_response(response, expected)
 
 
-def test_http_client_masks_auth_token_in_error_log(caplog: pytest.LogCaptureFixture) -> None:
-    """HTTP 异常日志不得输出完整 auth_token。"""
+def test_http_client_preserves_auth_token_in_error_log(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """HTTP 异常日志必须保留原始请求，便于复现平台任务。"""
 
     class FailingSession:
         """模拟 requests.Session 发起请求时失败。"""
@@ -364,14 +393,14 @@ def test_http_client_masks_auth_token_in_error_log(caplog: pytest.LogCaptureFixt
     with caplog.at_level(logging.ERROR), pytest.raises(requests.RequestException):
         client.post_json("http://example.test", {}, payload, 10)
 
-    assert "very-secret-token" not in caplog.text
-    assert "***" in caplog.text
+    assert "very-secret-token" in caplog.text
+    assert "network down" in caplog.text
 
 
-def test_http_client_logs_masked_request_and_response(
+def test_http_client_logs_raw_request_and_response(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """HTTP 调用成功时应输出脱敏请求和响应数据，便于单接口调试。"""
+    """HTTP 调用成功时应完整输出请求和响应数据，便于单接口调试。"""
 
     class SuccessfulSession:
         """模拟返回一个成功的 Gateway 响应。"""
@@ -390,7 +419,7 @@ def test_http_client_logs_masked_request_and_response(
     client = HttpClient(session=SuccessfulSession())
     payload = {
         "comm": {"auth_token": "very-secret-token", "user_id": "user_1"},
-        # Admin Gateway 步骤以请求体参数传递会话凭证，日志必须同样脱敏。
+        # Admin Gateway 步骤以请求体参数传递会话凭证，原始日志必须完整保留。
         "params": {"session_token": "admin-session-secret"},
         "requests": [],
     }
@@ -405,21 +434,50 @@ def test_http_client_logs_masked_request_and_response(
 
     assert "请求数据" in caplog.text
     assert "响应数据" in caplog.text
-    # 项目隔离后用户标识也属于会话材料，日志只保留字段名而不保留明文值。
-    assert '"user_id": "***"' in caplog.text
-    assert "user_1" not in caplog.text
+    assert '"user_id": "user_1"' in caplog.text
     assert '"code": 0' in caplog.text
-    assert "very-secret-token" not in caplog.text
-    assert "admin-session-secret" not in caplog.text
-    assert "secret-header" not in caplog.text
-    assert "response-access-secret" not in caplog.text
-    assert "response-refresh-secret" not in caplog.text
+    assert "very-secret-token" in caplog.text
+    assert "admin-session-secret" in caplog.text
+    assert "secret-header" in caplog.text
+    assert "response-access-secret" in caplog.text
+    assert "response-refresh-secret" in caplog.text
 
 
-def test_http_client_allure_attachments_reuse_masked_objects(
+def test_http_client_logs_non_json_response_text_verbatim(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """多行非 JSON 响应不得被 JSON 引号包裹或转义换行。"""
+
+    class TextResponse:
+        status_code = 502
+        headers = {"x-debug": "raw-header"}
+        text = "first raw line\nsecond raw line"
+
+        @staticmethod
+        def json() -> object:
+            raise ValueError("not json")
+
+    class TextSession:
+        @staticmethod
+        def post(*args: object, **kwargs: object) -> TextResponse:
+            return TextResponse()
+
+    with caplog.at_level(logging.INFO):
+        HttpClient(session=TextSession()).post_json(
+            "http://example.test/gateway/invoke",
+            {},
+            {},
+            10,
+        )
+
+    assert "body=first raw line\nsecond raw line" in caplog.text
+    assert 'body="first raw line\\nsecond raw line"' not in caplog.text
+
+
+def test_http_client_allure_attachments_preserve_raw_objects(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Gateway 报告附件必须复用 HttpClient 的脱敏请求和响应对象。"""
+    """Gateway 报告附件必须保留 HttpClient 的原始请求和响应对象。"""
     from utils.custom import http_client
 
     class SuccessfulSession:
@@ -452,16 +510,16 @@ def test_http_client_allure_attachments_reuse_masked_objects(
         "Gateway 请求",
         {
             "url": "https://gateway.example/invoke",
-            "headers": {"Authorization": "***"},
-            "payload": {"comm": {"auth_token": "***"}},
+            "headers": {"Authorization": "header-secret"},
+            "payload": {"comm": {"auth_token": "request-token-secret"}},
         },
     )
     response_attachment = attachments[1][1]
     assert isinstance(response_attachment, dict)
     assert response_attachment["status_code"] == 200
     assert response_attachment["body"] == {
-        "access_token": "***",
-        "upload_url": "https://cos.example/file?***",
+        "access_token": "response-access-secret",
+        "upload_url": "https://cos.example/file?secret=signed-secret",
     }
 
 
@@ -531,33 +589,54 @@ def test_runtime_context_extracts_first_candidate_id() -> None:
     assert context.get("candidate_id") == "candidate_1"
 
 
-def test_access_token_refreshes_when_less_than_one_day_remains() -> None:
-    """毫秒过期时间距当前不足一天时应判定 access token 需要刷新。"""
+def test_access_token_is_valid_when_more_than_two_hours_remain() -> None:
+    """剩余时间大于两小时时必须直接复用 access token。"""
     now_ms = int(time.time() * 1000)
     context = RuntimeContext(
         {
             "access_token": "access-old",
-            "expires_time": now_ms + 86_400_000 - 1,
+            "expires_time": now_ms + 7_200_001,
             "refresh_token": "refresh-old",
             "refresh_expires_time": now_ms + 172_800_000,
         }
     )
 
-    assert context.access_token_needs_refresh(now_ms, 86_400_000)
+    assert context.access_token_status(now_ms, 7_200_000) == "valid"
     assert context.refresh_token_is_valid(now_ms)
 
 
-def test_access_token_does_not_refresh_at_one_day_boundary() -> None:
-    """剩余时间恰好一天时仍可继续使用当前 access token。"""
+@pytest.mark.parametrize("remaining_ms", [7_200_000, 1])
+def test_access_token_refreshes_at_or_below_two_hour_boundary(
+    remaining_ms: int,
+) -> None:
+    """尚未过期且剩余不超过两小时时必须刷新 access token。"""
     now_ms = int(time.time() * 1000)
     context = RuntimeContext(
         {
             "access_token": "access-current",
-            "expires_time": now_ms + 86_400_000,
+            "expires_time": now_ms + remaining_ms,
         }
     )
 
-    assert not context.access_token_needs_refresh(now_ms, 86_400_000)
+    assert context.access_token_status(now_ms, 7_200_000) == "refresh"
+
+
+@pytest.mark.parametrize(
+    "session_values",
+    [
+        {"access_token": "access-expired", "expires_time": 1_799_999_999_999},
+        {"access_token": "access-expired", "expires_time": 1_800_000_000_000},
+        {"access_token": "access-without-expiry"},
+        {},
+    ],
+)
+def test_access_token_is_expired_when_missing_invalid_or_due(
+    session_values: dict[str, object],
+) -> None:
+    """缺失、无有效过期时间或已经到期的 token 必须进入重建分支。"""
+    context = RuntimeContext(session_values)
+
+    assert context.access_token_status(1_800_000_000_000, 7_200_000) == "expired"
 
 
 def test_gateway_api_refreshes_session_before_normal_request(tmp_path: Path) -> None:
@@ -703,6 +782,76 @@ def test_gateway_api_recreates_session_when_refresh_fails() -> None:
 
     assert gateway.session_calls == ["RefreshSession", "CreateAnonymousSession"]
     assert context.get("access_token") == "access-created"
+
+
+def test_gateway_api_reuses_access_token_with_more_than_two_hours_remaining() -> None:
+    """有效期超过两小时的 access token 不得触发任何会话接口。"""
+    now_ms = 1_800_000_000_000
+    context = RuntimeContext(
+        {
+            "access_token": "access-current",
+            "expires_time": now_ms + 7_200_001,
+            "refresh_token": "refresh-current",
+            "refresh_expires_time": now_ms + 172_800_000,
+        }
+    )
+
+    class RecordingGateway(GatewayApi):
+        """记录会话接口，确保有效 token 路径没有隐藏网络请求。"""
+
+        def __init__(self) -> None:
+            super().__init__(
+                {"gateway_base_url": "http://example.test", "comm": {}},
+                {"method": "POST", "path": "/gateway/invoke"},
+                runtime_context=context,
+                api_definitions=_session_api_definitions(),
+                now_ms=lambda: now_ms,
+            )
+            self.session_calls: list[str] = []
+
+        def _execute_session_api(self, api_id: str) -> None:
+            self.session_calls.append(api_id)
+
+    gateway = RecordingGateway()
+
+    gateway._ensure_session()
+
+    assert gateway.session_calls == []
+
+
+def test_gateway_api_creates_session_directly_when_access_token_expired() -> None:
+    """access token 已过期时即使 refresh token 有效也必须直接重建会话。"""
+    now_ms = 1_800_000_000_000
+    context = RuntimeContext(
+        {
+            "access_token": "access-expired",
+            "expires_time": now_ms,
+            "refresh_token": "refresh-still-valid",
+            "refresh_expires_time": now_ms + 172_800_000,
+        }
+    )
+
+    class RecordingGateway(GatewayApi):
+        """记录会话接口，验证过期分支不会误走 RefreshSession。"""
+
+        def __init__(self) -> None:
+            super().__init__(
+                {"gateway_base_url": "http://example.test", "comm": {}},
+                {"method": "POST", "path": "/gateway/invoke"},
+                runtime_context=context,
+                api_definitions=_session_api_definitions(),
+                now_ms=lambda: now_ms,
+            )
+            self.session_calls: list[str] = []
+
+        def _execute_session_api(self, api_id: str) -> None:
+            self.session_calls.append(api_id)
+
+    gateway = RecordingGateway()
+
+    gateway._ensure_session()
+
+    assert gateway.session_calls == ["CreateAnonymousSession"]
 
 
 @pytest.mark.parametrize(

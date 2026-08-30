@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 import os
 from datetime import date
 from pathlib import Path
@@ -22,12 +23,39 @@ from utils.custom.config_loader import (
 from utils.custom.logger import configure_logging
 from utils.custom.project_registry import ProjectPackage, ProjectRegistry
 from utils.custom.runtime_context import RuntimeContext
+from utils.custom.runtime_overrides import (
+    RuntimeOverrideError,
+    load_execution_asset_from_environment,
+)
 from utils.third_party.allure_reporter import (
     build_runtime_report_metadata,
     set_runtime_report_metadata,
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _execution_asset(config: pytest.Config) -> dict[str, Any] | None:
+    """读取并缓存本次 pytest 会话唯一的执行资产。
+
+    未设置内部环境变量时返回 None，普通 CLI 继续读取 YAML；设置后任何
+    缺失、越界或篡改都转换为 UsageError，使收集阶段直接非零退出。
+    """
+
+    cache_name = "_api_autotest_execution_asset"
+    if hasattr(config, cache_name):
+        return getattr(config, cache_name)
+    try:
+        document = load_execution_asset_from_environment(
+            runtime_root=PROJECT_ROOT / "runtime",
+            project_id=str(config.getoption("--project")),
+            task_id=str(config.getoption("--task-id") or ""),
+            environ=os.environ,
+        )
+    except RuntimeOverrideError as exc:
+        raise pytest.UsageError(f"执行资产不可用: {exc.message}") from exc
+    setattr(config, cache_name, document)
+    return document
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -107,14 +135,12 @@ def pytest_configure(config: pytest.Config) -> None:
         project_id = "truthy"
         project_root = direct_project_root
         target_env = str(config.getoption("--env"))
-        task_id = None
         flows_dir = project_root / "data" / "flows"
     else:
         project_id = str(config.getoption("--project"))
         package = ProjectRegistry(PROJECT_ROOT / "projects").get(project_id)
         project_root = package.root
         target_env = _target_env(config)
-        task_id = config.getoption("--task-id")
         flows_dir = package.flows_dir
     logging_config = load_yaml(PROJECT_ROOT / "config" / "settings.yaml").get(
         "logging"
@@ -125,10 +151,9 @@ def pytest_configure(config: pytest.Config) -> None:
         / project_id
         / target_env
     )
-    if task_id:
-        # 平台任务使用全局任务 ID 作为日志物理边界；configure_logging 仍可在
-        # 该目录内按日期分层，TaskManager 通过 rglob 只关联当前任务产物。
-        log_directory /= str(task_id)
+    # configure_logging 在项目/环境目录下直接追加日期层。任务记录会在终态按
+    # PID 关联唯一文件，因此无需再创建 task_id 子目录，日志保留策略也能直接
+    # 扫描 ``YYYY-MM-DD`` 一级目录。
     configure_logging(
         level=logging_config.get("level", "INFO"),
         log_directory=log_directory,
@@ -136,18 +161,57 @@ def pytest_configure(config: pytest.Config) -> None:
         console=bool(logging_config.get("console", True)),
         file=bool(logging_config.get("file", True)),
     )
-    # CaseLoader 负责解析 V1.3 嵌套 cases；集合去重避免相同标签重复注册。
-    case_tags = {
-        tag
-        for single_case in load_single_cases(project_root)
-        for tag in single_case["tags"]
-    }
+    execution_asset = _execution_asset(config)
+    if execution_asset is None:
+        # 普通 CLI 继续从当前项目 YAML 注册全部标签。
+        case_tags = {
+            tag
+            for single_case in load_single_cases(project_root)
+            for tag in single_case["tags"]
+        }
+        flow_tags = {
+            str(tag)
+            for flow_path in sorted(flows_dir.glob("*.yaml"))
+            for tag in (load_yaml(flow_path).get("tags") or [])
+        }
+    elif execution_asset.get("asset_type") == "case":
+        selected = execution_asset["resolved_execution_asset"]["single_case"]
+        case_tags = {str(tag) for tag in selected.get("tags") or []}
+        flow_tags = set()
+    elif execution_asset.get("asset_type") == "batch":
+        batch = execution_asset["resolved_execution_asset"]
+        items = batch["items"]
+        if batch.get("batch_type") == "cases":
+            case_tags = {
+                str(tag)
+                for item in items
+                for tag in (
+                    item["resolved_execution_asset"]["single_case"].get(
+                        "tags"
+                    )
+                    or []
+                )
+            }
+            flow_tags = set()
+        else:
+            case_tags = set()
+            flow_tags = {
+                str(tag)
+                for item in items
+                for tag in (
+                    item["resolved_execution_asset"]["flow_case"].get("tags")
+                    or []
+                )
+            }
+    else:
+        selected = execution_asset["resolved_execution_asset"]["flow_case"]
+        case_tags = set()
+        flow_tags = {str(tag) for tag in selected.get("tags") or []}
+
     for tag in sorted(case_tags):
         config.addinivalue_line("markers", f"{tag}: YAML 用例标签")
-    for flow_path in sorted(flows_dir.glob("*.yaml")):
-        flow = load_yaml(flow_path)
-        for tag in flow.get("tags") or []:
-            config.addinivalue_line("markers", f"{tag}: Flow YAML 标签")
+    for tag in sorted(flow_tags):
+        config.addinivalue_line("markers", f"{tag}: Flow YAML 标签")
 
 
 def _target_env(config: pytest.Config) -> str:
@@ -311,7 +375,7 @@ def gateway_api(
                 env_key: values[runtime_key]
                 for runtime_key, env_key in {
                     "access_token": "AUTH_TOKEN", "refresh_token": "REFRESH_TOKEN",
-                    "user_id": "USER_ID", "device_id": "DEVICE_ID",
+                    "user_id": "USER_ID",
                     "expires_time": "EXPIRES_TIME", "refresh_expires_time": "REFRESH_EXPIRES_TIME",
                 }.items()
                 if values.get(runtime_key) not in (None, "")
@@ -332,11 +396,20 @@ def gateway_api(
         session_path = None
         session_writer = write_platform_session
 
+    execution_asset = _execution_asset(request.config)
+    api_definitions = (
+        deepcopy(
+            execution_asset["resolved_execution_asset"]["api_definitions"]
+        )
+        if execution_asset is not None
+        else load_api_definitions(project_package.root)
+    )
     return GatewayApi(
         gateway_settings,
         gateway_endpoint,
         runtime_context=gateway_runtime,
-        api_definitions=load_api_definitions(project_package.root),
+        # 当前任务固化的注册表优先，确保自动会话依赖与所选资产同时冻结。
+        api_definitions=api_definitions,
         session_env_path=session_path,
         session_state_writer=session_writer,
     )

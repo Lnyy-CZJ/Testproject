@@ -427,6 +427,14 @@ def load_settings(
         # materialize 兼容层可能把 Secret 以平台逻辑键保存在 runtime_variables；
         # 此处只从快照内存规范化，绝不读取同名进程环境变量。
         for runtime_key, platform_key in SESSION_ENV_MAPPING.items():
+            if runtime_key == "device_id" and comm.get("device_id") not in (
+                None,
+                "",
+            ):
+                # device_id 已属于项目 Release 的静态 Comm。旧 Credential 版本
+                # 即使仍含 DEVICE_ID，也只能作为历史数据，不能进入 RuntimeContext
+                # 后在 build_payload 阶段反向覆盖当前项目配置。
+                continue
             if raw_runtime_variables.get(platform_key) not in (None, ""):
                 runtime_session[runtime_key] = deepcopy(
                     raw_runtime_variables[platform_key]

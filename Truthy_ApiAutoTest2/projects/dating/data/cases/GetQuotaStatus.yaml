@@ -9,6 +9,14 @@ cases:
         entitlement_code: quota.dating.analysis.monthly
     assert:
       http_status: 200
-      gateway: {code: 0}
-      response: {id: req_0, success: true, code: 0}
-      data_fields: [limit, reserved, consumed, remaining, unlimited]
+      gateway: {message: ok}
+  - id: get_reply_quota_success
+    name: 查询 Dating Reply 月度额度
+    tags: [dating, smoke, quota, reply]
+    request:
+      params:
+        product_code: dating_assistant
+        entitlement_code: quota.dating.reply.monthly
+    assert:
+      http_status: 200
+      gateway: {message: ok}

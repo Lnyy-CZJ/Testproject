@@ -60,15 +60,15 @@ def test_failure_message_truncated(tmp_path: Path) -> None:
     assert len(parsed["failed_cases"][0]["message"]) <= 500
 
 
-def test_failure_message_redacted(tmp_path: Path) -> None:
-    """失败摘要中的凭证必须被掩盖。"""
+def test_failure_message_preserves_raw_value(tmp_path: Path) -> None:
+    """失败摘要必须保留凭证原文，便于复现真实请求上下文。"""
     xml = junit_xml(
         [("case_fail", "failure")],
         message="Authorization: Bearer secret-token-value",
     )
     parsed = parse_junit_file(_write(tmp_path, xml))
     assert parsed is not None
-    assert "secret-token-value" not in parsed["failed_cases"][0]["message"]
+    assert "secret-token-value" in parsed["failed_cases"][0]["message"]
 
 
 def test_missing_file_returns_none(tmp_path: Path) -> None:

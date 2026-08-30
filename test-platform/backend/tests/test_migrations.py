@@ -633,3 +633,187 @@ def test_runtime_scope_migration_adds_real_constraints_without_unsafe_activation
         "WHERE id LIKE 'api-autotest.runtime.%'"
     ).fetchone()[0] == 0
     connection.close()
+
+
+def test_projectized_comm_migration_separates_copied_dating_values(
+    tmp_path: Path,
+) -> None:
+    """0022 只拆分确认复制自 Truthy 的 Dating/test comm，并可精确回滚。"""
+
+    database_path = tmp_path / "projectized-comm.db"
+    database_url = f"sqlite:///{database_path}"
+    run_alembic(database_url, "upgrade", "20260824_0019")
+
+    connection = sqlite3.connect(database_path)
+    tool_ids = [row[0] for row in connection.execute("SELECT id FROM tools")]
+    manifest_path = tmp_path / "projectized-comm-project-access-manifest.json"
+    manifest_path.write_text(json.dumps({
+        "user_roles": {},
+        "tool_projects": {tool_id: "project_legacy" for tool_id in tool_ids},
+        "memberships": [],
+        "required_environments": ["prod"],
+        "source_counts": {
+            "prod:truthy-search": 0,
+            "prod:api-autotest": 0,
+            "prod:functional-test-agent": 0,
+            "prod:api-test-agent": 0,
+            "prod:log-filter": 0,
+        },
+        "resources": [],
+    }), encoding="utf-8")
+    connection.close()
+    environment = os.environ.copy()
+    environment["DATABASE_URL"] = database_url
+    subprocess.run(
+        [
+            sys.executable, "-m", "app.migrate_project_access",
+            "--manifest", str(manifest_path), "--required-environment", "prod", "--apply",
+        ],
+        cwd=BACKEND_ROOT, env=environment, check=True, capture_output=True, text=True,
+    )
+    run_alembic(database_url, "upgrade", "20260827_0021")
+
+    copied_comm = {
+        "device_id": "shared-device",
+        "platform": "ios",
+        "app_version": "1.0.3",
+        "locale": "zh-Hans-CN",
+        "timezone": "UTC+08:00",
+        "country": "CN",
+    }
+    connection = sqlite3.connect(database_path)
+    connection.execute(
+        "UPDATE tool_project_scopes SET status='active' WHERE id='tps_truthy_dev_test'"
+    )
+    connection.execute(
+        "INSERT INTO tool_project_scopes "
+        "(id, environment_id, tool_id, platform_project_id, project_id, target_env, "
+        "display_name, status, is_default, revision, created_by, updated_by) "
+        "VALUES ('tps_dating_dev_test', 'dev', 'api-autotest', 'project_legacy', "
+        "'dating', 'test', 'Dating AI Assistant', 'active', 0, 1, 'test', 'test')"
+    )
+    for release_id, scope_id in (
+        ("rel_truthy_active", "tps_truthy_dev_test"),
+        ("rel_dating_active", "tps_dating_dev_test"),
+    ):
+        connection.execute(
+            "INSERT INTO config_releases "
+            "(id, environment_id, owner_type, owner_id, version, revision, status, "
+            "created_by, published_by, published_at) "
+            "VALUES (?, 'dev', 'tool_project_scope', ?, 1, 1, 'active', "
+            "'test', 'test', CURRENT_TIMESTAMP)",
+            (release_id, scope_id),
+        )
+        for definition_id, value in (
+            ("api-autotest.GATEWAY_API_URL", "https://gateway.test.example.com"),
+            ("api-autotest.runtime.gateway.path", "/gateway"),
+            ("api-autotest.runtime.gateway.comm", copied_comm),
+            ("api-autotest.ADMIN_LOGIN_API_URL", "https://truthy-admin.test.example.com/login"),
+        ):
+            connection.execute(
+                "INSERT INTO config_release_items "
+                "(release_id, definition_id, value_json) VALUES (?, ?, ?)",
+                (release_id, definition_id, json.dumps(value)),
+            )
+        connection.execute(
+            "INSERT INTO config_activations "
+            "(environment_id, owner_type, owner_id, active_release_id) "
+            "VALUES ('dev', 'tool_project_scope', ?, ?)",
+            (scope_id, release_id),
+        )
+    connection.commit()
+    connection.close()
+
+    run_alembic(database_url, "upgrade", "20260828_0022")
+    connection = sqlite3.connect(database_path)
+    connection.row_factory = sqlite3.Row
+    comm_schema = json.loads(connection.execute(
+        "SELECT validation_schema FROM config_definitions "
+        "WHERE id='api-autotest.runtime.gateway.comm'"
+    ).fetchone()[0])
+    assert comm_schema["forbidden_keys"] == [
+        "auth_token", "user_id", "client_request_id",
+    ]
+    assert comm_schema["field_order"] == [
+        "device_id", "platform", "app_version", "locale", "timezone", "country",
+        "app_package",
+    ]
+
+    dating_activation = connection.execute(
+        "SELECT active_release_id FROM config_activations "
+        "WHERE owner_type='tool_project_scope' AND owner_id='tps_dating_dev_test'"
+    ).fetchone()[0]
+    assert dating_activation != "rel_dating_active"
+    dating_release = connection.execute(
+        "SELECT version, based_on_release_id, created_by FROM config_releases WHERE id=?",
+        (dating_activation,),
+    ).fetchone()
+    assert tuple(dating_release) == (
+        2,
+        "rel_dating_active",
+        "system/migration-projectized-api-autotest-comm",
+    )
+    dating_comm = json.loads(connection.execute(
+        "SELECT value_json FROM config_release_items "
+        "WHERE release_id=? AND definition_id='api-autotest.runtime.gateway.comm'",
+        (dating_activation,),
+    ).fetchone()[0])
+    assert dating_comm["platform"] == "ios"
+    assert dating_comm["app_version"] == "1.0.0"
+    assert dating_comm["locale"] == "en-US"
+    assert dating_comm["timezone"] == "UTC+08:00"
+    assert dating_comm["country"] == "CN"
+    assert dating_comm["app_package"] == "com.example.dating"
+    assert dating_comm["device_id"] != copied_comm["device_id"]
+    assert connection.execute(
+        "SELECT COUNT(*) FROM config_release_items "
+        "WHERE release_id=? AND definition_id='api-autotest.ADMIN_LOGIN_API_URL'",
+        (dating_activation,),
+    ).fetchone()[0] == 0
+    assert connection.execute(
+        "SELECT active_release_id FROM config_activations "
+        "WHERE owner_type='tool_project_scope' AND owner_id='tps_truthy_dev_test'"
+    ).fetchone()[0] == "rel_truthy_active"
+    connection.close()
+
+    run_alembic(database_url, "upgrade", "20260828_0023")
+    connection = sqlite3.connect(database_path)
+    retired_device_definition = connection.execute(
+        "SELECT required, validation_schema FROM config_definitions "
+        "WHERE id='api-autotest.DEVICE_ID'"
+    ).fetchone()
+    assert retired_device_definition[0] == 0
+    assert json.loads(retired_device_definition[1]) == {
+        "runtime_config_excluded": True,
+        "replacement_key": "gateway.comm.device_id",
+    }
+    connection.close()
+
+    run_alembic(database_url, "downgrade", "20260828_0022")
+    connection = sqlite3.connect(database_path)
+    restored_device_definition = connection.execute(
+        "SELECT required, validation_schema FROM config_definitions "
+        "WHERE id='api-autotest.DEVICE_ID'"
+    ).fetchone()
+    assert restored_device_definition[0] == 1
+    assert json.loads(restored_device_definition[1]) == {}
+    connection.close()
+
+    run_alembic(database_url, "downgrade", "20260827_0021")
+    connection = sqlite3.connect(database_path)
+    assert connection.execute(
+        "SELECT active_release_id FROM config_activations "
+        "WHERE owner_type='tool_project_scope' AND owner_id='tps_dating_dev_test'"
+    ).fetchone()[0] == "rel_dating_active"
+    assert connection.execute(
+        "SELECT status FROM config_releases WHERE id='rel_dating_active'"
+    ).fetchone()[0] == "active"
+    assert connection.execute(
+        "SELECT COUNT(*) FROM config_releases "
+        "WHERE created_by='system/migration-projectized-api-autotest-comm'"
+    ).fetchone()[0] == 0
+    assert json.loads(connection.execute(
+        "SELECT validation_schema FROM config_definitions "
+        "WHERE id='api-autotest.runtime.gateway.comm'"
+    ).fetchone()[0]) == {}
+    connection.close()

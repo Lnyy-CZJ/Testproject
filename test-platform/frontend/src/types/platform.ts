@@ -162,6 +162,8 @@ export interface PersonalCredential {
   id: string;
   tool_id: string;
   environment_id: string;
+  /** 多项目工具绑定的 Runtime Scope；旧工具级凭证为 null。 */
+  runtime_scope_id: string | null;
   provider_type: string;
   status: string;
   current_version: number;

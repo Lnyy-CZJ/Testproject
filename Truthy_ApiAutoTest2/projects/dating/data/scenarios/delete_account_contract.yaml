@@ -1,0 +1,33 @@
+name: 注销隔离匿名账号并确认旧令牌失效、同设备创建新用户
+variables: {}
+step_data:
+  create_session_before_delete:
+    params: {consent_policy_version: "{{consent_policy_version}}"}
+    assert: {http_status: 200, gateway: {message: ok}}
+  get_me_before_delete:
+    params: {}
+    assert: {http_status: 200, gateway: {message: ok}}
+  delete_account:
+    params: {client_request_id: "{{flow_run_id}}-delete-account"}
+    assert: {http_status: 200, gateway: {message: ok}}
+  verify_old_access_token_rejected:
+    params: {}
+    assert:
+      http_status: 200
+      gateway: {message: ok}
+      response: {id: req_0, success: false, business_error_code: UNAUTHENTICATED}
+  verify_old_refresh_token_rejected:
+    params: {refresh_token: "{{deleted_refresh_token}}"}
+    assert:
+      http_status: 200
+      gateway: {message: ok}
+      response: {id: req_0, success: false, business_error_code: UNAUTHENTICATED}
+  create_session_after_delete:
+    params: {consent_policy_version: "{{consent_policy_version}}"}
+    assert:
+      http_status: 200
+      gateway: {message: ok}
+      data_not_equals: {user_id: "{{deleted_user_id}}"}
+  get_me_after_recreate:
+    params: {}
+    assert: {http_status: 200, gateway: {message: ok}}

@@ -4,8 +4,8 @@
 {% block content %}
 <div id="task-detail-root" data-task-id="{{ task_id }}">
   <header class="page-header detail-header">
-    <div><p class="eyebrow">API AUTOMATION</p><div class="title-with-status"><h1>任务详情 · <span id="detail-task-id">{{ task_id }}</span></h1><span class="status-badge neutral" id="detail-status">加载中</span></div><p id="detail-subtitle">正在读取任务与运行快照。</p></div>
-    <div class="button-row detail-actions"><button class="button secondary compact" id="task-retry" type="button" disabled>重试</button><button class="button danger compact" id="task-cancel" type="button" disabled>取消任务</button><a class="button tertiary compact" id="task-report" href="#" hidden>查看 Allure</a></div>
+    <div><p class="eyebrow">API AUTOMATION</p><div class="title-with-status"><h1>任务详情 · <span id="detail-task-id">{{ task_id }}</span></h1><span class="status-badge neutral" id="detail-status">加载中</span><span class="queue-badge" id="detail-queue" hidden></span></div><p id="detail-subtitle">正在读取任务与运行快照。</p></div>
+    <div class="button-row detail-actions"><button class="button secondary compact" id="task-retry" data-retry-mode="all" type="button" disabled>重试全部</button><button class="button secondary compact" id="task-retry-failed" data-retry-mode="failed" type="button" hidden>仅重试失败项</button><a class="button tertiary compact" id="task-retry-edit" href="#" hidden>修改参数后重试</a><button class="button danger compact" id="task-cancel" type="button" disabled>取消任务</button><a class="button tertiary compact" id="task-report" href="#" hidden>查看 Allure</a></div>
   </header>
 
   <section class="metric-grid detail-metrics" aria-label="任务结果">
@@ -19,8 +19,23 @@
     <section class="panel" aria-labelledby="timeline-heading"><div class="panel-heading"><div><h2 id="timeline-heading">执行时间线</h2><p>任务状态与失败原因。</p></div></div><dl class="summary-list dense" id="detail-timeline"><div><dt>提交时间</dt><dd>—</dd></div><div><dt>开始时间</dt><dd>—</dd></div><div><dt>结束时间</dt><dd>—</dd></div><div><dt>退出码</dt><dd>—</dd></div></dl><div class="inline-status" id="detail-error" hidden></div></section>
   </div>
 
+  <section class="panel attachment-panel" id="detail-attachments" aria-labelledby="attachment-heading" hidden>
+    <div class="panel-heading"><div><h2 id="attachment-heading">输入图片</h2><p>任务按以下顺序上传；图片随任务保留，不提供公开下载地址。</p></div><span class="status-badge neutral" id="detail-attachment-count">0 张</span></div>
+    <ol class="attachment-list" id="detail-attachment-list"></ol>
+  </section>
+
+  <section class="panel runtime-diff-panel" id="detail-runtime-overrides" aria-labelledby="detail-runtime-heading" hidden>
+    <div class="panel-heading"><div><h2 id="detail-runtime-heading">本次运行参数</h2><p>任务创建时固化；旧任务和 YAML 均未被修改。</p></div><code id="detail-asset-revision">—</code></div>
+    <div class="table-scroll"><table><thead><tr><th>字段</th><th>所属步骤</th><th>YAML 默认值</th><th>本次最终值</th></tr></thead><tbody id="detail-runtime-body"></tbody></table></div>
+  </section>
+
+  <section class="panel table-panel batch-detail-panel" id="detail-batch" aria-labelledby="detail-batch-heading" hidden>
+    <div class="panel-heading"><div><h2 id="detail-batch-heading">批量子项</h2><p id="detail-batch-summary">按提交时固化的资产版本执行。</p><p class="muted" id="detail-batch-counts" aria-live="polite">总数 0 · 通过 0 · 失败 0 · 跳过 0 · 未执行 0</p></div><div class="inline-controls"><label for="detail-batch-filter">显示</label><select id="detail-batch-filter"><option value="all">全部子项</option><option value="failed">仅失败项</option></select></div></div>
+    <div class="table-scroll"><table><thead><tr><th>资产</th><th>YAML 风险</th><th>状态</th><th>耗时</th><th>失败摘要</th></tr></thead><tbody id="detail-batch-body"><tr><td colspan="5" class="table-state">正在读取批量子项…</td></tr></tbody></table></div>
+  </section>
+
   <section class="panel table-panel" aria-labelledby="result-heading"><div class="panel-heading"><div><h2 id="result-heading">步骤与用例结果</h2><p>轮询尝试归并到同一业务步骤，不重复计数。</p></div></div><div class="table-scroll"><table><thead><tr><th>用例 / 步骤</th><th>状态</th><th>耗时</th><th>失败摘要</th></tr></thead><tbody id="detail-result-body"><tr><td colspan="4" class="table-state">正在读取 JUnit 结果…</td></tr></tbody></table></div></section>
 
-  <section class="panel logs-panel" aria-labelledby="logs-heading"><div class="panel-heading"><div><h2 id="logs-heading">执行日志</h2><p id="detail-log-source">日志会经过服务端脱敏。</p></div><div class="inline-controls"><label for="detail-log-tail">尾部行数</label><select id="detail-log-tail"><option>100</option><option selected>200</option><option>500</option></select><button class="button tertiary compact" id="detail-log-refresh" type="button">刷新日志</button></div></div><pre id="detail-log-view" tabindex="0" aria-live="polite">正在读取日志…</pre></section>
+  <section class="panel logs-panel" aria-labelledby="logs-heading"><div class="panel-heading"><div><h2 id="logs-heading">执行日志</h2><p id="detail-log-source">日志保留完整请求、响应与异常原文。</p></div><div class="inline-controls"><label for="detail-log-tail">尾部行数</label><select id="detail-log-tail"><option>100</option><option selected>200</option><option>500</option></select><button class="button tertiary compact" id="detail-log-refresh" type="button">刷新日志</button></div></div><pre id="detail-log-view" tabindex="0" aria-live="polite">正在读取日志…</pre></section>
 </div>
 {% endblock %}

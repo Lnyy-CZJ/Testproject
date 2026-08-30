@@ -11,12 +11,12 @@
   <h2 class="sr-only" id="catalog-heading">项目资产目录</h2>
   <div class="catalog-toolbar"><label class="search-field grow"><span class="sr-only">搜索用例库</span><input id="catalog-search" type="search" placeholder="搜索 ID、名称、Service 或标签"></label><button class="button tertiary compact" id="catalog-refresh" type="button">刷新</button></div>
   <div class="tab-list" role="tablist" aria-label="用例类型">
-    <button class="tab active" type="button" role="tab" aria-selected="true" data-catalog-type="apis">APIs <span id="catalog-api-count">0</span></button>
-    <button class="tab" type="button" role="tab" aria-selected="false" data-catalog-type="cases">Cases <span id="catalog-case-count">0</span></button>
-    <button class="tab" type="button" role="tab" aria-selected="false" data-catalog-type="flows">Flows <span id="catalog-flow-count">0</span></button>
+    <button class="tab active" type="button" role="tab" aria-selected="true" tabindex="0" data-catalog-type="apis">APIs <span id="catalog-api-count">0</span></button>
+    <button class="tab" type="button" role="tab" aria-selected="false" tabindex="-1" data-catalog-type="cases">Cases <span id="catalog-case-count">0</span></button>
+    <button class="tab" type="button" role="tab" aria-selected="false" tabindex="-1" data-catalog-type="flows">Flows <span id="catalog-flow-count">0</span></button>
   </div>
   <div class="inline-status loading" id="catalog-status" aria-live="polite">正在读取项目资产…</div>
   <div id="catalog-errors" class="stack" hidden></div>
-  <div class="table-scroll"><table><thead id="catalog-table-head"><tr><th>ID</th><th>名称</th><th>Service / Method</th><th>Profile</th><th>状态</th></tr></thead><tbody id="catalog-table-body"><tr><td colspan="5" class="table-state">加载中…</td></tr></tbody></table></div>
+  <div class="table-scroll"><table><thead id="catalog-table-head"><tr><th>ID</th><th>名称</th><th>Service / Method</th><th>Profile</th><th>状态</th><th><span class="sr-only">操作</span></th></tr></thead><tbody id="catalog-table-body"><tr><td colspan="6" class="table-state">加载中…</td></tr></tbody></table></div>
 </section>
 {% endblock %}

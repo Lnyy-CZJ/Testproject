@@ -1,0 +1,29 @@
+name: Dating Analysis 创建幂等与参数冲突契约
+tags: [dating, analysis, media, stateful, explicit]
+steps:
+  - id: get_upload_config
+    api: GetMediaUploadConfig
+  - id: prepare_upload
+    api: PrepareMediaUpload
+    extract:
+      asset_id: $.asset_id
+      upload_url: $.upload_url
+      required_headers: $.required_headers
+  - id: upload_binary
+    action:
+      type: signed_binary_upload
+      url: "{{upload_url}}"
+      headers: "{{required_headers}}"
+      fixture: chat-sample.png
+      method: PUT
+      success_statuses: [200, 204]
+  - id: complete_upload
+    api: CompleteMediaUpload
+  - id: create_analysis_first
+    api: CreateAnalysisTask
+    extract:
+      original_task_id: $.task_id
+  - id: create_analysis_retry
+    api: CreateAnalysisTask
+  - id: create_analysis_conflict
+    api: CreateAnalysisTask

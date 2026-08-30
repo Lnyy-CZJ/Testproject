@@ -16,6 +16,9 @@ from app.api import access_admin, admin, audit, auth, configuration, health, int
 from app.core.config import get_settings
 from app.core.errors import PlatformError
 from app.core.security import load_user_context_signing_key
+from app.db.session import SessionLocal
+from app.services.audit import add_audit_event
+from app.services.auth import REGISTRATION_PATH, RegistrationAttemptMiddleware
 
 
 settings = get_settings()
@@ -177,6 +180,11 @@ app = FastAPI(
     version=settings.read_platform_version(),
     lifespan=lifespan,
 )
+app.state.registration_session_factory = SessionLocal
+app.add_middleware(
+    RegistrationAttemptMiddleware,
+    session_factory_provider=lambda: app.state.registration_session_factory,
+)
 app.add_middleware(RequestIdMiddleware)
 app.include_router(health.router, prefix="/api/v1")
 app.include_router(auth.router, prefix="/api/v1")
@@ -221,6 +229,39 @@ async def validation_exception_handler(
 ) -> JSONResponse:
     """隐藏具体校验栈，仅向调用方返回稳定的参数错误信息。"""
 
+    if request.method == "POST" and request.url.path == REGISTRATION_PATH:
+        # 只读取错误类型进行安全分类；绝不访问或记录 errors 中的 input、ctx
+        # 或原始请求体，计数已由 middleware 完成，避免同一提交双计。
+        error_code = (
+            "REGISTRATION_UNKNOWN_FIELDS"
+            if any(item.get("type") == "extra_forbidden" for item in exc.errors())
+            else "REGISTRATION_VALIDATION_FAILED"
+        )
+        database = None
+        try:
+            factory = getattr(request.app.state, "registration_session_factory", None)
+            if not callable(factory):
+                raise RuntimeError("registration session factory unavailable")
+            database = factory()
+            add_audit_event(
+                database,
+                action="auth.register",
+                resource_type="user",
+                outcome="failed",
+                request=request,
+                actor_type="anonymous",
+                error_code=error_code,
+            )
+            database.commit()
+        except Exception:
+            if database is not None:
+                database.rollback()
+            # 审计是旁路能力；失败时保留原始 422 语义，且日志不包含校验输入。
+            logger.exception("注册参数校验审计写入失败")
+        finally:
+            if database is not None:
+                database.close()
+
     return error_response(request, 422, "VALIDATION_ERROR", "请求参数不正确")
 
 
@@ -228,7 +269,15 @@ async def validation_exception_handler(
 async def database_exception_handler(request: Request, exc: SQLAlchemyError) -> JSONResponse:
     """记录数据库异常并返回不包含内部连接信息的服务错误。"""
 
-    logger.exception("数据库请求执行失败", exc_info=exc)
+    if request.method == "POST" and request.url.path == REGISTRATION_PATH:
+        # SQLAlchemy 异常字符串可能带 statement params，其中包含用户名、
+        # 显示名称或密码哈希。注册路径只记录固定诊断文案和请求 ID。
+        logger.error(
+            "注册数据库请求执行失败",
+            extra={"request_id": getattr(request.state, "request_id", "unknown")},
+        )
+    else:
+        logger.exception("数据库请求执行失败", exc_info=exc)
     return error_response(request, 503, "DATABASE_UNAVAILABLE", "平台数据库暂时不可用")
 
 
@@ -236,5 +285,13 @@ async def database_exception_handler(request: Request, exc: SQLAlchemyError) -> 
 async def unexpected_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     """记录未知异常并返回通用错误，防止内部实现细节泄露。"""
 
-    logger.exception("未处理的平台请求异常", exc_info=exc)
+    if request.method == "POST" and request.url.path == REGISTRATION_PATH:
+        # 未知异常也可能由包含注册字段的数据库/序列化错误包装而来，因此
+        # 同样禁止输出异常对象和栈中的实参，只保留可关联的 request_id。
+        logger.error(
+            "注册请求处理失败",
+            extra={"request_id": getattr(request.state, "request_id", "unknown")},
+        )
+    else:
+        logger.exception("未处理的平台请求异常", exc_info=exc)
     return error_response(request, 500, "INTERNAL_ERROR", "平台服务内部错误")

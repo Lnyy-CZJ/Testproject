@@ -18,8 +18,12 @@ from utils.custom.runtime_context import RuntimeContext, RuntimeContextError
 
 
 LOGGER = get_logger(__name__)
-ONE_DAY_MS = 86_400_000
+SESSION_REFRESH_WINDOW_MS = 7_200_000
 SESSION_METHODS = {"CreateAnonymousSession", "RefreshSession"}
+# 这些字段的生命周期属于单次任务或当前会话，不能由 Release 静态配置决定。
+# 即使旧版本或异常客户端曾把它们写入 comm，也要在请求边界再次剥离，再由
+# RuntimeContext 和本次调用生成的 request id 覆盖，形成平台校验之外的防线。
+RUNTIME_COMM_KEYS = frozenset({"auth_token", "user_id", "client_request_id"})
 SESSION_EXTRACT_RULES = {
     "access_token": "$.access_token",
     "expires_time": "$.expires_time",
@@ -89,7 +93,7 @@ def build_payload(
     comm = {
         key: value
         for key, value in comm_source.items()
-        if value is not None and value != ""
+        if key not in RUNTIME_COMM_KEYS and value is not None and value != ""
     }
     comm = variables.resolve(comm)
     if runtime_context and include_runtime_session:
@@ -226,32 +230,43 @@ class GatewayApi:
         return endpoint
 
     def _ensure_session(self) -> None:
-        """在普通请求前创建或刷新会话，刷新失败时仅回退重建一次。"""
+        """按两小时临期边界复用、刷新或重建会话。
+
+        未过期且剩余时间大于两小时直接复用；剩余时间不超过两小时才尝试
+        RefreshSession；已经到期或缺少有效过期时间则直接执行
+        CreateAnonymousSession。临期刷新失败时只回退重建一次。
+        """
         if not self.runtime_context:
             return
         now_ms = self.now_ms()
         refresh_before_ms = int(
             (self.settings.get("session") or {}).get(
                 "refresh_before_ms",
-                ONE_DAY_MS,
+                SESSION_REFRESH_WINDOW_MS,
             )
         )
-        if not self.runtime_context.access_token_needs_refresh(
+        access_token_status = self.runtime_context.access_token_status(
             now_ms,
             refresh_before_ms,
-        ):
+        )
+        if access_token_status == "valid":
             return
 
         if (
-            self.runtime_context.refresh_token_is_valid(now_ms)
+            access_token_status == "refresh"
+            and self.runtime_context.refresh_token_is_valid(now_ms)
             and "RefreshSession" in self.api_definitions
         ):
             try:
                 self._execute_session_api("RefreshSession")
                 return
             except (AssertionError, RuntimeContextError, requests.RequestException, ValueError) as exc:
-                # 刷新失败只记录错误类型，不输出可能包含 token 的异常内容。
-                LOGGER.warning("会话刷新失败，将重新创建匿名会话: %s", type(exc).__name__)
+                # 用户要求保留原始排障信息，异常类型与消息均写入执行日志。
+                LOGGER.warning(
+                    "会话刷新失败，将重新创建匿名会话: %s: %s",
+                    type(exc).__name__,
+                    exc,
+                )
 
         self._execute_session_api("CreateAnonymousSession")
 

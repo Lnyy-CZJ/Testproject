@@ -26,8 +26,9 @@
   <section class="panel" aria-labelledby="quick-heading">
     <div class="panel-heading"><div><h2 id="quick-heading">快速开始</h2><p id="quick-project">请选择项目</p></div></div>
     <div class="button-row">
-      <a class="button primary" href="{{ base_path }}/tasks/new/single">创建单接口任务</a>
-      <a class="button secondary" href="{{ base_path }}/tasks/new/flow">创建 Flow 任务</a>
+      <a class="button primary" href="{{ base_path }}/tasks/new?mode=single">创建单接口任务</a>
+      <a class="button secondary" href="{{ base_path }}/tasks/new?mode=flow">创建 Flow 任务</a>
+      <a class="button secondary" href="{{ base_path }}/tasks/new?mode=batch">创建批量任务</a>
     </div>
     <dl class="summary-list" id="quick-summary">
       <div><dt>Runtime Scope</dt><dd>—</dd></div>

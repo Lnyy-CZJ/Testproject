@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -53,6 +55,173 @@ class AgentSplitComposeTest(unittest.TestCase):
         self.assertIn("API_EXECUTION_ENABLED: \"false\"", output)
         self.assertIn("DATABASE_PERSIST_ENABLED: \"false\"", output)
         self.assertIn("ALLOWED_TARGETS: '[]'", output)
+
+    def test_compose_uses_seven_day_session_defaults(self) -> None:
+        """平台 API 的两种新会话期限必须都解析为 168 小时。"""
+
+        output = subprocess.run(
+            ["docker", "compose", "config", "--format", "json"],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+        environment = json.loads(output)["services"]["platform-api"]["environment"]
+        self.assertEqual(environment["SESSION_IDLE_HOURS"], "168")
+        self.assertEqual(environment["SESSION_ABSOLUTE_HOURS"], "168")
+
+    def test_compose_exposes_registration_protection_settings(self) -> None:
+        """Compose 必须把模式、来源限流和全局熔断完整传给平台 API。"""
+
+        output = subprocess.run(
+            ["docker", "compose", "config", "--format", "json"],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+        environment = json.loads(output)["services"]["platform-api"]["environment"]
+        self.assertEqual(environment["REGISTRATION_MODE"], "open")
+        self.assertEqual(environment["REGISTRATION_RATE_LIMIT"], "5")
+        self.assertEqual(environment["REGISTRATION_RATE_WINDOW_MINUTES"], "15")
+        self.assertEqual(environment["REGISTRATION_LOCK_MINUTES"], "15")
+        self.assertEqual(environment["REGISTRATION_GLOBAL_LIMIT"], "100")
+        self.assertEqual(environment["REGISTRATION_GLOBAL_WINDOW_MINUTES"], "15")
+        self.assertEqual(environment["REGISTRATION_GLOBAL_LOCK_MINUTES"], "15")
+
+    def test_gateway_overwrites_forwarded_for_and_clears_untrusted_device_signal(self) -> None:
+        """客户端伪造的来源链与设备头必须在进入 API 前被网关覆盖。"""
+
+        text = (ROOT / "nginx/nginx.conf").read_text(encoding="utf-8")
+        api_location = text.split("location /api/v1/ {", 1)[1].split("}", 1)[0]
+        self.assertIn("proxy_set_header X-Forwarded-For $remote_addr;", api_location)
+        self.assertIn('proxy_set_header X-Test-Platform-Gateway "1";', api_location)
+        self.assertIn('proxy_set_header X-Registration-Device "";', api_location)
+        self.assertNotIn("$proxy_add_x_forwarded_for", api_location)
+
+    def test_platform_api_has_no_host_port(self) -> None:
+        """平台 API 只允许由网关访问，不能新增宿主机端口映射。"""
+
+        output = subprocess.run(
+            ["docker", "compose", "config", "--format", "json"],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+        self.assertNotIn("ports", json.loads(output)["services"]["platform-api"])
+
+    @staticmethod
+    def _production_auth_env(**overrides: str) -> str:
+        """构造只供部署门禁测试使用的完整生产认证配置。"""
+
+        values = {
+            "SESSION_IDLE_HOURS": "168",
+            "SESSION_ABSOLUTE_HOURS": "168",
+            "REGISTRATION_MODE": "open",
+            "REGISTRATION_RATE_LIMIT": "5",
+            "REGISTRATION_RATE_WINDOW_MINUTES": "15",
+            "REGISTRATION_LOCK_MINUTES": "15",
+            "REGISTRATION_GLOBAL_LIMIT": "100",
+            "REGISTRATION_GLOBAL_WINDOW_MINUTES": "15",
+            "REGISTRATION_GLOBAL_LOCK_MINUTES": "15",
+            "COOKIE_SECURE": "false",
+            "APP_PUBLIC_URL": "http://127.0.0.1:41873",
+            "SESSION_COOKIE_RISK_ACCEPTANCE_ID": "RISK-20260830-001",
+        }
+        values.update(overrides)
+        return "".join(f"{key}={value}\n" for key, value in values.items())
+
+    def _run_production_auth_gate(self, env_text: str) -> subprocess.CompletedProcess[str]:
+        """运行部署脚本的最前置门禁；后续固定密钥检查会阻止任何真实操作。"""
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            release = root / "release"
+            release.mkdir()
+            base_env = root / ".env.prod"
+            base_env.write_text(env_text, encoding="utf-8")
+            (release / ".env.images").write_text("", encoding="utf-8")
+            (release / "versions.json").write_text("{}", encoding="utf-8")
+            (release / "release-manifest.json").write_text("{}", encoding="utf-8")
+            source = (ROOT / "scripts/deploy-prod.sh").read_text(encoding="utf-8")
+            source = source.replace(
+                "base_env=/srv/test-platform/env/.env.prod",
+                f"base_env={shlex.quote(str(base_env))}",
+            )
+            script = root / "deploy-prod.sh"
+            script.write_text(source, encoding="utf-8")
+            return subprocess.run(
+                ["bash", str(script), str(release)],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+            )
+
+    def test_prod_insecure_cookie_requires_release_acceptance_reference(self) -> None:
+        """生产 HTTP Cookie 缺少格式合规的人工风险引用时必须在副作用前阻断。"""
+
+        result = self._run_production_auth_gate(
+            self._production_auth_env(SESSION_COOKIE_RISK_ACCEPTANCE_ID="")
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("SESSION_COOKIE_RISK_ACCEPTANCE_ID", result.stderr)
+
+    def test_prod_secure_cookie_requires_https_public_url(self) -> None:
+        """Secure Cookie 组合必须配套 HTTPS 公开入口。"""
+
+        result = self._run_production_auth_gate(
+            self._production_auth_env(
+                COOKIE_SECURE="true",
+                APP_PUBLIC_URL="http://prod.example.test",
+                SESSION_COOKIE_RISK_ACCEPTANCE_ID="",
+            )
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("APP_PUBLIC_URL", result.stderr)
+
+    def test_deploy_env_parser_never_executes_values(self) -> None:
+        """恶意 env 值只能作为文本被拒绝，不能通过 source/eval 执行。"""
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            sentinel = Path(temporary_directory) / "executed"
+            malicious = f"$(touch {sentinel})"
+            result = self._run_production_auth_gate(
+                self._production_auth_env(SESSION_IDLE_HOURS=malicious)
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("SESSION_IDLE_HOURS", result.stderr)
+            self.assertFalse(sentinel.exists())
+
+    def test_registration_release_preserves_existing_migration_manifest_gate(self) -> None:
+        """认证改造不新增迁移，0019 之外仍必须提供既有项目权限 manifest。"""
+
+        script = (ROOT / "scripts/deploy-prod.sh").read_text(encoding="utf-8")
+        self.assertIn('if [[ "$alembic_target" != "20260824_0019" ]]; then', script)
+        self.assertIn('PROJECT_ACCESS_MANIFEST', script)
+
+    def test_api_autotest_uses_asia_shanghai_for_human_readable_times(self) -> None:
+        """接口自动化容器必须按北京时间生成任务 ID、日志文件名和日志正文。
+
+        页面会把带时区的任务时间转换为浏览器本地时间；任务 ID 和 Python
+        logging 则依赖容器本地时区。若 Compose 未声明 TZ，两者会分别显示
+        北京时间和 UTC，产生固定八小时偏差。
+        """
+
+        output = subprocess.run(
+            ["docker", "compose", "config", "--format", "json"],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+            env={key: value for key, value in os.environ.items() if key != "TZ"},
+        ).stdout
+        config = json.loads(output)
+
+        self.assertEqual(
+            config["services"]["api-autotest"]["environment"].get("TZ"),
+            "Asia/Shanghai",
+        )
 
     def test_first_prod_deploy_promotes_before_bootstrap_start(self) -> None:
         """首次 prod 必须在启动 bootstrap 注册 Client 前复制空环境配置。"""

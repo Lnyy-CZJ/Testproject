@@ -52,7 +52,7 @@
 | --- | --- |
 | 执行引擎 | 通用的配置加载、Gateway 调用、断言、变量提取、Flow 编排、轮询、日志和报告能力，不包含任何具体业务项目判断 |
 | 项目包 | 某一业务项目在工具仓库内独立拥有的 Project Manifest、配置契约、API、Cases、Flows、Scenarios 和测试素材；不保存平台管理的可变运行配置 |
-| Project Manifest | 工具侧项目包描述文件，声明稳定 `project_id`、执行能力、所需配置键/Profile 和脱敏规则；不声明启停状态、默认被测环境或运行配置值 |
+| Project Manifest | 工具侧项目包描述文件，声明稳定 `project_id`、执行能力和所需配置键/Profile；`redaction.extra_keys` 仅为旧 schema 兼容保留，不参与日志改写；不声明启停状态、默认被测环境或运行配置值 |
 | `project_id` | 工具资产与执行上下文使用的稳定项目键，例如 `truthy`、`dating`；不等同于平台 RBAC 项目主键 |
 | `platform_project_id` | 测试开发平台中的项目主键，用于权限和配置归属；通过运行作用域与工具的 `project_id` 显式绑定 |
 | `platform_environment` | 平台自身部署/控制面环境，仅允许 `dev`、`prod`；由当前工具实例确定，不由任务提交者任意填写 |
@@ -81,7 +81,7 @@
 - HTTP、Gateway、子请求和业务数据的分层断言；
 - 匿名会话创建、Token 刷新和运行时注入；
 - Prepare、签名地址上传、Complete 类型的媒体上传流程；
-- JUnit、Allure、脱敏日志和任务结果；
+- JUnit、Allure、原始执行日志和任务结果；
 - CLI、Jenkins 和测试开发平台触发入口；
 - Web 用例目录、任务列表、任务详情、取消和报告查看。
 
@@ -143,7 +143,7 @@ Dating 与 Truthy 使用相同的 Gateway 调用架构：
 | S-09 | 日志、任务、JUnit 和 Allure 产物可按项目区分，且不存在跨项目覆盖 |
 | S-10 | 完成一次通用 Runtime Scope 能力建设后，新增标准 Gateway 项目只需增加项目包和平台配置数据，不修改公共引擎或平台业务代码即可被发现和执行 |
 | S-11 | 无效项目、无效被测环境、缺失/无效配置 Release、配置契约不满足或越界文件路径均在发起网络请求前失败 |
-| S-12 | Token、图片内容、签名 URL、上传 Header 和分析结果原文不会进入非脱敏日志 |
+| S-12 | 文件日志、终端、Web 日志、失败摘要、JUnit 和 Allure 保留请求/响应、Header、Token、签名 URL、异常及业务结果原文；上传二进制内容仍不写入任何文本产物 |
 | S-13 | Web 页面与任务业务接口均由 `Truthy_ApiAutoTest2` 提供；平台提供通用配置控制面但不形成第二套接口自动化页面、用例库或任务实现 |
 | S-14 | 平台配置模式不读取项目环境 YAML、本地 Secret 文件或根 `.env`；平台快照不可用时必须 fail-closed |
 | S-15 | 工具不提供独立“项目配置”“配置状态”或“配置异常”页面；仅在概览和任务提交位置内联展示必要的 Scope/Release/Profile 校验结果，配置维护统一进入平台配置中心 |
@@ -193,7 +193,7 @@ Dating 与 Truthy 使用相同的 Gateway 调用架构：
 7. 轮询任务直到成功、拒绝、失败或超时；
 8. 成功时查询结果，拒绝或失败时按终止规则结束；
 9. 清理任务私密数据；
-10. 输出每一步可定位且已脱敏的测试结果。
+10. 输出每一步可定位的原始测试结果；仅媒体二进制内容不进入文本日志和报告。
 
 #### 场景三：继续执行现有 Truthy 回归
 
@@ -480,7 +480,8 @@ redaction:
 - 未知能力必须在收集阶段报错；
 - `required_keys` 与 `credential_profiles` 是契约，不是运行值；平台快照必须满足本次选中资产实际需要的契约；
 - 项目启停、展示名覆盖、固定环境映射和默认 Scope 由平台管理，不在 Manifest 双写；
-- 项目级敏感字段只能扩充全局脱敏集合，不能关闭全局脱敏。
+- `redaction.extra_keys` 为 schema 兼容字段，当前版本不据此改写任何日志或报告内容；
+  新项目仍保留空数组，避免破坏既有 Manifest 契约。
 
 ### 7.4 平台 Runtime Scope 与配置边界
 
@@ -610,7 +611,8 @@ Gateway 执行必须从任务固化的 Runtime Scope 快照获得：
 - Gateway 顶层、子请求和业务错误继续分层处理；
 - 业务分支只依赖稳定错误码，不依赖 `message` 文本；
 - 请求 ID 在单次 Gateway 调用内唯一；
-- 敏感 `comm` 字段必须脱敏。
+- `comm`、Header、Token、请求体、响应体与异常均按原文写入授权范围内的执行日志和报告，
+  不做字段级脱敏。
 
 ### 8.6 FR-006 会话与凭证策略（P0）
 
@@ -640,6 +642,16 @@ Gateway 执行必须从任务固化的 Runtime Scope 快照获得：
 - Scope/Release/Secret 查询必须同时绑定 `platform_project_id`、`project_id` 和 `target_env`；
 - Secret 状态“可用”必须表示对当前 Scope、执行身份和实际所需 Profile 可解析，而不是仅表示平台中存在一个同名 Secret；
 - 平台快照不可用时返回稳定错误并终止，禁止自动切换本地来源。
+
+会话选择规则固定为：
+
+1. access token 存在、过期时间合法且剩余时间 **大于 2 小时**时直接复用，不调用会话 API；
+2. access token 尚未过期且剩余时间 **小于或等于 2 小时**时，refresh token 有效则调用一次 `RefreshSession`；
+3. access token 已过期、缺失或过期时间无效时，直接调用 `CreateAnonymousSession`；
+4. 临期刷新失败、refresh token 无效或缺少刷新接口时，只回退调用一次 `CreateAnonymousSession`。
+
+边界按毫秒比较，恰好剩余 2 小时属于刷新区间。该判断在发送业务 API 前执行，
+不得因为存在 refresh token 就在 access token 已过期时先请求 `RefreshSession`。
 
 独立调试模式：
 
@@ -673,8 +685,9 @@ Gateway 执行必须从任务固化的 Runtime Scope 快照获得：
 - 动作不得硬编码 `upload_headers`、`required_headers`、`media_asset_id` 或 `asset_id`；
 - Truthy 现有 `prepared_media_upload` 行为必须通过兼容映射保持有效；
 - Dating 新 Flow 使用通用动作和 Dating 实际字段；
-- 上传 URL、签名 Header 和文件内容不得写入日志或报告附件；
-- 上传失败时应保留脱敏后的目标域名、HTTP 状态和耗时，便于定位；
+- 上传 URL（含查询签名）、签名 Header、HTTP 状态、耗时和原始异常应写入授权范围内的
+  日志及 Allure 附件；上传文件二进制内容不得写入文本日志或报告附件；
+- 上传失败时应保留完整目标 URL、Header、HTTP 状态、耗时和异常原文，便于定位；
 - 签名过期应明确归类为外部上传失败，不得伪装成 Gateway 断言失败。
 
 ### 8.8 FR-008 Web 项目选择与用例目录（P0）
@@ -734,11 +747,10 @@ Web/平台任务提交只接收 `project_id` 和测试资产选择；`platform_e
 产物路径必须至少包含项目维度，建议逻辑结构：
 
 ```text
-logs/<runtime_scope_id>/<project_id>/<date>/...
-reports/<runtime_scope_id>/<project_id>/<task_id>/junit.xml
-reports/<runtime_scope_id>/<project_id>/<task_id>/allure-results/
-reports/<runtime_scope_id>/<project_id>/<task_id>/allure-report/
-runtime/<runtime_scope_id>/<credential_profile>/...
+logs/<project_id>/<target_env>/<YYYY-MM-DD>/<timestamp>_<target_env>_<pid>.log
+reports/junit/<project_id>/<task_id>.xml
+reports/task-reports/<project_id>/<task_id>/current
+runtime/<project_id>/<task_id>/...
 ```
 
 要求：
@@ -749,7 +761,9 @@ runtime/<runtime_scope_id>/<credential_profile>/...
 - JUnit 和 Allure 元数据应包含项目、环境和任务 ID；
 - JUnit、Allure 与结构化日志中的“环境”必须明确为 `target_env`，并额外记录 `runtime_scope_id` 与配置 Release；
 - 日志检索和下载接口必须校验项目与任务归属；
-- 清理策略可以统一执行，但必须按项目和任务安全枚举目标，禁止宽路径删除。
+- 每次任务通过任务记录中的 `log_file` 关联当日目录下的唯一进程日志，不再额外创建
+  `<task_id>` 日志目录；
+- 清理策略按 `project_id + target_env` 下的日期目录安全枚举目标，禁止宽路径删除。
 
 ### 8.11 FR-011 Jenkins 与外部触发（P0）
 
@@ -798,7 +812,7 @@ Jenkins 增加 `PROJECT_ID` 参数并满足：
 
 平台必须在 Scope 创建、激活、快照规划和任务提交四个阶段校验固定环境映射；`dev + prod` 或 `prod + test` Scope 不得被激活或执行。
 
-快照中至少包含：`runtime_scope_id`、`platform_environment`、`tool_id`、`platform_project_id`、`project_id`、`target_env`、`config_release_id/version`、普通配置值、Credential Profile 元数据和快照时间。Secret 明文不得进入浏览器、普通任务记录、日志或报告。
+快照中至少包含：`runtime_scope_id`、`platform_environment`、`tool_id`、`platform_project_id`、`project_id`、`target_env`、`config_release_id/version`、普通配置值、Credential Profile 元数据和快照时间。Secret 明文不得进入浏览器配置响应或普通任务 JSON；执行过程中实际进入请求、响应、Header 或异常的值可以按原文进入已授权任务的日志和报告。
 
 ### 8.14 FR-014 运行前校验与内联修复提示（P0）
 
@@ -947,7 +961,7 @@ Dating `test` 首个配置 Release 建议设置：
 - 关键集合和字段类型符合协议；
 - 未知 schema version 明确失败，不能按旧结构强行解析；
 - 证据不足返回 `UNCLEAR` 时，对应分数允许且应为 `null`，不得断言为 `0`；
-- 不将完整分析结果写入普通日志。
+- 完整分析结果按原文写入已授权任务的日志和报告，便于复现断言；不得扩大任务访问权限。
 
 ### 9.7 媒体与隐私约束
 
@@ -965,16 +979,19 @@ Dating `test` 首个配置 Release 建议设置：
 
 - 原始图片或其 Base64；
 - 聊天截图内容；
-- access token、refresh token；
-- COS 完整 URL、查询签名和 required headers；
-- 完整分析文本、回复建议或证据消息。
+- 上传文件的二进制正文。
 
-允许记录经过脱敏的：
+允许按原文记录：
 
 - 项目、环境、API ID；
-- 截断或哈希后的 asset/task/result ID；
+- access token、refresh token、Authorization/Cookie 等 Header；
+- COS 完整 URL、查询签名和 required headers；
+- asset/task/result ID、完整分析文本、回复建议或证据消息；
 - status、phase、schema version；
 - 数量、耗时、HTTP 状态和稳定错误码。
+
+这些日志与报告属于受限测试产物，必须经过任务归属/RBAC 校验后查看，并遵循保留期；
+“原文记录”不代表可公开分享或写入浏览器长期存储。
 
 ### 9.8 外部测试前置条件
 
@@ -1058,7 +1075,9 @@ Credential/会话在此基础上增加 `credential_profile` 和必要的用户/�
 - 激活、回滚和发布均记录操作人、时间、Scope 和版本；
 - 工具创建任务时先选择 Release，再物化配置与所需 Credential Profile；
 - 任务至少保存 `runtime_scope_id`、`config_release_id/version`、快照标识及 Credential Profile 版本元数据；
-- Secret 值仅存在于受信任运行进程内存或平台允许的短期受控文件，不写入任务数据库、命令行参数、浏览器、日志和报告；
+- Secret 值仅由平台物化到受信任运行进程内存或权限为 `0600` 的任务短期文件，
+  不写入普通任务 JSON、命令行参数、配置响应或浏览器长期存储；实际请求、响应、
+  Header 和异常中的值按用户确认保留在已授权任务的原始日志与报告中；
 - Release 或 Credential 后续变化不得改变历史任务展示；重试必须新建任务并重新解析当前有效配置。
 
 ### 10.5 Secret 状态语义
@@ -1182,7 +1201,7 @@ Dating 普通任务中不得出现上述 Truthy Admin 缺失提示。`config_cen
 - 至少区分 Scope 缺失、项目包缺失、Release 无效、Credential 缺失、Scope 禁用和平台快照不可用；
 - 项目包/配置契约错误、凭证错误、外部上传失败和异步 Flow 超时采用不同错误分类；
 - 内联错误保留用户当前项目和筛选状态，修复返回或重试后继续原操作；
-- 被禁用项目不得新建任务，但仍可访问其历史任务和脱敏报告。
+- 被禁用项目不得新建任务，但仍可按原任务权限访问其历史任务和原始报告。
 
 ### 11.7 页面状态与可用性
 
@@ -1225,7 +1244,8 @@ Dating 普通任务中不得出现上述 Truthy Admin 缺失提示。`config_cen
 - Scope、Release、项目包和凭证错误必须保持可区分，不能统一包装为“配置异常”；
 - 外部服务失败不得被包装为项目不存在；
 - `EXTERNAL_UPLOAD_FAILED` 和 `FLOW_ASYNC_TIMEOUT` 必须作为执行错误展示，不能被包装为用例断言失败或项目配置错误；
-- 对外错误不包含绝对路径、Token、签名、原始请求体或敏感响应。
+- 配置控制面和预检错误不返回 Secret 值；任务执行错误、失败摘要和日志在任务归属
+  校验通过后保留绝对路径、Token、签名、原始请求体及响应原文，并继续执行长度限制。
 
 ---
 
@@ -1261,7 +1281,7 @@ Dating 普通任务中不得出现上述 Truthy Admin 缺失提示。`config_cen
 - Case 请求参数和断言；
 - Flow 步骤顺序、变量名称、提取路径和终止规则；
 - 当前 Gateway target 行为；
-- 当前脱敏范围。
+- 当前原始日志输出范围、保留期与访问控制。
 
 ### 13.2 兼容入口
 
@@ -1297,9 +1317,10 @@ Dating 普通任务中不得出现上述 Truthy Admin 缺失提示。`config_cen
 - 独立调试模式的本地 Secret 必须被 Git 忽略，且不得与平台快照混合；
 - 仓库不得提交真实 Secret；
 - 项目路径必须经过白名单和解析后范围校验；
-- 日志、错误、报告附件和 Web API 统一脱敏；
-- Dating 图片和分析内容不得因失败自动附加到 Allure；
+- 文件日志、终端、任务失败摘要、JUnit、Allure 附件和 Web 日志 API 统一保留文本原文；
+- Dating 图片二进制不得自动附加到 Allure；分析结果文本允许按原文附加；
 - 报告下载和日志查看必须校验任务归属；
+- 原始日志与报告可能含凭证，必须执行最小权限访问、保留期清理并禁止公开分发；
 - 清理命令不得对未解析项目根、仓库根或用户目录执行递归删除。
 
 ### 14.2 可靠性
@@ -1414,7 +1435,7 @@ Dating 普通任务中不得出现上述 Truthy Admin 缺失提示。`config_cen
 - 现有三个核心 Flow 的步骤、参数、断言和变量保持一致；
 - CLI、Jenkins 和平台执行链路至少各完成一次冒烟；
 - Admin 与普通会话场景分别验证；
-- 现有 Allure/JUnit/日志脱敏能力无回归。
+- Allure、JUnit、文件日志、终端和 Web 日志均保留原文，且项目/任务访问隔离无回归。
 
 ### 15.8 Dating test 验收
 
@@ -1427,7 +1448,8 @@ Dating 普通任务中不得出现上述 Truthy Admin 缺失提示。`config_cen
 5. `GetAnalysisResult` 只在成功终态后调用；
 6. 删除后任务和结果不可访问；
 7. 额度查询成功，额度耗尽时可识别 `QUOTA_EXHAUSTED`；
-8. 日志和报告不包含图片、签名、Token 和完整分析内容。
+8. 日志和报告不包含图片二进制；签名、Token、Header 和完整分析文本按原文保留，
+   且只有具备该任务权限的用户能够访问。
 
 ### 15.9 新项目接入验收
 
@@ -1526,7 +1548,7 @@ Dating 普通任务中不得出现上述 Truthy Admin 缺失提示。`config_cen
 | Dating 原资料仍使用 staging 名称 | 环境选择和配置归属错误 | PRD 与实现统一按 test；保留原资料名仅用于追溯，不创建该旧名称的 Scope 或别名 |
 | dev 平台误调用 prod 接口 | 线上数据、安全和成本风险 | 平台和工具同时校验固定环境映射，Web 不提供环境切换，非法组合在网络请求前失败 |
 | Dating 额度或异步 Worker 不稳定 | 真实 E2E 偶发失败 | 区分框架测试、契约测试和真实集成标签，报告外部阻塞原因 |
-| COS 签名或图片泄漏 | 隐私与安全风险 | 通用上传动作默认脱敏，不附加请求体、URL、Header 和图片 |
+| 原始日志中的 Token/COS 签名被越权读取 | 凭证与隐私风险 | 按确认需求保留文本原文；通过任务归属/RBAC、最小暴露面、7 天日志清理和禁止公开分发控制风险；图片二进制仍不附加 |
 | 并发任务共享会话 | Token 覆盖或身份串用 | 会话按 Scope、Profile 和授权主体隔离，写入原子化 |
 | 项目越来越多导致页面混乱 | 选择和定位成本上升 | 项目列表、任务、报告均支持项目筛选，后续增加分组而非复制工具 |
 | 双目录长期存在 | 维护两套加载逻辑 | Truthy 一次迁移，兼容层只补项目 ID，不保留旧资产加载器 |
@@ -1579,7 +1601,8 @@ Dating 普通任务中不得出现上述 Truthy Admin 缺失提示。`config_cen
 - [ ] 配置 Release、Secret/Credential、会话、素材、任务、日志和报告隔离测试通过；
 - [ ] Truthy 回归无未解释失败；
 - [ ] Dating P0 test 链路完成真实验证，或对不可控外部阻塞留下可复现证据；
-- [ ] 日志与报告敏感信息扫描通过；
+- [ ] 原始日志契约测试通过：请求/响应/Header/Token/签名 URL/异常不被改写，
+  图片二进制不落盘，Web/报告访问仍受任务归属与 RBAC 约束；
 - [ ] 第三个 fixture 项目只新增工具项目包和平台 Scope/Release 数据，无需修改公共引擎或平台代码即可执行；
 - [ ] 开发设计、实施计划和新项目接入说明与最终实现一致。
 

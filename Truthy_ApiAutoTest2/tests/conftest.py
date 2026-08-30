@@ -187,6 +187,27 @@ def multi_project_root(fake_project: Path) -> Path:
             ),
             encoding="utf-8",
         )
+        case_params = (
+            ["      params:", "        locale: en-US"]
+            if project_id == "dating"
+            else ["      params: {}"]
+        )
+        case_runtime_inputs = (
+            [
+                "    runtime_inputs:",
+                "      client_locale:",
+                "        label: 客户端语言",
+                "        description: 仅影响本次 GetMe 请求",
+                "        type: enum",
+                "        options: [en-US, zh-CN]",
+                "        target:",
+                "          scope: case_request",
+                "          path: $.locale",
+                "        required: true",
+            ]
+            if project_id == "dating"
+            else []
+        )
         (project / "data" / "cases" / f"{api_id}.yaml").write_text(
             "\n".join(
                 [
@@ -196,7 +217,8 @@ def multi_project_root(fake_project: Path) -> Path:
                     "    name: 获取当前用户成功",
                     "    tags: [smoke]",
                     "    request:",
-                    "      params: {}",
+                    *case_params,
+                    *case_runtime_inputs,
                     "    assert:",
                     "      http_status: 200",
                     "      gateway: {code: 0}",
@@ -220,14 +242,37 @@ def multi_project_root(fake_project: Path) -> Path:
             ),
             encoding="utf-8",
         )
+        scenario_runtime_inputs = (
+            [
+                "runtime_inputs:",
+                "  client_locale:",
+                "    label: 结果语言",
+                "    description: 仅影响本次 Flow 的 GetMe 步骤",
+                "    type: enum",
+                "    options: [en-US, zh-CN]",
+                "    target:",
+                "      scope: flow_step_request",
+                "      step_id: get_me",
+                "      path: $.locale",
+                "    required: true",
+            ]
+            if project_id == "dating"
+            else []
+        )
+        scenario_params = (
+            ["    params:", "      locale: en-US"]
+            if project_id == "dating"
+            else ["    params: {}"]
+        )
         (project / "data" / "scenarios" / f"{flow_id}.yaml").write_text(
             "\n".join(
                 [
                     f"name: {display_name} Demo Flow 成功",
                     "variables: {}",
+                    *scenario_runtime_inputs,
                     "step_data:",
                     "  get_me:",
-                    "    params: {}",
+                    *scenario_params,
                     "    assert:",
                     "      http_status: 200",
                     "      gateway: {code: 0}",

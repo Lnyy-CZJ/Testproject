@@ -1691,9 +1691,16 @@ def test_pytest_configure_registers_nested_case_tags(
 
         @staticmethod
         def getoption(name: str) -> str:
-            """返回日志初始化使用的固定测试环境。"""
-            assert name == "--env"
-            return "test"
+            """返回 pytest_configure 所需的最小项目、环境和任务参数。"""
+            values = {
+                "--env": "test",
+                "--target-env": "",
+                "--project": "truthy",
+                "--task-id": "",
+            }
+            if name not in values:
+                raise AssertionError(f"unexpected option: {name}")
+            return values[name]
 
         def addinivalue_line(self, name: str, value: str) -> None:
             """保存 marker 配置，供测试检查去重后的标签集合。"""

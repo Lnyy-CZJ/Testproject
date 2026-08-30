@@ -1,0 +1,6 @@
+id: SubmitFeedback
+name: 提交 Dating 用户反馈
+credential_profile: anonymous_session
+request:
+  service_name: tool.dating.DatingFeedbackService
+  method_name: SubmitFeedback

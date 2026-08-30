@@ -788,6 +788,23 @@ def _system_runtime_snapshot(
     global Secret 仍保留作回滚材料，也不会进入 configured keys 或解密路径。
     """
 
+    runtime_scope = (
+        database.get(ToolProjectScope, runtime_scope_id)
+        if runtime_scope_id is not None else None
+    )
+
+    def applies_to_runtime_project(definition: ConfigDefinition) -> bool:
+        """按 Definition 的项目白名单过滤历史 Release 中已不适用的配置项。"""
+
+        project_ids = (definition.validation_schema or {}).get("project_ids")
+        if project_ids is None:
+            return True
+        return (
+            runtime_scope is not None
+            and isinstance(project_ids, list)
+            and runtime_scope.project_id in project_ids
+        )
+
     definitions = {
         row.id: row
         for row in database.scalars(select(ConfigDefinition).where(
@@ -795,6 +812,7 @@ def _system_runtime_snapshot(
             ConfigDefinition.owner_id == tool_id,
             ConfigDefinition.value_scope == "system",
         )).all()
+        if applies_to_runtime_project(row)
     }
     normal = {
         row.key: row.default_value
@@ -889,12 +907,39 @@ def _personal_credential_runtime_snapshot(
         by_provider.setdefault(str(definition.credential_provider_type), {})[
             definition.key
         ] = definition
+
+    def participates_in_runtime(definition: ConfigDefinition) -> bool:
+        """判断个人凭证字段是否仍属于运行时契约。
+
+        已迁移到项目 Release 的静态字段会保留 Definition 与历史 Secret，便于
+        审计和旧快照校验，但新快照不得再把这些值下发给工具，否则会重新覆盖
+        ``gateway.comm`` 中按项目发布的静态参数。
+        """
+
+        return not bool(
+            (definition.validation_schema or {}).get("runtime_config_excluded")
+        )
+
     if not by_provider:
         if selected_versions or expected_secret_versions:
             raise _runtime_snapshot_invalid()
         return {}, set(), {}, {}, {}
 
     materializing = selected_versions is not None
+
+    def credential_is_ready(credential: UserCredential) -> bool:
+        """判断 Credential 是否允许进入本次运行快照。
+
+        项目 Scope 已经具备完整的 Credential 生命周期，因此必须 fail-closed：
+        只有 Agent 明确标记为 ``healthy`` 的版本才可被冻结和物化。验证中、
+        刷新中或未来新增的未知状态都只能作为诊断信息返回，不能意外下发
+        Secret。尚未迁移到 Runtime Scope 的旧工具继续沿用原有拒绝列表，避免
+        本次接口自动化修复改变其它工具的兼容行为。
+        """
+
+        if runtime_scope_id is not None:
+            return credential.status == "healthy"
+        return credential.status not in {"missing", "expired", "action_required"}
 
     def fail() -> PlatformError:
         if materializing:
@@ -930,6 +975,10 @@ def _personal_credential_runtime_snapshot(
                 raise fail()
             credentials.append((row, version))
 
+    # 规划态要同时保留未就绪 Credential 的非敏感诊断元数据。它们随后仍会从
+    # selector 与 Secret 物化链路中过滤掉；否则工具只能看到“Profile 缺失”，
+    # 无法区分真实未配置、已过期或自动刷新失败。
+    planning_credentials = list(credentials)
     if allow_incomplete_profiles and not materializing:
         # Scope 规划阶段只冻结当前可用的 Profile。已失效的可选 Credential
         # 仍应在平台配置中心显示其真实状态，但不能污染一个与它无关的 API/Flow
@@ -938,13 +987,16 @@ def _personal_credential_runtime_snapshot(
         credentials = [
             (row, version)
             for row, version in credentials
-            if row.status not in {"missing", "expired", "action_required"}
+            if credential_is_ready(row)
         ]
     credential_by_provider = {row.provider_type: (row, version) for row, version in credentials}
     required_providers = set() if allow_incomplete_profiles else {
         provider
         for provider, provider_definitions in by_provider.items()
-        if any(definition.required for definition in provider_definitions.values())
+        if any(
+            definition.required and participates_in_runtime(definition)
+            for definition in provider_definitions.values()
+        )
     }
     if not required_providers.issubset(credential_by_provider):
         raise fail()
@@ -953,13 +1005,46 @@ def _personal_credential_runtime_snapshot(
 
     values: dict[str, str] = {}
     configured: set[str] = set()
-    providers: dict[str, Any] = {}
+    def provider_metadata(
+        credential: UserCredential,
+        version_number: int,
+    ) -> dict[str, Any]:
+        """返回可安全展示的 Profile 状态，不包含字段值或 Secret 指纹。"""
+
+        def iso_timestamp(value: datetime | None) -> str | None:
+            # SQLite 测试库会丢失 timezone 标记；对外契约始终补成 UTC，避免
+            # dev/prod 因数据库方言不同而返回两种时间格式。
+            if value is None:
+                return None
+            aware = value.replace(tzinfo=UTC) if value.tzinfo is None else value
+            return aware.astimezone(UTC).isoformat()
+
+        return {
+            "credential_id": credential.id,
+            "credential_version": version_number,
+            "status": credential.status,
+            "expires_at": iso_timestamp(credential.expires_at),
+            "refresh_expires_at": iso_timestamp(credential.refresh_expires_at),
+            "last_checked_at": iso_timestamp(credential.last_checked_at),
+            "last_error_code": credential.last_error_code,
+        }
+
+    providers: dict[str, Any] = (
+        {
+            credential.provider_type: provider_metadata(
+                credential, version_number
+            )
+            for credential, version_number in planning_credentials
+        }
+        if allow_incomplete_profiles and not materializing
+        else {}
+    )
     versions: dict[str, int] = {}
     secret_versions: dict[str, dict[str, str]] = {}
     primary_metadata: dict[str, Any] = {}
     cipher = None
     for provider, (credential, version_number) in sorted(credential_by_provider.items()):
-        if credential.status in {"missing", "expired", "action_required"}:
+        if not credential_is_ready(credential):
             raise fail()
         provider_definitions = by_provider[provider]
         items = list(database.scalars(select(UserCredentialItem).where(
@@ -968,7 +1053,9 @@ def _personal_credential_runtime_snapshot(
         )).all())
         items_by_key = {item.key: item for item in items}
         if any(
-            definition.required and definition.key not in items_by_key
+            definition.required
+            and participates_in_runtime(definition)
+            and definition.key not in items_by_key
             for definition in provider_definitions.values()
         ):
             raise fail()
@@ -977,6 +1064,19 @@ def _personal_credential_runtime_snapshot(
             definition = provider_definitions.get(key)
             if definition is None:
                 raise fail()
+            if not participates_in_runtime(definition):
+                # 新快照完全忽略已项目化字段。物化历史任务时，仅校验并保留旧
+                # selector 中的版本引用，使既有任务可重放；明文仍不再下发。
+                expected_version_id = (
+                    (expected_secret_versions or {})
+                    .get(credential.id, {})
+                    .get(key)
+                )
+                if expected_version_id is not None:
+                    if item.secret_version_id != expected_version_id:
+                        raise fail()
+                    selected_secret_versions[key] = expected_version_id
+                continue
             if item.secret_version_id:
                 version = database.get(SecretVersion, item.secret_version_id)
                 secret = database.get(Secret, version.secret_id) if version else None
@@ -1015,16 +1115,7 @@ def _personal_credential_runtime_snapshot(
                 raise fail()
         versions[credential.id] = version_number
         secret_versions[credential.id] = selected_secret_versions
-        providers[provider] = {
-            "credential_id": credential.id,
-            "credential_version": version_number,
-            "status": credential.status,
-            "expires_at": credential.expires_at.isoformat() if credential.expires_at else None,
-            "refresh_expires_at": (
-                credential.refresh_expires_at.isoformat()
-                if credential.refresh_expires_at else None
-            ),
-        }
+        providers[provider] = provider_metadata(credential, version_number)
         if provider == "gateway_session":
             primary_metadata.update({
                 "credential_id": credential.id,
@@ -1488,6 +1579,281 @@ def materialize_runtime_config(
     )
 
 
+def _validate_dispatch_runtime_context(
+    database: Session,
+    runtime_context_id: str,
+    context: ToolClientContext,
+) -> RuntimeContext:
+    """在任务真正入队前重新校验并锁定浏览器身份租约。
+
+    普通物化允许已派发任务继续使用既有 Execution Lease；dispatch 则是能力
+    真正交付给后台任务的最后边界，必须额外确认原 Session、用户权限版本和
+    ``tool.execute`` 仍然有效。锁顺序固定为 RuntimeContext → Tool → User →
+    Session，避免与授权变更及用户禁用事务形成循环等待；所有行在同一事务
+    中锁定，避免校验通过后、快照提交前发生撤销竞态。
+
+    参数说明:
+        database: 当前请求的数据库事务。
+        runtime_context_id: 创建任务时签发的不透明 Runtime Context ID。
+        context: 已认证的 api-autotest Tool Client 上下文。
+    返回值:
+        已锁定且通过 dispatch 级身份校验的 RuntimeContext。
+    异常说明:
+        Context TTL 过期沿用 ``RUNTIME_CONTEXT_EXPIRED``；其余身份、会话或
+        权限失效统一返回 ``RUNTIME_CONTEXT_INVALID``，避免暴露具体撤销来源。
+    """
+
+    runtime_context = validate_runtime_context(
+        database,
+        runtime_context_id,
+        context.client,
+        "api-autotest",
+        for_update=True,
+    )
+    # 全平台授权写路径采用 Tool → User，用户禁用采用 User → Session。
+    # dispatch 因此固定使用 Context → Tool → User → Session，既兼容两条既有
+    # 写路径，也避免 PostgreSQL 在并发撤销时形成循环锁等待。
+    tool = database.scalar(select(Tool).where(
+        Tool.id == "api-autotest",
+    ).with_for_update().execution_options(populate_existing=True))
+    user = database.scalar(select(User).where(
+        User.id == runtime_context.user_id,
+    ).with_for_update().execution_options(populate_existing=True))
+    session = database.scalar(select(PlatformSession).where(
+        PlatformSession.id == runtime_context.session_id,
+    ).with_for_update().execution_options(populate_existing=True))
+    now = datetime.now(UTC)
+    access_decision = (
+        decide_tool_access(database, user, tool)
+        if user is not None and tool is not None
+        else None
+    )
+    invalid_identity = (
+        session is None
+        or session.user_id != runtime_context.user_id
+        or session.revoked_at is not None
+        or as_utc(session.idle_expires_at) <= now
+        or as_utc(session.absolute_expires_at) <= now
+        or user is None
+        or user.status != "active"
+        or user.permission_version != runtime_context.permission_version
+        or tool is None
+        or access_decision is None
+        or not access_decision.allowed
+        or access_decision.source == "public"
+        or access_decision.project_id != runtime_context.project_id_snapshot
+        or not has_tool_permission(
+            database, runtime_context.user_id, "tool.execute", "api-autotest"
+        )
+    )
+    if invalid_identity:
+        raise PlatformError(
+            403,
+            "RUNTIME_CONTEXT_INVALID",
+            "用户上下文无效或与工具不匹配",
+        )
+    return runtime_context
+
+
+def _runtime_dispatch_credential_unavailable() -> PlatformError:
+    """返回排队期间原 Credential 无法继续派发的稳定错误。"""
+
+    return PlatformError(
+        409,
+        "RUNTIME_DISPATCH_CREDENTIAL_UNAVAILABLE",
+        "任务排队期间凭证已失效或版本不可用，请重新提交任务",
+    )
+
+
+def _dispatch_selector_matches_allowed(
+    selector: RuntimeSnapshotSelector,
+    allowed_config_refs: list[dict[str, Any]] | None,
+) -> bool:
+    """判断 dispatch 重试是否仍属于 Context 当前冻结的配置身份。
+
+    首次 dispatch 会把 ``allowed_config_refs`` 中的个人 Credential 版本提升到
+    当前健康版本。如果响应在工具落盘前丢失，工具只能拿创建任务时的旧
+    selector 重试。这里允许旧、当前 selector 的 Credential *版本*不同，但
+    Credential ID 集合必须完全相同；Scope、Release、系统 Secret 与 LLM
+    选择器仍逐字段等于 Context 当前值。
+
+    参数说明:
+        selector: 工具本次提交的旧或当前 selector。
+        allowed_config_refs: Runtime Context 当前唯一允许的 selector 列表。
+    返回值:
+        ``True`` 表示只存在可安全忽略的个人 Credential 版本差异；存储结构
+        异常、Credential ID 集合变化或任何非 Credential 字段漂移均返回
+        ``False``，由调用方统一失败关闭。
+    """
+
+    if not isinstance(allowed_config_refs, list) or len(allowed_config_refs) != 1:
+        return False
+    try:
+        allowed_selector = RuntimeSnapshotSelector.model_validate(
+            allowed_config_refs[0]
+        )
+    except (TypeError, ValueError):
+        return False
+
+    submitted = selector.model_dump(mode="json")
+    allowed = allowed_selector.model_dump(mode="json")
+    submitted_credential_ids = set(submitted["credential_versions"])
+    allowed_credential_ids = set(allowed["credential_versions"])
+    if (
+        set(submitted["credential_secret_versions"])
+        != submitted_credential_ids
+        or set(allowed["credential_secret_versions"])
+        != allowed_credential_ids
+        or submitted_credential_ids != allowed_credential_ids
+    ):
+        return False
+
+    # 个人版本字段由 dispatch 根据数据库当前健康版本重新计算，因此不会信任
+    # 调用方的旧值。除此之外的快照身份必须和 Context 当前值完全一致。
+    for credential_field in (
+        "credential_versions",
+        "credential_secret_versions",
+    ):
+        submitted.pop(credential_field)
+        allowed.pop(credential_field)
+    return submitted == allowed
+
+
+@router.post(
+    "/tools/api-autotest/runtime-config/dispatch-materialize",
+    response_model=RuntimeConfigResponse,
+)
+def dispatch_materialize_api_autotest_runtime_config(
+    payload: RuntimeConfigMaterializeRequest,
+    request: Request,
+    response: Response,
+    context: Annotated[ToolClientContext, Depends(current_tool_client)],
+    database: Annotated[Session, Depends(get_db)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> RuntimeConfigResponse:
+    """在任务派发边界刷新原 Credential 集合并原子物化运行快照。
+
+    该入口只把原选择器中已有 Credential ID 提升到各自 ``current_version``；
+    Scope、Release、系统 Secret 和 LLM 版本全部保持不变，同 Scope 后来新增的
+    Profile 不会进入任务。新选择器仅在完整物化成功后随同审计记录一起提交，
+    任一身份、Scope、凭据或 Secret 校验失败都会回滚，Context TTL 也不延长。
+    """
+
+    _assert_client_scope(context, "api-autotest")
+    _require_capability(context, "config.read")
+    if not settings.personal_credentials_enabled:
+        raise PlatformError(
+            503, "PERSONAL_CONFIG_DISABLED", "个人运行配置尚未启用"
+        )
+    runtime_context = _validate_dispatch_runtime_context(
+        database, payload.runtime_context_id, context
+    )
+    original_selector = payload.snapshot_selector
+    if not _dispatch_selector_matches_allowed(
+        original_selector,
+        runtime_context.allowed_config_refs,
+    ):
+        raise _runtime_snapshot_invalid()
+    if (
+        not runtime_context.runtime_scope_id
+        or original_selector.runtime_scope_id != runtime_context.runtime_scope_id
+    ):
+        raise _runtime_snapshot_invalid()
+
+    runtime_scope = database.scalar(select(ToolProjectScope).where(
+        ToolProjectScope.id == runtime_context.runtime_scope_id,
+    ).with_for_update())
+    if runtime_scope is None or (
+        runtime_scope.tool_id,
+        runtime_scope.environment_id,
+        runtime_scope.platform_project_id,
+    ) != (
+        "api-autotest",
+        context.client.environment_id,
+        runtime_context.project_id_snapshot,
+    ):
+        raise _runtime_snapshot_invalid()
+    if runtime_scope.status != "active":
+        raise PlatformError(
+            409, "RUNTIME_SCOPE_DISABLED", "当前 Runtime Scope 已禁用"
+        )
+
+    selected_credential_ids = set(original_selector.credential_versions)
+    if set(original_selector.credential_secret_versions) != selected_credential_ids:
+        raise _runtime_snapshot_invalid()
+    credentials = (
+        list(database.scalars(select(UserCredential).where(
+            UserCredential.id.in_(selected_credential_ids),
+            UserCredential.user_id == runtime_context.user_id,
+            UserCredential.tool_id == "api-autotest",
+            UserCredential.environment_id == context.client.environment_id,
+            UserCredential.runtime_scope_id == runtime_scope.id,
+        ).with_for_update()).all())
+        if selected_credential_ids
+        else []
+    )
+    if (
+        {credential.id for credential in credentials} != selected_credential_ids
+        or any(
+            credential.status != "healthy" or credential.current_version < 1
+            for credential in credentials
+        )
+    ):
+        raise _runtime_dispatch_credential_unavailable()
+    refreshed_credential_versions = {
+        credential.id: credential.current_version for credential in credentials
+    }
+    try:
+        (
+            _personal_values,
+            _personal_configured,
+            _metadata,
+            resolved_credential_versions,
+            refreshed_credential_secret_versions,
+        ) = _personal_credential_runtime_snapshot(
+            database,
+            settings,
+            runtime_context.user_id,
+            "api-autotest",
+            context.client.environment_id,
+            include_secrets=False,
+            selected_versions=refreshed_credential_versions,
+            runtime_scope_id=runtime_scope.id,
+            allow_incomplete_profiles=True,
+        )
+    except PlatformError as exc:
+        if exc.code == "RUNTIME_SNAPSHOT_INVALID":
+            raise _runtime_dispatch_credential_unavailable() from exc
+        raise
+    if resolved_credential_versions != refreshed_credential_versions:
+        raise _runtime_dispatch_credential_unavailable()
+
+    refreshed_selector = original_selector.model_copy(
+        deep=True,
+        update={
+            "credential_versions": refreshed_credential_versions,
+            "credential_secret_versions": refreshed_credential_secret_versions,
+        },
+    )
+    runtime_context.allowed_config_refs = [
+        refreshed_selector.model_dump(mode="json")
+    ]
+    # 复用普通精确物化路径完成 Release/System Secret/LLM 校验、Secret 解密、
+    # 审计及单次 commit。若其中任一步抛错，本请求事务会整体回滚选择器更新。
+    return materialize_runtime_config(
+        "api-autotest",
+        RuntimeConfigMaterializeRequest(
+            runtime_context_id=runtime_context.id,
+            snapshot_selector=refreshed_selector,
+        ),
+        request,
+        response,
+        context,
+        database,
+        settings,
+    )
+
+
 @router.post("/tools/{tool_id}/config-ack", response_model=MessageResponse)
 def config_ack(
     tool_id: str,
@@ -1830,6 +2196,9 @@ def write_user_credential_session(
             ConfigDefinition.value_scope == "user",
             ConfigDefinition.credential_provider_type == credential.provider_type,
         )).all()
+        if not bool(
+            (row.validation_schema or {}).get("runtime_config_excluded")
+        )
     }
     if not definitions or set(payload.values) - set(definitions):
         raise PlatformError(

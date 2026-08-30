@@ -54,9 +54,10 @@ ADMIN_OPERATOR_ID=your_admin_operator_id
 ADMIN_OPERATOR_NAME=your_admin_operator_name
 ```
 
-启动时优先复用未临期的 access token。token 距过期不足配置的安全窗口时，
-框架使用 `RefreshSession` API 定义刷新；刷新失败或 refresh token 已过期时，
-使用 `CreateAnonymousSession` API 定义重建会话。
+启动时按两小时边界处理 access token：剩余时间大于两小时直接复用；未过期且
+剩余时间小于或等于两小时才调用 `RefreshSession`；已经过期、缺少 token 或
+过期时间无效时直接调用 `CreateAnonymousSession`。临期刷新失败或 refresh token
+不可用时，仅回退调用一次 `CreateAnonymousSession`。
 
 Truthy 本地兼容运行创建或刷新成功后，会把 token、用户 ID 和过期时间更新到
 `.env`；Dating 本地调试只在当前进程内使用会话。平台模式统一通过当前 Scope 的
@@ -79,7 +80,7 @@ Credential CAS 写回，不写 `.env`。Truthy 本地模式下终端同名变量
 | `utils/custom/` | 配置、HTTP、日志、断言及 YAML 加载工具 |
 | `utils/third_party/` | Allure、Jenkins、飞书等第三方集成预留层 |
 | `test_cases/` | pytest 框架测试和真实接口测试入口 |
-| `logs/` | 每次执行产生的脱敏请求、响应和异常日志 |
+| `logs/` | 每次执行产生的原始请求、响应和异常日志；仅受任务访问权限与保留期约束 |
 | `reports/` | 测试报告和运行产物预留目录 |
 
 ## 4. 运行测试
@@ -129,7 +130,7 @@ python3 runtest.py --project dating --target-env test \
   -- -s --log-cli-level=INFO
 ```
 
-该入口保留 `-s --log-cli-level=INFO`，终端会实时显示脱敏后的请求和响应。
+该入口保留 `-s --log-cli-level=INFO`，终端会实时显示未经脱敏的请求和响应。
 
 ### 精确调试一条 Case
 
@@ -298,17 +299,19 @@ RUN_FLOW_IDS: tuple[str, ...] = (
 正式代码应保持为空元组以收集全部 Flow。命令行 `--flow` 优先于
 `RUN_FLOW_IDS`，适合临时执行一个指定 Flow。
 
-## 8. 日志与脱敏
+## 8. 日志与原文输出
 
-每次 pytest 执行会在 `logs/YYYY-MM-DD/` 生成独立 UTF-8 日志文件，记录请求、
-响应、HTTP 状态和耗时。首次创建当天目录时，框架会清理超过 7 天的日期日志目录；
-非日期目录不会被删除。以下敏感信息会脱敏：
+每次 pytest 执行会在
+`logs/<project_id>/<target_env>/<YYYY-MM-DD>/<timestamp>_<target_env>_<pid>.log`
+生成独立 UTF-8 日志文件。日志直接位于当日目录，不再增加任务 ID 目录；任务记录
+通过 `log_file` 关联本次进程的唯一日志文件。首次创建当天目录时，框架会清理超过
+7 天的日期日志目录，非日期目录不会被删除。
 
-- `auth_token`、refresh token 等 token 字段。
-- `Authorization` 请求头。
-- 预签名上传 URL 的查询参数。
-
-日志中的敏感值显示为 `***`。新增日志字段时应同步补充脱敏测试。
+根据当前排障要求，框架文件日志、终端、Web 日志接口、任务失败摘要、JUnit 与
+Allure 附件均保留原始请求、响应、Header、Token、签名 URL、异常消息和业务结果，
+不执行字段脱敏。二进制上传内容仍不写入日志或报告，只记录长度等元数据。原始日志
+可能包含凭证，只能通过已授权的任务详情访问，不得公开分发；新增输出通道时应同步
+补充“内容不被改写、访问权限不放宽、长度上限仍生效”的回归测试。
 
 ## 9. 配置校验
 
@@ -375,8 +378,8 @@ allure open allure-report
 
 任务 Allure 原始结果和 `allure-report/` 都是本地运行产物，不提交到仓库。首次或
 希望清空旧结果时使用 `--clean-alluredir`；需要合并多批结果时，后续执行不要
-使用该参数。报告附件会脱敏 token 和签名 URL，不保存非 JSON 响应正文或媒体
-二进制，但仍不应将结果目录对外公开。
+使用该参数。报告附件保留原始 token、签名 URL、Header、JSON 与非 JSON 响应正文；
+媒体二进制仍不保存。结果目录包含敏感原文，不得对外公开。
 
 ## 12. 报告发布与同步
 
@@ -421,7 +424,7 @@ Jenkins 侧的 HTML 归档由 `Jenkinsfile` post 阶段的
 ## 13. Web 壳服务与平台接入
 
 壳服务（`web/`）在既有框架外包一层薄 Web：接收任务提交、以子进程驱动
-`pytest`，并提供任务结果、脱敏日志、用例库与报告查看，不重写框架逻辑。
+`pytest`，并提供任务结果、原始日志、用例库与报告查看，不重写框架逻辑。
 
 ### 独立模式
 
@@ -450,7 +453,8 @@ Jenkins 侧的 HTML 归档由 `Jenkinsfile` post 阶段的
 - 退出码语义透传：0 成功；5 为"未收集到任何用例"；超时强制终止并标记
   `TASK_TIMEOUT`（默认 1800 秒，可用 `API_AUTOTEST_TASK_TIMEOUT_SECONDS` 调整）；
 - 取消后 `result_available=false`、`reason_code=JUNIT_NOT_GENERATED`；
-- `/api/tasks/<id>/logs` 返回的日志经二次脱敏，凭证值不进入响应。
+- `/api/tasks/<id>/logs` 在任务权限校验通过后返回原始日志，仅按响应长度上限截断，
+  不改写凭证、Header、签名 URL、异常或业务结果。
 
 ### 排障
 

@@ -1,4 +1,4 @@
-"""requests HTTP 调用与敏感信息脱敏封装。"""
+"""requests HTTP 调用与原始请求响应日志封装。"""
 
 from __future__ import annotations
 
@@ -6,7 +6,6 @@ import json
 import time
 from copy import deepcopy
 from typing import Any
-from urllib.parse import urlsplit, urlunsplit
 
 import requests
 
@@ -14,56 +13,21 @@ from utils.custom.logger import get_logger
 from utils.third_party.allure_reporter import attach_json
 
 LOGGER = get_logger(__name__)
-SENSITIVE_KEYS = {
-    "access_token",
-    "auth_token",
-    "authorization",
-    "refresh_token",
-    # Admin Gateway 审计步骤以请求体参数传递会话凭证，必须与 token 同级脱敏。
-    "session_token",
-    "token",
-    "user_id",
-    "device_id",
-}
-SENSITIVE_KEY_FRAGMENTS = (
-    "authorization",
-    "cookie",
-    "operator",
-    "password",
-    "secret",
-    "signature",
-    "token",
-)
 
 
 def mask_sensitive(data: Any) -> Any:
-    """递归复制并脱敏字典或列表中的敏感字段。
+    """兼容旧调用名并返回原始数据的深拷贝。
 
     参数说明:
-        data: 准备写入日志的数据，可为任意 JSON 兼容结构。
+        data: 准备写入日志或报告的数据，可为任意 JSON 兼容结构。
 
     返回值:
-        脱敏后的副本；原对象不会被修改。
+        内容不变的深拷贝；原对象不会被修改。
+
+    设计说明:
+        历史调用方和第三方扩展仍可能导入 ``mask_sensitive``。保留函数名可避免
+        破坏接口，但按当前产品要求不再替换 Token、Header 或签名 URL。
     """
-    if isinstance(data, dict):
-        masked: dict[Any, Any] = {}
-        for key, value in data.items():
-            normalized_key = str(key).lower()
-            if normalized_key in SENSITIVE_KEYS or any(
-                fragment in normalized_key for fragment in SENSITIVE_KEY_FRAGMENTS
-            ):
-                masked[key] = "***"
-            elif (
-                isinstance(value, str)
-                and (normalized_key == "url" or normalized_key.endswith("_url"))
-            ):
-                # PrepareMediaUpload 的响应也可能携带预签名 URL，响应日志同样要脱敏。
-                masked[key] = _mask_signed_url(value)
-            else:
-                masked[key] = mask_sensitive(value)
-        return masked
-    if isinstance(data, list):
-        return [mask_sensitive(item) for item in data]
     return deepcopy(data)
 
 
@@ -79,16 +43,14 @@ def _format_log_data(data: Any) -> str:
     异常说明:
         不向调用方抛出序列化异常，遇到非 JSON 类型时回退为字符串。
     """
+    if isinstance(data, str):
+        # 非 JSON 响应已经是服务端原文；再次 json.dumps 会增加引号并把真实
+        # 换行转义为 ``\\n``，违反文件与终端日志的逐字保留契约。
+        return data
     try:
         return json.dumps(data, ensure_ascii=False, indent=2, default=str)
     except (TypeError, ValueError):
         return str(data)
-
-
-def _mask_signed_url(url: str) -> str:
-    """移除签名 URL 查询参数，避免对象存储临时凭证进入日志。"""
-    parts = urlsplit(url)
-    return urlunsplit((parts.scheme, parts.netloc, parts.path, "***" if parts.query else "", ""))
 
 
 class HttpClient:
@@ -117,15 +79,15 @@ class HttpClient:
             requests 返回的 Response 对象。
 
         异常说明:
-            requests.RequestException: 网络错误或超时时记录脱敏请求后原样抛出。
+            requests.RequestException: 网络错误或超时时记录原始请求后原样抛出。
         """
-        safe_request = {
+        request_details = {
             "url": url,
-            "headers": mask_sensitive(headers),
-            "payload": mask_sensitive(payload),
+            "headers": deepcopy(headers),
+            "payload": deepcopy(payload),
         }
-        LOGGER.info("Gateway 请求数据:\n%s", _format_log_data(safe_request))
-        attach_json("Gateway 请求", safe_request)
+        LOGGER.info("Gateway 请求数据:\n%s", _format_log_data(request_details))
+        attach_json("Gateway 请求", request_details)
         started_at = time.perf_counter()
         try:
             response = self.session.post(
@@ -135,47 +97,53 @@ class HttpClient:
                 timeout=timeout,
             )
         except requests.RequestException as exc:
-            # 异常日志复用脱敏后的请求副本，避免网络失败时泄露凭证。
             elapsed_ms = (time.perf_counter() - started_at) * 1000
             attach_json(
                 "Gateway 请求异常",
                 {
-                    "request": safe_request,
+                    "request": request_details,
                     "elapsed_ms": elapsed_ms,
                     "exception_type": type(exc).__name__,
+                    "exception_message": str(exc),
                 },
             )
             LOGGER.error(
-                "Gateway 请求异常: elapsed_ms=%.2f\n%s",
+                "Gateway 请求异常: %s: %s elapsed_ms=%.2f\n%s",
+                type(exc).__name__,
+                exc,
                 elapsed_ms,
-                _format_log_data(safe_request),
+                _format_log_data(request_details),
             )
             raise
 
+        response_headers = deepcopy(dict(getattr(response, "headers", {}) or {}))
         try:
             response_body = response.json()
             response_attachment = {
                 "status_code": response.status_code,
                 "elapsed_ms": (time.perf_counter() - started_at) * 1000,
+                "headers": response_headers,
                 "body_type": "json",
-                "body": mask_sensitive(response_body),
+                "body": deepcopy(response_body),
             }
         except (TypeError, ValueError):
             # 非 JSON 响应仍需输出原始文本，方便定位网关或代理异常。
             response_body = getattr(response, "text", "")
-            # 报告不保存非 JSON 正文，只保留足以判断代理错误的类型和长度。
             response_attachment = {
                 "status_code": response.status_code,
                 "elapsed_ms": (time.perf_counter() - started_at) * 1000,
+                "headers": response_headers,
                 "body_type": "text",
+                "body": response_body,
                 "body_length": len(response_body),
             }
         attach_json("Gateway 响应", response_attachment)
         LOGGER.info(
-            "Gateway 响应数据: HTTP %s elapsed_ms=%.2f\n%s",
+            "Gateway 响应数据: HTTP %s elapsed_ms=%.2f\nheaders=%s\nbody=%s",
             response.status_code,
             (time.perf_counter() - started_at) * 1000,
-            _format_log_data(mask_sensitive(response_body)),
+            _format_log_data(response_headers),
+            _format_log_data(response_body),
         )
         return response
 
@@ -198,15 +166,15 @@ class HttpClient:
             requests 返回的 Response；由流程层判断是否为 HTTP 2xx。
 
         异常说明:
-            requests.RequestException: 网络错误或超时时记录脱敏信息后原样抛出。
+            requests.RequestException: 网络错误或超时时记录原始信息后原样抛出。
         """
-        safe_request = {
-            "url": _mask_signed_url(url),
-            "headers": mask_sensitive(headers),
+        request_details = {
+            "url": url,
+            "headers": deepcopy(headers),
             "content_length": len(content),
         }
-        LOGGER.info("PUT 上传请求数据:\n%s", _format_log_data(safe_request))
-        attach_json("COS PUT 请求", safe_request)
+        LOGGER.info("PUT 上传请求数据:\n%s", _format_log_data(request_details))
+        attach_json("COS PUT 请求", request_details)
         started_at = time.perf_counter()
         try:
             response = self.session.put(
@@ -220,28 +188,38 @@ class HttpClient:
             attach_json(
                 "COS PUT 请求异常",
                 {
-                    "request": safe_request,
+                    "request": request_details,
                     "elapsed_ms": elapsed_ms,
                     "exception_type": type(exc).__name__,
+                    "exception_message": str(exc),
                 },
             )
             LOGGER.error(
-                "PUT 上传请求异常: elapsed_ms=%.2f\n%s",
+                "PUT 上传请求异常: %s: %s elapsed_ms=%.2f\n%s",
+                type(exc).__name__,
+                exc,
                 elapsed_ms,
-                _format_log_data(safe_request),
+                _format_log_data(request_details),
             )
             raise
         elapsed_ms = (time.perf_counter() - started_at) * 1000
+        response_headers = deepcopy(dict(getattr(response, "headers", {}) or {}))
+        response_body = getattr(response, "text", "")
         attach_json(
             "COS PUT 响应",
             {
                 "status_code": response.status_code,
                 "elapsed_ms": elapsed_ms,
+                "headers": response_headers,
+                "body": response_body,
+                "body_length": len(response_body),
             },
         )
         LOGGER.info(
-            "PUT 上传响应: HTTP %s elapsed_ms=%.2f",
+            "PUT 上传响应: HTTP %s elapsed_ms=%.2f\nheaders=%s\nbody=%s",
             response.status_code,
             elapsed_ms,
+            _format_log_data(response_headers),
+            response_body,
         )
         return response

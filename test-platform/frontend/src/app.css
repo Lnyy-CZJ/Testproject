@@ -392,7 +392,7 @@
 
 .project-tabs { margin: 0 0 26px; display: flex; border-bottom: 1px solid #dedee3; }
 .project-tabs a { min-width: 110px; padding: 12px 4px; border-bottom: 2px solid transparent; color: #6e6e73; font-size: 12px; text-align: center; text-decoration: none; }
-.project-tabs a[aria-current="page"] { border-bottom-color: #0071e3; color: #0071e3; font-weight: 650; }
+.project-tabs a[aria-current="page"], .project-tabs a.active { border-bottom-color: #0071e3; color: #0071e3; font-weight: 650; }
 .project-overview-grid { display: grid; grid-template-columns: 1.65fr 1fr; gap: 16px; }
 .detail-list { margin: 16px 0 0; }
 .detail-list div { padding: 9px 0; display: grid; grid-template-columns: 120px 1fr; border-bottom: 1px solid #ececef; }
@@ -624,6 +624,12 @@
 .login-form input { min-height: 44px; }
 .login-form .primary-button { min-height: 44px; margin-top: 2px; }
 .login-form .inline-message { margin: -5px 0 0; }
+.login-form .field-error {
+  margin: -14px 0 0;
+  color: var(--color-danger);
+  font-size: 12px;
+  line-height: 1.45;
+}
 
 .login-help {
   margin: 18px 0 0;
@@ -1055,11 +1061,74 @@
 .config-field input:disabled,
 .config-field select:disabled { color: var(--color-text-tertiary); background: var(--color-canvas); }
 
+/* Gateway comm 在一个 Definition 内承载多个静态协议字段。结构化编辑器占满整行，
+ * 保留原配置控制面的紧凑两列节奏，同时避免用户直接编辑容易混入动态字段的 JSON。 */
+.config-field-wide {
+  grid-column: 1 / -1;
+  display: block;
+  padding: 0;
+}
+
+.gateway-comm-heading {
+  min-height: 76px;
+  padding: 16px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  border-bottom: 1px solid var(--color-divider);
+}
+
+.gateway-comm-heading strong,
+.gateway-comm-heading small { display: block; }
+.gateway-comm-heading strong { color: var(--color-text-primary); font-size: 13px; }
+.gateway-comm-heading small { margin-top: 5px; color: var(--color-text-tertiary); font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.gateway-comm-heading p { max-width: 520px; margin: 0; color: var(--color-text-secondary); font-size: 12px; line-height: 1.55; text-align: right; }
+
+.gateway-comm-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--color-divider);
+}
+
+.gateway-comm-item {
+  min-height: 94px;
+  padding: 14px 18px;
+  display: grid;
+  grid-template-columns: minmax(150px, .8fr) minmax(180px, 1fr);
+  align-items: center;
+  gap: 16px;
+  background: var(--color-surface);
+}
+
+.gateway-comm-item > span:first-child { color: var(--color-text-primary); font-size: 13px; font-weight: 600; }
+.gateway-comm-item small { margin-top: 5px; display: block; color: var(--color-text-tertiary); font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.gateway-comm-control { display: flex; align-items: center; gap: 10px; }
+.gateway-comm-control input { min-width: 0; flex: 1; }
+.destructive-link { color: #b42318; }
+
+.gateway-comm-add {
+  padding: 14px 18px;
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(220px, 1fr) auto;
+  align-items: end;
+  gap: 12px;
+  border-top: 1px solid var(--color-divider);
+  background: var(--color-surface-subtle);
+}
+
+.gateway-comm-add label { display: grid; gap: 6px; color: var(--color-text-secondary); font-size: 11px; font-weight: 600; }
+.gateway-comm-error { margin: 0; padding: 10px 18px; border-top: 1px solid #fecdca; color: #b42318; background: #fffbfa; font-size: 12px; }
+.gateway-comm-item input:focus-visible,
+.gateway-comm-add input:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+
 .release-history { margin-top: 28px; }
 .release-history h2 { margin-bottom: 12px; font-size: 20px; }
 .release-row { min-height: 58px; padding: 10px 14px; display: grid; grid-template-columns: 1fr 120px auto; align-items: center; gap: 16px; border-top: 1px solid var(--color-divider); }
 .release-row:first-of-type { border-top: 0; }
 .release-row span { display: block; color: var(--color-text-tertiary); font-size: 11px; }
+.release-row-selected { background: var(--color-surface-subtle); }
 
 .row-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
 .link-button { padding: 3px 0; border: 0; color: var(--color-accent); background: none; font-family: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
@@ -1149,6 +1218,50 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 18px;
+}
+
+.scope-credential-panel {
+  margin-top: 20px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--color-surface);
+}
+
+.scope-credential-panel > header h2 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.scope-credential-panel > header p {
+  margin: 5px 0 16px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.scope-credential-list {
+  display: grid;
+}
+
+.scope-credential-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 14px;
+  padding: 13px 0;
+  border-top: 1px solid var(--line);
+}
+
+.scope-credential-row:first-child { border-top: 0; }
+.scope-credential-row strong,
+.scope-credential-row span,
+.scope-credential-row code { display: block; }
+.scope-credential-row span { margin-top: 3px; color: var(--muted); font-size: 12px; }
+.scope-credential-row code { margin-top: 6px; color: var(--color-danger); font-size: 11px; overflow-wrap: anywhere; }
+
+@media (max-width: 980px) {
+  .scope-credential-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .scope-credential-row .secondary-button { grid-column: 1 / -1; width: fit-content; }
 }
 
 .personal-credential-card {

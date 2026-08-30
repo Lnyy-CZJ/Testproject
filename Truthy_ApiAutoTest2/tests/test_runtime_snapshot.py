@@ -79,6 +79,37 @@ def test_platform_snapshot_is_only_configuration_source(
     assert settings["runtime_metadata"]["runtime_scope_id"] == "scope-1"
 
 
+def test_platform_snapshot_prefers_release_device_over_legacy_credential_device(
+    tmp_path: Path,
+) -> None:
+    """旧 Credential Device 不能经 RuntimeContext 反向覆盖项目 Release。"""
+
+    snapshot = _snapshot()
+    settings = snapshot["settings"]
+    assert isinstance(settings, dict)
+    settings["runtime_variables"] = {
+        "DEVICE_ID": "legacy-credential-device",
+        "AUTH_TOKEN": "credential-token",
+    }
+    snapshot_path = tmp_path / "snapshot.json"
+    snapshot_path.write_text(json.dumps(snapshot), encoding="utf-8")
+    snapshot_path.chmod(0o600)
+
+    loaded = load_settings(
+        "test",
+        project_root=tmp_path,
+        config_source="platform",
+        snapshot_file=snapshot_path,
+        project_id="dating",
+        task_id="task-1",
+        runtime_scope_id="scope-1",
+    )
+
+    assert loaded["comm"]["device_id"] == "snapshot-device"
+    assert loaded["runtime_session"]["device_id"] == "snapshot-device"
+    assert loaded["runtime_session"]["access_token"] == "credential-token"
+
+
 @pytest.mark.parametrize(
     ("override", "message"),
     [

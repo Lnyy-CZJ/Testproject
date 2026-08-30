@@ -12,6 +12,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import shutil
 import signal
 import subprocess
 import threading
@@ -264,21 +265,21 @@ def test_legacy_real_directory_current_is_migrated(tmp_path: Path) -> None:
 
 def test_publish_fails_fast_when_lock_is_held(tmp_path: Path) -> None:
     report_root = tmp_path / "reports"
-    report_root.mkdir(parents=True)
-    lock = report_root / ".publish.lock"
-    lock.mkdir()
+    lock = report_root / "task-reports" / DEFAULT_TASK_ID / ".publish.lock"
+    lock.mkdir(parents=True)
 
     result = run_publish(make_report_source(tmp_path), report_root)
 
     assert result.returncode == 3
+    # 未持有锁的竞争进程退出时，不得误删当前发布者的任务锁。
+    assert lock.is_dir()
     assert not (report_root / "task-reports" / DEFAULT_TASK_ID / "current").exists()
 
 
 def test_stale_lock_is_reclaimed(tmp_path: Path) -> None:
     report_root = tmp_path / "reports"
-    report_root.mkdir(parents=True)
-    lock = report_root / ".publish.lock"
-    lock.mkdir()
+    lock = report_root / "task-reports" / DEFAULT_TASK_ID / ".publish.lock"
+    lock.mkdir(parents=True)
     # 残留锁超过安全时间（600s）后允许回收。
     stale = time.time() - 700
     os.utime(lock, (stale, stale))
@@ -287,6 +288,82 @@ def test_stale_lock_is_reclaimed(tmp_path: Path) -> None:
 
     assert result.returncode == 0, result.stderr
     assert not lock.exists()
+
+
+def test_different_tasks_can_publish_while_each_copy_is_in_progress(
+    tmp_path: Path,
+) -> None:
+    """一个任务持锁并发布时，另一个任务仍应能完成独立发布。"""
+
+    report_root = tmp_path / "reports"
+    copy_marker = tmp_path / "copy-started"
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    real_cp = shutil.which("cp")
+    assert real_cp is not None
+
+    # 第一个任务拿锁后进入 cp 包装器；包装器暂停其父 shell，让任务锁稳定保持，
+    # 同时自身完成复制。此时启动第二个任务即可确定它是否仍受全局锁阻塞。
+    fake_cp = fake_bin / "cp"
+    fake_cp.write_text(
+        """#!/usr/bin/env bash
+set -euo pipefail
+kill -STOP "$PPID"
+touch "$TEST_CP_MARKER"
+exec "$TEST_REAL_CP" "$@"
+""",
+        encoding="utf-8",
+    )
+    fake_cp.chmod(0o755)
+
+    first_task = "20260830-101530-a1b2"
+    second_task = "20260830-101531-b2c3"
+    first_env = os.environ.copy()
+    first_env.update(
+        {
+            "PATH": f"{fake_bin}{os.pathsep}{first_env['PATH']}",
+            "PUBLISH_TASK_ID": first_task,
+            "TEST_CP_MARKER": str(copy_marker),
+            "TEST_REAL_CP": real_cp,
+        }
+    )
+    first_env.pop("PUBLISH_PROJECT_ID", None)
+    first = subprocess.Popen(
+        [
+            str(PUBLISH_SCRIPT),
+            str(make_report_source(tmp_path, "first-concurrent")),
+            str(report_root),
+            "manual",
+        ],
+        env=first_env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+    deadline = time.monotonic() + 5
+    while not copy_marker.is_file() and first.poll() is None and time.monotonic() < deadline:
+        time.sleep(0.02)
+    second: subprocess.CompletedProcess[str] | None = None
+    try:
+        if copy_marker.is_file():
+            second = run_publish(
+                make_report_source(tmp_path, "second-concurrent"),
+                report_root,
+                env={"PUBLISH_TASK_ID": second_task, "PUBLISH_PROJECT_ID": ""},
+            )
+    finally:
+        # 无论第二个任务结果如何都恢复第一个发布进程，避免遗留暂停进程。
+        if first.poll() is None:
+            first.send_signal(signal.SIGCONT)
+        first_stdout, first_stderr = first.communicate(timeout=10)
+
+    assert copy_marker.is_file(), first_stderr
+    assert first.returncode == 0, first_stderr
+    assert second is not None
+    assert second.returncode == 0, second.stderr
+    assert first_stdout.strip().startswith("manual-")
+    assert second.stdout.strip().startswith("manual-")
 
 
 def test_concurrent_publish_keeps_current_consistent(tmp_path: Path) -> None:
@@ -386,7 +463,7 @@ def test_interrupted_publish_never_breaks_existing_current(
     third = run_publish(make_report_source(tmp_path, "src3"), report_root)
     if third.returncode == 3:
         # 极端情况：SIGTERM 时锁尚未释放且未超龄；人为回收后重试。
-        lock = report_root / ".publish.lock"
+        lock = report_root / "task-reports" / DEFAULT_TASK_ID / ".publish.lock"
         stale = time.time() - 700
         os.utime(lock, (stale, stale))
         third = run_publish(make_report_source(tmp_path, "src3"), report_root)

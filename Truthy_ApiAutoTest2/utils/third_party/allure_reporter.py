@@ -25,8 +25,13 @@ _RUNTIME_METADATA_KEYS = (
 
 
 def _log_reporter_failure(operation: str, exc: Exception) -> None:
-    """仅记录报告异常类型，避免原始业务数据通过异常消息泄露。"""
-    LOGGER.warning("Allure %s失败: %s", operation, type(exc).__name__)
+    """记录报告异常类型与原始消息，保持所有排障通道信息一致。"""
+    LOGGER.warning(
+        "Allure %s失败: %s: %s",
+        operation,
+        type(exc).__name__,
+        exc,
+    )
 
 
 def build_runtime_report_metadata(
@@ -69,7 +74,7 @@ def build_runtime_report_metadata(
 def set_runtime_report_metadata(metadata: dict[str, str]) -> None:
     """把非敏感 Scope/Release 身份写入当前 Allure 用例参数区。
 
-    Allure 属于观察层；报告插件不可用时只记录异常类型，不得改变真实接口
+    Allure 属于观察层；报告插件不可用时记录异常类型与原始消息，不得改变真实接口
     测试结果。调用方同时使用 pytest ``record_property`` 写入 JUnit。
     """
     try:
@@ -142,7 +147,7 @@ def step(title: str) -> Iterator[None]:
         可用于 ``with`` 的上下文管理器。
 
     异常说明:
-        Allure 创建或关闭步骤失败时仅记录异常类型；测试体自身异常始终原样传播。
+        Allure 创建或关闭步骤失败时记录异常类型与原始消息；测试体自身异常始终原样传播。
     """
     try:
         manager = allure.step(title)
@@ -177,13 +182,13 @@ def attach_json(name: str, data: Any) -> None:
 
     参数说明:
         name: 附件名称。
-        data: 已由调用方完成脱敏的 JSON 兼容对象。
+        data: 需要按原文写入报告的 JSON 兼容对象。
 
     返回值:
         无。
 
     异常说明:
-        序列化或 Allure 写入失败时仅记录异常类型，不回退保存原始数据。
+        序列化或 Allure 写入失败时记录异常类型和原始异常消息。
     """
     try:
         content = json.dumps(
@@ -212,7 +217,7 @@ def attach_text(name: str, content: Any) -> None:
         无。
 
     异常说明:
-        Allure 写入失败时仅记录异常类型，不回退保存原始数据。
+        Allure 写入失败时记录异常类型与原始消息，不回退到其他存储通道。
     """
     try:
         allure.attach(

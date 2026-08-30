@@ -1,5 +1,5 @@
-name: Dating 单图 Analysis 成功链路
-tags: [dating, smoke, regression, flow, analysis, media]
+name: Dating Analysis 任务数据删除契约
+tags: [dating, flow, analysis, media, cleanup, destructive, explicit]
 steps:
   - id: get_upload_config
     api: GetMediaUploadConfig
@@ -8,7 +8,6 @@ steps:
     extract:
       asset_id: $.asset_id
       upload_url: $.upload_url
-      upload_method: $.upload_method
       required_headers: $.required_headers
   - id: upload_binary
     action:
@@ -39,9 +38,12 @@ steps:
     skip_unless:
       variable: analysis_status
       equals: succeeded
+  # 该步骤既覆盖正常删除，也保证创建远端任务后的失败路径仍会清理。
   - id: delete_task_data
     api: DeleteTaskData
     run_on_termination: true
+  - id: repeat_delete_task_data
+    api: DeleteTaskData
   - id: verify_deleted_task
     api: GetAnalysisTask
   - id: verify_deleted_result

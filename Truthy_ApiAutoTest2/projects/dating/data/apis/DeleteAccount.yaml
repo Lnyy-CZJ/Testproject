@@ -1,0 +1,6 @@
+id: DeleteAccount
+name: 注销当前账号（高风险，暂无默认用例）
+credential_profile: anonymous_session
+request:
+  service_name: tool.identity.IdentityService
+  method_name: DeleteAccount

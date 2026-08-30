@@ -117,7 +117,7 @@ class PlatformSession(Base):
 
 
 class LoginThrottle(Base):
-    """持久化用户名/IP 登录失败窗口，避免重启绕过限速。"""
+    """持久化认证防滥用桶；登录与注册通过 key namespace 严格隔离。"""
 
     __tablename__ = "login_throttles"
     __table_args__ = (UniqueConstraint("key_type", "key_hash", name="uq_login_throttle_key"),)

@@ -9,7 +9,7 @@
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="{{ base_path }}/static/app.css">
 </head>
-<body data-page="{% block page_id %}{% endblock %}">
+<body data-page="{% block page_id %}{% endblock %}" {% block body_attributes %}{% endblock %}>
   <a class="skip-link" href="#main-content">跳到主要内容</a>
   <header class="topbar">
     <a class="brand" href="{{ base_path }}/" aria-label="接口自动化概览">
@@ -33,7 +33,7 @@
       <p class="nav-label">接口自动化</p>
       <nav>
         <a href="{{ base_path }}/" data-nav="overview">概览</a>
-        <a href="{{ base_path }}/tasks/new/single" data-nav="task-single">执行任务</a>
+        <a href="{{ base_path }}/tasks/new" data-nav="task-new">执行任务</a>
         <a href="{{ base_path }}/catalog" data-nav="catalog">用例库</a>
         <a href="{{ base_path }}/tasks" data-nav="tasks">任务记录</a>
         <a href="{{ base_path }}/projects" data-nav="projects">切换项目</a>

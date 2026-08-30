@@ -9,6 +9,10 @@ from typing import Any
 
 from utils.custom.api_loader import load_api_definitions
 from utils.custom.config_loader import load_yaml
+from utils.custom.runtime_overrides import (
+    RuntimeOverrideError,
+    validate_flow_runtime_inputs,
+)
 
 
 class FlowConfigError(ValueError):
@@ -39,10 +43,34 @@ _SIGNED_UPLOAD_FIELDS = {
     "url",
     "headers",
     "fixture",
+    "input_file",
     "method",
     "success_statuses",
     "output",
 }
+_VALIDATE_BINARY_INPUT_FIELDS = {
+    "type",
+    "files",
+    "allowed_content_types",
+    "min_items",
+    "max_items",
+    "max_size_bytes",
+}
+_FOREACH_FIELDS = {"items", "item", "collect", "steps"}
+_FILE_INPUT_FIELDS = {
+    "type",
+    "required",
+    "min_items",
+    "max_items",
+    "allowed_content_types",
+    "max_size_bytes",
+    "label",
+    "description",
+}
+_SUPPORTED_IMAGE_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp"}
+_VARIABLE_EXPRESSION_PATTERN = re.compile(
+    r"^{{\s*[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*\s*}}$"
+)
 
 
 def _validate_path(path: Any, field: str, allow_short: bool = False) -> None:
@@ -76,6 +104,122 @@ def _validate_number(value: Any, field: str, minimum: float, maximum: float | No
     return number
 
 
+def _validate_flow_inputs(flow_id: str, inputs: Any) -> None:
+    """校验 Web 可交互文件输入契约；未声明 inputs 的旧 Flow 保持不变。"""
+
+    if inputs is None:
+        return
+    if not isinstance(inputs, dict):
+        raise FlowConfigError(f"Flow {flow_id}.inputs 必须是对象")
+    for input_name, definition in inputs.items():
+        if not _VARIABLE_NAME_PATTERN.fullmatch(str(input_name)):
+            raise FlowConfigError(f"Flow {flow_id}.inputs 包含非法输入名: {input_name}")
+        if not isinstance(definition, dict):
+            raise FlowConfigError(f"Flow {flow_id}.inputs.{input_name} 必须是对象")
+        unexpected = sorted(set(definition) - _FILE_INPUT_FIELDS)
+        if unexpected:
+            raise FlowConfigError(
+                f"Flow {flow_id}.inputs.{input_name} 包含未知字段: {', '.join(unexpected)}"
+            )
+        if definition.get("type") != "files":
+            raise FlowConfigError(
+                f"Flow {flow_id}.inputs.{input_name}.type 仅支持 files"
+            )
+        if definition.get("required") is not True:
+            raise FlowConfigError(
+                f"Flow {flow_id}.inputs.{input_name}.required 首期必须为 true"
+            )
+        min_items = definition.get("min_items")
+        max_items = definition.get("max_items")
+        if (
+            isinstance(min_items, bool)
+            or not isinstance(min_items, int)
+            or isinstance(max_items, bool)
+            or not isinstance(max_items, int)
+            or not 1 <= min_items <= max_items <= 9
+        ):
+            raise FlowConfigError(
+                f"Flow {flow_id}.inputs.{input_name} 数量必须满足 1 <= min_items <= max_items <= 9"
+            )
+        content_types = definition.get("allowed_content_types")
+        if (
+            not isinstance(content_types, list)
+            or not content_types
+            or any(item not in _SUPPORTED_IMAGE_CONTENT_TYPES for item in content_types)
+        ):
+            raise FlowConfigError(
+                f"Flow {flow_id}.inputs.{input_name}.allowed_content_types 无效"
+            )
+        max_size_bytes = definition.get("max_size_bytes")
+        if (
+            isinstance(max_size_bytes, bool)
+            or not isinstance(max_size_bytes, int)
+            or not 1 <= max_size_bytes <= 7 * 1024 * 1024
+        ):
+            raise FlowConfigError(
+                f"Flow {flow_id}.inputs.{input_name}.max_size_bytes 必须在 1～7340032"
+            )
+
+
+def _flatten_steps_for_validation(
+    flow_id: str,
+    steps: list[Any],
+    *,
+    foreach_depth: int = 0,
+) -> list[Any]:
+    """展开一层 foreach 以复用既有步骤/Scenario 校验，禁止继续嵌套。"""
+
+    flattened: list[Any] = []
+    for position, step in enumerate(steps, start=1):
+        flattened.append(step)
+        if not isinstance(step, dict) or "foreach" not in step:
+            continue
+        step_id = str(step.get("id") or f"第 {position} 个步骤")
+        if foreach_depth >= 1:
+            raise FlowConfigError(f"步骤 {step_id} 不支持嵌套 foreach")
+        foreach = step.get("foreach")
+        if not isinstance(foreach, dict):
+            raise FlowConfigError(f"步骤 {step_id}.foreach 必须是对象")
+        unexpected = sorted(set(foreach) - _FOREACH_FIELDS)
+        if unexpected:
+            raise FlowConfigError(
+                f"步骤 {step_id}.foreach 包含未知字段: {', '.join(unexpected)}"
+            )
+        items = foreach.get("items")
+        if not isinstance(items, str) or not _VARIABLE_EXPRESSION_PATTERN.fullmatch(items):
+            raise FlowConfigError(
+                f"步骤 {step_id}.foreach.items 必须是完整运行时变量占位符"
+            )
+        item_name = foreach.get("item")
+        if not isinstance(item_name, str) or not _VARIABLE_NAME_PATTERN.fullmatch(item_name):
+            raise FlowConfigError(f"步骤 {step_id}.foreach.item 必须是有效变量名")
+        collect = foreach.get("collect") or {}
+        if not isinstance(collect, dict):
+            raise FlowConfigError(f"步骤 {step_id}.foreach.collect 必须是对象")
+        for variable_name, expression in collect.items():
+            if not _VARIABLE_NAME_PATTERN.fullmatch(str(variable_name)):
+                raise FlowConfigError(
+                    f"步骤 {step_id}.foreach.collect 包含非法变量名: {variable_name}"
+                )
+            if not isinstance(expression, str) or not _VARIABLE_EXPRESSION_PATTERN.fullmatch(
+                expression
+            ):
+                raise FlowConfigError(
+                    f"步骤 {step_id}.foreach.collect.{variable_name} 必须是完整变量占位符"
+                )
+        child_steps = foreach.get("steps")
+        if not isinstance(child_steps, list) or not child_steps:
+            raise FlowConfigError(f"步骤 {step_id}.foreach.steps 必须是非空数组")
+        flattened.extend(
+            _flatten_steps_for_validation(
+                flow_id,
+                child_steps,
+                foreach_depth=foreach_depth + 1,
+            )
+        )
+    return flattened
+
+
 def _validate_flow(
     flow_id: str,
     flow: dict[str, Any],
@@ -100,6 +244,8 @@ def _validate_flow(
     steps = flow.get("steps")
     if not isinstance(steps, list) or not steps:
         raise FlowConfigError(f"Flow {flow_id} 必须配置非空 steps")
+    _validate_flow_inputs(flow_id, flow.get("inputs"))
+    steps = _flatten_steps_for_validation(flow_id, steps)
 
     step_ids: set[str] = set()
     api_step_ids: list[str] = []
@@ -119,10 +265,10 @@ def _validate_flow(
             raise FlowConfigError(
                 f"步骤 {step_id} 不再支持 call，请改用 api 引用接口定义"
             )
-        actions = [key for key in ("api", "action", "wait") if key in step]
+        actions = [key for key in ("api", "action", "wait", "foreach") if key in step]
         if len(actions) != 1:
             raise FlowConfigError(
-                f"步骤 {step_id} 必须且只能配置 api、action、wait 之一"
+                f"步骤 {step_id} 必须且只能配置 api、action、wait、foreach 之一"
             )
 
         if "api" in step:
@@ -180,21 +326,26 @@ def _validate_flow(
                 raise FlowConfigError(
                     f"步骤 {step_id} 包含未知 action: {action}"
                 )
-            else:
+            elif action.get("type") == "signed_binary_upload":
                 unexpected = sorted(set(action) - _SIGNED_UPLOAD_FIELDS)
                 if unexpected:
                     raise FlowConfigError(
                         f"步骤 {step_id}.action 包含未知字段: {', '.join(unexpected)}"
                     )
-                if action.get("type") != "signed_binary_upload":
-                    raise FlowConfigError(
-                        f"步骤 {step_id}.action.type 仅支持 signed_binary_upload"
-                    )
-                for field in ("url", "headers", "fixture"):
+                for field in ("url", "headers"):
                     if not isinstance(action.get(field), str) or not action[field].strip():
                         raise FlowConfigError(
                             f"步骤 {step_id}.action.{field} 必须为非空字符串"
                         )
+                sources = [
+                    field
+                    for field in ("fixture", "input_file")
+                    if isinstance(action.get(field), str) and action[field].strip()
+                ]
+                if len(sources) != 1:
+                    raise FlowConfigError(
+                        f"步骤 {step_id}.action.fixture 与 input_file 必须二选一"
+                    )
                 method = action.get("method", "PUT")
                 if method != "PUT":
                     raise FlowConfigError(
@@ -210,6 +361,27 @@ def _validate_flow(
                     raise FlowConfigError(
                         f"步骤 {step_id}.action.success_statuses 必须是 HTTP 状态码数组"
                     )
+            elif action.get("type") == "validate_binary_inputs":
+                unexpected = sorted(set(action) - _VALIDATE_BINARY_INPUT_FIELDS)
+                if unexpected:
+                    raise FlowConfigError(
+                        f"步骤 {step_id}.action 包含未知字段: {', '.join(unexpected)}"
+                    )
+                for field in (
+                    "files",
+                    "allowed_content_types",
+                    "min_items",
+                    "max_items",
+                    "max_size_bytes",
+                ):
+                    if field not in action:
+                        raise FlowConfigError(
+                            f"步骤 {step_id}.action.validate_binary_inputs 缺少 {field}"
+                        )
+            else:
+                raise FlowConfigError(
+                    f"步骤 {step_id}.action.type 不支持: {action.get('type')}"
+                )
         elif "wait" in step:
             wait = step["wait"]
             if not isinstance(wait, dict) or "seconds" not in wait:
@@ -230,12 +402,21 @@ def _validate_flow(
                     raise FlowConfigError(
                         f"步骤 {step_id}.until.terminate_on 必须是非空字符串数组"
                     )
+            if "fail_on_termination" in until:
+                if not isinstance(until["fail_on_termination"], bool):
+                    raise FlowConfigError(
+                        f"步骤 {step_id}.until.fail_on_termination 必须是布尔值"
+                    )
+                if until["fail_on_termination"] and not until.get("terminate_on"):
+                    raise FlowConfigError(
+                        f"步骤 {step_id}.until.fail_on_termination 需要 terminate_on"
+                    )
             interval_value = until.get("interval_seconds")
             timeout_value = until.get("timeout_seconds")
             # 平台 Release 的轮询值在运行时注入，因此完整占位符在静态阶段只校验
             # 变量语法；字面量仍沿用原有边界校验。
-            if isinstance(interval_value, str) and re.fullmatch(
-                r"{{\s*[A-Za-z_][A-Za-z0-9_]*\s*}}", interval_value
+            if isinstance(interval_value, str) and _VARIABLE_EXPRESSION_PATTERN.fullmatch(
+                interval_value
             ):
                 interval = None
             else:
@@ -244,8 +425,8 @@ def _validate_flow(
                     f"步骤 {step_id}.until.interval_seconds",
                     0.000001,
                 )
-            if isinstance(timeout_value, str) and re.fullmatch(
-                r"{{\s*[A-Za-z_][A-Za-z0-9_]*\s*}}", timeout_value
+            if isinstance(timeout_value, str) and _VARIABLE_EXPRESSION_PATTERN.fullmatch(
+                timeout_value
             ):
                 timeout = None
             else:
@@ -294,13 +475,20 @@ def _validate_flow(
         assertions = configured_data["assert"]
         if not isinstance(assertions, dict):
             raise FlowConfigError(f"Scenario 步骤 {step_id}.assert 必须是对象")
-        data_equals = assertions.get("data_equals")
-        if data_equals is None:
-            data_equals = {}
-        if not isinstance(data_equals, dict):
-            raise FlowConfigError(f"Scenario 步骤 {step_id}.data_equals 必须是对象")
-        for path in data_equals:
-            _validate_path(path, f"Scenario 步骤 {step_id}.data_equals", allow_short=True)
+        for assertion_name in ("data_equals", "data_not_equals"):
+            expected_values = assertions.get(assertion_name)
+            if expected_values is None:
+                expected_values = {}
+            if not isinstance(expected_values, dict):
+                raise FlowConfigError(
+                    f"Scenario 步骤 {step_id}.{assertion_name} 必须是对象"
+                )
+            for path in expected_values:
+                _validate_path(
+                    path,
+                    f"Scenario 步骤 {step_id}.{assertion_name}",
+                    allow_short=True,
+                )
     return referenced_api_ids
 
 
@@ -360,6 +548,16 @@ def load_flow_cases(
             scenario,
             api_definitions,
         )
+        try:
+            # Scenario 拥有 step_data，因此运行时字段也必须从同名 Scenario
+            # 解析；Flow 的文件输入与拓扑继续由原校验逻辑负责。
+            runtime_inputs = validate_flow_runtime_inputs(
+                flow,
+                scenario,
+                scope=f"Flow {flow_path.stem}",
+            )
+        except RuntimeOverrideError as exc:
+            raise FlowConfigError(exc.message) from exc
         tags = flow.get("tags") or []
         if not isinstance(tags, list):
             raise FlowConfigError(f"Flow {flow_path.stem}.tags 必须是数组")
@@ -368,6 +566,7 @@ def load_flow_cases(
                 "id": flow_path.stem,
                 "name": str(flow.get("name") or flow_path.stem),
                 "tags": [str(tag) for tag in tags],
+                "runtime_inputs": runtime_inputs,
                 "flow": flow,
                 "scenario": scenario,
                 "api_definitions": {

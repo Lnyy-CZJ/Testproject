@@ -7,6 +7,26 @@ import type {
 const API_PREFIX = "/api/v1";
 const REQUEST_TIMEOUT_MS = 3000;
 
+/** 全局认证失效事件只携带请求发起时的代次，不暴露路径、用户或 Cookie。 */
+export const AUTH_REQUIRED_EVENT = "test-platform:auth-required";
+
+export interface AuthRequiredEventDetail {
+  generation: number;
+}
+
+let authGeneration = 0;
+
+/** 返回当前内存认证代次，供请求与 AuthProvider 判断迟到响应。 */
+export function currentAuthGeneration(): number {
+  return authGeneration;
+}
+
+/** 在成功建立或明确失效认证态时推进代次，使旧请求的 401 自动失效。 */
+export function advanceAuthGeneration(): number {
+  authGeneration += 1;
+  return authGeneration;
+}
+
 /** 平台 API 请求失败时使用的统一错误。 */
 export class ApiError extends Error {
   constructor(
@@ -63,6 +83,9 @@ function csrfToken(): string | undefined {
 export async function request(path: string, init: RequestInit = {}): Promise<Response> {
   const controller = new AbortController();
   const timeoutId = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  // 必须在 fetch 发起前捕获代次；响应返回时再读取会把迟到的旧 401
+  // 错认成新会话的失效通知，从而清除用户刚完成的登录。
+  const requestGeneration = currentAuthGeneration();
 
   try {
     const method = (init.method ?? "GET").toUpperCase();
@@ -82,6 +105,12 @@ export async function request(path: string, init: RequestInit = {}): Promise<Res
       const payload = (await response.clone().json().catch(() => null)) as
         | { message?: string; code?: string }
         | null;
+      if (response.status === 401 && payload?.code === "AUTH_REQUIRED") {
+        window.dispatchEvent(new CustomEvent<AuthRequiredEventDetail>(
+          AUTH_REQUIRED_EVENT,
+          { detail: { generation: requestGeneration } },
+        ));
+      }
       throw new ApiError(
         payload?.message ?? `请求失败：HTTP ${response.status}`,
         response.status,
@@ -105,6 +134,9 @@ export async function request(path: string, init: RequestInit = {}): Promise<Res
 /** 请求并解析 JSON；所有平台页面共享相同错误和安全策略。 */
 export async function apiJson<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await request(`${API_PREFIX}${path}`, init);
+  // DELETE 等接口使用 204 表示成功且没有响应体；此时继续调用 json() 会把已成功的
+  // 操作误报为解析失败，导致页面不刷新。调用方不读取返回值时统一返回 undefined。
+  if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
 }
 

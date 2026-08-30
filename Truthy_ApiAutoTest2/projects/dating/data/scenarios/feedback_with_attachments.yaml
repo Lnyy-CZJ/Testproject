@@ -1,0 +1,57 @@
+name: 上传反馈专用附件并提交文字反馈
+variables:
+  feedback_upload_purpose: feedback_attachment
+runtime_inputs:
+  feedback_type:
+    label: 反馈类型
+    description: 最新协议允许的反馈类型
+    type: enum
+    options: [general, bug, content_quality, safety, other]
+    required: true
+    target:
+      scope: flow_step_request
+      step_id: submit_feedback
+      path: $.feedback_type
+  feedback_message:
+    label: 反馈正文
+    description: 去除首尾空白后为 1～500 个 Unicode 字符
+    type: string
+    required: true
+    min_length: 1
+    max_length: 500
+    target:
+      scope: flow_step_request
+      step_id: submit_feedback
+      path: $.feedback_message
+  contact_email:
+    label: 联系邮箱
+    description: 可选联系邮箱，最长 320 个字符
+    type: string
+    required: false
+    max_length: 320
+    target:
+      scope: flow_step_request
+      step_id: submit_feedback
+      path: $.contact_email
+step_data:
+  get_upload_config:
+    params: {}
+    assert: {http_status: 200, gateway: {message: ok}}
+  prepare_feedback_upload:
+    params:
+      client_request_id: "{{client_request_id}}"
+      content_type: "{{media_file.content_type}}"
+      size_bytes: "{{media_file.size_bytes}}"
+      purpose: "{{feedback_upload_purpose}}"
+    assert: {http_status: 200, gateway: {message: ok}}
+  complete_feedback_upload:
+    params: {asset_id: "{{asset_id}}"}
+    assert: {http_status: 200, gateway: {message: ok}}
+  submit_feedback:
+    params:
+      client_request_id: "{{flow_run_id}}-feedback"
+      feedback_type: content_quality
+      feedback_message: Automated feedback attachment contract test.
+      contact_email: qa@example.test
+      asset_ids: "{{feedback_asset_ids}}"
+    assert: {http_status: 200, gateway: {message: ok}}

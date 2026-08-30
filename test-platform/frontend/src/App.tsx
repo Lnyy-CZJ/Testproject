@@ -7,10 +7,12 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
 } from "react";
 import {
   BrowserRouter,
+  Link,
   Navigate,
   NavLink,
   Route,
@@ -21,7 +23,17 @@ import {
   useSearchParams,
 } from "react-router-dom";
 
-import { ApiError, apiJson, describeApiError, fetchTools, request } from "./api/client";
+import {
+  AUTH_REQUIRED_EVENT,
+  ApiError,
+  advanceAuthGeneration,
+  apiJson,
+  currentAuthGeneration,
+  describeApiError,
+  fetchTools,
+  request,
+  type AuthRequiredEventDetail,
+} from "./api/client";
 import { accessApi } from "./api/access";
 import versionsManifest from "../../versions.json";
 import { AppShell } from "./components/AppShell";
@@ -54,6 +66,21 @@ import type { Tool } from "./types/tool";
 import type { ImpactPreview, PlatformRole, ProjectMember, ProjectRecord, ProjectSummary, ToolAccessRecord, ToolGrantSummary } from "./types/access";
 
 const PLATFORM_VERSION = versionsManifest.product.version;
+const AUTH_SESSION_SEEN_KEY = "tp_session_seen";
+const AUTH_EXPIRED_NOTICE_KEY = "tp_auth_expired_notice";
+
+type RegistrationMode = "open" | "disabled" | "invite";
+
+/**
+ * 校验所有“设置新密码”入口共享的 6–18 个 Unicode code point 规则。
+ * 不 trim 密码；Array.from 避免把一个辅助平面字符按两个 UTF-16 code unit 计算。
+ */
+function validateNewPassword(value: string): string | null {
+  const length = Array.from(value).length;
+  return length >= 6 && length <= 18
+    ? null
+    : "密码长度必须为 6 到 18 个字符";
+}
 
 interface RuntimeIdentity {
   version: string;
@@ -110,6 +137,7 @@ interface VersionMatrix {
 interface AuthContextValue {
   auth: AuthState | null;
   loading: boolean;
+  registrationMode: RegistrationMode;
   reload: () => Promise<void>;
   setAuth: (value: AuthState | null) => void;
 }
@@ -124,24 +152,83 @@ function useAuth(): AuthContextValue {
 
 /** 统一加载当前用户，401 仅表示未登录，其他异常保留为平台错误。 */
 function AuthProvider({ children }: PropsWithChildren) {
-  const [auth, setAuth] = useState<AuthState | null>(null);
+  const [auth, setAuthState] = useState<AuthState | null>(null);
   const [loading, setLoading] = useState(true);
+  const [registrationMode, setRegistrationMode] = useState<RegistrationMode>("disabled");
+  const setAuth = useCallback((value: AuthState | null) => {
+    // 成功登录、注册或恢复会话时只持久化一个非敏感布尔标记；显式退出则
+    // 同时清掉标记和一次性提示，避免下一次匿名恢复被误报为过期。
+    advanceAuthGeneration();
+    if (value) {
+      localStorage.setItem(AUTH_SESSION_SEEN_KEY, "1");
+    } else {
+      localStorage.removeItem(AUTH_SESSION_SEEN_KEY);
+      sessionStorage.removeItem(AUTH_EXPIRED_NOTICE_KEY);
+    }
+    setAuthState(value);
+  }, []);
   const reload = useCallback(async () => {
+    const reloadGeneration = currentAuthGeneration();
     setLoading(true);
     try {
-      setAuth(await apiJson<AuthState>("/auth/me"));
+      const result = await apiJson<AuthState>("/auth/me");
+      // 登录/注册可能在恢复请求尚未返回时已建立新认证态；无论旧响应是
+      // 200 还是 401，都不能覆盖更高代次的新会话。
+      if (reloadGeneration === currentAuthGeneration()) setAuth(result);
     } catch (error) {
-      if (error instanceof ApiError && error.status === 401) setAuth(null);
+      // 初次匿名 401 已由全局事件区分是否曾有会话；这里仅完成状态收敛，
+      // 不能调用显式退出语义的 setAuth(null) 清掉刚写入的一次性提示。
+      if (error instanceof ApiError && error.status === 401) {
+        if (reloadGeneration === currentAuthGeneration()) setAuthState(null);
+      }
       else throw error;
     } finally {
       setLoading(false);
     }
+  }, [setAuth]);
+
+  // 监听器必须早于初次 /auth/me effect 注册，保证页面恢复请求的 401 也能被处理。
+  useEffect(() => {
+    function handleAuthRequired(event: Event) {
+      const detail = (event as CustomEvent<AuthRequiredEventDetail>).detail;
+      if (!detail || detail.generation !== currentAuthGeneration()) return;
+      if (localStorage.getItem(AUTH_SESSION_SEEN_KEY) === "1") {
+        localStorage.removeItem(AUTH_SESSION_SEEN_KEY);
+        sessionStorage.setItem(AUTH_EXPIRED_NOTICE_KEY, "1");
+        // 第一个同代 401 推进代次；随后迟到的并发 401 会因代次不一致被忽略。
+        advanceAuthGeneration();
+      }
+      setAuthState(null);
+    }
+    window.addEventListener(AUTH_REQUIRED_EVENT, handleAuthRequired);
+    return () => window.removeEventListener(AUTH_REQUIRED_EVENT, handleAuthRequired);
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void apiJson<unknown>("/auth/registration-status")
+      .then((payload) => {
+        if (cancelled) return;
+        const mode = payload && typeof payload === "object" && "mode" in payload
+          ? (payload as { mode?: unknown }).mode
+          : null;
+        setRegistrationMode(
+          mode === "open" || mode === "disabled" || mode === "invite"
+            ? mode
+            : "disabled",
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setRegistrationMode("disabled");
+      });
+    return () => { cancelled = true; };
+  }, []);
+
   useEffect(() => {
     void reload().catch(() => setLoading(false));
   }, [reload]);
   return (
-    <AuthContext.Provider value={{ auth, loading, reload, setAuth }}>
+    <AuthContext.Provider value={{ auth, loading, registrationMode, reload, setAuth }}>
       {children}
     </AuthContext.Provider>
   );
@@ -155,8 +242,18 @@ function InlineMessage({ kind = "info", children }: PropsWithChildren<{ kind?: "
   return <p className={`inline-message inline-message-${kind}`} role={kind === "error" ? "alert" : "status"}>{children}</p>;
 }
 
-/** 为桌面对话框提供 Esc 关闭、焦点循环和关闭后的焦点恢复。 */
-function useModal(open: boolean, onClose: () => void) {
+/**
+ * 为桌面对话框提供 Esc 关闭、焦点循环和关闭后的焦点恢复。
+ *
+ * ``onClose`` 与 ``closeDisabled`` 通过 ref 保持为最新值；若只把 ``open`` 放入
+ * effect 依赖而直接捕获回调，提交开始后的 busy 状态会被旧闭包忽略，Esc 可能
+ * 在写请求中途关闭弹窗并丢失恢复上下文。
+ */
+function useModal(open: boolean, onClose: () => void, closeDisabled = false) {
+  const onCloseRef = useRef(onClose);
+  const closeDisabledRef = useRef(closeDisabled);
+  onCloseRef.current = onClose;
+  closeDisabledRef.current = closeDisabled;
   useEffect(() => {
     if (!open) return;
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -164,7 +261,11 @@ function useModal(open: boolean, onClose: () => void) {
     const focusable = () => [...(dialog?.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])') ?? [])];
     focusable()[0]?.focus();
     function handleKey(event: KeyboardEvent) {
-      if (event.key === "Escape") { event.preventDefault(); onClose(); return; }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        if (!closeDisabledRef.current) onCloseRef.current();
+        return;
+      }
       if (event.key !== "Tab") return;
       const nodes = focusable();
       if (!nodes.length) return;
@@ -178,13 +279,18 @@ function useModal(open: boolean, onClose: () => void) {
 }
 
 function LoginPage() {
-  const { auth, setAuth } = useAuth();
+  const { auth, registrationMode, setAuth } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [expiredNotice] = useState(() => {
+    const visible = sessionStorage.getItem(AUTH_EXPIRED_NOTICE_KEY) === "1";
+    if (visible) sessionStorage.removeItem(AUTH_EXPIRED_NOTICE_KEY);
+    return visible;
+  });
   if (auth) return <Navigate to="/" replace />;
 
   async function submit(event: FormEvent) {
@@ -199,7 +305,10 @@ function LoginPage() {
       const next = new URLSearchParams(location.search).get("next");
       navigate(next?.startsWith("/") && !next.startsWith("//") ? next : "/", { replace: true });
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "登录失败");
+      const apiError = requestError instanceof ApiError ? requestError : null;
+      if (apiError?.code === "INVALID_CREDENTIALS") setError("用户名或密码错误");
+      else if (apiError?.code === "ACCOUNT_LOCKED") setError("登录尝试过多，请稍后再试");
+      else setError("登录失败，请稍后重试");
     } finally {
       setSubmitting(false);
     }
@@ -210,44 +319,106 @@ function LoginPage() {
       <form className="auth-form login-form" onSubmit={submit}>
         <label>用户名<input autoFocus autoComplete="username" placeholder="请输入用户名" value={username} onChange={(event) => setUsername(event.target.value)} required /></label>
         <label>密码<input type="password" autoComplete="current-password" placeholder="请输入密码" aria-invalid={Boolean(error)} aria-describedby={error ? "login-error" : undefined} value={password} onChange={(event) => setPassword(event.target.value)} required /></label>
+        {expiredNotice && <InlineMessage>登录状态已过期，请重新登录。</InlineMessage>}
         {error && <div id="login-error"><InlineMessage kind="error">{error}</InlineMessage></div>}
         <button className="primary-button" disabled={submitting}>{submitting ? "正在验证…" : "登录"}</button>
       </form>
-      <p className="login-register-link"><NavLink to="/register">创建测试人员账号</NavLink></p>
+      {registrationMode === "open" && <p className="login-register-link"><NavLink to="/register">创建测试人员账号</NavLink></p>}
     </LoginLayout>
   );
 }
 
 /** 自助注册永远只提交身份基础字段，角色与项目范围只能由服务端决定。 */
 function RegisterPage() {
-  const { auth, setAuth } = useAuth();
+  const { auth, registrationMode, setAuth } = useAuth();
   const navigate = useNavigate();
-  const [values, setValues] = useState({ username: "", display_name: "", password: "" });
+  const [values, setValues] = useState({
+    username: "",
+    display_name: "",
+    password: "",
+    confirm_password: "",
+  });
+  const [fieldErrors, setFieldErrors] = useState<{
+    display_name?: string;
+    password?: string;
+    confirm_password?: string;
+  }>({});
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   if (auth) return <Navigate to="/" replace />;
+  if (registrationMode !== "open") {
+    return (
+      <LoginLayout
+        title="暂未开放注册"
+        copy="请使用已有账号登录，或联系平台管理员。"
+      >
+        <p className="login-register-link"><NavLink to="/login">返回登录</NavLink></p>
+      </LoginLayout>
+    );
+  }
+
+  function clearPasswordFields() {
+    setValues((current) => ({ ...current, password: "", confirm_password: "" }));
+  }
+
   async function submit(event: FormEvent) {
-    event.preventDefault(); setError(""); setSubmitting(true);
+    event.preventDefault();
+    if (submitting) return;
+    setError("");
+    const nextErrors: typeof fieldErrors = {};
+    if (!values.display_name.trim()) nextErrors.display_name = "显示名称不能为空";
+    const passwordError = validateNewPassword(values.password);
+    if (passwordError) nextErrors.password = passwordError;
+    if (values.password !== values.confirm_password) nextErrors.confirm_password = "两次输入的密码不一致";
+    setFieldErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) {
+      clearPasswordFields();
+      return;
+    }
+    setSubmitting(true);
     try {
-      const result = await apiJson<AuthState>("/auth/register", { method: "POST", body: JSON.stringify(values) });
+      // 显式构造三字段 body，确认密码和任何未来 UI 状态都不能越权提交给后端。
+      const result = await apiJson<AuthState>("/auth/register", {
+        method: "POST",
+        body: JSON.stringify({
+          username: values.username,
+          display_name: values.display_name.trim(),
+          password: values.password,
+        }),
+      });
       setAuth(result); navigate("/", { replace: true });
     } catch (requestError) {
       const apiError = requestError instanceof ApiError ? requestError : null;
-      setError(apiError?.status === 422 || apiError?.code === "REGISTRATION_UNAVAILABLE"
-        ? "暂时无法创建账号，请检查信息或稍后重试。"
-        : "注册失败，请稍后重试。");
+      if (apiError?.status === 429 || apiError?.code === "REGISTRATION_RATE_LIMITED") {
+        setError("操作过于频繁，请稍后重试。");
+      } else if (apiError?.status === 422) {
+        setError("请检查注册信息后重试。");
+      } else if ([409, 503].includes(apiError?.status ?? 0) || apiError?.code === "REGISTRATION_UNAVAILABLE") {
+        setError("暂时无法创建账号，请稍后重试。");
+      } else {
+        setError("注册失败，请稍后重试。");
+      }
+      clearPasswordFields();
     } finally { setSubmitting(false); }
   }
-  return <LoginLayout><div className="login-panel-heading"><h1>创建测试人员账号</h1><p>账号创建后可立即使用已开放的公共工具。</p></div><form className="auth-form login-form" onSubmit={submit}>
+  return <LoginLayout title="创建测试人员账号" copy="账号创建后可立即使用已开放的公共工具。"><form className="auth-form login-form" onSubmit={submit}>
     <label>用户名<input autoFocus autoComplete="username" minLength={3} value={values.username} onChange={(event) => setValues({ ...values, username: event.target.value })} required /></label>
-    <label>显示名称<input autoComplete="name" value={values.display_name} onChange={(event) => setValues({ ...values, display_name: event.target.value })} required /></label>
-    <label>密码<input type="password" autoComplete="new-password" minLength={12} value={values.password} onChange={(event) => setValues({ ...values, password: event.target.value })} required /></label>
+    <label>显示名称<input autoComplete="name" aria-invalid={Boolean(fieldErrors.display_name)} aria-describedby={fieldErrors.display_name ? "register-display-name-error" : undefined} value={values.display_name} onChange={(event) => setValues({ ...values, display_name: event.target.value })} required /></label>
+    {fieldErrors.display_name && <span className="field-error" id="register-display-name-error" role="alert">{fieldErrors.display_name}</span>}
+    <label>密码<input type="password" autoComplete="new-password" aria-invalid={Boolean(fieldErrors.password)} aria-describedby={fieldErrors.password ? "register-password-error" : undefined} value={values.password} onChange={(event) => setValues({ ...values, password: event.target.value })} required /></label>
+    {fieldErrors.password && <span className="field-error" id="register-password-error" role="alert">{fieldErrors.password}</span>}
+    <label>确认密码<input type="password" autoComplete="new-password" aria-invalid={Boolean(fieldErrors.confirm_password)} aria-describedby={fieldErrors.confirm_password ? "register-confirm-password-error" : undefined} value={values.confirm_password} onChange={(event) => setValues({ ...values, confirm_password: event.target.value })} required /></label>
+    {fieldErrors.confirm_password && <span className="field-error" id="register-confirm-password-error" role="alert">{fieldErrors.confirm_password}</span>}
     {error && <InlineMessage kind="error">{error}</InlineMessage>}
     <button className="primary-button" disabled={submitting}>{submitting ? "正在创建…" : "创建账号"}</button>
   </form><p className="login-register-link"><NavLink to="/login">返回登录</NavLink></p></LoginLayout>;
 }
 
-function LoginLayout({ children }: PropsWithChildren) {
+function LoginLayout({
+  children,
+  title = "欢迎回来",
+  copy = "登录后继续你的测试工作",
+}: PropsWithChildren<{ title?: string; copy?: string }>) {
   const [runtimeEnvironment, setRuntimeEnvironment] = useState("UNKNOWN");
   useEffect(() => {
     fetch("/version.json")
@@ -274,7 +445,7 @@ function LoginLayout({ children }: PropsWithChildren) {
         </div>
       </section>
       <section className="login-panel" aria-labelledby="login-title">
-        <div className="login-panel-heading"><h1 id="login-title">欢迎回来</h1><p>登录后继续你的测试工作</p></div>
+        <div className="login-panel-heading"><h1 id="login-title">{title}</h1><p>{copy}</p></div>
         {children}
         <p className="login-help">遇到问题？请联系平台管理员</p>
       </section>
@@ -292,6 +463,11 @@ function SetupPage() {
   async function submit(event: FormEvent) {
     event.preventDefault();
     setError("");
+    const passwordError = validateNewPassword(values.password);
+    if (passwordError) {
+      setError(passwordError);
+      return;
+    }
     try {
       const result = await apiJson<AuthState>("/setup", { method: "POST", body: JSON.stringify(values) });
       setAuth(result);
@@ -306,7 +482,7 @@ function SetupPage() {
         <label>Bootstrap Token<input autoFocus type="password" autoComplete="off" value={values.bootstrap_token} onChange={(event) => setValues({ ...values, bootstrap_token: event.target.value })} required /></label>
         <label>用户名<input value={values.username} onChange={(event) => setValues({ ...values, username: event.target.value })} required /></label>
         <label>显示名<input value={values.display_name} onChange={(event) => setValues({ ...values, display_name: event.target.value })} required /></label>
-        <label>密码<input type="password" minLength={12} autoComplete="new-password" value={values.password} onChange={(event) => setValues({ ...values, password: event.target.value })} required /></label>
+        <label>密码<input type="password" autoComplete="new-password" value={values.password} onChange={(event) => setValues({ ...values, password: event.target.value })} required /></label>
         {error && <InlineMessage kind="error">{error}</InlineMessage>}
         <button className="primary-button">创建管理员</button>
       </form>
@@ -336,10 +512,15 @@ function ChangePasswordPage() {
   const [error, setError] = useState("");
   async function submit(event: FormEvent) {
     event.preventDefault(); setError("");
+    const passwordError = validateNewPassword(values.new_password);
+    if (passwordError) {
+      setError(passwordError);
+      return;
+    }
     try { await apiJson("/auth/change-password", { method: "POST", body: JSON.stringify(values) }); await reload(); navigate("/", { replace: true }); }
     catch (requestError) { setError(requestError instanceof Error ? requestError.message : "修改密码失败"); }
   }
-  return <WorkspaceShell><section className="workspace-page narrow-page"><PageHeader eyebrow="ACCOUNT SECURITY" title="修改密码" copy="首次登录或管理员重置密码后，必须先设置只有你知道的新密码。" />{error && <InlineMessage kind="error">{error}</InlineMessage>}<div className="settings-card"><form className="auth-form" onSubmit={submit}><label>当前密码<input autoFocus type="password" autoComplete="current-password" value={values.current_password} onChange={(event) => setValues({ ...values, current_password: event.target.value })} required /></label><label>新密码<input type="password" autoComplete="new-password" minLength={12} value={values.new_password} onChange={(event) => setValues({ ...values, new_password: event.target.value })} required /></label><button className="primary-button">保存并撤销其他会话</button></form></div></section></WorkspaceShell>;
+  return <WorkspaceShell><section className="workspace-page narrow-page"><PageHeader eyebrow="ACCOUNT SECURITY" title="修改密码" copy="首次登录或管理员重置密码后，必须先设置只有你知道的新密码。" />{error && <InlineMessage kind="error">{error}</InlineMessage>}<div className="settings-card"><form className="auth-form" onSubmit={submit}><label>当前密码<input autoFocus type="password" autoComplete="current-password" value={values.current_password} onChange={(event) => setValues({ ...values, current_password: event.target.value })} required /></label><label>新密码<input type="password" autoComplete="new-password" value={values.new_password} onChange={(event) => setValues({ ...values, new_password: event.target.value })} required /></label><button className="primary-button">保存并撤销其他会话</button></form></div></section></WorkspaceShell>;
 }
 
 function AccountPage() {
@@ -685,6 +866,12 @@ function providerDisplayName(providerType: string): string {
   return providerType;
 }
 
+/** 构造只携带 Scope 与逻辑 Provider 的个人凭证深链。 */
+function credentialManagementPath(scopeId: string, providerType: string): string {
+  const query = new URLSearchParams({ scope_id: scopeId, provider_type: providerType });
+  return `/account/credentials?${query.toString()}`;
+}
+
 interface PersonalCredentialGroup {
   key: string;
   toolId: string;
@@ -702,6 +889,9 @@ interface PersonalCredentialGroup {
 function PersonalCredentialsPage() {
   const environment = useEnvironment();
   const [definitions, setDefinitions] = useState<ConfigDefinition[]>([]);
+  const ownerSelection = useConfigurationOwnerSelection(definitions);
+  const [searchParams] = useSearchParams();
+  const providerFilter = searchParams.get("provider_type");
   const [credentials, setCredentials] = useState<PersonalCredential[]>([]);
   const [editing, setEditing] = useState<PersonalCredentialGroup | null>(null);
   const [values, setValues] = useState<Record<string, string>>({});
@@ -720,6 +910,7 @@ function PersonalCredentialsPage() {
       row.owner_type === "tool"
       && row.value_scope === "user"
       && Boolean(row.credential_provider_type)
+      && row.validation_schema?.runtime_config_excluded !== true
     )));
     setCredentials(credentialRows);
     setLoading(false);
@@ -738,33 +929,44 @@ function PersonalCredentialsPage() {
   useEffect(() => {
     setEditing(null);
     setValues({});
-  }, [environment]);
+  }, [environment, ownerSelection.ownerId]);
   useModal(Boolean(editing), () => {
     setEditing(null);
     setValues({});
   });
 
   const groupMap = new Map<string, Omit<PersonalCredentialGroup, "credential">>();
-  for (const definition of definitions) {
-    if (!definition.credential_provider_type) continue;
-    const key = `${definition.owner_id}:${definition.credential_provider_type}`;
-    const current = groupMap.get(key) ?? {
-      key,
-      toolId: definition.owner_id,
-      providerType: definition.credential_provider_type,
-      definitions: [],
-    };
-    current.definitions.push(definition);
-    groupMap.set(key, current);
+  const hasCredentialOwner = !ownerSelection.usesRuntimeScope || Boolean(ownerSelection.selectedScope);
+  if (hasCredentialOwner) {
+    for (const definition of definitions) {
+      if (!definition.credential_provider_type) continue;
+      if (definition.owner_id !== ownerSelection.selectedToolId) continue;
+      if (providerFilter && definition.credential_provider_type !== providerFilter) continue;
+      const key = `${ownerSelection.ownerId}:${definition.owner_id}:${definition.credential_provider_type}`;
+      const current = groupMap.get(key) ?? {
+        key,
+        toolId: definition.owner_id,
+        providerType: definition.credential_provider_type,
+        definitions: [],
+      };
+      current.definitions.push(definition);
+      groupMap.set(key, current);
+    }
   }
   const groups: PersonalCredentialGroup[] = [...groupMap.values()]
     .map((group) => ({
       ...group,
-      definitions: [...group.definitions].sort((left, right) => left.sort_order - right.sort_order),
-      credential: credentials.find((row) => (
-        row.tool_id === group.toolId && row.provider_type === group.providerType
-      )) ?? null,
-    }))
+        definitions: [...group.definitions].sort((left, right) => left.sort_order - right.sort_order),
+        credential: credentials.find((row) => (
+          row.tool_id === group.toolId
+          && row.provider_type === group.providerType
+          && (row.runtime_scope_id ?? null) === (
+            ownerSelection.usesRuntimeScope
+              ? ownerSelection.selectedScope?.id ?? null
+              : null
+          )
+        )) ?? null,
+      }))
     .sort((left, right) => left.key.localeCompare(right.key));
 
   function openEditor(group: PersonalCredentialGroup) {
@@ -796,6 +998,9 @@ function PersonalCredentialsPage() {
         method: "PUT",
         body: JSON.stringify({
           environment_id: environment,
+          ...(ownerSelection.usesRuntimeScope && ownerSelection.selectedScope
+            ? { runtime_scope_id: ownerSelection.selectedScope.id }
+            : {}),
           expected_version: editing.credential?.current_version ?? 0,
           values: submittedValues,
         }),
@@ -835,18 +1040,21 @@ function PersonalCredentialsPage() {
   }
 
   return <WorkspaceShell><section className="workspace-page personal-settings-page">
-    <PageHeader eyebrow={`${environment.toUpperCase()} / PERSONAL CREDENTIALS`} title="我的凭证" copy="每项配置仅供你自己的任务使用。保存后平台只显示状态，不会再次回显账号、密码或 Token。" />
+    <PageHeader eyebrow={`${environment.toUpperCase()} / PERSONAL CREDENTIALS`} title="我的凭证" copy="个人凭证按工具与 Runtime Scope 隔离。保存后平台只显示状态，不会再次回显账号、密码或 Token。" />
     <PersonalNav />
+    <ConfigurationOwnerSelector selection={ownerSelection} />
     {message && <InlineMessage kind="success">{message}</InlineMessage>}
     {error && <InlineMessage kind="error">{error}</InlineMessage>}
-    {loading ? <div className="panel-loading" role="status">正在加载个人凭证…</div> : groups.length === 0
-      ? <EmptyState title="没有可配置的个人凭证" copy="当前账号没有可执行工具，或工具尚未登记个人凭证字段。" />
+    {ownerSelection.usesRuntimeScope && !ownerSelection.loading && !ownerSelection.selectedScope
+      && <InlineMessage kind="error">当前工具没有可用的 Runtime Scope，不能读取或配置工具级兜底凭证。</InlineMessage>}
+    {loading || ownerSelection.loading ? <div className="panel-loading" role="status">正在加载个人凭证…</div> : groups.length === 0
+      ? <EmptyState title="没有可配置的个人凭证" copy="当前 Scope 没有匹配的 Provider，或工具尚未登记个人凭证字段。" />
       : <div className="personal-credential-grid">{groups.map((group) => {
         const configuredFields = new Map(
           (group.credential?.fields ?? []).map((field) => [field.key, field.configured]),
         );
         return <article className="personal-credential-card" key={group.key}>
-          <header><div><h2>{group.toolId}</h2><p>{providerDisplayName(group.providerType)}</p></div><StatusBadge value={group.credential?.status ?? "missing"} /></header>
+          <header><div><h2>{providerDisplayName(group.providerType)}</h2><p>{ownerSelection.ownerLabel} · {group.toolId}</p></div><StatusBadge value={group.credential?.status ?? "missing"} /></header>
           <dl className="credential-summary"><div><dt>版本</dt><dd>v{group.credential?.current_version ?? 0}</dd></div><div><dt>过期时间</dt><dd>{group.credential?.expires_at ? new Date(group.credential.expires_at).toLocaleString() : "未提供"}</dd></div></dl>
           <ul className="credential-field-list">{group.definitions.map((definition) => <li key={definition.id}><span>{definition.display_name}<small>{definition.required ? "必填" : "可选"}</small></span><StatusBadge value={configuredFields.get(definition.key) ? "已配置" : "缺失"} /></li>)}</ul>
           {group.credential?.last_error_code && <p className="credential-error-code">最近错误：{group.credential.last_error_code}</p>}
@@ -1281,6 +1489,114 @@ function PersonalLlmPage() {
   </section></WorkspaceShell>;
 }
 
+/** 判断 Tool 级 Definition 是否属于当前工具项目；未声明项目白名单时保持兼容。 */
+function definitionAppliesToProject(definition: ConfigDefinition, projectId: string | null): boolean {
+  const projectIds = definition.validation_schema.project_ids;
+  if (projectIds === undefined) return true;
+  return Boolean(projectId) && Array.isArray(projectIds) && projectIds.includes(projectId);
+}
+
+/** 把不可变 Release 的普通配置项转换为页面值；切换历史版本时不会复用旧草稿状态。 */
+function valuesFromRelease(release: ConfigRelease | null): Record<string, unknown> {
+  return release ? Object.fromEntries(release.items.map((item) => [item.definition_id, item.value])) : {};
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function stringRecord(value: unknown): Record<string, string> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return Object.fromEntries(Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === "string"));
+}
+
+/**
+ * Gateway comm 结构化编辑器。
+ *
+ * 已登记字段按服务端 field_order 展示，项目新增的未知静态字段也可直接添加；
+ * 会话与单次请求字段由 forbidden_keys 排除，页面从不把它们当成可配置值。
+ */
+function GatewayCommEditor({
+  definition,
+  value,
+  editable,
+  onChange,
+}: {
+  definition: ConfigDefinition;
+  value: unknown;
+  editable: boolean;
+  onChange: (value: Record<string, string>) => void;
+}) {
+  const schema = definition.validation_schema;
+  const fieldOrder = stringArray(schema.field_order);
+  const fieldLabels = stringRecord(schema.field_labels);
+  const requiredKeys = new Set(stringArray(schema.required_keys));
+  const forbiddenKeys = new Set(stringArray(schema.forbidden_keys));
+  const comm = stringRecord(value);
+  const extraKeys = Object.keys(comm)
+    .filter((key) => !fieldOrder.includes(key) && !forbiddenKeys.has(key))
+    .sort((left, right) => left.localeCompare(right));
+  const keys = [...fieldOrder, ...extraKeys];
+  const [newKey, setNewKey] = useState("");
+  const [newValue, setNewValue] = useState("");
+  const [fieldError, setFieldError] = useState("");
+
+  function replaceField(key: string, nextValue: string) {
+    const next = Object.fromEntries(
+      Object.entries({ ...comm, [key]: nextValue }).filter(([itemKey]) => !forbiddenKeys.has(itemKey)),
+    );
+    onChange(next);
+  }
+
+  function removeField(key: string) {
+    const next = { ...comm };
+    delete next[key];
+    onChange(next);
+  }
+
+  function addField(event: FormEvent) {
+    event.preventDefault();
+    const key = newKey.trim();
+    if (forbiddenKeys.has(key)) {
+      setFieldError(`${key} 由运行时生成，不能保存为静态配置。`);
+      return;
+    }
+    const pattern = typeof schema.property_name_pattern === "string"
+      ? new RegExp(schema.property_name_pattern)
+      : /^[a-z][a-z0-9_]{0,63}$/;
+    if (!pattern.test(key)) {
+      setFieldError("参数名必须以小写字母开头，且只能包含小写字母、数字和下划线。");
+      return;
+    }
+    if (keys.includes(key)) {
+      setFieldError(`${key} 已存在，请直接修改现有值。`);
+      return;
+    }
+    setFieldError("");
+    onChange({ ...comm, [key]: newValue });
+    setNewKey("");
+    setNewValue("");
+  }
+
+  return <section className="config-field config-field-wide gateway-comm-editor" aria-labelledby={`comm-title-${definition.id}`}>
+    <div className="gateway-comm-heading"><div><strong id={`comm-title-${definition.id}`}>{definition.display_name}</strong><small>{definition.key} · 仅静态参数</small></div><p>Token、用户 ID 与请求 ID 由每次任务运行时生成，不在 Release 中配置。</p></div>
+    <div className="gateway-comm-grid">{keys.map((key) => {
+      const label = fieldLabels[key] ?? key;
+      const custom = !fieldOrder.includes(key);
+      return <label className="gateway-comm-item" key={key}>
+        <span>{label}<small>{key} · {requiredKeys.has(key) ? "必填" : "可选"}</small></span>
+        <span className="gateway-comm-control"><input aria-label={label} disabled={!editable} value={comm[key] ?? ""} onChange={(event) => replaceField(key, event.target.value)} required={requiredKeys.has(key)} />{editable && custom && <button type="button" className="link-button destructive-link" aria-label={`删除 ${key}`} onClick={() => removeField(key)}>删除</button>}</span>
+      </label>;
+    })}</div>
+    {editable && <form className="gateway-comm-add" onSubmit={addField}>
+      <label>静态参数名<input aria-label="静态参数名" value={newKey} onChange={(event) => setNewKey(event.target.value)} placeholder="例如 channel" required /></label>
+      <label>静态参数值<input aria-label="静态参数值" value={newValue} onChange={(event) => setNewValue(event.target.value)} placeholder="字符串值" required /></label>
+      <button className="secondary-button" type="submit">添加静态参数</button>
+    </form>}
+    {fieldError && <p className="gateway-comm-error" role="alert">{fieldError}</p>}
+  </section>;
+}
+
 function ConfigPage() {
   const [items, setItems] = useState<ConfigDefinition[]>([]);
   const ownerSelection = useConfigurationOwnerSelection(items);
@@ -1290,30 +1606,38 @@ function ConfigPage() {
   } = ownerSelection;
   const [releases, setReleases] = useState<ConfigRelease[]>([]);
   const [draft, setDraft] = useState<ConfigRelease | null>(null);
+  const [viewedReleaseId, setViewedReleaseId] = useState<string | null>(null);
   const [values, setValues] = useState<Record<string, unknown>>({});
   const [confirmPublish, setConfirmPublish] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [scopeEditor, setScopeEditor] = useState<"create" | "edit" | null>(null);
   const [scopeForm, setScopeForm] = useState({ platform_project_id: "", project_id: "", display_name: "", status: "active", is_default: false });
+  const [scopeCredentials, setScopeCredentials] = useState<PersonalCredential[]>([]);
+  const [scopeCredentialsLoading, setScopeCredentialsLoading] = useState(false);
+  const [scopeCredentialsError, setScopeCredentialsError] = useState("");
   const ownerItems = items.filter((item) => (
     item.owner_type === "tool"
     && item.owner_id === selectedToolId
     && item.value_scope === "system"
     && item.sensitivity === "normal"
+    && definitionAppliesToProject(item, usesRuntimeScope ? scope?.project_id ?? null : null)
   ));
+  const viewedRelease = releases.find((release) => release.id === viewedReleaseId) ?? null;
+  const editingDraft = Boolean(draft && viewedRelease?.id === draft.id);
 
   const loadReleases = useCallback(async (selectedOwnerType: ConfigurationOwnerType, selectedOwnerId: string, enabled: boolean) => {
     if (!selectedOwnerId || !enabled) {
-      setReleases([]); setDraft(null); setValues({}); return;
+      setReleases([]); setDraft(null); setViewedReleaseId(null); setValues({}); return;
     }
     const query = new URLSearchParams({ environment_id: environment, owner_type: selectedOwnerType, owner_id: selectedOwnerId });
     const rows = await apiJson<ConfigRelease[]>(`/config/releases?${query.toString()}`);
     setReleases(rows);
     const currentDraft = rows.find((row) => row.status === "draft") ?? null;
+    const currentRelease = currentDraft ?? rows.find((row) => row.status === "active") ?? rows[0] ?? null;
     setDraft(currentDraft);
-    if (currentDraft) setValues(Object.fromEntries(currentDraft.items.map((item) => [item.definition_id, item.value])));
-    else setValues({});
+    setViewedReleaseId(currentRelease?.id ?? null);
+    setValues(valuesFromRelease(currentRelease));
   }, [environment]);
 
   useEffect(() => {
@@ -1325,6 +1649,35 @@ function ConfigPage() {
     const enabled = !ownerDisabled && ownerItems.length > 0;
     void loadReleases(ownerType, ownerId, enabled).catch((requestError) => setError(describeApiError(requestError, "无法读取当前配置归属的 Release。")));
   }, [loadReleases, ownerDisabled, ownerId, ownerItems.length, ownerType]);
+  useEffect(() => {
+    if (!usesRuntimeScope || !scope || scope.status !== "active") {
+      setScopeCredentials([]);
+      setScopeCredentialsError("");
+      setScopeCredentialsLoading(false);
+      return;
+    }
+    let active = true;
+    setScopeCredentialsLoading(true);
+    setScopeCredentialsError("");
+    const query = new URLSearchParams({
+      environment_id: environment,
+      runtime_scope_id: scope.id,
+    });
+    void apiJson<PersonalCredential[]>(`/me/credentials?${query.toString()}`)
+      .then((rows) => {
+        if (active) setScopeCredentials(rows.filter((row) => (
+          row.tool_id === selectedToolId && row.runtime_scope_id === scope.id
+        )));
+      })
+      .catch((requestError) => {
+        if (active) {
+          setScopeCredentials([]);
+          setScopeCredentialsError(describeApiError(requestError, "当前 Scope 的个人凭证状态加载失败。"));
+        }
+      })
+      .finally(() => { if (active) setScopeCredentialsLoading(false); });
+    return () => { active = false; };
+  }, [environment, scope, selectedToolId, usesRuntimeScope]);
   useEffect(() => { setConfirmPublish(false); }, [environment]);
 
   function inputValue(definition: ConfigDefinition): string | number {
@@ -1340,9 +1693,22 @@ function ConfigPage() {
   }
   function payloadValue(definition: ConfigDefinition): unknown {
     const value = values[definition.id] ?? definition.default_value;
-    if (definition.value_type !== "json" || typeof value !== "string") return value;
-    try { return JSON.parse(value); }
-    catch { throw new Error(`${definition.display_name} 必须是有效 JSON。`); }
+    let parsed = value;
+    if (definition.value_type === "json" && typeof value === "string") {
+      try { parsed = JSON.parse(value); }
+      catch { throw new Error(`${definition.display_name} 必须是有效 JSON。`); }
+    }
+    if (definition.key === "gateway.comm" && parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const forbiddenKeys = new Set(stringArray(definition.validation_schema.forbidden_keys));
+      return Object.fromEntries(Object.entries(parsed).filter(([key]) => !forbiddenKeys.has(key)));
+    }
+    return parsed;
+  }
+  function viewRelease(release: ConfigRelease) {
+    setError("");
+    setMessage("");
+    setViewedReleaseId(release.id);
+    setValues(valuesFromRelease(release));
   }
   /** Scope 身份字段只在创建时提交；编辑始终带 revision，避免覆盖其他管理员的并发变更。 */
   function openScopeEditor(mode: "create" | "edit") {
@@ -1376,7 +1742,7 @@ function ConfigPage() {
     setError(""); setMessage("");
     try {
       const next = await apiJson<ConfigRelease>("/config/releases", { method: "POST", body: JSON.stringify({ environment_id: environment, owner_type: ownerType, owner_id: ownerId }) });
-      setDraft(next); setValues(Object.fromEntries(next.items.map((item) => [item.definition_id, item.value]))); setMessage(`已创建 v${next.version} 草稿。`);
+      setDraft(next); setViewedReleaseId(next.id); setValues(valuesFromRelease(next)); setMessage(`已创建 v${next.version} 草稿。`);
       await loadReleases(ownerType, ownerId, true);
     } catch (requestError) { setError(requestError instanceof Error ? requestError.message : "创建草稿失败"); }
   }
@@ -1384,7 +1750,11 @@ function ConfigPage() {
     if (!draft || !ownerId || ownerDisabled) return;
     setError(""); setMessage("");
     try {
-      const updated = await apiJson<ConfigRelease>(`/config/releases/${draft.id}/items`, { method: "PUT", body: JSON.stringify({ revision: draft.revision, items: ownerItems.map((item) => ({ definition_id: item.id, value: payloadValue(item) })) }) });
+      const releaseItems = ownerItems.flatMap((item) => {
+        const value = payloadValue(item);
+        return value === undefined || value === null ? [] : [{ definition_id: item.id, value }];
+      });
+      const updated = await apiJson<ConfigRelease>(`/config/releases/${draft.id}/items`, { method: "PUT", body: JSON.stringify({ revision: draft.revision, items: releaseItems }) });
       setDraft(updated); setMessage(`v${updated.version} 草稿已保存。`); await loadReleases(ownerType, ownerId, true);
     } catch (requestError) { setError(requestError instanceof Error ? requestError.message : "保存失败"); }
   }
@@ -1432,15 +1802,34 @@ function ConfigPage() {
     {scope?.status === "disabled" && ownerItems.length === 0 && <div className="config-toolbar"><div><strong>{ownerLabel}</strong><span>Scope 已停用，不读取配置值</span></div><button className="primary-button" disabled>创建草稿</button></div>}
     {ownerSelection.selectedTool && ownerItems.length === 0 && <EmptyState title="该工具尚未登记普通配置" copy="工具入口仍然保留；登记 ConfigDefinition 后即可在此创建、校验和发布版本。" />}
     {ownerId && ownerItems.length > 0 && <>
-      <div className="config-toolbar"><div><strong>{ownerLabel}</strong><span>{draft ? `v${draft.version} 草稿 · revision ${draft.revision}` : "当前没有草稿"}</span></div><div className="dialog-actions">{!draft
+      <div className="config-toolbar"><div><strong>{ownerLabel}</strong><span>{viewedRelease
+        ? viewedRelease.status === "draft" ? `v${viewedRelease.version} 草稿 · revision ${viewedRelease.revision}`
+          : viewedRelease.status === "active" ? `v${viewedRelease.version} · 当前生效`
+            : `v${viewedRelease.version} · 历史版本`
+        : "当前没有已发布版本"}</span></div><div className="dialog-actions">{!draft
         ? <button className="primary-button" disabled={ownerDisabled} onClick={() => void createDraft()}>创建草稿</button>
-        : <><button className="secondary-button" disabled={ownerDisabled} onClick={() => void saveDraft()}>保存草稿</button><button className="secondary-button" disabled={ownerDisabled} onClick={() => void releaseAction("validate")}>校验</button><button className="primary-button" disabled={ownerDisabled} onClick={() => void releaseAction("publish")}>{environment === "prod" && confirmPublish ? "确认发布 PROD" : "发布"}</button></>}</div></div>
-      <div className="config-grid">{ownerItems.map((item) => <label className="config-field" key={item.id}><span>{item.display_name}<small>{item.key} · {item.apply_mode}</small></span>{["bool", "boolean"].includes(item.value_type)
-        ? <select disabled={!draft || ownerDisabled} value={String(values[item.id] ?? item.default_value ?? false)} onChange={(event) => updateValue(item, event.target.value)}><option value="true">true</option><option value="false">false</option></select>
-        : <input disabled={!draft || ownerDisabled} type={["int", "integer", "float"].includes(item.value_type) ? "number" : "text"} step={item.value_type === "float" ? "any" : undefined} value={inputValue(item)} onChange={(event) => updateValue(item, event.target.value)} required={item.required} />}</label>)}</div>
+        : editingDraft
+          ? <><button className="secondary-button" disabled={ownerDisabled} onClick={() => void saveDraft()}>保存草稿</button><button className="secondary-button" disabled={ownerDisabled} onClick={() => void releaseAction("validate")}>校验</button><button className="primary-button" disabled={ownerDisabled} onClick={() => void releaseAction("publish")}>{environment === "prod" && confirmPublish ? "确认发布 PROD" : "发布"}</button></>
+          : <button className="primary-button" disabled={ownerDisabled} onClick={() => draft && viewRelease(draft)}>继续编辑 v{draft.version} 草稿</button>}</div></div>
+      <div className="config-grid">{ownerItems.map((item) => item.key === "gateway.comm"
+        ? <GatewayCommEditor key={`${viewedRelease?.id ?? "none"}:${item.id}`} definition={item} value={values[item.id] ?? item.default_value} editable={editingDraft && !ownerDisabled} onChange={(value) => setValues((current) => ({ ...current, [item.id]: value }))} />
+        : <label className="config-field" key={item.id}><span>{item.display_name}<small>{item.key} · {item.apply_mode}</small></span>{["bool", "boolean"].includes(item.value_type)
+          ? <select disabled={!editingDraft || ownerDisabled} value={String(values[item.id] ?? item.default_value ?? false)} onChange={(event) => updateValue(item, event.target.value)}><option value="true">true</option><option value="false">false</option></select>
+          : <input disabled={!editingDraft || ownerDisabled} type={["int", "integer", "float"].includes(item.value_type) ? "number" : "text"} step={item.value_type === "float" ? "any" : undefined} value={inputValue(item)} onChange={(event) => updateValue(item, event.target.value)} required={item.required} />}</label>)}</div>
+      {usesRuntimeScope && scope && <section className="scope-credential-panel" aria-labelledby="scope-credential-title">
+        <header><div><h2 id="scope-credential-title">个人凭证（不属于普通 Release）</h2><p>Secret 与会话由个人凭证独立管理；这里只显示当前 Scope 的非敏感状态。</p></div></header>
+        {scopeCredentialsError && <InlineMessage kind="error">{scopeCredentialsError}</InlineMessage>}
+        {scopeCredentialsLoading ? <div className="panel-loading" role="status">正在加载当前 Scope 的凭证状态…</div> : scopeCredentials.length === 0
+          ? <EmptyState title="当前 Scope 尚未配置个人凭证" copy="任务实际需要哪个 Profile 由资产预检决定；请从任务错误中的入口定位。" />
+          : <div className="scope-credential-list">{scopeCredentials.map((credential) => <article className="scope-credential-row" key={credential.id}>
+            <div><strong>{providerDisplayName(credential.provider_type)}</strong><span>v{credential.current_version} · 过期时间 {credential.expires_at ? new Date(credential.expires_at).toLocaleString() : "未提供"}</span>{credential.last_error_code && <code>最近错误：{credential.last_error_code}</code>}</div>
+            <StatusBadge value={credential.status} />
+            <NavLink className="secondary-button" aria-label={`管理 ${providerDisplayName(credential.provider_type)}`} to={credentialManagementPath(scope.id, credential.provider_type)}>管理</NavLink>
+          </article>)}</div>}
+      </section>}
       <section className="release-history" aria-labelledby="release-history-title"><h2 id="release-history-title">版本历史</h2>{releases.length === 0
         ? <EmptyState title="尚无版本" copy="创建首个草稿后，版本记录会显示在这里。" />
-        : releases.map((release) => <div className="release-row" key={release.id}><div><strong>v{release.version}</strong><span>revision {release.revision} · {new Date(release.created_at).toLocaleString()}</span></div><StatusBadge value={release.status} /><div className="row-actions">{release.status === "active" || release.status === "superseded" ? <button className="secondary-button" disabled={ownerDisabled} onClick={() => void rollback(release)}>回滚到此版本</button> : null}{environment === "dev" && release.status === "active" ? <button className="secondary-button" disabled={ownerDisabled} onClick={() => void promote(release)}>提升为 PROD 草稿</button> : null}</div></div>)}</section>
+        : releases.map((release) => <div className={`release-row ${viewedRelease?.id === release.id ? "release-row-selected" : ""}`} key={release.id}><div><strong>v{release.version}</strong><span>revision {release.revision} · {new Date(release.created_at).toLocaleString()}</span></div><StatusBadge value={release.status} /><div className="row-actions"><button className="link-button" disabled={viewedRelease?.id === release.id} aria-label={`查看 v${release.version} 配置`} onClick={() => viewRelease(release)}>查看配置</button>{release.status === "active" || release.status === "superseded" ? <button className="secondary-button" disabled={ownerDisabled} onClick={() => void rollback(release)}>回滚到此版本</button> : null}{environment === "dev" && release.status === "active" ? <button className="secondary-button" disabled={ownerDisabled} onClick={() => void promote(release)}>提升为 PROD 草稿</button> : null}</div></div>)}</section>
     </>}
     {scopeEditor && <div className="modal-backdrop" role="presentation"><section className="dialog" role="dialog" aria-modal="true" aria-labelledby="scope-dialog-title"><p className="section-label">{environment.toUpperCase()} / RUNTIME SCOPE</p><h2 id="scope-dialog-title">{scopeEditor === "create" ? "新建 Runtime Scope" : "编辑 Runtime Scope"}</h2><p>接口环境由平台固定，不能在此切换；所有 Release、Secret 与 Credential 都归属此 Scope。</p><form className="auth-form" onSubmit={saveScope}>{scopeEditor === "create" && <><label>平台项目 ID<input value={scopeForm.platform_project_id} onChange={(event) => setScopeForm({ ...scopeForm, platform_project_id: event.target.value })} required /></label><label>工具项目键<input value={scopeForm.project_id} onChange={(event) => setScopeForm({ ...scopeForm, project_id: event.target.value })} pattern="[a-z][a-z0-9-]{0,31}" required /></label></>}<label>Scope 显示名称<input autoFocus value={scopeForm.display_name} onChange={(event) => setScopeForm({ ...scopeForm, display_name: event.target.value })} required /></label><label>接口环境<input value={environment === "prod" ? "PROD（由 PROD 平台固定）" : "TEST（由 DEV 平台固定）"} readOnly disabled /></label>{scopeEditor === "edit" && <label>状态<select value={scopeForm.status} onChange={(event) => setScopeForm({ ...scopeForm, status: event.target.value })}><option value="active">启用</option><option value="disabled">停用</option></select></label>}<label className="checkbox-row"><input type="checkbox" checked={scopeForm.is_default} onChange={(event) => setScopeForm({ ...scopeForm, is_default: event.target.checked })} />作为当前平台项目默认 Scope</label><div className="dialog-actions"><button type="button" className="secondary-button" onClick={() => setScopeEditor(null)}>取消</button><button className="primary-button">保存 Scope</button></div></form></section></div>}
   </section></WorkspaceShell>;
@@ -1644,31 +2033,72 @@ function AccessTable({ headers, children }: PropsWithChildren<{ headers: string[
 function ProjectDetailPage() {
   const { projectId = "" } = useParams(); const { auth } = useAuth(); const location = useLocation();
   const [project, setProject] = useState<ProjectRecord | null>(null); const [members, setMembers] = useState<ProjectMember[]>([]); const [managers, setManagers] = useState<ProjectMember[]>([]); const [tools, setTools] = useState<ToolAccessRecord[]>([]); const [impact, setImpact] = useState<ImpactPreview | null>(null); const [error, setError] = useState("");
-  const [personDialog, setPersonDialog] = useState<"members" | "managers" | null>(null); const [personUsername, setPersonUsername] = useState("");
+  const [personDialog, setPersonDialog] = useState<"members" | "managers" | null>(null);
+  const [personUsername, setPersonUsername] = useState("");
+  const [personError, setPersonError] = useState("");
+  const [personBusy, setPersonBusy] = useState(false);
+  const [removingUserId, setRemovingUserId] = useState<string | null>(null);
   const [forceUnknownImpact, setForceUnknownImpact] = useState(false);
   const canManageMembers = auth?.role === "platform_admin" || auth?.role === "admin";
   const canManageProject = auth?.role === "platform_admin";
   const load = useCallback(async () => { const [detail, toolRows, memberRows, managerRows] = await Promise.all([accessApi.getProject(projectId), accessApi.listProjectTools(projectId), (auth?.role === "admin" || auth?.role === "platform_admin") ? accessApi.listProjectMembers(projectId, "members") : Promise.resolve([]), auth?.role === "platform_admin" ? accessApi.listProjectMembers(projectId, "managers") : Promise.resolve([])]); setProject(detail); setTools(toolRows); setMembers(memberRows); setManagers(managerRows); }, [auth?.role, projectId]);
   useEffect(() => { void load().catch((reason) => setError(reason.message)); }, [load]);
   useModal(Boolean(impact), () => setImpact(null));
-  useModal(Boolean(personDialog), () => setPersonDialog(null));
+  useModal(Boolean(personDialog), () => { setPersonDialog(null); setPersonError(""); }, personBusy);
   async function previewDeactivate() { try { setForceUnknownImpact(false); setImpact(await accessApi.projectImpact(projectId)); } catch (reason) { setError(reason instanceof Error ? reason.message : "无法读取影响范围"); } }
   async function confirmDeactivate() { if (!impact) return; try { await accessApi.setProjectStatus(projectId, { status: "inactive", reason: "项目停用", expected_revision: impact.expected_revision, impact_token: impact.impact_token, force_unknown_impact: forceUnknownImpact }); setImpact(null); await load(); } catch (reason) { const stale = reason instanceof ApiError && reason.code === "STALE_IMPACT"; setImpact(null); setError(stale ? "资源状态已变化，请重新确认影响范围" : reason instanceof Error ? reason.message : "项目停用失败"); } }
-  async function removePerson(member: ProjectMember, relation: "members" | "managers") { try { await accessApi.removeProjectMember(projectId, relation, member.id, relation === "members" ? "移出项目成员" : "移除项目负责人"); await load(); } catch (reason) { setError(reason instanceof Error ? reason.message : "移除人员失败"); } }
-  async function addPerson(event: FormEvent) { event.preventDefault(); if (!personDialog) return; try { await accessApi.addProjectMember(projectId, personDialog, personUsername.trim()); setPersonDialog(null); setPersonUsername(""); await load(); } catch (reason) { setError(reason instanceof Error ? reason.message : "添加人员失败"); } }
+  /** 删除关系期间锁住人员操作，避免重复点击把已成功请求误报为冲突。 */
+  async function removePerson(member: ProjectMember, relation: "members" | "managers") {
+    if (removingUserId) return;
+    setRemovingUserId(member.id); setError("");
+    try {
+      await accessApi.removeProjectMember(projectId, relation, member.id, relation === "members" ? "移出项目成员" : "移除项目负责人");
+      await load();
+    } catch (reason) {
+      setError(describeApiError(reason, "移除人员失败"));
+    } finally {
+      setRemovingUserId(null);
+    }
+  }
+
+  /** 添加失败时保留弹窗与用户名，并把服务端原因放在用户当前视线内。 */
+  async function addPerson(event: FormEvent) {
+    event.preventDefault();
+    if (!personDialog || personBusy) return;
+    setPersonBusy(true); setPersonError(""); setError("");
+    let relationCreated = false;
+    try {
+      await accessApi.addProjectMember(projectId, personDialog, personUsername.trim());
+      relationCreated = true;
+      await load();
+      setPersonDialog(null); setPersonUsername("");
+    } catch (reason) {
+      if (relationCreated) {
+        // 写入已经成功时不能让用户继续提交同一关系；关闭弹窗并明确要求刷新确认。
+        setPersonDialog(null); setPersonUsername("");
+        setError(`人员已添加，但列表刷新失败：${describeApiError(reason, "请刷新页面确认最新成员列表")}`);
+      } else {
+        setPersonError(describeApiError(reason, "添加人员失败"));
+      }
+    } finally {
+      setPersonBusy(false);
+    }
+  }
   if (!project && !error) return <LoadingPage label="正在加载项目…" />;
   if (!project) return <WorkspaceShell><section className="workspace-page"><InlineMessage kind="error">{error}</InlineMessage></section></WorkspaceShell>;
   const unknownRunning = impact?.running_task_count == null || impact.running_task_count === "unknown";
   const isMembersPage = location.pathname.endsWith("/members");
   const isToolsPage = location.pathname.endsWith("/tools");
+  const isManagersView = isMembersPage && auth?.role === "platform_admin" && new URLSearchParams(location.search).get("view") === "managers";
   const pageNumber = isMembersPage ? "05" : isToolsPage ? "06" : "04";
   const pageTitle = isMembersPage ? "项目详情 · 人员" : isToolsPage ? "项目详情 · 工具与授权" : "项目详情 · 概览";
   return <WorkspaceShell><section className="workspace-page access-page"><PageHeader eyebrow={`${pageNumber} / ACCESS CONTROL`} title={pageTitle} copy={`${project.name} · ${project.code}`} actions={!isMembersPage && !isToolsPage && canManageProject ? <button className="secondary-button" disabled title="项目资料编辑接口尚未开放">编辑项目</button> : undefined} />
-    <nav className="project-tabs" aria-label="项目详情"><NavLink to={`/projects/${encodeURIComponent(projectId)}/overview`}>概览</NavLink>{auth?.role === "platform_admin" && <NavLink to={`/projects/${encodeURIComponent(projectId)}/members?view=managers`}>负责人</NavLink>}{(auth?.role === "admin" || auth?.role === "platform_admin") && <NavLink to={`/projects/${encodeURIComponent(projectId)}/members`}>测试成员</NavLink>}<NavLink to={`/projects/${encodeURIComponent(projectId)}/tools`}>项目工具</NavLink><NavLink to={`/projects/${encodeURIComponent(projectId)}/tools?view=grants`}>额外授权</NavLink><a href="#audit">审计</a></nav>{error && <InlineMessage kind="error">{error}</InlineMessage>}
-    {!isMembersPage && !isToolsPage && <><div className="metric-grid metric-grid-four"><MetricCard label="负责人" value={project.manager_count} note={managers.map((item) => item.display_name).join(" · ") || "尚未分配"} /><MetricCard label="测试成员" value={project.member_count} note="成员仅操作本人资源" /><MetricCard label="项目工具" value={project.tool_count} note="全部项目关系自动继承" /><MetricCard label="额外授权" value={project.active_grant_count} note="临时单工具访问" /></div><div className="project-overview-grid"><section className="access-card"><h2>项目资料</h2><dl className="detail-list"><div><dt>项目编码</dt><dd>{project.code}（不可修改）</dd></div><div><dt>项目名称</dt><dd>{project.name}</dd></div><div><dt>创建时间</dt><dd>—</dd></div><div><dt>最近更新</dt><dd>{new Date(project.updated_at).toLocaleString()}</dd></div></dl></section><section className="access-card"><h2>访问规则</h2><span className="scope-badge project">项目范围</span><dl className="detail-list"><div><dt>负责人</dt><dd>使用并管理项目工具</dd></div><div><dt>测试成员</dt><dd>使用工具，仅操作本人资源</dd></div><div><dt>临时授权</dt><dd>单工具使用，不获得项目数据</dd></div></dl></section></div>{project.status === "active" && canManageProject && <section className="deactivate-banner"><div><strong>停用项目将立即收敛工具访问</strong><p>{project.tool_count} 个项目工具将从普通用户目录隐藏，{project.active_grant_count} 条额外授权暂时失效；运行中任务不会自动取消。</p></div><button className="secondary-button" onClick={() => void previewDeactivate()}>预览停用影响</button></section>}</>}
-    {isMembersPage && <><section className="access-card member-section"><div className="section-heading"><div><h2>项目负责人</h2><p>仅平台管理员可以分配 active 管理员。</p></div>{auth?.role === "platform_admin" && <button className="secondary-button" onClick={() => { setPersonUsername(""); setPersonDialog("managers"); }}>分配负责人</button>}</div>{managers.length ? <MemberList members={managers} canRemove={auth?.role === "platform_admin"} onRemove={(member) => void removePerson(member, "managers")} /> : <EmptyState title="尚未分配负责人" copy="平台管理员可为项目分配管理员负责人。" />}</section><section className="access-card member-section"><div className="section-heading"><div><h2>测试成员</h2><p>普通管理员只能通过精确用户名查找并加入 active 测试人员。</p></div>{canManageMembers && <div className="row-actions"><NavLink className="secondary-button button-link" to={`/admin/users?project_id=${encodeURIComponent(projectId)}`}>创建测试人员</NavLink><button className="primary-button" onClick={() => { setPersonUsername(""); setPersonDialog("members"); }}>添加成员</button></div>}</div>{members.length ? <MemberList members={members} canRemove={canManageMembers} onRemove={(member) => void removePerson(member, "members")} /> : <EmptyState title="暂无测试成员" copy="成员加入后会自动获得该项目的启用工具。" />}</section></>}
+    <nav className="project-tabs" aria-label="项目详情"><NavLink to={`/projects/${encodeURIComponent(projectId)}/overview`}>概览</NavLink>{auth?.role === "platform_admin" && <Link aria-current={isManagersView ? "page" : undefined} className={isManagersView ? "active" : ""} to={`/projects/${encodeURIComponent(projectId)}/members?view=managers`}>负责人</Link>}{(auth?.role === "admin" || auth?.role === "platform_admin") && <Link aria-current={isMembersPage && !isManagersView ? "page" : undefined} className={isMembersPage && !isManagersView ? "active" : ""} to={`/projects/${encodeURIComponent(projectId)}/members`}>测试成员</Link>}<NavLink to={`/projects/${encodeURIComponent(projectId)}/tools`}>项目工具</NavLink><NavLink to={`/projects/${encodeURIComponent(projectId)}/tools?view=grants`}>额外授权</NavLink><a href="#audit">审计</a></nav>{error && <InlineMessage kind="error">{error}</InlineMessage>}
+    {!isMembersPage && !isToolsPage && <><div className="metric-grid metric-grid-four"><MetricCard label="负责人" value={project.manager_count} note={auth?.role === "platform_admin" ? managers.map((item) => item.display_name).join(" · ") || "尚未分配" : project.manager_count ? `${project.manager_count} 位，由平台管理员维护` : "尚未分配"} /><MetricCard label="测试成员" value={project.member_count} note="成员仅操作本人资源" /><MetricCard label="项目工具" value={project.tool_count} note="全部项目关系自动继承" /><MetricCard label="额外授权" value={project.active_grant_count} note="临时单工具访问" /></div><div className="project-overview-grid"><section className="access-card"><h2>项目资料</h2><dl className="detail-list"><div><dt>项目编码</dt><dd>{project.code}（不可修改）</dd></div><div><dt>项目名称</dt><dd>{project.name}</dd></div><div><dt>创建时间</dt><dd>—</dd></div><div><dt>最近更新</dt><dd>{new Date(project.updated_at).toLocaleString()}</dd></div></dl></section><section className="access-card"><h2>访问规则</h2><span className="scope-badge project">项目范围</span><dl className="detail-list"><div><dt>负责人</dt><dd>使用并管理项目工具</dd></div><div><dt>测试成员</dt><dd>使用工具，仅操作本人资源</dd></div><div><dt>临时授权</dt><dd>单工具使用，不获得项目数据</dd></div></dl></section></div>{project.status === "active" && canManageProject && <section className="deactivate-banner"><div><strong>停用项目将立即收敛工具访问</strong><p>{project.tool_count} 个项目工具将从普通用户目录隐藏，{project.active_grant_count} 条额外授权暂时失效；运行中任务不会自动取消。</p></div><button className="secondary-button" onClick={() => void previewDeactivate()}>预览停用影响</button></section>}</>}
+    {isMembersPage && isManagersView && <section className="access-card member-section"><div className="section-heading"><div><h2>项目负责人</h2><p>仅平台管理员可以分配 active 管理员。</p></div><button className="secondary-button" disabled={personBusy || Boolean(removingUserId)} onClick={() => { setPersonUsername(""); setPersonError(""); setPersonDialog("managers"); }}>分配负责人</button></div>{managers.length ? <MemberList members={managers} relation="managers" canRemove onRemove={(member) => void removePerson(member, "managers")} removingUserId={removingUserId} /> : <EmptyState title="尚未分配负责人" copy="平台管理员可为项目分配管理员负责人。" />}</section>}
+    {isMembersPage && !isManagersView && <section className="access-card member-section"><div className="section-heading"><div><h2>测试成员</h2><p>普通管理员只能通过精确用户名查找并加入 active 测试人员。</p></div>{canManageMembers && <div className="row-actions"><NavLink className="secondary-button button-link" to={`/admin/users?project_id=${encodeURIComponent(projectId)}`}>创建测试人员</NavLink><button className="primary-button" disabled={personBusy || Boolean(removingUserId)} onClick={() => { setPersonUsername(""); setPersonError(""); setPersonDialog("members"); }}>添加成员</button></div>}</div>{members.length ? <MemberList members={members} relation="members" canRemove={canManageMembers} onRemove={(member) => void removePerson(member, "members")} removingUserId={removingUserId} /> : <EmptyState title="暂无测试成员" copy="成员加入后会自动获得该项目的启用工具。" />}</section>}
     {isToolsPage && <><div className="section-heading project-tools-heading"><div><h2>项目工具</h2><p>项目工具自动授予负责人和成员；额外授权只提供单工具业务使用权。</p></div>{canManageProject && <button className="secondary-button" disabled title="工具归属只能由平台管理员在工具管理中修改">关联项目工具</button>}</div>{tools.length ? <AccessTable headers={["工具", "状态", "分类", "成员覆盖", "临时授权", "操作"]}>{tools.map((tool) => <tr key={tool.id}><td><strong>{tool.name}</strong><small>{tool.description}</small></td><td><StatusBadge value={tool.is_enabled ? "enabled" : "disabled"} /></td><td>工具</td><td>{project.manager_count + project.member_count} 人</td><td>0</td><td>{canManageProject ? <NavLink to={`/admin/tool-access/${encodeURIComponent(tool.id)}`}>进入控制面</NavLink> : "查看"}</td></tr>)}</AccessTable> : <EmptyState title="项目暂无工具" copy="启用并归属本项目的工具会在这里显示。" />}<section className="access-card grant-readonly"><div><h2>额外授权只读汇总</h2><p>授权由平台管理员在“额外授权”模块统一管理。</p></div>{project.active_grant_count ? <span className="status-badge status-badge-warning">{project.active_grant_count} 条有效授权</span> : <span>暂无临时授权</span>}<span>仅本人资源</span></section></>}
-    {personDialog && <div className="modal-backdrop" role="presentation"><section className="dialog" role="dialog" aria-modal="true" aria-labelledby="add-project-person-title"><h2 id="add-project-person-title">{personDialog === "managers" ? "添加项目负责人" : "添加测试人员"}</h2><p>请输入完整用户名。平台不会提供全局用户候选列表。</p><form className="auth-form" onSubmit={addPerson}><label>完整用户名<input autoFocus value={personUsername} onChange={(event) => setPersonUsername(event.target.value)} minLength={3} required /></label><div className="dialog-actions"><button type="button" className="secondary-button" onClick={() => setPersonDialog(null)}>取消</button><button className="primary-button">确认添加</button></div></form></section></div>}
+    {personDialog && <div className="modal-backdrop" role="presentation"><section className="dialog" role="dialog" aria-modal="true" aria-labelledby="add-project-person-title"><h2 id="add-project-person-title">{personDialog === "managers" ? "添加项目负责人" : "添加测试人员"}</h2><p>请输入完整用户名。平台不会提供全局用户候选列表。</p>{personError && <InlineMessage kind="error">{personError}</InlineMessage>}<form className="auth-form" onSubmit={addPerson}><label>完整用户名<input autoFocus value={personUsername} onChange={(event) => setPersonUsername(event.target.value)} minLength={3} disabled={personBusy} required /></label><div className="dialog-actions"><button type="button" className="secondary-button" disabled={personBusy} onClick={() => { setPersonDialog(null); setPersonError(""); }}>取消</button><button className="primary-button" disabled={personBusy || !personUsername.trim()}>{personBusy ? "添加中…" : "确认添加"}</button></div></form></section></div>}
     {impact && <div className="modal-backdrop" role="presentation"><section className="dialog" role="dialog" aria-modal="true" aria-labelledby="deactivate-project-title"><p className="section-label">HIGH-RISK ACTION</p><h2 id="deactivate-project-title">停用 {project.name}</h2><p>将影响 {impact.manager_count ?? 0} 位负责人、{impact.member_count ?? 0} 位成员、{impact.tool_count ?? 0} 个工具及 {impact.active_grant_count ?? 0} 条额外授权。</p><p>{unknownRunning ? "运行中任务状态未知，默认阻止停用。" : `当前运行中任务：${impact.running_task_count}`}</p>{unknownRunning && <label className="checkbox-row"><input type="checkbox" checked={forceUnknownImpact} onChange={(event) => setForceUnknownImpact(event.target.checked)} />我已核对外部运行状态并承担继续停用的影响</label>}<div className="dialog-actions"><button className="secondary-button" onClick={() => setImpact(null)}>取消</button><button className="primary-button" disabled={unknownRunning && !forceUnknownImpact} onClick={() => void confirmDeactivate()}>确认停用</button></div></section></div>}
   </section></WorkspaceShell>;
 }
@@ -1679,7 +2109,10 @@ function ProjectOverviewRedirect() {
   return <Navigate to={`/projects/${encodeURIComponent(projectId)}/overview`} replace />;
 }
 
-function MemberList({ members, canRemove = false, onRemove }: { members: ProjectMember[]; canRemove?: boolean; onRemove?: (member: ProjectMember) => void }) { return <div className="data-panel">{members.map((member) => <div className="table-row" key={member.id}><strong>{member.display_name}<small>{member.username}</small></strong><span>{roleLabel[member.role]}</span><StatusBadge value={member.status} />{canRemove ? <button className="link-button" onClick={() => onRemove?.(member)}>移除成员</button> : <span />}</div>)}</div>; }
+function MemberList({ members, relation, canRemove = false, onRemove, removingUserId = null }: { members: ProjectMember[]; relation: "members" | "managers"; canRemove?: boolean; onRemove?: (member: ProjectMember) => void; removingUserId?: string | null }) {
+  const removeLabel = relation === "managers" ? "移除负责人" : "移除成员";
+  return <div className="data-panel">{members.map((member) => <div className="table-row" key={member.id}><strong>{member.display_name}<small>{member.username}</small></strong><span>{roleLabel[member.role]}</span><StatusBadge value={member.status} />{canRemove ? <button className="link-button" aria-label={`${removeLabel} ${member.display_name}（${member.username}）`} disabled={Boolean(removingUserId)} onClick={() => onRemove?.(member)}>{removingUserId === member.id ? "移除中…" : removeLabel}</button> : <span />}</div>)}</div>;
+}
 
 function ToolAccessAdminPage() {
   const { toolId } = useParams(); const location = useLocation(); const [tools, setTools] = useState<ToolAccessRecord[]>([]); const [projects, setProjects] = useState<ProjectSummary[]>([]); const [grants, setGrants] = useState<ToolGrantSummary[]>([]); const [loaded, setLoaded] = useState(false); const [editing, setEditing] = useState<ToolAccessRecord | null>(null); const [impact, setImpact] = useState<ImpactPreview | null>(null); const [confirmingImpact, setConfirmingImpact] = useState(false); const [grantDialog, setGrantDialog] = useState<ToolGrantSummary | "new" | null>(null); const [error, setError] = useState("");
@@ -1747,9 +2180,18 @@ function FixedUsersPage() {
   const projectIdToJoin = new URLSearchParams(location.search).get("project_id");
   const [items, setItems] = useState<AdminUser[]>([]); const [selected, setSelected] = useState<AdminUser | null>(null); const [detailLoading, setDetailLoading] = useState(false); const [creating, setCreating] = useState(false); const [error, setError] = useState("");
   const [form, setForm] = useState({ username: "", display_name: "", password: "", role: "tester" as PlatformRole });
+  const [createError, setCreateError] = useState("");
+  const [createBusy, setCreateBusy] = useState(false);
+  const [createdUsername, setCreatedUsername] = useState<string | null>(null);
+  const [createdUserId, setCreatedUserId] = useState<string | null>(null);
   const load = useCallback(() => apiJson<AdminUser[]>("/admin/users").then(setItems), []);
   useEffect(() => { void load().catch((reason) => setError(reason.message)); }, [load]);
-  useEffect(() => { if (projectIdToJoin && !userId) setCreating(true); }, [projectIdToJoin, userId]);
+  useEffect(() => {
+    if (!projectIdToJoin || userId) return;
+    // 从项目进入时只能创建 tester，防止平台管理员在同一入口误建管理员后又尝试加入成员关系。
+    setForm((current) => ({ ...current, role: "tester" }));
+    setCreateError(""); setCreatedUsername(null); setCreatedUserId(null); setCreating(true);
+  }, [projectIdToJoin, userId]);
   useEffect(() => {
     setSelected(null);
     setError("");
@@ -1760,8 +2202,57 @@ function FixedUsersPage() {
       .catch((reason) => setError(reason.message))
       .finally(() => setDetailLoading(false));
   }, [userId]);
-  useModal(creating, () => setCreating(false));
-  async function createFixedUser(event: FormEvent) { event.preventDefault(); try { await apiJson("/admin/users", { method: "POST", body: JSON.stringify({ ...form, must_change_password: true }) }); if (projectIdToJoin) await accessApi.addProjectMember(projectIdToJoin, "members", form.username); setCreating(false); setForm({ username: "", display_name: "", password: "", role: "tester" }); if (projectIdToJoin) navigate(`/projects/${encodeURIComponent(projectIdToJoin)}/members`); else await load(); } catch (reason) { setError(reason instanceof Error ? reason.message : "创建用户失败"); } }
+  useModal(creating, () => { setCreating(false); setCreateError(""); }, createBusy);
+  /**
+   * 项目入口包含“创建账号”和“加入项目”两次写入。若第二步失败，保留已创建用户名并只重试加入，
+   * 避免用户再次提交时得到用户名重复、却不知道账号其实已经创建成功的半完成状态。
+   */
+  async function createFixedUser(event: FormEvent) {
+    event.preventDefault();
+    if (createBusy) return;
+    if (!createdUsername) {
+      const passwordError = validateNewPassword(form.password);
+      if (passwordError) {
+        setCreateError(passwordError);
+        return;
+      }
+    }
+    setCreateBusy(true); setCreateError(""); setError("");
+    let accountCreated = Boolean(createdUsername);
+    let accountUserId = createdUserId;
+    try {
+      if (!accountCreated) {
+        const created = await apiJson<{ id: string }>("/admin/users", { method: "POST", body: JSON.stringify({ ...form, role: projectIdToJoin ? "tester" : form.role, must_change_password: true }) });
+        accountCreated = true;
+        accountUserId = created.id;
+        setCreatedUsername(form.username);
+        setCreatedUserId(created.id);
+      }
+      if (projectIdToJoin) {
+        try {
+          await accessApi.addProjectMember(projectIdToJoin, "members", createdUsername ?? form.username);
+        } catch (relationError) {
+          if (!(relationError instanceof ApiError) || relationError.code !== "PROJECT_RELATION_EXISTS") throw relationError;
+          // 首次响应可能在服务端提交后丢失。只有重新读取确认“刚创建的同一账号”已经是
+          // 当前项目成员，才把重复关系视为幂等成功；不能仅凭 409 猜测写入结果。
+          const currentMembers = await accessApi.listProjectMembers(projectIdToJoin, "members");
+          const relationExists = currentMembers.some((member) => (
+            accountUserId ? member.user_id === accountUserId : member.username === (createdUsername ?? form.username)
+          ));
+          if (!relationExists) throw relationError;
+        }
+      }
+      setCreating(false); setCreatedUsername(null); setCreatedUserId(null); setCreateError("");
+      setForm({ username: "", display_name: "", password: "", role: "tester" });
+      if (projectIdToJoin) navigate(`/projects/${encodeURIComponent(projectIdToJoin)}/members`);
+      else await load();
+    } catch (reason) {
+      const message = describeApiError(reason, accountCreated ? "加入项目失败" : "创建用户失败");
+      setCreateError(accountCreated && projectIdToJoin ? `账号已创建，但加入项目失败：${message}。请修复问题后重试加入。` : message);
+    } finally {
+      setCreateBusy(false);
+    }
+  }
   if (userId && detailLoading) return <WorkspaceShell><LoadingPage label="正在读取用户权限…" /></WorkspaceShell>;
   if (userId && !selected) return <WorkspaceShell><section className="workspace-page access-page"><EmptyState title="用户不可见或不存在" copy="请返回用户管理后重新选择。" /></section></WorkspaceShell>;
   if (userId && selected) return <WorkspaceShell><section className="workspace-page access-page"><PageHeader eyebrow="08 / ACCESS CONTROL" title="用户详情 · 权限全景" copy={`${selected.display_name} · ${selected.username}`} />{error && <InlineMessage kind="error">{error}</InlineMessage>}
@@ -1773,11 +2264,11 @@ function FixedUsersPage() {
   const platformAdmins = items.filter((item) => item.role === "platform_admin").length;
   const admins = items.filter((item) => item.role === "admin").length;
   const testers = items.filter((item) => item.role === "tester").length;
-  return <WorkspaceShell><section className="workspace-page access-page"><PageHeader eyebrow="07 / ACCESS CONTROL" title="用户管理" copy="固定全局角色一人一个；项目关系和额外授权决定工具范围。" actions={<button className="primary-button" onClick={() => setCreating(true)}>创建用户</button>} />{error && <InlineMessage kind="error">{error}</InlineMessage>}
+  return <WorkspaceShell><section className="workspace-page access-page"><PageHeader eyebrow="07 / ACCESS CONTROL" title="用户管理" copy="固定全局角色一人一个；项目关系和额外授权决定工具范围。" actions={<button className="primary-button" onClick={() => { setCreateError(""); if (!projectIdToJoin) { setCreatedUsername(null); setCreatedUserId(null); } setCreating(true); }}>创建用户</button>} />{error && <InlineMessage kind="error">{error}</InlineMessage>}
     <div className="metric-grid metric-grid-four"><MetricCard label="全部用户" value={items.length} note={`Active ${items.filter((item) => item.status === "active").length}`} /><MetricCard label="平台管理员" value={platformAdmins} note="至少保留 1 位 active" /><MetricCard label="管理员" value={admins} note={`负责 ${items.reduce((sum, item) => sum + item.projects.filter((project) => project.relation === "manager").length, 0)} 个项目`} /><MetricCard label="测试人员" value={testers} note={`${items.filter((item) => item.role === "tester" && item.projects.length === 0).length} 人无项目`} /></div>
     <div className="access-toolbar"><input type="search" placeholder="搜索用户名或显示名" /><select aria-label="全部角色"><option>全部角色</option></select><select aria-label="全部用户状态"><option>全部状态</option></select></div>
     <AccessTable headers={["用户", "固定角色", "状态", "项目关系", "额外授权", "最近登录", "操作"]}>{items.map((item) => <tr key={item.id}><td><strong>{item.display_name} {item.username}</strong></td><td><span className={`role-badge ${item.role}`}>{roleLabel[item.role]}</span></td><td><StatusBadge value={item.status} /></td><td>{item.role === "platform_admin" ? "全平台" : `${item.projects.some((project) => project.relation === "manager") ? "负责" : "加入"} ${item.projects.length} 个项目`}</td><td>{item.extra_tool_grants.length}</td><td>{item.last_login_at ? new Date(item.last_login_at).toLocaleString() : "尚未登录"}</td><td><NavLink to={`/admin/users/${encodeURIComponent(item.id)}`}>查看</NavLink></td></tr>)}</AccessTable>
-    {creating && <div className="modal-backdrop" role="presentation"><section className="dialog" role="dialog" aria-modal="true" aria-labelledby="create-fixed-user-title"><h2 id="create-fixed-user-title">创建用户</h2><form className="auth-form" onSubmit={createFixedUser}><label>用户名<input autoFocus value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} minLength={3} required /></label><label>显示名称<input value={form.display_name} onChange={(event) => setForm({ ...form, display_name: event.target.value })} required /></label><label>初始密码<input type="password" autoComplete="new-password" minLength={12} value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} required /></label>{auth?.role === "platform_admin" && <label>固定角色<select value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value as PlatformRole })}><option value="tester">测试人员</option><option value="admin">管理员</option><option value="platform_admin">平台管理员</option></select></label>}<div className="dialog-actions"><button type="button" className="secondary-button" onClick={() => setCreating(false)}>取消</button><button className="primary-button">确认创建</button></div></form></section></div>}
+    {creating && <div className="modal-backdrop" role="presentation"><section className="dialog" role="dialog" aria-modal="true" aria-labelledby="create-fixed-user-title"><h2 id="create-fixed-user-title">{projectIdToJoin ? "创建测试人员" : "创建用户"}</h2>{projectIdToJoin && <p>{createdUsername ? `账号 ${createdUsername} 已创建，当前仅需完成加入项目。` : "账号固定创建为测试人员，创建成功后将立即加入当前项目。"}</p>}{createError && <InlineMessage kind="error">{createError}</InlineMessage>}<form className="auth-form" onSubmit={createFixedUser}><label>用户名<input autoFocus value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} minLength={3} disabled={createBusy || Boolean(createdUsername)} required /></label><label>显示名称<input value={form.display_name} onChange={(event) => setForm({ ...form, display_name: event.target.value })} disabled={createBusy || Boolean(createdUsername)} required /></label><label>初始密码<input type="password" autoComplete="new-password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} disabled={createBusy || Boolean(createdUsername)} required /></label>{auth?.role === "platform_admin" && !projectIdToJoin && <label>固定角色<select value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value as PlatformRole })} disabled={createBusy}><option value="tester">测试人员</option><option value="admin">管理员</option><option value="platform_admin">平台管理员</option></select></label>}<div className="dialog-actions"><button type="button" className="secondary-button" disabled={createBusy} onClick={() => { setCreating(false); setCreateError(""); }}>取消</button><button className="primary-button" disabled={createBusy}>{createBusy ? "提交中…" : createdUsername ? "重试加入项目" : "确认创建"}</button></div></form></section></div>}
   </section></WorkspaceShell>;
 }
 
@@ -1811,6 +2302,11 @@ function UsersPage() {
   }
   async function createUser(event: FormEvent) {
     event.preventDefault(); setError(""); setMessage("");
+    const passwordError = validateNewPassword(form.password);
+    if (passwordError) {
+      setError(passwordError);
+      return;
+    }
     try {
       await apiJson("/admin/users", { method: "POST", body: JSON.stringify({ ...form, must_change_password: true }) });
       setCreating(false); setForm({ username: "", display_name: "", password: "", role_ids: [] }); setMessage("用户已创建，首次登录必须修改密码。"); await load();
@@ -1824,6 +2320,11 @@ function UsersPage() {
   async function submitReset(event: FormEvent) {
     event.preventDefault(); if (!resetting) return;
     setError(""); setMessage("");
+    const passwordError = validateNewPassword(resetPassword);
+    if (passwordError) {
+      setError(passwordError);
+      return;
+    }
     try { await apiJson(`/admin/users/${resetting.id}/reset-password`, { method: "POST", body: JSON.stringify({ new_password: resetPassword }) }); setResetPassword(""); setResetting(null); setMessage("密码已重置，目标用户的全部会话已撤销。"); }
     catch (requestError) { setError(requestError instanceof Error ? requestError.message : "重置失败"); }
   }
@@ -1832,7 +2333,7 @@ function UsersPage() {
     try { await apiJson(`/admin/users/${user.id}/sessions`, { method: "DELETE" }); setMessage(`${user.display_name} 的会话已全部撤销。`); }
     catch (requestError) { setError(requestError instanceof Error ? requestError.message : "撤销失败"); }
   }
-  return <WorkspaceShell><section className="workspace-page"><PageHeader eyebrow="IDENTITY" title="用户管理" copy="本地账号的状态、角色和会话都由平台统一管理。" actions={<button className="primary-button" onClick={() => setCreating(true)}>创建用户</button>} /><ManagementNav />{message && <InlineMessage kind="success">{message}</InlineMessage>}{error && <InlineMessage kind="error">{error}</InlineMessage>}<div className="data-panel user-table"><div className="table-header"><span>用户</span><span>角色</span><span>状态 / 最近登录</span><span>操作</span></div>{items.length === 0 ? <EmptyState title="尚无用户" copy="创建本地用户并分配最小必要角色。" /> : items.map((item) => <div className="table-row" key={item.id}><strong>{item.display_name}<small>{item.username}</small></strong><span>{item.role_ids.length ? item.role_ids.map((id) => roles.find((role) => role.id === id)?.name ?? id).join("、") : "未分配"}</span><span><StatusBadge value={item.status} /><small>{item.last_login_at ? new Date(item.last_login_at).toLocaleString() : "尚未登录"}</small></span><div className="row-actions"><button className="link-button" onClick={() => void updateUser(item, { status: item.status === "active" ? "disabled" : "active" }, item.status === "active" ? "用户已禁用并撤销会话。" : "用户已启用。")}>{item.status === "active" ? "禁用" : "启用"}</button><button className="link-button" onClick={() => setResetting(item)}>重置密码</button><button className="link-button" onClick={() => void revokeUserSessions(item)}>强制退出</button></div></div>)}</div>{creating && <div className="modal-backdrop" role="presentation"><section className="dialog" role="dialog" aria-modal="true" aria-labelledby="create-user-title"><p className="section-label">LOCAL IDENTITY</p><h2 id="create-user-title">创建用户</h2><form className="auth-form" onSubmit={createUser}><label>用户名<input autoFocus value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} minLength={3} required /></label><label>显示名<input value={form.display_name} onChange={(event) => setForm({ ...form, display_name: event.target.value })} required /></label><label>初始密码<input type="password" autoComplete="new-password" minLength={12} value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} required /></label><fieldset><legend>角色</legend>{roles.map((role) => <label className="checkbox-row" key={role.id}><input type="checkbox" checked={form.role_ids.includes(role.id)} onChange={() => toggleRole(role.id)} />{role.name}</label>)}</fieldset><div className="dialog-actions"><button type="button" className="secondary-button" onClick={() => setCreating(false)}>取消</button><button className="primary-button">创建用户</button></div></form></section></div>}{resetting && <div className="modal-backdrop" role="presentation"><section className="dialog" role="dialog" aria-modal="true" aria-labelledby="reset-password-title"><p className="section-label">HIGH-RISK ACTION</p><h2 id="reset-password-title">重置 {resetting.display_name} 的密码</h2><p>提交后该用户所有会话会立即失效。</p><form className="auth-form" onSubmit={submitReset}><label>新密码<input autoFocus type="password" autoComplete="new-password" minLength={12} value={resetPassword} onChange={(event) => setResetPassword(event.target.value)} required /></label><div className="dialog-actions"><button type="button" className="secondary-button" onClick={() => setResetting(null)}>取消</button><button className="primary-button">确认重置</button></div></form></section></div>}</section></WorkspaceShell>;
+  return <WorkspaceShell><section className="workspace-page"><PageHeader eyebrow="IDENTITY" title="用户管理" copy="本地账号的状态、角色和会话都由平台统一管理。" actions={<button className="primary-button" onClick={() => setCreating(true)}>创建用户</button>} /><ManagementNav />{message && <InlineMessage kind="success">{message}</InlineMessage>}{error && <InlineMessage kind="error">{error}</InlineMessage>}<div className="data-panel user-table"><div className="table-header"><span>用户</span><span>角色</span><span>状态 / 最近登录</span><span>操作</span></div>{items.length === 0 ? <EmptyState title="尚无用户" copy="创建本地用户并分配最小必要角色。" /> : items.map((item) => <div className="table-row" key={item.id}><strong>{item.display_name}<small>{item.username}</small></strong><span>{item.role_ids.length ? item.role_ids.map((id) => roles.find((role) => role.id === id)?.name ?? id).join("、") : "未分配"}</span><span><StatusBadge value={item.status} /><small>{item.last_login_at ? new Date(item.last_login_at).toLocaleString() : "尚未登录"}</small></span><div className="row-actions"><button className="link-button" onClick={() => void updateUser(item, { status: item.status === "active" ? "disabled" : "active" }, item.status === "active" ? "用户已禁用并撤销会话。" : "用户已启用。")}>{item.status === "active" ? "禁用" : "启用"}</button><button className="link-button" onClick={() => setResetting(item)}>重置密码</button><button className="link-button" onClick={() => void revokeUserSessions(item)}>强制退出</button></div></div>)}</div>{creating && <div className="modal-backdrop" role="presentation"><section className="dialog" role="dialog" aria-modal="true" aria-labelledby="create-user-title"><p className="section-label">LOCAL IDENTITY</p><h2 id="create-user-title">创建用户</h2><form className="auth-form" onSubmit={createUser}><label>用户名<input autoFocus value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} minLength={3} required /></label><label>显示名<input value={form.display_name} onChange={(event) => setForm({ ...form, display_name: event.target.value })} required /></label><label>初始密码<input type="password" autoComplete="new-password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} required /></label><fieldset><legend>角色</legend>{roles.map((role) => <label className="checkbox-row" key={role.id}><input type="checkbox" checked={form.role_ids.includes(role.id)} onChange={() => toggleRole(role.id)} />{role.name}</label>)}</fieldset><div className="dialog-actions"><button type="button" className="secondary-button" onClick={() => setCreating(false)}>取消</button><button className="primary-button">创建用户</button></div></form></section></div>}{resetting && <div className="modal-backdrop" role="presentation"><section className="dialog" role="dialog" aria-modal="true" aria-labelledby="reset-password-title"><p className="section-label">HIGH-RISK ACTION</p><h2 id="reset-password-title">重置 {resetting.display_name} 的密码</h2><p>提交后该用户所有会话会立即失效。</p><form className="auth-form" onSubmit={submitReset}><label>新密码<input autoFocus type="password" autoComplete="new-password" value={resetPassword} onChange={(event) => setResetPassword(event.target.value)} required /></label><div className="dialog-actions"><button type="button" className="secondary-button" onClick={() => setResetting(null)}>取消</button><button className="primary-button">确认重置</button></div></form></section></div>}</section></WorkspaceShell>;
 }
 
 function RolesPage() {

@@ -1,0 +1,114 @@
+name: Dating 多图 Reply 并保留任务数据
+variables: {}
+runtime_inputs:
+  reply_locale:
+    label: Reply 结果语言
+    description: 仅修改本次 Reply 任务的 locale
+    type: enum
+    options: [en-US, zh-CN]
+    required: true
+    target:
+      scope: flow_step_request
+      step_id: create_reply
+      path: $.locale
+  requested_intent:
+    label: Reply 意图
+    description: 本次 Reply 的可选意图；提交值使用 Gateway 当前接受的稳定 code
+    type: enum
+    options: [opener, flirt, tease, advance]
+    required: false
+    target:
+      scope: flow_step_request
+      step_id: create_reply
+      path: $.requested_intent
+  reply_background:
+    label: Reply 背景说明
+    description: 本次 Reply 的可选背景，最长 1000 个字符
+    type: string
+    required: false
+    max_length: 1000
+    target:
+      scope: flow_step_request
+      step_id: create_reply
+      path: $.background
+  update_preferences__dating_goal:
+    label: Dating Goal
+    description: 仅在当前账号尚未完成偏好设置时写入
+    type: string
+    required: true
+    target:
+      scope: flow_step_request
+      step_id: update_preferences
+      path: $.dating_goal
+  update_preferences__your_voice:
+    label: Your Voice
+    description: 仅在当前账号尚未完成偏好设置时写入
+    type: string
+    required: true
+    target:
+      scope: flow_step_request
+      step_id: update_preferences
+      path: $.your_voice
+# Dating Reply 仍在联调期。这里暂时只固定传输成功与 Gateway message，
+# 不断言易变化的业务 data 字段、类型或值；Flow extract 使用的字段仍属于
+# 偏好判断、上传、创建任务和轮询所必需的运行时依赖。
+step_data:
+  get_preferences:
+    params: {}
+    assert:
+      http_status: 200
+      gateway: {message: "ok"}
+  update_preferences:
+    params:
+      client_request_id: "{{client_request_id}}"
+      # 这是 Reply 自动化场景的业务输入，不是运行环境配置。只有账号尚未完成
+      # 偏好设置时才会写入，已配置账号不会被覆盖。
+      dating_goal: serious_relationship
+      your_voice: warm_direct
+      expected_version: "{{preferences_version}}"
+    assert:
+      http_status: 200
+      gateway: {message: "ok"}
+  get_upload_config:
+    params: {}
+    assert:
+      http_status: 200
+      gateway: {message: "ok"}
+  prepare_upload:
+    params:
+      client_request_id: "{{client_request_id}}"
+      content_type: "{{media_file.content_type}}"
+      size_bytes: "{{media_file.size_bytes}}"
+    assert:
+      http_status: 200
+      gateway: {message: "ok"}
+  complete_upload:
+    params:
+      asset_id: "{{asset_id}}"
+    assert:
+      http_status: 200
+      gateway: {message: "ok"}
+  create_reply:
+    params:
+      client_request_id: "{{client_request_id}}"
+      asset_ids: "{{asset_ids}}"
+      locale: en-US
+      # 协议示例与真实 Gateway 都使用小写稳定 code。产品展示名
+      # Opener/Charming/Add Spark/Confident 不能直接作为接口参数发送。
+      requested_intent: flirt
+      background: Automated Dating Reply test context.
+    assert:
+      http_status: 200
+      gateway: {message: "ok"}
+  poll_reply:
+    params:
+      task_id: "{{task_id}}"
+    assert:
+      http_status: 200
+      gateway: {message: "ok"}
+  get_reply_result:
+    params:
+      task_id: "{{task_id}}"
+    assert:
+      http_status: 200
+      gateway: {message: "ok"}

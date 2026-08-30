@@ -5,6 +5,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.deps import AuthContext, current_auth_context, require_csrf
@@ -22,6 +23,7 @@ from app.schemas.auth import (
     MessageResponse,
     ProjectSummary,
     RegisterRequest,
+    RegistrationStatusResponse,
     SessionResponse,
     SetupRequest,
     ToolGrantSummary,
@@ -34,6 +36,7 @@ from app.services.auth import (
     create_session,
     is_login_blocked,
     record_login_failure,
+    resolve_client_ip,
     revoke_user_sessions,
     utc_now,
 )
@@ -43,11 +46,80 @@ from app.services.authorization import decide_tool_access, platform_permissions_
 router = APIRouter(tags=["auth"])
 
 
-def _client_ip(request: Request) -> str:
-    """读取经过网关传递的客户端地址，缺失时使用连接地址。"""
+def _record_registration_denied(
+    database: Session,
+    request: Request,
+    *,
+    error_code: str,
+) -> None:
+    """在独立、安全字段集合中记录注册拒绝并提交当前事务。
 
-    forwarded = request.headers.get("x-forwarded-for", "").split(",", 1)[0].strip()
-    return forwarded or (request.client.host if request.client else "")
+    参数说明:
+        database: 当前业务或冲突确认会话。
+        request: 提供 request_id 和连接元数据的 HTTP 请求。
+        error_code: 仅供内部审计分类的稳定错误码。
+    异常说明:
+        数据库异常继续抛出，由统一数据库异常处理器失败关闭。
+    """
+
+    add_audit_event(
+        database,
+        action="auth.register",
+        resource_type="user",
+        outcome="denied",
+        request=request,
+        actor_type="anonymous",
+        error_code=error_code,
+    )
+    database.commit()
+
+
+def _confirm_concurrent_username_conflict(
+    request: Request,
+    normalized_username: str,
+    original_error: IntegrityError,
+) -> None:
+    """用注入的隔离会话确认并发用户名冲突，再返回安全 409。
+
+    只有重新查询确认规范化用户名已存在时才把唯一键异常解释为重复用户名；
+    provider 缺失或其他约束错误继续交给统一数据库 503，避免测试或运行时
+    悄悄回退到模块级真实数据库。
+    """
+
+    factory = getattr(request.app.state, "registration_session_factory", None)
+    if not callable(factory):
+        raise original_error
+    try:
+        with factory() as verification_database:
+            existing = verification_database.scalar(
+                select(User).where(User.username_normalized == normalized_username)
+            )
+            if existing is None:
+                raise original_error
+            _record_registration_denied(
+                verification_database,
+                request,
+                error_code="REGISTRATION_UNAVAILABLE",
+            )
+    except PlatformError:
+        raise
+    except Exception:
+        raise original_error
+    raise PlatformError(
+        409,
+        "REGISTRATION_UNAVAILABLE",
+        "暂时无法创建账号，请更换信息或稍后重试",
+    )
+
+
+def _client_ip(request: Request) -> str:
+    """只信任带网关覆盖标记的单值 XFF，直连请求使用连接地址。"""
+
+    return resolve_client_ip(
+        forwarded_for=request.headers.get("x-forwarded-for"),
+        peer_host=request.client.host if request.client else None,
+        gateway_marker=request.headers.get("x-test-platform-gateway"),
+    ) or ""
 
 
 def _set_auth_cookies(response: Response, settings: Settings, session_token: str, csrf_token: str) -> None:
@@ -81,6 +153,8 @@ def _me_response(database: Session, context: AuthContext) -> MeResponse:
         if context.user.platform_role is not None
         else sorted({grant.permission_code for grant in grants if grant.resource_type == "platform"})
     )
+
+
     tools = list(database.scalars(select(Tool).where(Tool.is_enabled.is_(True))).all())
     tool_map: dict[str, list[str]] = {}
     for tool in tools:
@@ -157,6 +231,17 @@ def _me_response(database: Session, context: AuthContext) -> MeResponse:
     )
 
 
+@router.get("/auth/registration-status", response_model=RegistrationStatusResponse)
+def registration_status(
+    response: Response,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> RegistrationStatusResponse:
+    """返回公开注册模式，并禁止浏览器或代理缓存开关状态。"""
+
+    response.headers["Cache-Control"] = "no-store"
+    return RegistrationStatusResponse(mode=settings.registration_mode)
+
+
 @router.post("/auth/register", response_model=MeResponse, status_code=201)
 def register(
     payload: RegisterRequest,
@@ -167,20 +252,48 @@ def register(
 ) -> MeResponse:
     """注册 active tester 并创建登录会话，客户端不能选择角色或项目。"""
 
+    if settings.registration_mode != "open":
+        error_code = (
+            "REGISTRATION_MODE_DISABLED"
+            if settings.registration_mode == "disabled"
+            else "REGISTRATION_INVITE_UNAVAILABLE"
+        )
+        _record_registration_denied(database, request, error_code=error_code)
+        raise PlatformError(
+            503,
+            "REGISTRATION_UNAVAILABLE",
+            "暂未开放注册，请稍后重试",
+        )
+
     normalized = normalize_username(payload.username)
     if database.scalar(select(User).where(User.username_normalized == normalized)):
-        raise PlatformError(409, "USERNAME_EXISTS", "用户名已存在")
+        _record_registration_denied(
+            database,
+            request,
+            error_code="REGISTRATION_UNAVAILABLE",
+        )
+        raise PlatformError(
+            409,
+            "REGISTRATION_UNAVAILABLE",
+            "暂时无法创建账号，请更换信息或稍后重试",
+        )
     user = User(
         id=new_id("usr"),
-        username=payload.username.strip(),
+        # RegisterRequest 已在 trim 后执行长度校验，这里复用同一清理结果，
+        # 避免持久化值与唯一性规范化值出现不同边界语义。
+        username=payload.username,
         username_normalized=normalized,
-        display_name=payload.display_name.strip(),
+        display_name=payload.display_name,
         password_hash=hash_password(payload.password),
         status="active",
         platform_role="tester",
     )
     database.add(user)
-    database.flush()
+    try:
+        database.flush()
+    except IntegrityError as exc:
+        database.rollback()
+        _confirm_concurrent_username_conflict(request, normalized, exc)
     session, session_token, csrf_token = create_session(
         database, user, settings, _client_ip(request), request.headers.get("user-agent", "")
     )
@@ -194,9 +307,12 @@ def register(
         actor=user,
         after={"role": "tester", "status": "active"},
     )
+    # 必须在事务提交前完成响应所需的全部查询与构造；否则构造失败会留下
+    # 客户端从未收到成功结果的用户和 Session，且重试只能得到冲突响应。
+    result = _me_response(database, AuthContext(session, user))
     database.commit()
     _set_auth_cookies(response, settings, session_token, csrf_token)
-    return _me_response(database, AuthContext(session, user))
+    return result
 
 
 @router.post("/setup", response_model=MeResponse)

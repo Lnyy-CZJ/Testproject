@@ -356,17 +356,38 @@ class ProjectRegistry:
         package: ProjectPackage,
         flow_cases: list[dict[str, Any]],
     ) -> None:
-        """验证上传动作声明的 fixture 均落在当前项目且真实存在。"""
+        """验证上传动作声明的 fixture 均落在当前项目且真实存在。
+
+        任务 ``input_file`` 在提交后才存在于 runtime，因此只由 FlowRunner
+        在任务输入边界内校验；这里仍递归进入 foreach 保护其中的静态 fixture。
+        """
+
+        def iter_steps(steps: list[Any]) -> list[dict[str, Any]]:
+            """按声明顺序展开顶层及 foreach 子步骤。"""
+
+            result: list[dict[str, Any]] = []
+            for candidate in steps:
+                if not isinstance(candidate, dict):
+                    continue
+                result.append(candidate)
+                foreach = candidate.get("foreach")
+                if isinstance(foreach, dict) and isinstance(foreach.get("steps"), list):
+                    result.extend(iter_steps(foreach["steps"]))
+            return result
+
         for flow_case in flow_cases:
             scenario = flow_case.get("scenario") or {}
             variables = scenario.get("variables") or {}
-            for step in (flow_case.get("flow") or {}).get("steps") or []:
+            steps = (flow_case.get("flow") or {}).get("steps") or []
+            for step in iter_steps(steps):
                 action = step.get("action")
                 if action == "prepared_media_upload":
                     fixture = variables.get("media_file")
                     if isinstance(fixture, str) and fixture.startswith("fixtures/"):
                         fixture = fixture.removeprefix("fixtures/")
                 elif isinstance(action, dict) and action.get("type") == "signed_binary_upload":
+                    if action.get("input_file"):
+                        continue
                     fixture = action.get("fixture")
                     if isinstance(fixture, str) and (
                         match := _FULL_VARIABLE_PATTERN.fullmatch(fixture)

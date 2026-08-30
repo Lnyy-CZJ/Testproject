@@ -17,13 +17,13 @@ from web.redaction import FAILED_MESSAGE_LIMIT, redact_text
 
 
 def _case_message(element: ET.Element) -> str:
-    """提取 failure/error 元素的摘要消息并脱敏截断。
+    """提取 failure/error 元素的原始摘要消息并按展示上限截断。
 
     参数说明:
         element: testcase 下的 failure 或 error 元素。
 
     返回值:
-        优先取 message 属性，其次取元素文本；统一脱敏并截断到
+        优先取 message 属性，其次取元素文本；不修改内容，只截断到
         ``FAILED_MESSAGE_LIMIT`` 字符。
     """
     message = element.get("message") or (element.text or "")
@@ -38,12 +38,12 @@ def parse_junit_file(
 
     功能说明:
         以 testcase 为单位统计 total/passed/failed/errors/skipped，
-        并收集 failed 与 error 用例的名称和脱敏后的失败摘要。
+        并收集 failed 与 error 用例的名称和原始失败摘要。
         pytest 的 JUnit 可能嵌套 testsuite，故直接遍历全部 testcase。
 
     参数说明:
         path: JUnit XML 文件路径。
-        project_root: 项目根目录，用于脱敏容器内绝对路径。
+        project_root: 兼容旧调用签名保留；原始日志模式不改写路径。
 
     返回值:
         ``{"summary": {...}, "cases": [...], "failed_cases": [...]}``；文件不存在或

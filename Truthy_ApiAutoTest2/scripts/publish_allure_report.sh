@@ -68,7 +68,8 @@ else
 fi
 ALLURE_REPORTS_DIR="$TASK_REPORT_ROOT/versions"
 CURRENT_LINK="$TASK_REPORT_ROOT/current"
-LOCK_DIR="$REPORT_ROOT/.publish.lock"
+LOCK_DIR="$TASK_REPORT_ROOT/.publish.lock"
+LOCK_ACQUIRED=0
 LOCK_MAX_AGE_SECONDS=600   # 锁超过该时间视为残留，强制回收
 TMP_MAX_AGE_SECONDS=3600   # 无引用临时目录超过该时间才允许清理
 
@@ -98,8 +99,9 @@ TMP_LINK="$TASK_REPORT_ROOT/.current.tmp"
 # ---------------- 发布锁 ----------------
 
 acquire_lock() {
-    # mkdir 是原子操作，用作跨进程互斥锁。
+    # mkdir 是原子操作；锁位于任务报告根，因此只串行化同一任务的发布。
     if mkdir "$LOCK_DIR" 2>/dev/null; then
+        LOCK_ACQUIRED=1
         return 0
     fi
     # 已存在：判断是否为超龄残留锁（发布进程异常退出未清理）。
@@ -110,6 +112,7 @@ acquire_lock() {
         log "回收超龄发布锁: $LOCK_DIR"
         rm -rf "$LOCK_DIR"
         mkdir "$LOCK_DIR" || die 3 "已有发布正在进行（回收锁后仍无法获取）: $LOCK_DIR"
+        LOCK_ACQUIRED=1
         return 0
     fi
     die 3 "已有发布正在进行: $LOCK_DIR"
@@ -122,7 +125,11 @@ cleanup() {
     if [ "$exit_code" -ne 0 ]; then
         rm -rf "$STAGING_DIR" "$TMP_LINK" 2>/dev/null || true
     fi
-    rmdir "$LOCK_DIR" 2>/dev/null || rm -rf "$LOCK_DIR" 2>/dev/null || true
+    # 获取失败的竞争进程同样会执行 EXIT trap；只有实际持锁者才能释放锁，
+    # 否则它会误删仍在发布中的同任务锁并破坏互斥保证。
+    if [ "$LOCK_ACQUIRED" -eq 1 ]; then
+        rmdir "$LOCK_DIR" 2>/dev/null || rm -rf "$LOCK_DIR" 2>/dev/null || true
+    fi
 }
 trap cleanup EXIT
 

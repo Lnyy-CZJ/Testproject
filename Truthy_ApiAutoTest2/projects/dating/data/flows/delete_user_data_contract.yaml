@@ -1,0 +1,28 @@
+name: Dating 当前用户数据擦除契约
+tags: [dating, data-erasure, preferences, destructive, isolated, explicit]
+steps:
+  - id: create_session
+    api: CreateAnonymousSession
+    extract:
+      access_token: $.access_token
+      expires_time: $.expires_time
+      refresh_token: $.refresh_token
+      refresh_expires_time: $.refresh_expires_time
+      user_id: $.user_id
+  - id: get_preferences_before
+    api: GetUserPreferences
+    extract: {preferences_version_before: $.version}
+  - id: seed_preferences
+    api: UpdateUserPreferences
+  - id: delete_user_data
+    api: DeleteUserData
+    extract: {deletion_id: $.deletion_id}
+  - id: repeat_delete_user_data
+    api: DeleteUserData
+  - id: verify_account_still_available
+    api: GetMe
+  - id: get_preferences_after
+    api: GetUserPreferences
+    extract: {preferences_version_after: $.version}
+  - id: recreate_preferences
+    api: UpdateUserPreferences

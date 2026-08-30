@@ -168,11 +168,11 @@ def test_attachments_use_declared_types_and_json_format(
     assert calls[1] == ("说明", "123", "text-type")
 
 
-def test_reporter_failure_is_best_effort_and_logs_only_exception_type(
+def test_reporter_failure_is_best_effort_and_logs_raw_exception(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Reporter 写入失败不得影响测试，也不得把原始附件内容写入日志。"""
+    """Reporter 写入失败不得影响测试，异常日志保留原始异常内容。"""
     from utils.third_party import allure_reporter
 
     secret = "very-secret-token"
@@ -184,7 +184,7 @@ def test_reporter_failure_is_best_effort_and_logs_only_exception_type(
     allure_reporter.attach_json("请求", {"access_token": secret})
 
     assert "RuntimeError" in caplog.text
-    assert secret not in caplog.text
+    assert secret in caplog.text
 
 
 def test_step_passes_title_and_preserves_business_exception(
@@ -417,10 +417,10 @@ def test_flow_poll_creates_numbered_steps_and_safe_summaries(
     ]
 
 
-def test_http_post_attachments_are_masked_and_non_json_body_is_omitted(
+def test_http_post_attachments_preserve_raw_values_and_non_json_body(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Gateway 附件复用安全对象，非 JSON 响应不得保存正文。"""
+    """Gateway 附件保留原始对象和非 JSON 响应正文。"""
     from utils.custom import http_client
 
     class Response:
@@ -452,18 +452,18 @@ def test_http_post_attachments_are_masked_and_non_json_body_is_omitted(
     )
 
     serialized = json.dumps(attachments, ensure_ascii=False)
-    assert "header-secret" not in serialized
-    assert "request-token-secret" not in serialized
-    assert "response-access-secret" not in serialized
-    assert attachments[0][1]["headers"]["Authorization"] == "***"
+    assert "header-secret" in serialized
+    assert "request-token-secret" in serialized
+    assert "response-access-secret" in serialized
+    assert attachments[0][1]["headers"]["Authorization"] == "header-secret"
     assert attachments[1][1]["body_type"] == "text"
-    assert attachments[1][1]["body_length"] == len(Response.text)
+    assert attachments[1][1]["body"] == Response.text
 
 
-def test_http_exception_attachment_is_safe_and_exception_is_unchanged(
+def test_http_exception_attachment_preserves_raw_request_and_exception(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """网络异常附件只保留安全诊断字段，原 requests 异常原样抛出。"""
+    """网络异常附件保留原始请求和异常，原 requests 异常原样抛出。"""
     from utils.custom import http_client
 
     expected = requests.Timeout("signed-secret")
@@ -491,19 +491,24 @@ def test_http_exception_attachment_is_safe_and_exception_is_unchanged(
 
     assert caught.value is expected
     assert attachments[-1][1]["exception_type"] == "Timeout"
+    assert attachments[-1][1]["exception_message"] == "signed-secret"
     serialized = json.dumps(attachments, ensure_ascii=False)
-    assert "signed-secret" not in serialized
-    assert "header-secret" not in serialized
-    assert "request-token-secret" not in serialized
+    assert "signed-secret" in serialized
+    assert "header-secret" in serialized
+    assert "request-token-secret" in serialized
 
 
-def test_put_attachments_omit_binary_path_and_signature(
+def test_put_attachments_preserve_signature_but_omit_binary_content(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """COS PUT 附件只保留路径、请求头、字节数、状态和耗时。"""
+    """COS PUT 附件保留完整签名 URL，但二进制正文仍只记录字节数。"""
     from utils.custom import http_client
 
-    response = SimpleNamespace(status_code=200)
+    response = SimpleNamespace(
+        status_code=200,
+        headers={"x-cos-request-id": "raw-response-header"},
+        text="raw-upload-response",
+    )
 
     class Session:
         @staticmethod
@@ -526,17 +531,21 @@ def test_put_attachments_omit_binary_path_and_signature(
 
     assert result is response
     serialized = json.dumps(attachments, ensure_ascii=False)
-    assert "signed-secret" not in serialized
+    assert "signed-secret" in serialized
     assert "abc" not in serialized
-    assert attachments[0][1]["url"].endswith("?***")
+    assert attachments[0][1]["url"].endswith("?signature=signed-secret")
     assert attachments[0][1]["content_length"] == 3
     assert attachments[1][1]["status_code"] == 200
+    assert attachments[1][1]["headers"] == {
+        "x-cos-request-id": "raw-response-header"
+    }
+    assert attachments[1][1]["body"] == "raw-upload-response"
 
 
-def test_put_exception_attachment_is_safe_and_exception_is_unchanged(
+def test_put_exception_attachment_preserves_raw_values_and_exception(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """PUT 失败只附加安全诊断字段，并保持原始网络异常对象。"""
+    """PUT 失败附件保留签名 URL 和异常原文，并保持原始异常对象。"""
     from utils.custom import http_client
 
     expected = requests.ConnectionError("signed-secret")
@@ -563,8 +572,9 @@ def test_put_exception_attachment_is_safe_and_exception_is_unchanged(
 
     assert caught.value is expected
     assert attachments[-1][1]["exception_type"] == "ConnectionError"
+    assert attachments[-1][1]["exception_message"] == "signed-secret"
     serialized = json.dumps(attachments, ensure_ascii=False)
-    assert "signed-secret" not in serialized
+    assert "signed-secret" in serialized
     assert "abc" not in serialized
 
 

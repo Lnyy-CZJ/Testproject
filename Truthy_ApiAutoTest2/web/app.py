@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 import json
 import hmac
 import os
@@ -15,6 +16,7 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Mapping
+from urllib.parse import urlencode
 
 import requests
 
@@ -23,6 +25,7 @@ from flask import (
     Flask,
     abort,
     jsonify,
+    redirect,
     render_template,
     request,
     send_from_directory,
@@ -32,7 +35,8 @@ from flask import (
 from web import catalog as catalog_module
 from web import credentials
 from web.junit_report import parse_junit_file
-from web.task_manager import SubmissionError, TaskManager
+from web.redaction import DEFAULT_MAX_LENGTH, truncate_tail
+from web.task_manager import SubmissionError, TaskManager, TERMINAL_STATUSES
 from web.task_store import TaskStore, is_valid_task_id
 from utils.custom.project_registry import ProjectRegistry, ProjectRegistryError
 
@@ -46,6 +50,17 @@ MAX_PAGE_SIZE = 100
 # 日志 tail 默认行数与上限。
 DEFAULT_LOG_TAIL = 500
 MAX_LOG_TAIL = 2000
+
+
+def _bounded_log_tail(content: str, line_limit: int) -> list[str]:
+    """按行数选择最新日志，再按统一字符上限保留真正的尾部。
+
+    先执行行数选择可保持 ``tail`` 参数语义；随后从所选内容尾部限长，避免
+    单行超大响应绕过上限，也避免先截文件开头而丢失最终异常。
+    """
+    latest = "\n".join(content.splitlines()[-line_limit:])
+    bounded = truncate_tail(latest, max_length=DEFAULT_MAX_LENGTH * 5)
+    return bounded.splitlines()
 
 # 浏览器永远不能覆盖由平台实例、Runtime Scope 或 Release 决定的字段。
 FORBIDDEN_TASK_OVERRIDE_KEYS = {
@@ -68,6 +83,28 @@ FORBIDDEN_TASK_OVERRIDE_KEYS = {
     "platform_project_id",
 }
 
+_V2_TASK_FIELDS = {
+    "project_id",
+    "run_type",
+    "api_id",
+    "case_id",
+    "flow_id",
+    "tag",
+    "asset_revision",
+    "runtime_overrides",
+    # inputs 只用于 Preflight 的非敏感文件元数据；真实提交必须走 multipart。
+    "inputs",
+    "batch_type",
+    "selection_mode",
+    "items",
+    "tag_filters",
+    "risk_acknowledgements",
+    # 仅用于“修改参数后重试”建立审计链；服务端会重新校验来源任务权限、
+    # 终态、项目和资产类型，不能由浏览器任意关联其他任务。
+    "retry_from",
+}
+_LEGACY_TASK_FIELDS = {"env", "run_type", "flow", "tag"}
+
 # 项目资产使用稳定的“逻辑 Profile”，平台凭证中心继续使用现有 provider_type。
 # 映射只发生在工具边界，避免把平台实现名写进 API/Flow 资产，后续平台迁移也不
 # 需要批量修改项目 YAML。
@@ -76,11 +113,34 @@ _PROFILE_PROVIDER_ALIASES = {
     "admin_session": "admin_login",
 }
 _READY_PROFILE_STATUSES = {"ready", "active", "healthy"}
+_PROFILE_STATUS_LABELS = {
+    "missing": "尚未配置",
+    "expired": "已过期",
+    "action_required": "需要处理",
+    "refreshing": "正在刷新",
+    "pending_validation": "等待验证",
+    "expiring": "即将过期",
+}
+_PROFILE_ERROR_REASONS = {
+    "CREDENTIAL_REFRESH_HTTPSTATUSERROR": (
+        "自动续期请求返回 HTTP 错误，需要重新配置或验证凭证"
+    ),
+    "CREDENTIAL_REFRESH_VALUEERROR": (
+        "自动续期响应不符合协议，需要重新配置或检查服务配置"
+    ),
+    "CREDENTIAL_REFRESH_CONNECTERROR": (
+        "自动续期无法连接凭证服务，请检查网络或 Gateway 配置"
+    ),
+    "CREDENTIAL_REFRESH_READTIMEOUT": (
+        "自动续期请求超时，请稍后重试或检查 Gateway 状态"
+    ),
+}
 
 
 def _credential_profiles(
     payload: Mapping[str, Any],
     required_profile_ids: list[str] | tuple[str, ...] | None = None,
+    runtime_scope_id: str | None = None,
 ) -> list[dict[str, Any]]:
     """从平台 Credential 元数据提取并规范化逻辑 Profile 摘要。
 
@@ -105,9 +165,8 @@ def _credential_profiles(
                     continue
                 raw_profiles.append(
                     {
+                        **item,
                         "id": profile_id,
-                        "status": item.get("status", "ready"),
-                        "version": item.get("credential_version"),
                     }
                 )
 
@@ -128,22 +187,71 @@ def _credential_profiles(
         )
         item = by_id.get(logical_profile_id) or by_id.get(provider_id)
         if item is None:
-            result.append(
-                {"id": logical_profile_id, "status": "missing", "version": None}
-            )
-            continue
+            item = {"status": "missing", "credential_version": None}
         raw_status = str(item.get("status") or "missing").lower()
-        result.append(
-            {
-                "id": logical_profile_id,
-                "status": (
-                    "ready" if raw_status in _READY_PROFILE_STATUSES else raw_status
-                ),
-                "version": item.get("version")
-                or item.get("credential_version"),
-            }
+        normalized_status = (
+            "ready" if raw_status in _READY_PROFILE_STATUSES else raw_status
         )
+        profile: dict[str, Any] = {
+            "id": logical_profile_id,
+            "status": normalized_status,
+            "version": item.get("version") or item.get("credential_version"),
+        }
+        if normalized_status not in _READY_PROFILE_STATUSES:
+            error_code = (
+                str(item.get("last_error_code"))
+                if item.get("last_error_code") else None
+            )
+            default_reasons = {
+                "missing": "当前 Runtime Scope 尚未配置该凭证",
+                "expired": "凭证已经过期，需要重新配置或等待平台续期",
+                "action_required": "凭证自动维护失败，需要重新配置或验证",
+                "refreshing": "平台正在刷新凭证，请稍后重试",
+                "pending_validation": "凭证正在等待平台验证",
+                "expiring": "凭证即将过期，平台正在安排刷新",
+            }
+            profile.update(
+                {
+                    "provider_type": provider_id,
+                    "expires_at": item.get("expires_at"),
+                    "refresh_expires_at": item.get("refresh_expires_at"),
+                    "last_checked_at": item.get("last_checked_at"),
+                    "last_error_code": error_code,
+                    "reason": _PROFILE_ERROR_REASONS.get(
+                        error_code or "",
+                        default_reasons.get(
+                            normalized_status,
+                            "凭证状态不可用，请前往平台检查",
+                        ),
+                    ),
+                }
+            )
+            if runtime_scope_id:
+                profile["management_url"] = (
+                    "/account/credentials?"
+                    + urlencode(
+                        {
+                            "scope_id": runtime_scope_id,
+                            "provider_type": provider_id,
+                        }
+                    )
+                )
+        result.append(profile)
     return result
+
+
+def _credential_problem_message(profiles: list[dict[str, Any]]) -> str:
+    """把未就绪 Profile 转成不含 Secret、可直接行动的中文错误。"""
+
+    problems: list[str] = []
+    for profile in profiles:
+        status = str(profile.get("status") or "missing").lower()
+        status_label = _PROFILE_STATUS_LABELS.get(status, "不可用")
+        problems.append(
+            f"{profile.get('id')} 凭证{status_label}："
+            f"{profile.get('reason') or '请前往平台检查凭证状态'}"
+        )
+    return "；".join(problems)
 
 
 def _platform_json_response(response: Any) -> dict[str, Any]:
@@ -213,6 +321,10 @@ def load_web_settings(env: Mapping[str, str] | None = None) -> dict[str, Any]:
         "platform_home_url": env.get("PLATFORM_HOME_URL", "/"),
         "timeout_seconds": int(env.get("API_AUTOTEST_TASK_TIMEOUT_SECONDS", "1800")),
         "tasks_retain": int(env.get("API_AUTOTEST_TASKS_RETAIN", "50")),
+        "max_pending_tasks": int(
+            env.get("API_AUTOTEST_MAX_PENDING_TASKS", "20")
+        ),
+        "max_concurrency": int(env.get("API_AUTOTEST_MAX_CONCURRENCY", "1")),
         "report_dir": env.get("API_AUTOTEST_REPORT_DIR", "reports/allure-current"),
         "config_source": env.get("API_AUTOTEST_CONFIG_SOURCE", "local"),
         "platform_environment": env.get("PLATFORM_RUNTIME_ENV", "dev"),
@@ -375,7 +487,11 @@ def create_app(
             or payload.get("target_env")
         )
         required_profiles = _required_credential_profiles(project_id, selection)
-        credential_profiles = _credential_profiles(payload, required_profiles)
+        credential_profiles = _credential_profiles(
+            payload,
+            required_profiles,
+            str(runtime_scope_id) if runtime_scope_id else None,
+        )
         missing_profiles = [
             item
             for item in credential_profiles
@@ -386,8 +502,7 @@ def create_app(
             raise SubmissionError(
                 409,
                 "PROJECT_CREDENTIAL_MISSING",
-                "当前资产所需凭证未就绪: "
-                + ", ".join(str(item.get("id")) for item in missing_profiles),
+                _credential_problem_message(missing_profiles),
             )
         package = _get_registry().get(project_id)
         missing_config_keys = _missing_project_config_keys(
@@ -460,7 +575,7 @@ def create_app(
                 )
             elif isinstance(selector, dict):
                 response = requests.post(
-                    f"{platform_api_url}/internal/tools/api-autotest/runtime-config/materialize",
+                    f"{platform_api_url}/internal/tools/api-autotest/runtime-config/dispatch-materialize",
                     headers={"Authorization": f"Bearer {token}"},
                     json={
                         "runtime_context_id": runtime_context_id,
@@ -477,13 +592,41 @@ def create_app(
             raise SubmissionError(503, "PLATFORM_CONFIG_UNAVAILABLE", "平台运行配置暂时不可用") from exc
         if not isinstance(payload, dict) or payload.get("tool_id") != "api-autotest":
             raise SubmissionError(503, "PLATFORM_CONFIG_UNAVAILABLE", "平台运行配置作用域不匹配")
+        refreshed_selector = payload.get("snapshot_selector")
+        if refreshed_selector is not None:
+            if not isinstance(refreshed_selector, dict):
+                raise SubmissionError(
+                    409,
+                    "RUNTIME_SNAPSHOT_INVALID",
+                    "平台调度快照选择器无效，请重新提交任务",
+                )
+            # dispatch 只刷新原 Credential ID 的版本。更新后的 selector
+            # 作为任务历史的一部分落盘，后续日志和会话 CAS 使用同一版本。
+            runtime["snapshot_selector"] = refreshed_selector
         project = record.get("project")
         project = project if isinstance(project, dict) else {}
-        selection = record.get("selection")
-        selection = selection if isinstance(selection, dict) else {}
+        # ``selection`` 是面向历史展示的精简投影，批次不会把内部
+        # ``batch_items`` 重复保存进去；完整且已由服务端校验的逻辑条目在
+        # ``input``。dispatch 阶段必须合并二者后计算 Profile 并集，否则实际
+        # 使用 anonymous_session 的批次会在详情中误显示“无需凭证”。
+        selection: dict[str, Any] = {}
+        public_selection = record.get("selection")
+        if isinstance(public_selection, dict):
+            selection.update(public_selection)
+        execution_input = record.get("input")
+        if isinstance(execution_input, dict):
+            selection.update(execution_input)
         project_id = str(project.get("project_id") or selection.get("project_id") or "")
         required_profiles = _required_credential_profiles(project_id, selection)
-        credential_profiles = _credential_profiles(payload, required_profiles)
+        materialized_scope_id = (
+            payload.get("runtime_scope_id")
+            or record.get("runtime", {}).get("runtime_scope_id")
+        )
+        credential_profiles = _credential_profiles(
+            payload,
+            required_profiles,
+            str(materialized_scope_id) if materialized_scope_id else None,
+        )
         missing_profiles = [
             item
             for item in credential_profiles
@@ -573,6 +716,8 @@ def create_app(
             platform_configured_secret_keys if platform_mode else None
         ),
         platform_environment=str(settings.get("platform_environment") or "dev"),
+        max_pending_tasks=int(settings.get("max_pending_tasks") or 20),
+        max_concurrency=int(settings.get("max_concurrency") or 1),
     )
     if task_manager is None:
         manager.recover_on_startup()
@@ -652,8 +797,11 @@ const platformFetch=window.fetch.bind(window);window.fetch=function(resource,opt
     @app.errorhandler(SubmissionError)
     def _handle_submission_error(error: SubmissionError):
         """统一拒绝响应：可读信息 + 稳定错误码。"""
+        payload = {"error": error.message, "error_code": error.error_code}
+        if error.details:
+            payload["field_errors"] = error.details
         return (
-            jsonify({"error": error.message, "error_code": error.error_code}),
+            jsonify(payload),
             error.status_code,
         )
 
@@ -816,7 +964,9 @@ def _resolve_report_dir(task_id: str) -> Path | None:
     record = _get_manager().store.load(task_id) or {}
     normalized = _normalize_task_record(record)
     report_dir = configured.parent / "task-reports"
-    if record.get("schema_version") == 2:
+    # V2 与 V3 都使用项目隔离的报告目录。V3 是批量/队列任务的当前格式，
+    # 若仍走历史全局路径，报告已经发布成功也会被页面误判为不存在。
+    if record.get("schema_version") in {2, 3}:
         report_dir = report_dir / normalized["project"]["project_id"]
     report_dir = report_dir / task_id / "current"
     try:
@@ -856,7 +1006,7 @@ def _resolve_task_report_dir(task_id: str) -> tuple[Path, dict[str, Any]] | None
         not isinstance(meta, dict)
         or meta.get("task_id") != task_id
         or (
-            record.get("schema_version") == 2
+            record.get("schema_version") in {2, 3}
             and meta.get("project_id") != project_id
         )
     ):
@@ -929,7 +1079,7 @@ def _project_items() -> list[dict[str, Any]]:
 def _validate_selection_payload(payload: dict[str, Any]) -> dict[str, Any]:
     """复用 TaskManager 的资产归属校验，但不创建任务或启动子进程。"""
 
-    return _get_manager()._validate_input(  # noqa: SLF001 - 同一服务内的预检入口
+    selection = _get_manager()._validate_input(  # noqa: SLF001 - 同一服务内的预检入口
         None,
         str(payload.get("run_type") or ""),
         None,
@@ -939,6 +1089,214 @@ def _validate_selection_payload(payload: dict[str, Any]) -> dict[str, Any]:
         case_id=payload.get("case_id"),
         flow_id=payload.get("flow_id"),
     )
+    if selection.get("run_type") == "batch":
+        selection.update(
+            {
+                "batch_type": payload.get("batch_type"),
+                "selection_mode": payload.get("selection_mode"),
+                "batch_items": payload.get("items"),
+                "tag_filters": payload.get("tag_filters"),
+                "risk_acknowledgements": payload.get(
+                    "risk_acknowledgements"
+                ),
+            }
+        )
+    return selection
+
+
+def _validate_task_payload_fields(
+    payload: dict[str, Any],
+    *,
+    allow_input_metadata: bool,
+) -> None:
+    """拒绝任务请求中未约定的顶层字段。
+
+    新版请求允许逻辑 ``asset_revision`` 与 ``runtime_overrides``；平台配置
+    覆盖仍由 ``FORBIDDEN_TASK_OVERRIDE_KEYS`` 优先拒绝。历史无 project_id
+    请求保持原契约，不能借兼容入口启用运行时覆盖。
+    """
+
+    if payload.get("project_id"):
+        allowed = set(_V2_TASK_FIELDS)
+        if not allow_input_metadata:
+            allowed.discard("inputs")
+        unexpected = sorted(set(payload) - allowed)
+        if unexpected:
+            raise SubmissionError(
+                400,
+                "INVALID_PARAMS",
+                f"任务请求包含未知字段: {', '.join(unexpected)}",
+            )
+        return
+
+    if "runtime_overrides" in payload or "asset_revision" in payload:
+        raise SubmissionError(
+            400,
+            "RUNTIME_OVERRIDE_NOT_SUPPORTED",
+            "历史兼容任务不支持本次运行参数修改",
+        )
+    unexpected = sorted(set(payload) - _LEGACY_TASK_FIELDS)
+    if unexpected:
+        raise SubmissionError(
+            400,
+            "INVALID_PARAMS",
+            f"历史任务请求包含未知字段: {', '.join(unexpected)}",
+        )
+
+
+def _selected_file_input_contract(
+    project_id: str,
+    selection: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    """返回所选 Flow 的 ``media_files`` 静态契约；其他任务返回 None。"""
+
+    run_type = selection.get("run_type")
+    if run_type not in {"flow", "batch"}:
+        return None
+    catalog = catalog_module.build_catalog(_get_root(), project_id)
+    flow_ids: list[str]
+    if run_type == "flow":
+        flow_ids = [str(selection.get("flow_id") or "")]
+    elif selection.get("batch_type") == "flows" and selection.get(
+        "selection_mode"
+    ) == "selected":
+        flow_ids = [
+            str(item.get("asset_id") or "")
+            for item in selection.get("batch_items") or []
+            if isinstance(item, Mapping)
+        ]
+    else:
+        # all_safe 已在领域层排除必填文件 Flow。
+        return None
+    for flow_id in flow_ids:
+        flow = next(
+            (item for item in catalog["flows"] if item.get("id") == flow_id),
+            None,
+        )
+        inputs = flow.get("inputs") if isinstance(flow, dict) else None
+        contract = inputs.get("media_files") if isinstance(inputs, dict) else None
+        if isinstance(contract, dict) and bool(contract.get("required")):
+            return dict(contract)
+    return None
+
+
+def _input_error(code: str, message: str) -> dict[str, Any]:
+    """构造与平台预检错误同形的本地输入错误。"""
+
+    return {
+        "code": code,
+        "message": message,
+        "scope_id": None,
+        "release_id": None,
+        "logical_keys": [],
+        "management_url": None,
+    }
+
+
+def _validate_file_input_metadata(
+    contract: dict[str, Any] | None,
+    inputs: Any,
+) -> list[dict[str, Any]]:
+    """校验浏览器预检使用的非敏感文件元数据。
+
+    这里只用于即时交互反馈；任务提交仍把真实文件交给 ``TaskStore`` 按
+    文件头、大小和 SHA-256 再校验，不能以浏览器声明替代服务端验证。
+    """
+
+    if contract is None:
+        if isinstance(inputs, dict) and inputs.get("media_files"):
+            return [_input_error("TASK_INPUTS_NOT_ALLOWED", "当前任务不接受图片输入")]
+        return []
+    raw_files = inputs.get("media_files") if isinstance(inputs, dict) else None
+    if not isinstance(raw_files, list) or not raw_files:
+        return [_input_error("TASK_INPUTS_REQUIRED", "请先选择需要分析的图片")]
+
+    minimum = int(contract.get("min_items") or 1)
+    maximum = int(contract.get("max_items") or 9)
+    if not minimum <= len(raw_files) <= maximum:
+        return [
+            _input_error(
+                "TASK_INPUT_COUNT_INVALID",
+                f"图片数量必须为 {minimum}～{maximum} 张",
+            )
+        ]
+    allowed_types = set(contract.get("allowed_content_types") or [])
+    maximum_size = int(contract.get("max_size_bytes") or 0)
+    for index, item in enumerate(raw_files, start=1):
+        if not isinstance(item, dict):
+            return [_input_error("TASK_INPUT_TYPE_INVALID", f"第 {index} 张图片元数据无效")]
+        name = str(item.get("name") or item.get("original_name") or "").strip()
+        content_type = str(item.get("content_type") or "").split(";", 1)[0].lower()
+        size_bytes = item.get("size_bytes")
+        if not name or content_type not in allowed_types:
+            return [
+                _input_error(
+                    "TASK_INPUT_TYPE_INVALID",
+                    f"第 {index} 张图片必须是 JPEG、PNG 或 WebP",
+                )
+            ]
+        if isinstance(size_bytes, bool) or not isinstance(size_bytes, int) or size_bytes <= 0:
+            return [_input_error("TASK_INPUT_TYPE_INVALID", f"图片 {name} 的大小无效")]
+        if maximum_size and size_bytes > maximum_size:
+            return [
+                _input_error(
+                    "TASK_INPUT_TOO_LARGE",
+                    # 协议以十进制字节给出上限，不能整除 MiB 后显示成
+                    # 误导性的“6 MB”。直接展示带千分位的权威字节值。
+                    f"图片 {name} 超过 {maximum_size:,} 字节",
+                )
+            ]
+    return []
+
+
+def _upload_metadata(uploads: list[Any]) -> dict[str, list[dict[str, Any]]]:
+    """读取 multipart 文件元数据并恢复流位置，不把图片内容发往平台。"""
+
+    metadata: list[dict[str, Any]] = []
+    for upload in uploads:
+        stream = getattr(upload, "stream", upload)
+        try:
+            position = stream.tell()
+            stream.seek(0, os.SEEK_END)
+            size_bytes = stream.tell()
+            stream.seek(position)
+        except (AttributeError, OSError) as exc:
+            raise SubmissionError(
+                400,
+                "TASK_INPUT_TYPE_INVALID",
+                "无法读取上传图片大小",
+            ) from exc
+        metadata.append(
+            {
+                "name": str(getattr(upload, "filename", "") or ""),
+                "content_type": str(getattr(upload, "content_type", "") or ""),
+                "size_bytes": size_bytes,
+            }
+        )
+    return {"media_files": metadata}
+
+
+def _parse_task_request() -> tuple[dict[str, Any], list[Any]]:
+    """解析 JSON 或文件型 multipart 任务请求，拒绝未约定的表单字段。"""
+
+    if request.mimetype != "multipart/form-data":
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            raise SubmissionError(400, "INVALID_PARAMS", "请求体必须是 JSON 对象")
+        return payload, []
+
+    if set(request.form) != {"task_payload"} or set(request.files) - {"media_files"}:
+        raise SubmissionError(400, "INVALID_PARAMS", "multipart 字段不符合任务契约")
+    payload_items = request.form.getlist("task_payload")
+    if len(payload_items) != 1:
+        raise SubmissionError(400, "INVALID_PARAMS", "task_payload 必须且只能提交一次")
+    try:
+        payload = json.loads(payload_items[0])
+    except (TypeError, json.JSONDecodeError) as exc:
+        raise SubmissionError(400, "INVALID_PARAMS", "task_payload 必须是 JSON 对象") from exc
+    if not isinstance(payload, dict):
+        raise SubmissionError(400, "INVALID_PARAMS", "task_payload 必须是 JSON 对象")
+    return payload, list(request.files.getlist("media_files"))
 
 
 def _required_credential_profiles(
@@ -975,6 +1333,38 @@ def _required_credential_profiles(
                 for item in flow.get("credential_profiles", [])
                 if item not in {None, "public"}
             )
+    elif run_type == "batch":
+        batch_items = selection.get("batch_items")
+        batch_items = batch_items if isinstance(batch_items, list) else []
+        apis_by_id = {
+            str(item.get("id")): item
+            for item in catalog["apis"]
+            if isinstance(item, dict)
+        }
+        flows_by_id = {
+            str(item.get("id")): item
+            for item in catalog["flows"]
+            if isinstance(item, dict)
+        }
+        for batch_item in batch_items:
+            if not isinstance(batch_item, Mapping):
+                continue
+            asset_type = str(batch_item.get("asset_type") or "")
+            asset_id = str(batch_item.get("asset_id") or "")
+            if asset_type == "case":
+                api_id = asset_id.split("::", 1)[0]
+                api = apis_by_id.get(api_id)
+                profile = api.get("credential_profile") if api else None
+                if profile not in {None, "public"}:
+                    required.add(str(profile))
+            elif asset_type == "flow":
+                flow = flows_by_id.get(asset_id)
+                if flow:
+                    required.update(
+                        str(item)
+                        for item in flow.get("credential_profiles", [])
+                        if item not in {None, "public"}
+                    )
     elif run_type == "all":
         required.update(
             str(item.get("credential_profile"))
@@ -1039,6 +1429,56 @@ def _preflight_response(
         "display_name": package.display_name,
         "package_status": "valid" if not catalog["errors"] else "invalid",
     }
+    asset: dict[str, Any] | None = None
+    batch_preview: dict[str, Any] | None = None
+    asset_errors: list[dict[str, Any]] = []
+    try:
+        if selection.get("run_type") == "batch":
+            input_files = (
+                payload.get("inputs", {}).get("media_files")
+                if isinstance(payload.get("inputs"), dict)
+                else None
+            )
+            preview = _get_manager().preview_batch(
+                selection,
+                batch_type=payload.get("batch_type"),
+                selection_mode=payload.get("selection_mode"),
+                batch_items=payload.get("items"),
+                tag_filters=payload.get("tag_filters"),
+                risk_acknowledgements=payload.get("risk_acknowledgements"),
+                has_uploads=bool(input_files),
+            )
+            asset = preview["asset"]
+            batch_preview = preview["batch"]
+            selection["batch_items"] = batch_preview.get("items") or []
+            selection["batch_type"] = batch_preview.get("type")
+            selection["selection_mode"] = batch_preview.get("selection_mode")
+        else:
+            asset = _get_manager().preview_asset(
+                selection,
+                asset_revision=payload.get("asset_revision"),
+                runtime_overrides=payload.get("runtime_overrides"),
+            )
+    except SubmissionError as exc:
+        # Preflight 永远以 HTTP 200 返回可修正状态。即使覆盖值无效，也再次
+        # 读取不带覆盖的公开契约，让页面仍能渲染字段并定位错误。
+        error = _input_error(exc.error_code, exc.message)
+        if exc.details:
+            error["field_errors"] = exc.details
+        asset_errors.append(error)
+        if selection.get("run_type") != "batch":
+            try:
+                asset = _get_manager().preview_asset(selection)
+            except SubmissionError:
+                asset = None
+    authoritative_file_contract = (
+        batch_preview.get("input_contract")
+        if isinstance(batch_preview, dict)
+        else _selected_file_input_contract(project_id, selection)
+    )
+    input_errors = _validate_file_input_metadata(
+        authoritative_file_contract, payload.get("inputs")
+    )
     provider = _get_preflight_provider()
     if provider is None:
         runtime = {
@@ -1054,7 +1494,10 @@ def _preflight_response(
             "project": project,
             "runtime": runtime,
             "profiles": [],
-            "errors": [
+            "asset": asset,
+            "batch": batch_preview,
+            "queue": _get_manager().queue_status(),
+            "errors": asset_errors + input_errors + [
                 {
                     "code": "PLATFORM_CONFIG_REQUIRED",
                     "message": "Web 任务只能使用平台 Runtime Scope 与配置快照",
@@ -1090,8 +1533,11 @@ def _preflight_response(
     profiles = _credential_profiles(
         config,
         _required_credential_profiles(project_id, selection),
+        str(scope_id) if scope_id else None,
     )
-    errors: list[dict[str, Any]] = []
+    # 输入错误优先展示：用户可直接在当前表单修正；平台 Scope/Release
+    # 错误随后追加，并继续保持相同的深链配置语义。
+    errors: list[dict[str, Any]] = [*asset_errors, *input_errors]
     management_url = config.get("management_url") or context_scope.get("management_url")
     if project["package_status"] != "valid":
         errors.append(
@@ -1148,14 +1594,23 @@ def _preflight_response(
         not in _READY_PROFILE_STATUSES
     ]
     if enforce_profiles and missing_profiles:
+        credential_management_url = next(
+            (
+                str(item.get("management_url"))
+                for item in missing_profiles
+                if item.get("management_url")
+            ),
+            management_url,
+        )
         errors.append(
             {
                 "code": "PROJECT_CREDENTIAL_MISSING",
-                "message": "当前资产所需凭证未就绪",
+                "message": _credential_problem_message(missing_profiles),
                 "scope_id": scope_id,
                 "release_id": release_id,
                 "logical_keys": [str(item.get("id")) for item in missing_profiles],
-                "management_url": management_url,
+                "profile_details": missing_profiles,
+                "management_url": credential_management_url,
             }
         )
     platform_environment = (
@@ -1195,15 +1650,48 @@ def _preflight_response(
         "project": project,
         "runtime": runtime,
         "profiles": profiles,
+        "asset": asset,
+        "batch": batch_preview,
+        "queue": _get_manager().queue_status(),
         "errors": errors,
     }
 
 
 def _normalize_task_record(record: dict[str, Any]) -> dict[str, Any]:
-    """读取时把 V1 Truthy 历史任务映射为 V2 展示结构，不改写旧文件。"""
+    """读取时公开 V2/V3 安全字段，并映射 V1 历史任务。"""
 
-    if record.get("schema_version") == 2:
-        return record
+    if record.get("schema_version") in {2, 3}:
+        normalized = deepcopy(record)
+        snapshot = record.get("asset_snapshot")
+        if isinstance(snapshot, dict):
+            raw_runtime_inputs = snapshot.get("runtime_inputs", [])
+            if isinstance(raw_runtime_inputs, Mapping):
+                raw_runtime_inputs = list(raw_runtime_inputs.values())
+            runtime_inputs = [
+                {
+                    key: deepcopy(value)
+                    for key, value in field.items()
+                    if key != "target"
+                }
+                for field in raw_runtime_inputs
+                if isinstance(field, dict)
+            ]
+            applied = deepcopy(snapshot.get("applied_overrides") or [])
+            normalized["asset_snapshot"] = {
+                "asset_type": snapshot.get("asset_type"),
+                "asset_id": snapshot.get("asset_id"),
+                "asset_revision": snapshot.get("asset_revision"),
+                "runtime_input_schema_revision": snapshot.get(
+                    "runtime_input_schema_revision"
+                ),
+                "runtime_inputs": runtime_inputs,
+                "runtime_input_count": len(runtime_inputs),
+                "applied_overrides": applied,
+                "override_count": len(applied),
+            }
+        else:
+            normalized["asset_snapshot"] = None
+        return normalized
     legacy_input = record.get("input") if isinstance(record.get("input"), dict) else {}
     normalized = dict(record)
     normalized["schema_version"] = 1
@@ -1269,26 +1757,29 @@ def _register_routes(blueprint: Blueprint) -> None:
 
     @blueprint.get("/tasks/new/single")
     def new_single_task_page():
-        """创建单接口任务页。"""
+        """历史深链重定向到统一创建入口。"""
 
-        return render_template(
-            "task_form.html",
-            base_path=_get_settings()["base_path"],
-            platform_home_url=_get_settings()["platform_home_url"],
-            platform_environment=_get_settings().get("platform_environment", "dev"),
-            task_mode="single",
-        )
+        return redirect(f"{_get_settings()['base_path']}/tasks/new?mode=single", code=302)
 
     @blueprint.get("/tasks/new/flow")
     def new_flow_task_page():
-        """创建 Flow 任务页。"""
+        """历史深链重定向到统一创建入口。"""
 
+        return redirect(f"{_get_settings()['base_path']}/tasks/new?mode=flow", code=302)
+
+    @blueprint.get("/tasks/new")
+    def new_task_page():
+        """统一创建入口：单接口、Flow 与批量回归使用真实链接切换。"""
+
+        task_mode = str(request.args.get("mode") or "single").strip()
+        if task_mode not in {"single", "flow", "batch"}:
+            abort(400, description="mode 必须是 single、flow 或 batch")
         return render_template(
             "task_form.html",
             base_path=_get_settings()["base_path"],
             platform_home_url=_get_settings()["platform_home_url"],
             platform_environment=_get_settings().get("platform_environment", "dev"),
-            task_mode="flow",
+            task_mode=task_mode,
         )
 
     @blueprint.get("/tasks")
@@ -1361,14 +1852,14 @@ def _register_routes(blueprint: Blueprint) -> None:
                 "INVALID_PARAMS",
                 f"不得覆盖平台运行字段: {', '.join(forbidden)}",
             )
+        _validate_task_payload_fields(payload, allow_input_metadata=True)
         return jsonify(_preflight_response(payload))
 
     @blueprint.post("/api/tasks")
     def submit_task():
-        """提交任务；校验失败 400，槽位占用 409。"""
-        payload = request.get_json(silent=True)
-        if not isinstance(payload, dict):
-            raise SubmissionError(400, "INVALID_PARAMS", "请求体必须是 JSON 对象")
+        """提交 JSON 或 multipart 任务；图片只允许流向声明输入契约的 Flow。"""
+
+        payload, uploads = _parse_task_request()
         forbidden = sorted(FORBIDDEN_TASK_OVERRIDE_KEYS & set(payload))
         if forbidden:
             raise SubmissionError(
@@ -1376,12 +1867,96 @@ def _register_routes(blueprint: Blueprint) -> None:
                 "INVALID_PARAMS",
                 f"不得覆盖平台运行字段: {', '.join(forbidden)}",
             )
+        _validate_task_payload_fields(payload, allow_input_metadata=False)
+        retry_from = payload.get("retry_from")
+        if retry_from is not None:
+            if (
+                not isinstance(retry_from, str)
+                or not is_valid_task_id(retry_from)
+                or payload.get("run_type") not in {"single", "flow"}
+            ):
+                raise SubmissionError(
+                    400,
+                    "INVALID_PARAMS",
+                    "retry_from 只允许引用单接口或 Flow 的合法任务 ID",
+                )
+            retry_source = _normalize_task_record(
+                _require_task(retry_from, action="retry")
+            )
+            if retry_source.get("status") not in TERMINAL_STATUSES:
+                raise SubmissionError(
+                    409, "TASK_NOT_TERMINATED", "仅终态任务可以修改参数后重试"
+                )
+            source_project = retry_source.get("project", {}).get("project_id")
+            source_selection = retry_source.get("selection", {})
+            source_run_type = source_selection.get("run_type")
+            same_asset = (
+                source_selection.get("api_id") == payload.get("api_id")
+                and source_selection.get("case_id") == payload.get("case_id")
+                if source_run_type == "single"
+                else source_selection.get("flow_id") == payload.get("flow_id")
+            )
+            if (
+                source_project != payload.get("project_id")
+                or source_run_type != payload.get("run_type")
+                or not same_asset
+            ):
+                raise SubmissionError(
+                    400,
+                    "INVALID_PARAMS",
+                    "retry_from 必须与当前提交属于同一项目、任务类型和具体资产",
+                )
+        if request.mimetype != "multipart/form-data" and "inputs" in payload:
+            raise SubmissionError(
+                400,
+                "INVALID_PARAMS",
+                "任务提交的 inputs 必须使用 multipart 真实文件",
+            )
         signed_context = request.headers.get("X-Platform-User-Context", "")
         if payload.get("project_id"):
-            preflight = _preflight_response(payload)
+            # 先用真实 multipart 元数据执行本地门禁，再进入平台预检。这里
+            # 不信任 JSON 中的 inputs，也绝不把文件名、大小或内容发送平台。
+            selection = _validate_selection_payload(payload)
+            input_metadata = _upload_metadata(uploads)
+            # 批次必须先由服务端解析全部 Flow 契约，才能判断彼此是否兼容；
+            # 若先拿第一条契约检查“缺文件”，会遮蔽更准确的契约冲突错误。
+            # 单条 Flow/Case 仍保留这个轻量门禁，避免无效文件进入平台预检。
+            input_errors = (
+                []
+                if selection.get("run_type") == "batch"
+                else _validate_file_input_metadata(
+                    _selected_file_input_contract(
+                        selection["project_id"], selection
+                    ),
+                    input_metadata,
+                )
+            )
+            if input_errors:
+                first = input_errors[0]
+                raise SubmissionError(400, first["code"], first["message"])
+            preflight = _preflight_response(
+                {
+                    **payload,
+                    "inputs": input_metadata,
+                }
+            )
             if not preflight["ready"]:
                 first = preflight["errors"][0]
-                raise SubmissionError(409, first["code"], first["message"])
+                error_code = str(first["code"])
+                input_error = (
+                    error_code.startswith("TASK_INPUT")
+                    or error_code.startswith("BATCH_")
+                    or (
+                        error_code.startswith("RUNTIME_OVERRIDE_")
+                        and error_code != "RUNTIME_OVERRIDE_SCHEMA_CHANGED"
+                    )
+                )
+                raise SubmissionError(
+                    400 if input_error else 409,
+                    error_code,
+                    first["message"],
+                    details=first.get("field_errors") or [],
+                )
             record = _get_manager().submit(
                 project_id=str(payload.get("project_id") or ""),
                 run_type=str(payload.get("run_type") or ""),
@@ -1389,9 +1964,24 @@ def _register_routes(blueprint: Blueprint) -> None:
                 case_id=payload.get("case_id"),
                 flow_id=payload.get("flow_id"),
                 tag=payload.get("tag"),
+                asset_revision=payload.get("asset_revision"),
+                runtime_overrides=payload.get("runtime_overrides"),
                 signed_user_context=signed_context,
+                uploads=uploads or None,
+                batch_type=payload.get("batch_type"),
+                selection_mode=payload.get("selection_mode"),
+                batch_items=payload.get("items"),
+                tag_filters=payload.get("tag_filters"),
+                risk_acknowledgements=payload.get("risk_acknowledgements"),
+                retry_of=retry_from,
             )
         else:
+            if uploads:
+                raise SubmissionError(
+                    400,
+                    "TASK_INPUTS_NOT_ALLOWED",
+                    "旧版兼容任务不接受图片输入",
+                )
             # 兼容旧调用方：env 只能映射 Truthy，不接受任何新运行覆盖字段。
             record = _get_manager().submit(
                 env=str(payload.get("env") or ""),
@@ -1406,6 +1996,7 @@ def _register_routes(blueprint: Blueprint) -> None:
                     "id": record["id"],
                     "status": record["status"],
                     "created_at": record["created_at"],
+                    "queue_position": _get_manager().queue_position(record["id"]),
                 }
             ),
             201,
@@ -1425,6 +2016,10 @@ def _register_routes(blueprint: Blueprint) -> None:
             _normalize_task_record(item)
             for item in _visible_task_records(_get_manager().store.list(), decision)
         ]
+        for record in records:
+            record["queue_position"] = _get_manager().queue_position(
+                str(record.get("id") or "")
+            )
         project_filter = request.args.get("project_id", "all").strip()
         status_filter = request.args.get("status", "").strip()
         run_type_filter = request.args.get("run_type", "").strip()
@@ -1468,7 +2063,9 @@ def _register_routes(blueprint: Blueprint) -> None:
     @blueprint.get("/api/tasks/<task_id>")
     def task_detail_api(task_id: str):
         """任务详情：记录全量字段。"""
-        return jsonify(_normalize_task_record(_require_task(task_id)))
+        record = _normalize_task_record(_require_task(task_id))
+        record["queue_position"] = _get_manager().queue_position(task_id)
+        return jsonify(record)
 
     @blueprint.post("/api/tasks/<task_id>/cancel")
     def cancel_task(task_id: str):
@@ -1482,9 +2079,15 @@ def _register_routes(blueprint: Blueprint) -> None:
         """重试创建新任务，旧任务与旧快照保持不变。"""
 
         _require_task(task_id, "retry")
+        payload = request.get_json(silent=True)
+        if payload is None:
+            payload = {}
+        if not isinstance(payload, dict) or set(payload) - {"mode"}:
+            raise SubmissionError(400, "INVALID_PARAMS", "重试请求只允许 mode 字段")
         record = _get_manager().retry(
             task_id,
             signed_user_context=request.headers.get("X-Platform-User-Context", ""),
+            mode=str(payload.get("mode") or "all"),
         )
         return (
             jsonify(
@@ -1527,7 +2130,7 @@ def _register_routes(blueprint: Blueprint) -> None:
 
     @blueprint.get("/api/tasks/<task_id>/logs")
     def task_logs(task_id: str):
-        """任务日志：优先框架脱敏日志，兜底二次脱敏后的 console 尾部。"""
+        """任务日志：优先框架原始日志，兜底返回原始 console 尾部。"""
         record = _require_task(task_id)
         try:
             tail = int(request.args.get("tail", DEFAULT_LOG_TAIL))
@@ -1540,34 +2143,34 @@ def _register_routes(blueprint: Blueprint) -> None:
         if log_file:
             log_path = root / log_file
             if log_path.is_file():
-                lines = log_path.read_text(
-                    encoding="utf-8", errors="replace"
-                ).splitlines()
+                content = log_path.read_text(encoding="utf-8", errors="replace")
                 return jsonify(
-                    {"log_file": log_file, "lines": lines[-tail:], "source": "framework_log"}
+                    {
+                        "log_file": log_file,
+                        "lines": _bounded_log_tail(content, tail),
+                        "source": "framework_log",
+                    }
                 )
 
         normalized = _normalize_task_record(record)
         project_id = normalized["project"]["project_id"]
+        # V2 与 V3 都由 TaskManager 写入项目隔离的 runtime 目录。只有显式
+        # legacy_mode 或无法证明新任务契约的历史 schema 才读取 tasks/<id>；
+        # 否则 V3 单接口/Flow 在 framework log 尚未产生时会被误报为无日志。
         legacy_mode = bool(record.get("input", {}).get("legacy_mode")) or record.get(
             "schema_version"
-        ) != 2
+        ) not in {2, 3}
         console_path = _get_manager().store.console_log_path(
             task_id,
             None if legacy_mode else project_id,
         )
         if console_path.is_file():
-            from web.redaction import DEFAULT_MAX_LENGTH, redact_text
-
             content = console_path.read_text(encoding="utf-8", errors="replace")
-            redacted = redact_text(
-                content, project_root=root, max_length=DEFAULT_MAX_LENGTH * 5
-            )
             return jsonify(
                 {
                     "log_file": None,
-                    "lines": redacted.splitlines()[-tail:],
-                    "source": "console_redacted",
+                    "lines": _bounded_log_tail(content, tail),
+                    "source": "console",
                 }
             )
         return jsonify({"log_file": None, "lines": [], "source": "none"})

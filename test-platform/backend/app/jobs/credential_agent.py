@@ -5,6 +5,7 @@ import time
 import uuid
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 from sqlalchemy import and_, or_, select
@@ -111,10 +112,21 @@ def _runtime_inputs(
         for key, definition in normal_definitions.items()
         if definition.default_value is not None
     }
+    # 多项目接口自动化的 Release 归属于具体 Runtime Scope。继续读取 Tool 级
+    # Activation 会把 Truthy/Dating 混成同一份配置，因此个人凭证必须以自身
+    # runtime_scope_id 作为唯一发布锚点；其他旧工具仍保持 Tool 级兼容路径。
+    scoped_credential = (
+        isinstance(credential, UserCredential)
+        and credential.runtime_scope_id is not None
+    )
+    activation_owner_type = "tool_project_scope" if scoped_credential else "tool"
+    activation_owner_id = (
+        credential.runtime_scope_id if scoped_credential else credential.tool_id
+    )
     activation = database.scalar(select(ConfigActivation).where(
         ConfigActivation.environment_id == credential.environment_id,
-        ConfigActivation.owner_type == "tool",
-        ConfigActivation.owner_id == credential.tool_id,
+        ConfigActivation.owner_type == activation_owner_type,
+        ConfigActivation.owner_id == activation_owner_id,
     ))
     if activation:
         items = database.scalars(select(ConfigReleaseItem).where(
@@ -135,6 +147,10 @@ def _runtime_inputs(
             definition = secret_definitions.get(item.key)
             if definition is None:
                 raise ValueError("个人凭证包含未登记字段")
+            if (definition.validation_schema or {}).get("runtime_config_excluded"):
+                # DEVICE_ID 等已迁入项目 Release 的历史字段只保留用于审计。
+                # Agent 不解密、不下发，避免旧 Credential 再覆盖 Scope Comm。
+                continue
             if item.secret_version_id:
                 version = database.get(SecretVersion, item.secret_version_id)
                 secret = database.get(Secret, version.secret_id) if version else None
@@ -158,7 +174,9 @@ def _runtime_inputs(
             else:
                 raise ValueError("个人凭证字段没有有效值来源")
         if any(
-            definition.required and key not in secrets
+            definition.required
+            and not (definition.validation_schema or {}).get("runtime_config_excluded")
+            and key not in secrets
             for key, definition in secret_definitions.items()
         ):
             raise ValueError("个人凭证缺少必需字段")
@@ -188,6 +206,38 @@ def _post_json(url: str, payload: dict[str, Any]) -> dict[str, Any]:
     return body
 
 
+def _gateway_endpoint(normal: dict[str, Any]) -> str:
+    """从项目 Release 的 Base URL 与请求路径组合完整 Gateway 地址。
+
+    ``gateway.base_url`` 与 ``gateway.path`` 都属于同一个 Runtime Scope 的
+    普通配置。Path 只能是相对路径，禁止携带 scheme、host、查询串或 fragment，
+    避免配置错误把 Credential Token 发送到另一主机。历史 Release 若已把完整
+    路径写进 Base URL，则继续允许省略 ``gateway.path``。
+    """
+
+    base_url = str(
+        normal.get("SEARCH_API_URL")
+        or normal.get("gateway.base_url")
+        or normal.get("GATEWAY_API_URL")
+        or ""
+    ).strip()
+    if not base_url:
+        raise ValueError("缺少 Gateway 会话接口地址")
+    path = str(normal.get("gateway.path") or "").strip()
+    if not path:
+        return base_url
+    parsed_path = urlsplit(path)
+    if (
+        parsed_path.scheme
+        or parsed_path.netloc
+        or parsed_path.query
+        or parsed_path.fragment
+        or "\\" in path
+    ):
+        raise ValueError("Gateway 请求路径必须是站内相对路径")
+    return f"{base_url.rstrip('/')}/{parsed_path.path.lstrip('/')}"
+
+
 def _envelope_data(body: dict[str, Any], request_id: str) -> dict[str, Any]:
     """按请求 ID 匹配 Gateway 内层响应并校验内外层成功状态。"""
 
@@ -203,29 +253,28 @@ def _envelope_data(body: dict[str, Any], request_id: str) -> dict[str, Any]:
 def _gateway_session(normal: dict[str, Any], secrets: dict[str, str]) -> dict[str, Any]:
     """优先 RefreshSession；Refresh 不可用时调用正式匿名建会话接口。"""
 
-    url = str(
-        normal.get("SEARCH_API_URL")
-        or normal.get("gateway.base_url")
-        or normal.get("GATEWAY_API_URL")
-        or ""
-    ).strip()
-    if not url:
-        raise ValueError("缺少 Gateway 会话接口地址")
+    url = _gateway_endpoint(normal)
     now = datetime.now(UTC)
     refresh_expires = None
     if secrets.get("REFRESH_EXPIRES_TIME"):
         refresh_expires = _as_datetime(secrets["REFRESH_EXPIRES_TIME"])
-    comm = {
+    configured_comm = normal.get("gateway.comm")
+    comm = dict(configured_comm) if isinstance(configured_comm, dict) else {}
+    # Scope Release 是静态 Comm 的唯一真源。旧工具尚未项目化时才使用原有
+    # 顶层字段和 Credential DEVICE_ID 兜底，不能反向覆盖已发布的项目值。
+    comm.setdefault("device_id", secrets.get("DEVICE_ID", ""))
+    comm.setdefault("platform", str(normal.get("PLATFORM", "ios")))
+    comm.setdefault("app_version", str(normal.get("APP_VERSION", "1.0.0")))
+    comm.setdefault("locale", str(normal.get("LOCALE", "zh-Hans-CN")))
+    comm.setdefault("timezone", str(normal.get("TIMEZONE", "UTC+08:00")))
+    # 以下字段属于每次调用或当前会话的动态数据，即使异常 Release 中出现同名
+    # 字段也必须由 Agent 覆盖，避免发布静态值造成请求串线。
+    comm.update({
         "auth_token": secrets.get("AUTH_TOKEN", ""),
-        "device_id": secrets.get("DEVICE_ID", ""),
         "install_id": "",
         "client_request_id": f"gw_req_{uuid.uuid4().hex}",
         "trace_id": "",
-        "platform": str(normal.get("PLATFORM", "ios")),
-        "app_version": str(normal.get("APP_VERSION", "1.0.0")),
-        "locale": str(normal.get("LOCALE", "zh-Hans-CN")),
-        "timezone": str(normal.get("TIMEZONE", "UTC+08:00")),
-    }
+    })
 
     def invoke(method: str) -> dict[str, Any]:
         """使用唯一请求 ID 调用一次会话方法并返回已校验数据。"""

@@ -2,7 +2,9 @@ import json
 import re
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -24,12 +26,23 @@ class Settings(BaseSettings):
     tool_health_timeout_seconds: float = 3.0
     app_public_url: str = "http://localhost:8080"
     platform_runtime_env: str = "dev"
-    session_idle_hours: int = 8
-    session_absolute_hours: int = 24
+    # 新签发的登录会话同时采用 7 天空闲期限和 7 天绝对期限；
+    # 数据库中已存在的会话仍按各自持久化的到期时间判断，不会被此默认值追溯修改。
+    session_idle_hours: int = 168
+    session_absolute_hours: int = 168
     session_touch_interval_seconds: int = 300
     login_failure_limit: int = 5
     login_failure_window_minutes: int = 15
     login_lock_minutes: int = 15
+    # 自助注册默认开放，但所有提交在进入业务校验前都受来源限流和全局熔断保护。
+    # 这些边界只能保持或收紧，避免通过环境变量把防滥用能力意外关闭。
+    registration_mode: Literal["open", "disabled", "invite"] = "open"
+    registration_rate_limit: int = Field(default=5, ge=1, le=5)
+    registration_rate_window_minutes: int = Field(default=15, ge=15)
+    registration_lock_minutes: int = Field(default=15, ge=15)
+    registration_global_limit: int = Field(default=100, ge=1, le=100)
+    registration_global_window_minutes: int = Field(default=15, ge=15)
+    registration_global_lock_minutes: int = Field(default=15, ge=15)
     cookie_secure: bool = False
     bootstrap_token: str = ""
     bootstrap_token_file: str = ""
@@ -55,6 +68,25 @@ class Settings(BaseSettings):
     prod_release_bom_file: str = ""
 
     model_config = SettingsConfigDict(case_sensitive=False)
+
+    @model_validator(mode="after")
+    def validate_registration_rate_windows(self) -> "Settings":
+        """确保注册锁定至少覆盖完整计数窗口。
+
+        返回值:
+            Settings: 校验通过的当前配置实例。
+        异常说明:
+            ValueError: 来源或全局锁定短于对应窗口时阻止服务启动。
+        """
+
+        if self.registration_lock_minutes < self.registration_rate_window_minutes:
+            raise ValueError("注册来源锁定时间不能短于计数窗口")
+        if (
+            self.registration_global_lock_minutes
+            < self.registration_global_window_minutes
+        ):
+            raise ValueError("注册全局锁定时间不能短于计数窗口")
+        return self
 
     def read_bootstrap_token(self) -> str:
         """

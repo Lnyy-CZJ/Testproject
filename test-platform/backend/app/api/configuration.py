@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
@@ -85,6 +86,30 @@ def _owner_definitions(database: Session, owner_type: str, owner_id: str) -> lis
         ConfigDefinition.owner_type == owner_type,
         ConfigDefinition.owner_id == owner_id,
     )).all())
+
+
+def _definition_applies_to_owner(
+    database: Session,
+    definition: ConfigDefinition,
+    owner_type: str,
+    owner_id: str,
+) -> bool:
+    """判断 Tool 级配置定义是否适用于当前项目 Scope。
+
+    ``project_ids`` 是配置契约中的服务端白名单。没有声明该字段的旧定义继续
+    对 Tool 下所有项目生效；声明后则只允许列出的 ``project_id`` 使用，避免
+    Dating 草稿意外写入 Truthy Admin 地址等项目专属配置。
+    """
+
+    if owner_type != "tool_project_scope":
+        return True
+    scope = _scope_owner(database, owner_type, owner_id)
+    if scope is None:
+        return False
+    project_ids = (definition.validation_schema or {}).get("project_ids")
+    if project_ids is None:
+        return True
+    return isinstance(project_ids, list) and scope.project_id in project_ids
 
 
 def _assert_scope_environment(
@@ -250,7 +275,11 @@ def _release_response(database: Session, row: ConfigRelease) -> ReleaseResponse:
 
 
 def _validate_value(definition: ConfigDefinition, value: Any) -> None:
-    """按配置定义的基础类型校验普通值。"""
+    """按配置定义校验普通值，并约束 JSON 中可持久化的静态字段。
+
+    JSON 对象的动态字段黑名单由平台契约控制。校验错误只返回字段名，不回显
+    用户提交的值，避免配置值意外进入接口错误日志。
+    """
 
     expected = definition.value_type
     valid = (
@@ -275,6 +304,56 @@ def _validate_value(definition: ConfigDefinition, value: Any) -> None:
             raise PlatformError(422, "CONFIG_VALIDATION_FAILED", f"{definition.display_name} 小于允许值")
         if schema.get("maximum") is not None and value > schema["maximum"]:
             raise PlatformError(422, "CONFIG_VALIDATION_FAILED", f"{definition.display_name} 超过允许值")
+    if isinstance(value, dict):
+        required_keys = schema.get("required_keys") or []
+        missing_keys = [
+            key for key in required_keys
+            if key not in value or value[key] is None or value[key] == ""
+        ]
+        if missing_keys:
+            raise PlatformError(
+                422,
+                "CONFIG_VALIDATION_FAILED",
+                f"{definition.display_name} 缺少必填字段：{', '.join(missing_keys)}",
+            )
+
+        forbidden_keys = set(schema.get("forbidden_keys") or [])
+        invalid_keys = sorted(forbidden_keys.intersection(value))
+        if invalid_keys:
+            raise PlatformError(
+                422,
+                "CONFIG_VALIDATION_FAILED",
+                f"{definition.display_name} 包含运行时动态字段：{', '.join(invalid_keys)}",
+            )
+
+        max_properties = schema.get("max_properties")
+        if max_properties is not None and len(value) > int(max_properties):
+            raise PlatformError(
+                422,
+                "CONFIG_VALIDATION_FAILED",
+                f"{definition.display_name} 字段数量超过限制",
+            )
+
+        property_pattern = schema.get("property_name_pattern")
+        if property_pattern:
+            invalid_names = sorted(
+                str(key) for key in value if re.fullmatch(str(property_pattern), str(key)) is None
+            )
+            if invalid_names:
+                raise PlatformError(
+                    422,
+                    "CONFIG_VALIDATION_FAILED",
+                    f"{definition.display_name} 字段名不合法：{', '.join(invalid_names)}",
+                )
+
+        if schema.get("string_values"):
+            non_string_keys = sorted(str(key) for key, item in value.items() if not isinstance(item, str))
+            if non_string_keys:
+                raise PlatformError(
+                    422,
+                    "CONFIG_VALIDATION_FAILED",
+                    f"{definition.display_name} 字段必须使用字符串值：{', '.join(non_string_keys)}",
+                )
 
 
 def _personal_credential_definitions(
@@ -288,12 +367,17 @@ def _personal_credential_definitions(
     legacy 系统 Secret 的键名，也不会被写入个人作用域或绕过字段分类。
     """
 
-    return list(database.scalars(select(ConfigDefinition).where(
+    definitions = list(database.scalars(select(ConfigDefinition).where(
         ConfigDefinition.owner_type == "tool",
         ConfigDefinition.owner_id == tool_id,
         ConfigDefinition.value_scope == "user",
         ConfigDefinition.credential_provider_type == provider_type,
     ).order_by(ConfigDefinition.sort_order, ConfigDefinition.key)).all())
+    return [
+        definition
+        for definition in definitions
+        if not (definition.validation_schema or {}).get("runtime_config_excluded")
+    ]
 
 
 def _personal_credential_response(
@@ -955,7 +1039,14 @@ def update_release(
     }
     for item in payload.items:
         definition = definitions.get(item.definition_id)
-        if definition is None or definition.sensitivity != "normal" or not definition.editable:
+        if (
+            definition is None
+            or not _definition_applies_to_owner(
+                database, definition, row.owner_type, row.owner_id
+            )
+            or definition.sensitivity != "normal"
+            or not definition.editable
+        ):
             raise PlatformError(422, "CONFIG_VALIDATION_FAILED", "包含不可编辑的配置项")
         _validate_value(definition, item.value)
     before = {item.definition_id: item.value_json for item in database.scalars(select(ConfigReleaseItem).where(ConfigReleaseItem.release_id == row.id)).all() if item.value_json is not None}
@@ -986,6 +1077,7 @@ def _validate_release(database: Session, row: ConfigRelease) -> None:
         definition
         for definition in _owner_definitions(database, row.owner_type, row.owner_id)
         if definition.value_scope == "system"
+        and _definition_applies_to_owner(database, definition, row.owner_type, row.owner_id)
     ]
     items = {item.definition_id: item for item in database.scalars(select(ConfigReleaseItem).where(ConfigReleaseItem.release_id == row.id)).all()}
     secrets = {

@@ -65,10 +65,10 @@ def test_task_artifacts_are_project_and_task_isolated() -> None:
     )
 
 
-def test_platform_pytest_logging_is_scoped_by_project_environment_and_task(
+def test_platform_pytest_logging_is_scoped_by_project_and_environment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """真实 pytest 入口的文件日志必须落在任务专属目录，不能靠 PID 猜测关联。"""
+    """真实 pytest 入口应由日志组件直接按项目、环境和日期组织文件。"""
 
     from test_cases import conftest as project_conftest
 
@@ -97,5 +97,5 @@ def test_platform_pytest_logging_is_scoped_by_project_environment_and_task(
 
     assert captured["log_directory"] == (
         Path(project_conftest.PROJECT_ROOT)
-        / "logs/dating/test/20260827-120000-a1b2"
+        / "logs/dating/test"
     )

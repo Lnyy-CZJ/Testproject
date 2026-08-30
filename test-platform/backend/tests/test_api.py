@@ -54,7 +54,7 @@ def test_live_and_ready(client: TestClient) -> None:
     assert client.get("/api/v1/health/live").json() == {
         "service": "platform-api",
         "status": "ok",
-        "version": "1.2.0",
+        "version": "1.3.0",
         "component_version": "unknown",
         "revision": "unknown",
         "dirty": True,
@@ -66,7 +66,7 @@ def test_live_and_ready(client: TestClient) -> None:
     assert ready_response.json() == {
         "service": "platform-api",
         "status": "ready",
-        "version": "1.2.0",
+        "version": "1.3.0",
         "component_version": "unknown",
         "revision": "unknown",
         "dirty": True,

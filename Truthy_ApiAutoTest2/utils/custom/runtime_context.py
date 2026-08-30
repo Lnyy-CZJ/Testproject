@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from copy import deepcopy
 from typing import Any
 
@@ -11,8 +12,11 @@ class RuntimeContextError(ValueError):
     """表示运行时变量缺失、提取路径无效或目标响应字段为空。"""
 
 
-_FULL_VARIABLE_PATTERN = re.compile(r"^\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*}}$")
-_VARIABLE_PATTERN = re.compile(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*}}")
+_VARIABLE_EXPRESSION = (
+    r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*"
+)
+_FULL_VARIABLE_PATTERN = re.compile(rf"^\{{\{{\s*({_VARIABLE_EXPRESSION})\s*}}}}$")
+_VARIABLE_PATTERN = re.compile(rf"\{{\{{\s*({_VARIABLE_EXPRESSION})\s*}}}}")
 _PATH_TOKEN_PATTERN = re.compile(r"([^.\[\]]+)|\[(\d+)]")
 
 
@@ -38,6 +42,16 @@ class RuntimeContext:
         """深拷贝并保存一个运行时变量，防止可变响应对象被外部修改。"""
         self._values[key] = deepcopy(value)
 
+    def contains(self, key: str) -> bool:
+        """判断顶层变量是否存在，供 foreach 在结束时恢复调用方上下文。"""
+
+        return key in self._values
+
+    def unset(self, key: str) -> None:
+        """移除一个顶层变量；变量不存在时保持幂等。"""
+
+        self._values.pop(key, None)
+
     def update(self, values: dict[str, Any]) -> None:
         """批量深拷贝运行时变量，后写入值覆盖同名旧值。"""
         for key, value in values.items():
@@ -62,12 +76,15 @@ class RuntimeContext:
 
         full_match = _FULL_VARIABLE_PATTERN.match(value)
         if full_match:
-            return deepcopy(self._require(full_match.group(1)))
+            return deepcopy(self._require_expression(full_match.group(1)))
 
         def replace(match: re.Match[str]) -> str:
-            return str(self._require(match.group(1)))
+            return str(self._require_expression(match.group(1)))
 
-        return _VARIABLE_PATTERN.sub(replace, value)
+        resolved = _VARIABLE_PATTERN.sub(replace, value)
+        if "{{" in resolved or "}}" in resolved:
+            raise RuntimeContextError(f"运行时变量表达式格式错误: {value!r}")
+        return resolved
 
     def extract(self, data: dict[str, Any], rules: dict[str, str]) -> None:
         """根据以业务 ``data`` 为根的路径提取字段并写入上下文。
@@ -114,17 +131,32 @@ class RuntimeContext:
                 continue
             self.set(variable_name, extracted)
 
-    def access_token_needs_refresh(
+    def access_token_status(
         self,
         now_ms: int,
         refresh_before_ms: int,
-    ) -> bool:
-        """判断 access token 是否缺失、过期时间无效或距过期不足安全窗口。"""
+    ) -> str:
+        """返回 access token 的三态会话决策。
+
+        参数说明:
+            now_ms: 当前 UTC 毫秒时间戳。
+            refresh_before_ms: 临期刷新窗口；剩余时间等于该值时也刷新。
+
+        返回值:
+            ``valid`` 表示可直接复用，``refresh`` 表示尚未过期但已进入刷新
+            窗口，``expired`` 表示 token 缺失、过期时间无效或已经到期。
+
+        设计说明:
+            显式区分临期与过期，避免 refresh token 仍有效时把已过期的 access
+            token 误送入 RefreshSession 分支。
+        """
         access_token = self.get("access_token")
         expires_time = self._timestamp("expires_time")
-        if not access_token or expires_time is None:
-            return True
-        return expires_time - now_ms < refresh_before_ms
+        if not access_token or expires_time is None or expires_time <= now_ms:
+            return "expired"
+        if expires_time - now_ms <= refresh_before_ms:
+            return "refresh"
+        return "valid"
 
     def refresh_token_is_valid(self, now_ms: int) -> bool:
         """仅当 refresh token 存在且其毫秒过期时间晚于当前时间时返回 True。"""
@@ -137,6 +169,24 @@ class RuntimeContext:
         if key not in self._values:
             raise RuntimeContextError(f"运行时变量未定义: {key}")
         return self._values[key]
+
+    def _require_expression(self, expression: str) -> Any:
+        """读取 ``root.child`` 受控变量路径，不执行属性访问或任意表达式。
+
+        根变量沿用既有命名规则；后续段只能读取 Mapping 中不以下划线开头的
+        公开键。这样既能支持 foreach 元数据，又不会暴露 ``__class__`` 等
+        Python 对象反射入口。
+        """
+
+        segments = expression.split(".")
+        current = self._require(segments[0])
+        for segment in segments[1:]:
+            if segment.startswith("_"):
+                raise RuntimeContextError(f"运行时变量路径不允许访问私有字段: {expression}")
+            if not isinstance(current, Mapping) or segment not in current:
+                raise RuntimeContextError(f"运行时变量路径不存在: {expression}")
+            current = current[segment]
+        return current
 
     def _timestamp(self, key: str) -> int | None:
         """将毫秒时间戳转换为整数；缺失或格式无效时返回 None。"""

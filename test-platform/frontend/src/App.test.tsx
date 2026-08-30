@@ -1,7 +1,12 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
+import {
+  AUTH_REQUIRED_EVENT,
+  currentAuthGeneration,
+  request,
+} from "./api/client";
 import type { AuthState } from "./types/platform";
 
 const auth: AuthState = {
@@ -50,11 +55,19 @@ function mockAuthenticatedCatalog(items = allTools, currentAuth: AuthState = aut
   return vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
     const url = String(input);
     if (url.endsWith("/auth/me")) return jsonResponse(currentAuth);
+    if (url.endsWith("/auth/registration-status")) return jsonResponse({ mode: "open" });
     if (url.endsWith("/tools")) return jsonResponse({ items });
     if (url.endsWith("/health/live")) return jsonResponse({ status: "ok", version: "1.1.0", component_version: "1.1.0", revision: "abc", dirty: false, runtime_environment: "dev" });
     if (url.includes("/credentials?")) return jsonResponse([]);
     return jsonResponse({ tool_id: items[0]?.id, status: "healthy", checked_at: "2026-08-17T00:00:00Z" });
   });
+}
+
+/** 创建可由测试精确结算的 fetch 响应，用于复现旧请求迟到的认证竞态。 */
+function deferredResponse() {
+  let resolve!: (response: Response) => void;
+  const promise = new Promise<Response>((complete) => { resolve = complete; });
+  return { promise, resolve };
 }
 
 describe("第三阶段 AI 测试工作台", () => {
@@ -110,6 +123,305 @@ describe("第三阶段 AI 测试工作台", () => {
     expect(screen.getByText("分配负责人 → 加入测试成员 → 关联项目工具")).toBeInTheDocument();
   });
 
+  it("项目人员页可按完整用户名添加测试人员并在成功后刷新列表", async () => {
+    window.history.replaceState({}, "", "/projects/project_a/members");
+    const project = { id: "project_a", code: "TEST-1", name: "test", description: "", status: "active", relation: null, revision: 1, manager_count: 0, member_count: 0, tool_count: 0, active_grant_count: 0, updated_at: "2026-08-30T00:00:00Z" };
+    const tester = { id: "tester_1", username: "tester.one", display_name: "测试人员一", role: "tester", status: "active" };
+    let memberAdded = false;
+    let postBody: Record<string, unknown> | null = null;
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url = String(input);
+      if (url.endsWith("/auth/me")) return jsonResponse(auth);
+      if (url.endsWith("/tools")) return jsonResponse({ items: [] });
+      if (url.endsWith("/projects/project_a")) return jsonResponse(project);
+      if (url.endsWith("/projects/project_a/tools")) return jsonResponse([]);
+      if (url.endsWith("/projects/project_a/managers")) return jsonResponse([]);
+      if (url.endsWith("/projects/project_a/members") && init?.method === "POST") {
+        postBody = JSON.parse(String(init.body)); memberAdded = true; return jsonResponse(tester, 201);
+      }
+      if (url.endsWith("/projects/project_a/members")) return jsonResponse(memberAdded ? [tester] : []);
+      return jsonResponse({});
+    });
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "添加成员" }));
+    const dialog = screen.getByRole("dialog", { name: "添加测试人员" });
+    fireEvent.change(within(dialog).getByLabelText("完整用户名"), { target: { value: "tester.one" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "确认添加" }));
+
+    await waitFor(() => expect(postBody).toEqual({ username: "tester.one", reason: "添加项目成员" }));
+    expect(await screen.findByText("测试人员一")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("项目人员添加失败时在弹窗内展示错误并允许修正用户名", async () => {
+    window.history.replaceState({}, "", "/projects/project_a/members");
+    const project = { id: "project_a", code: "TEST-1", name: "test", description: "", status: "active", relation: null, revision: 1, manager_count: 0, member_count: 0, tool_count: 0, active_grant_count: 0, updated_at: "2026-08-30T00:00:00Z" };
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url = String(input);
+      if (url.endsWith("/auth/me")) return jsonResponse(auth);
+      if (url.endsWith("/tools")) return jsonResponse({ items: [] });
+      if (url.endsWith("/projects/project_a")) return jsonResponse(project);
+      if (url.endsWith("/projects/project_a/tools") || url.endsWith("/projects/project_a/managers")) return jsonResponse([]);
+      if (url.endsWith("/projects/project_a/members") && init?.method === "POST") return jsonResponse({ code: "USER_NOT_FOUND", message: "用户不存在" }, 404);
+      if (url.endsWith("/projects/project_a/members")) return jsonResponse([]);
+      return jsonResponse({});
+    });
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "添加成员" }));
+    const dialog = screen.getByRole("dialog", { name: "添加测试人员" });
+    fireEvent.change(within(dialog).getByLabelText("完整用户名"), { target: { value: "missing.user" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "确认添加" }));
+
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("用户不存在");
+    expect(within(dialog).getByLabelText("完整用户名")).toHaveValue("missing.user");
+  });
+
+  it("成员关系已创建但列表刷新失败时关闭弹窗并展示可恢复提示", async () => {
+    window.history.replaceState({}, "", "/projects/project_a/members");
+    const project = { id: "project_a", code: "TEST-1", name: "test", description: "", status: "active", relation: null, revision: 1, manager_count: 0, member_count: 0, tool_count: 0, active_grant_count: 0, updated_at: "2026-08-30T00:00:00Z" };
+    const tester = { id: "tester_1", username: "tester.one", display_name: "测试人员一", role: "tester", status: "active" };
+    let memberListReads = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url = String(input);
+      if (url.endsWith("/auth/me")) return jsonResponse(auth);
+      if (url.endsWith("/tools")) return jsonResponse({ items: [] });
+      if (url.endsWith("/projects/project_a")) return jsonResponse(project);
+      if (url.endsWith("/projects/project_a/tools") || url.endsWith("/projects/project_a/managers")) return jsonResponse([]);
+      if (url.endsWith("/projects/project_a/members") && init?.method === "POST") return jsonResponse(tester, 201);
+      if (url.endsWith("/projects/project_a/members")) {
+        memberListReads += 1;
+        return memberListReads === 1 ? jsonResponse([]) : jsonResponse({ code: "READ_FAILED", message: "列表读取失败" }, 503);
+      }
+      return jsonResponse({});
+    });
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "添加成员" }));
+    const dialog = screen.getByRole("dialog", { name: "添加测试人员" });
+    fireEvent.change(within(dialog).getByLabelText("完整用户名"), { target: { value: "tester.one" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "确认添加" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("人员已添加，但列表刷新失败");
+    expect(screen.queryByRole("dialog", { name: "添加测试人员" })).not.toBeInTheDocument();
+  });
+
+  it("普通管理员的人员页不伪造负责人空状态", async () => {
+    window.history.replaceState({}, "", "/projects/project_a/members");
+    const projectAdmin: AuthState = { ...auth, role: "admin", roles: ["admin"], platform_permissions: [], projects: [{ id: "project_a", code: "TEST-1", name: "test", status: "active", relation: "manager" }] };
+    const project = { id: "project_a", code: "TEST-1", name: "test", description: "", status: "active", relation: "manager", revision: 1, manager_count: 1, member_count: 0, tool_count: 0, active_grant_count: 0, updated_at: "2026-08-30T00:00:00Z" };
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const url = String(input);
+      if (url.endsWith("/auth/me")) return jsonResponse(projectAdmin);
+      if (url.endsWith("/tools")) return jsonResponse({ items: [] });
+      if (url.endsWith("/projects/project_a")) return jsonResponse(project);
+      if (url.endsWith("/projects/project_a/tools") || url.endsWith("/projects/project_a/members")) return jsonResponse([]);
+      return jsonResponse({});
+    });
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "测试成员" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "项目负责人" })).not.toBeInTheDocument();
+    expect(screen.queryByText("尚未分配负责人")).not.toBeInTheDocument();
+  });
+
+  it("普通管理员在项目概览只看到负责人数量而非错误空状态", async () => {
+    window.history.replaceState({}, "", "/projects/project_a/overview");
+    const projectAdmin: AuthState = { ...auth, role: "admin", roles: ["admin"], platform_permissions: [], projects: [{ id: "project_a", code: "TEST-1", name: "test", status: "active", relation: "manager" }] };
+    const project = { id: "project_a", code: "TEST-1", name: "test", description: "", status: "active", relation: "manager", revision: 1, manager_count: 1, member_count: 0, tool_count: 0, active_grant_count: 0, updated_at: "2026-08-30T00:00:00Z" };
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const url = String(input);
+      if (url.endsWith("/auth/me")) return jsonResponse(projectAdmin);
+      if (url.endsWith("/tools")) return jsonResponse({ items: [] });
+      if (url.endsWith("/projects/project_a")) return jsonResponse(project);
+      if (url.endsWith("/projects/project_a/tools") || url.endsWith("/projects/project_a/members")) return jsonResponse([]);
+      return jsonResponse({});
+    });
+    render(<App />);
+
+    expect(await screen.findByText("1 位，由平台管理员维护")).toBeInTheDocument();
+    expect(screen.queryByText("尚未分配")).not.toBeInTheDocument();
+  });
+
+  it("删除成员兼容 204 空响应并在提交后刷新列表", async () => {
+    window.history.replaceState({}, "", "/projects/project_a/members");
+    const project = { id: "project_a", code: "TEST-1", name: "test", description: "", status: "active", relation: null, revision: 1, manager_count: 0, member_count: 1, tool_count: 0, active_grant_count: 0, updated_at: "2026-08-30T00:00:00Z" };
+    const tester = { id: "tester_1", username: "tester.one", display_name: "测试人员一", role: "tester", status: "active" };
+    let deleted = false;
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url = String(input);
+      if (url.endsWith("/auth/me")) return jsonResponse(auth);
+      if (url.endsWith("/tools")) return jsonResponse({ items: [] });
+      if (url.endsWith("/projects/project_a")) return jsonResponse(project);
+      if (url.endsWith("/projects/project_a/tools") || url.endsWith("/projects/project_a/managers")) return jsonResponse([]);
+      if (url.endsWith("/projects/project_a/members/tester_1") && init?.method === "DELETE") { deleted = true; return Promise.resolve(new Response(null, { status: 204 })); }
+      if (url.endsWith("/projects/project_a/members")) return jsonResponse(deleted ? [] : [tester]);
+      return jsonResponse({});
+    });
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /移除成员/ }));
+    expect(await screen.findByText("暂无测试成员")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("从项目创建测试人员时固定角色且不允许切换为管理员", async () => {
+    window.history.replaceState({}, "", "/admin/users?project_id=project_a");
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const url = String(input);
+      if (url.endsWith("/auth/me")) return jsonResponse(auth);
+      if (url.endsWith("/tools")) return jsonResponse({ items: [] });
+      if (url.endsWith("/admin/users")) return jsonResponse([]);
+      return jsonResponse({});
+    });
+    render(<App />);
+
+    expect(await screen.findByRole("dialog", { name: "创建测试人员" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("固定角色")).not.toBeInTheDocument();
+  });
+
+  it("创建账号成功但加入项目失败时只重试项目关系", async () => {
+    window.history.replaceState({}, "", "/admin/users?project_id=project_a");
+    const project = { id: "project_a", code: "TEST-1", name: "test", description: "", status: "active", relation: null, revision: 1, manager_count: 0, member_count: 1, tool_count: 0, active_grant_count: 0, updated_at: "2026-08-30T00:00:00Z" };
+    const tester = { id: "tester_1", username: "tester.retry", display_name: "重试测试人员", role: "tester", status: "active" };
+    let userCreateCount = 0;
+    let membershipCreateCount = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url = String(input);
+      if (url.endsWith("/auth/me")) return jsonResponse(auth);
+      if (url.endsWith("/tools")) return jsonResponse({ items: [] });
+      if (url.endsWith("/admin/users") && init?.method === "POST") { userCreateCount += 1; return jsonResponse(tester, 201); }
+      if (url.endsWith("/admin/users")) return jsonResponse([]);
+      if (url.endsWith("/projects/project_a/members") && init?.method === "POST") {
+        membershipCreateCount += 1;
+        return membershipCreateCount === 1
+          ? jsonResponse({ code: "TEMPORARY_FAILURE", message: "临时写入失败" }, 503)
+          : jsonResponse(tester, 201);
+      }
+      if (url.endsWith("/projects/project_a")) return jsonResponse(project);
+      if (url.endsWith("/projects/project_a/tools") || url.endsWith("/projects/project_a/managers")) return jsonResponse([]);
+      if (url.endsWith("/projects/project_a/members")) return jsonResponse([tester]);
+      return jsonResponse({});
+    });
+    render(<App />);
+
+    const dialog = await screen.findByRole("dialog", { name: "创建测试人员" });
+    fireEvent.change(within(dialog).getByLabelText("用户名"), { target: { value: "tester.retry" } });
+    fireEvent.change(within(dialog).getByLabelText("显示名称"), { target: { value: "重试测试人员" } });
+    fireEvent.change(within(dialog).getByLabelText("初始密码"), { target: { value: "StrongPassword!1" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "确认创建" }));
+
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("账号已创建，但加入项目失败");
+    expect(within(dialog).getByLabelText("用户名")).toBeDisabled();
+    fireEvent.click(within(dialog).getByRole("button", { name: "重试加入项目" }));
+
+    await waitFor(() => expect(membershipCreateCount).toBe(2));
+    expect(userCreateCount).toBe(1);
+    expect(await screen.findByRole("heading", { name: "测试成员" })).toBeInTheDocument();
+  });
+
+  it("关系首次结果未知、重试发现同一成员已存在时按成功恢复", async () => {
+    window.history.replaceState({}, "", "/admin/users?project_id=project_a");
+    const project = { id: "project_a", code: "TEST-1", name: "test", description: "", status: "active", relation: null, revision: 1, manager_count: 0, member_count: 1, tool_count: 0, active_grant_count: 0, updated_at: "2026-08-30T00:00:00Z" };
+    const tester = { id: "tester_unknown", user_id: "tester_unknown", username: "tester.unknown", display_name: "未知结果测试人员", role: "tester", status: "active" };
+    let userCreateCount = 0;
+    let membershipCreateCount = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url = String(input);
+      if (url.endsWith("/auth/me")) return jsonResponse(auth);
+      if (url.endsWith("/tools")) return jsonResponse({ items: [] });
+      if (url.endsWith("/admin/users") && init?.method === "POST") { userCreateCount += 1; return jsonResponse(tester, 201); }
+      if (url.endsWith("/admin/users")) return jsonResponse([]);
+      if (url.endsWith("/projects/project_a/members") && init?.method === "POST") {
+        membershipCreateCount += 1;
+        return membershipCreateCount === 1
+          ? Promise.reject(new TypeError("response lost after commit"))
+          : jsonResponse({ code: "PROJECT_RELATION_EXISTS", message: "用户已在项目中" }, 409);
+      }
+      if (url.endsWith("/projects/project_a")) return jsonResponse(project);
+      if (url.endsWith("/projects/project_a/tools") || url.endsWith("/projects/project_a/managers")) return jsonResponse([]);
+      if (url.endsWith("/projects/project_a/members")) return jsonResponse([tester]);
+      return jsonResponse({});
+    });
+    render(<App />);
+
+    const dialog = await screen.findByRole("dialog", { name: "创建测试人员" });
+    fireEvent.change(within(dialog).getByLabelText("用户名"), { target: { value: "tester.unknown" } });
+    fireEvent.change(within(dialog).getByLabelText("显示名称"), { target: { value: "未知结果测试人员" } });
+    fireEvent.change(within(dialog).getByLabelText("初始密码"), { target: { value: "StrongPassword!2" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "确认创建" }));
+
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("账号已创建，但加入项目失败");
+    fireEvent.click(within(dialog).getByRole("button", { name: "重试加入项目" }));
+
+    await waitFor(() => expect(membershipCreateCount).toBe(2));
+    expect(userCreateCount).toBe(1);
+    expect(await screen.findByRole("heading", { name: "测试成员" })).toBeInTheDocument();
+  });
+
+  it("重复关系属于其他用户时不得把未知提交结果误判为成功", async () => {
+    window.history.replaceState({}, "", "/admin/users?project_id=project_a");
+    const createdTester = { id: "tester_target", username: "tester.target", display_name: "目标测试人员", role: "tester", status: "active" };
+    const otherTester = { id: "tester_other", user_id: "tester_other", username: "tester.other", display_name: "其他测试人员", role: "tester", status: "active" };
+    let membershipCreateCount = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url = String(input);
+      if (url.endsWith("/auth/me")) return jsonResponse(auth);
+      if (url.endsWith("/tools")) return jsonResponse({ items: [] });
+      if (url.endsWith("/admin/users") && init?.method === "POST") return jsonResponse(createdTester, 201);
+      if (url.endsWith("/admin/users")) return jsonResponse([]);
+      if (url.endsWith("/projects/project_a/members") && init?.method === "POST") {
+        membershipCreateCount += 1;
+        return membershipCreateCount === 1
+          ? Promise.reject(new TypeError("response lost"))
+          : jsonResponse({ code: "PROJECT_RELATION_EXISTS", message: "用户已在项目中" }, 409);
+      }
+      if (url.endsWith("/projects/project_a/members")) return jsonResponse([otherTester]);
+      return jsonResponse({});
+    });
+    render(<App />);
+
+    const dialog = await screen.findByRole("dialog", { name: "创建测试人员" });
+    fireEvent.change(within(dialog).getByLabelText("用户名"), { target: { value: "tester.target" } });
+    fireEvent.change(within(dialog).getByLabelText("显示名称"), { target: { value: "目标测试人员" } });
+    fireEvent.change(within(dialog).getByLabelText("初始密码"), { target: { value: "StrongPassword!4" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "确认创建" }));
+    await within(dialog).findByRole("alert");
+    fireEvent.click(within(dialog).getByRole("button", { name: "重试加入项目" }));
+
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("用户已在项目中");
+    expect(screen.getByRole("dialog", { name: "创建测试人员" })).toBeInTheDocument();
+  });
+
+  it("创建账号请求提交期间按 Esc 不关闭弹窗", async () => {
+    window.history.replaceState({}, "", "/admin/users");
+    let resolveCreate!: (response: Response) => void;
+    const createResponse = new Promise<Response>((resolve) => { resolveCreate = resolve; });
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url = String(input);
+      if (url.endsWith("/auth/me")) return jsonResponse(auth);
+      if (url.endsWith("/tools")) return jsonResponse({ items: [] });
+      if (url.endsWith("/admin/users") && init?.method === "POST") return createResponse;
+      if (url.endsWith("/admin/users")) return jsonResponse([]);
+      return jsonResponse({});
+    });
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "创建用户" }));
+    const dialog = screen.getByRole("dialog", { name: "创建用户" });
+    fireEvent.change(within(dialog).getByLabelText("用户名"), { target: { value: "tester.busy" } });
+    fireEvent.change(within(dialog).getByLabelText("显示名称"), { target: { value: "提交中测试人员" } });
+    fireEvent.change(within(dialog).getByLabelText("初始密码"), { target: { value: "StrongPassword!3" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "确认创建" }));
+
+    expect(await within(dialog).findByRole("button", { name: "提交中…" })).toBeDisabled();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.getByRole("dialog", { name: "创建用户" })).toBeInTheDocument();
+    void jsonResponse({ id: "tester_busy" }, 201).then(resolveCreate);
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "创建用户" })).not.toBeInTheDocument());
+  });
+
   it("工具详情按新版范围与归属页面展示影响预览入口", async () => {
     window.history.replaceState({}, "", "/admin/tool-access/functional-test-agent");
     vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
@@ -154,7 +466,7 @@ describe("第三阶段 AI 测试工作台", () => {
     expect(screen.getByRole("link", { name: "自动化" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "质量分析" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "专项评测" })).toBeInTheDocument();
-    expect(screen.getByText(/1\.2\.0/)).toBeInTheDocument();
+    expect(screen.getByText(/1\.3\.0/)).toBeInTheDocument();
     expect(screen.getByRole("complementary", { name: "平台状态" })).toHaveTextContent("运行环境DEV");
     expect(screen.queryByRole("link", { name: "查看版本详情" })).not.toBeInTheDocument();
   });
@@ -335,6 +647,123 @@ describe("第三阶段 AI 测试工作台", () => {
     expect(screen.getByLabelText("接口环境")).toBeDisabled();
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes("owner_type=tool_project_scope") && String(url).includes("owner_id=tps_dating_dev_test"))).toBe(true);
     expect(window.location.search).toBe("?scope_id=tps_dating_dev_test");
+  });
+
+  it("默认展示当前生效版本的 Dating Comm 静态值，并可查看历史版本", async () => {
+    window.history.replaceState({}, "", "/settings/config?scope_id=tps_dating_dev_test");
+    const definition = {
+      id: "api-autotest.runtime.gateway.comm", key: "gateway.comm", display_name: "Gateway Comm 默认值",
+      description: "", owner_type: "tool", owner_id: "api-autotest", group_key: "gateway", value_type: "json",
+      sensitivity: "normal", required: true, default_value: null,
+      validation_schema: {
+        required_keys: ["device_id", "platform", "app_version"],
+        forbidden_keys: ["auth_token", "user_id", "client_request_id"],
+        field_order: ["device_id", "platform", "app_version", "locale", "timezone", "country", "app_package"],
+        field_labels: { device_id: "Device ID", platform: "客户端平台", app_version: "客户端版本" },
+      },
+      apply_mode: "next_task", editable: true, sort_order: 1, value_scope: "system", credential_provider_type: null,
+    };
+    const release = (id: string, version: number, status: string, deviceId: string) => ({
+      id, environment_id: "dev", owner_type: "tool_project_scope", owner_id: "tps_dating_dev_test",
+      version, revision: 1, status, created_by: "admin", published_by: "admin",
+      created_at: `2026-08-2${version}T00:00:00Z`, published_at: `2026-08-2${version}T00:00:00Z`,
+      items: [{ definition_id: definition.id, value: {
+        device_id: deviceId, platform: "ios", app_version: version === 3 ? "1.0.0" : "0.9.0",
+        locale: "en-US", timezone: "UTC+08:00", country: "CN", app_package: "com.example.dating",
+        client_request_id: "legacy-dynamic-value",
+      } }],
+    });
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const url = String(input);
+      if (url.endsWith("/auth/me")) return jsonResponse(auth);
+      if (url.endsWith("/tools")) return jsonResponse({ items: [] });
+      if (url.includes("/runtime-scopes?")) return jsonResponse({ items: [{
+        id: "tps_dating_dev_test", environment_id: "dev", tool_id: "api-autotest",
+        platform_project_id: "project_dating", platform_project_name: "Dating 平台项目",
+        project_id: "dating", display_name: "Dating AI Assistant", target_env: "test", status: "active",
+        is_default: true, revision: 4, active_release: { id: "rel_dating_3", version: 3, status: "active" },
+      }] });
+      if (url.includes("/config/definitions")) return jsonResponse([definition]);
+      if (url.includes("/config/releases?")) return jsonResponse([
+        release("rel_dating_3", 3, "active", "dating-device-active"),
+        release("rel_dating_2", 2, "superseded", "dating-device-history"),
+      ]);
+      return jsonResponse({});
+    });
+    render(<App />);
+
+    await screen.findByLabelText("Device ID");
+    await waitFor(() => expect(screen.getByLabelText("Device ID")).toHaveValue("dating-device-active"));
+    const deviceInput = screen.getByLabelText("Device ID");
+    expect(deviceInput).toBeDisabled();
+    expect(screen.queryByDisplayValue("legacy-dynamic-value")).not.toBeInTheDocument();
+    expect(screen.getByText("v3 · 当前生效")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "查看 v2 配置" }));
+    expect(screen.getByLabelText("Device ID")).toHaveValue("dating-device-history");
+    expect(screen.getByText("v2 · 历史版本")).toBeInTheDocument();
+  });
+
+  it("Dating 草稿可新增静态 Comm 参数，但不能配置运行时动态字段", async () => {
+    window.history.replaceState({}, "", "/settings/config?scope_id=tps_dating_dev_test");
+    let savedBody: { items?: Array<{ definition_id: string; value: unknown }> } | null = null;
+    const definition = {
+      id: "api-autotest.runtime.gateway.comm", key: "gateway.comm", display_name: "Gateway Comm 默认值",
+      description: "", owner_type: "tool", owner_id: "api-autotest", group_key: "gateway", value_type: "json",
+      sensitivity: "normal", required: true, default_value: null,
+      validation_schema: {
+        required_keys: ["device_id", "platform", "app_version"],
+        forbidden_keys: ["auth_token", "user_id", "client_request_id"],
+        property_name_pattern: "^[a-z][a-z0-9_]{0,63}$",
+        field_order: ["device_id", "platform", "app_version"],
+        field_labels: { device_id: "Device ID", platform: "客户端平台", app_version: "客户端版本" },
+      },
+      apply_mode: "next_task", editable: true, sort_order: 1, value_scope: "system", credential_provider_type: null,
+    };
+    const draft = {
+      id: "rel_dating_4", environment_id: "dev", owner_type: "tool_project_scope", owner_id: "tps_dating_dev_test",
+      version: 4, revision: 2, status: "draft", created_by: "admin", published_by: null,
+      created_at: "2026-08-28T00:00:00Z", published_at: null,
+      items: [{ definition_id: definition.id, value: { device_id: "dating-device", platform: "ios", app_version: "1.0.0" } }],
+    };
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url = String(input);
+      if (url.endsWith("/auth/me")) return jsonResponse(auth);
+      if (url.endsWith("/tools")) return jsonResponse({ items: [] });
+      if (url.includes("/runtime-scopes?")) return jsonResponse({ items: [{
+        id: "tps_dating_dev_test", environment_id: "dev", tool_id: "api-autotest",
+        platform_project_id: "project_dating", platform_project_name: "Dating 平台项目",
+        project_id: "dating", display_name: "Dating AI Assistant", target_env: "test", status: "active",
+        is_default: true, revision: 4, active_release: null,
+      }] });
+      if (url.includes("/config/definitions")) return jsonResponse([definition]);
+      if (url.includes("/config/releases/rel_dating_4/items") && init?.method === "PUT") {
+        savedBody = JSON.parse(String(init.body));
+        return jsonResponse({ ...draft, revision: 3, items: savedBody?.items ?? [] });
+      }
+      if (url.includes("/me/credentials?")) return jsonResponse([]);
+      if (url.includes("/config/releases?")) return jsonResponse([draft]);
+      return jsonResponse({});
+    });
+    render(<App />);
+
+    await screen.findByLabelText("静态参数名");
+    fireEvent.change(screen.getByLabelText("静态参数名"), { target: { value: "custom_channel" } });
+    fireEvent.change(screen.getByLabelText("静态参数值"), { target: { value: "app-store" } });
+    fireEvent.click(screen.getByRole("button", { name: "添加静态参数" }));
+    expect(screen.getByLabelText("custom_channel")).toHaveValue("app-store");
+
+    fireEvent.change(screen.getByLabelText("静态参数名"), { target: { value: "auth_token" } });
+    fireEvent.change(screen.getByLabelText("静态参数值"), { target: { value: "must-not-save" } });
+    fireEvent.click(screen.getByRole("button", { name: "添加静态参数" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("auth_token 由运行时生成，不能保存为静态配置");
+
+    fireEvent.click(screen.getByRole("button", { name: "保存草稿" }));
+    await waitFor(() => expect(savedBody).not.toBeNull());
+    const persistedBody = savedBody as { items?: Array<{ definition_id: string; value: unknown }> } | null;
+    const commItem = persistedBody?.items?.find((item) => item.definition_id === definition.id);
+    expect(commItem?.value).toMatchObject({ custom_channel: "app-store" });
+    expect(commItem?.value).not.toHaveProperty("auth_token");
   });
 
   it("配置控制面保留全部既有工具，并按工具能力选择 Scope 或工具级归属", async () => {
@@ -528,8 +957,171 @@ describe("第三阶段 AI 测试工作台", () => {
     expect(screen.queryByText("frontend-secret-sentinel")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "配置 truthy-search Gateway Session" }));
     expect(screen.getByLabelText("Access Token")).toHaveValue("");
-    expect(localStorage.length).toBe(0);
+    // 认证层只允许保存“曾建立会话”的非敏感布尔标记；个人 Secret 仍不得落盘。
+    expect(localStorage.getItem("tp_session_seen")).toBe("1");
+    expect(JSON.stringify(localStorage)).not.toContain("new-token-value");
     expect(fetchMock).toHaveBeenCalled();
+  });
+
+  it("接口自动化个人凭证不再展示已项目化的 Device ID", async () => {
+    window.history.replaceState({}, "", "/account/credentials");
+    const apiAutotestAuth: AuthState = {
+      ...auth,
+      tool_permissions: {
+        "api-autotest": ["tool.view", "tool.execute"],
+      },
+    };
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const url = String(input);
+      if (url.endsWith("/auth/me")) return jsonResponse(apiAutotestAuth);
+      if (url.endsWith("/tools")) return jsonResponse({ items: [allTools[2]] });
+      if (url.includes("/runtime-scopes?")) return jsonResponse({ items: [{
+        id: "tps_dating_dev_test", environment_id: "dev", tool_id: "api-autotest",
+        platform_project_id: "project_dating", platform_project_name: "Dating 平台项目",
+        project_id: "dating", display_name: "Dating AI Assistant", target_env: "test",
+        status: "active", is_default: true, revision: 4, active_release: null,
+      }] });
+      if (url.includes("/config/definitions")) return jsonResponse([
+        { id: "api-autotest.AUTH_TOKEN", key: "AUTH_TOKEN", display_name: "Access Token", description: "", owner_type: "tool", owner_id: "api-autotest", group_key: "credentials", value_type: "secret", sensitivity: "secret", required: true, default_value: null, validation_schema: {}, apply_mode: "next_task", editable: true, sort_order: 10, value_scope: "user", credential_provider_type: "gateway_session" },
+        { id: "api-autotest.DEVICE_ID", key: "DEVICE_ID", display_name: "设备 ID", description: "", owner_type: "tool", owner_id: "api-autotest", group_key: "credentials", value_type: "secret", sensitivity: "secret", required: false, default_value: null, validation_schema: { runtime_config_excluded: true, replacement_key: "gateway.comm.device_id" }, apply_mode: "next_task", editable: true, sort_order: 20, value_scope: "user", credential_provider_type: "gateway_session" },
+      ]);
+      if (url.includes("/me/credentials?")) return jsonResponse([{
+        id: "ucred_api_autotest", tool_id: "api-autotest", environment_id: "dev",
+        runtime_scope_id: "tps_dating_dev_test",
+        provider_type: "gateway_session", status: "healthy", current_version: 19,
+        expires_at: null, refresh_expires_at: null, last_checked_at: null,
+        last_error_code: null, fields: [
+          { key: "AUTH_TOKEN", display_name: "Access Token", required: true, configured: true },
+          { key: "DEVICE_ID", display_name: "设备 ID", required: false, configured: true },
+        ],
+      }]);
+      return jsonResponse({ tool_id: "api-autotest", status: "healthy" });
+    });
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", {
+      name: "配置 api-autotest Gateway Session",
+    }));
+    expect(await screen.findByLabelText("Access Token")).toBeInTheDocument();
+    expect(screen.queryByLabelText("设备 ID")).not.toBeInTheDocument();
+  });
+
+  it("接口自动化没有可用 Scope 时不回退展示工具级旧凭证", async () => {
+    window.history.replaceState({}, "", "/account/credentials");
+    const apiAutotestAuth: AuthState = {
+      ...auth,
+      tool_permissions: { "api-autotest": ["tool.view", "tool.execute"] },
+    };
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const url = String(input);
+      if (url.endsWith("/auth/me")) return jsonResponse(apiAutotestAuth);
+      if (url.endsWith("/tools")) return jsonResponse({ items: [allTools[2]] });
+      if (url.includes("/runtime-scopes?")) return jsonResponse({ items: [] });
+      if (url.includes("/config/definitions")) return jsonResponse([{
+        id: "api-autotest.AUTH_TOKEN", key: "AUTH_TOKEN", display_name: "Access Token",
+        description: "", owner_type: "tool", owner_id: "api-autotest", group_key: "credentials",
+        value_type: "secret", sensitivity: "secret", required: true, default_value: null,
+        validation_schema: {}, apply_mode: "next_task", editable: true, sort_order: 10,
+        value_scope: "user", credential_provider_type: "gateway_session",
+      }]);
+      if (url.includes("/me/credentials?")) return jsonResponse([{
+        id: "ucred_legacy_api_autotest", tool_id: "api-autotest", environment_id: "dev",
+        runtime_scope_id: null, provider_type: "gateway_session", status: "healthy",
+        current_version: 9, expires_at: null, refresh_expires_at: null,
+        last_checked_at: null, last_error_code: null, fields: [],
+      }]);
+      return jsonResponse({});
+    });
+
+    render(<App />);
+
+    expect(await screen.findByText("当前工具没有可用的 Runtime Scope，不能读取或配置工具级兜底凭证。")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "配置 api-autotest Gateway Session" })).not.toBeInTheDocument();
+    expect(screen.queryByText("v9")).not.toBeInTheDocument();
+  });
+
+  it("接口自动化个人凭证按 Runtime Scope 隔离并从深链定位 Provider", async () => {
+    window.history.replaceState(
+      {},
+      "",
+      "/account/credentials?scope_id=tps_dating_dev_test&provider_type=gateway_session",
+    );
+    let savedBody: Record<string, unknown> | null = null;
+    const apiAutotestAuth: AuthState = {
+      ...auth,
+      tool_permissions: { "api-autotest": ["tool.view", "tool.execute"] },
+    };
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url = String(input);
+      if (url.endsWith("/auth/me")) return jsonResponse(apiAutotestAuth);
+      if (url.endsWith("/tools")) return jsonResponse({ items: [allTools[2]] });
+      if (url.includes("/runtime-scopes?")) return jsonResponse({ items: [
+        { id: "tps_truthy_dev_test", environment_id: "dev", tool_id: "api-autotest", platform_project_id: "project_truthy", platform_project_name: "Truthy", project_id: "truthy", display_name: "Truthy Gateway", target_env: "test", status: "active", is_default: true, revision: 1, active_release: null },
+        { id: "tps_dating_dev_test", environment_id: "dev", tool_id: "api-autotest", platform_project_id: "project_dating", platform_project_name: "Dating", project_id: "dating", display_name: "Dating AI Assistant", target_env: "test", status: "active", is_default: false, revision: 1, active_release: null },
+      ] });
+      if (url.includes("/config/definitions")) return jsonResponse([
+        { id: "api-autotest.AUTH_TOKEN", key: "AUTH_TOKEN", display_name: "Access Token", description: "", owner_type: "tool", owner_id: "api-autotest", group_key: "credentials", value_type: "secret", sensitivity: "secret", required: true, default_value: null, validation_schema: {}, apply_mode: "next_task", editable: true, sort_order: 10, value_scope: "user", credential_provider_type: "gateway_session" },
+      ]);
+      if (url.includes("/me/credentials?")) return jsonResponse([
+        { id: "ucred_truthy", tool_id: "api-autotest", environment_id: "dev", runtime_scope_id: "tps_truthy_dev_test", provider_type: "gateway_session", status: "healthy", current_version: 3, expires_at: "2026-09-01T00:00:00Z", refresh_expires_at: null, last_checked_at: null, last_error_code: null, fields: [{ key: "AUTH_TOKEN", display_name: "Access Token", required: true, configured: true }] },
+        { id: "ucred_dating", tool_id: "api-autotest", environment_id: "dev", runtime_scope_id: "tps_dating_dev_test", provider_type: "gateway_session", status: "action_required", current_version: 23, expires_at: "2026-08-29T08:36:30Z", refresh_expires_at: "2026-09-27T08:36:30Z", last_checked_at: "2026-08-29T09:07:30Z", last_error_code: "CREDENTIAL_REFRESH_HTTPSTATUSERROR", fields: [{ key: "AUTH_TOKEN", display_name: "Access Token", required: true, configured: true }] },
+      ]);
+      if (url.includes("/me/credentials/api-autotest/gateway_session") && init?.method === "PUT") {
+        savedBody = JSON.parse(String(init.body));
+        return jsonResponse({ id: "ucred_dating", tool_id: "api-autotest", environment_id: "dev", runtime_scope_id: "tps_dating_dev_test", provider_type: "gateway_session", status: "pending_validation", current_version: 24, expires_at: null, refresh_expires_at: null, last_checked_at: null, last_error_code: null, fields: [{ key: "AUTH_TOKEN", display_name: "Access Token", required: true, configured: true }] });
+      }
+      return jsonResponse({});
+    });
+
+    render(<App />);
+
+    expect(await screen.findByLabelText("工具项目")).toHaveDisplayValue("Dating AI Assistant");
+    expect(screen.getByText("v23")).toBeInTheDocument();
+    expect(screen.getByText("CREDENTIAL_REFRESH_HTTPSTATUSERROR", { exact: false })).toBeInTheDocument();
+    expect(screen.queryByText("v3")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "配置 api-autotest Gateway Session" }));
+    fireEvent.change(screen.getByLabelText("Access Token"), { target: { value: "new-dating-token" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存凭证" }));
+    await waitFor(() => expect(savedBody).toEqual({
+      environment_id: "dev",
+      runtime_scope_id: "tps_dating_dev_test",
+      expected_version: 23,
+      values: { AUTH_TOKEN: "new-dating-token" },
+    }));
+  });
+
+  it("普通配置页展示当前 Scope 的个人凭证状态但不回显凭证值", async () => {
+    window.history.replaceState({}, "", "/settings/config?scope_id=tps_dating_dev_test");
+    const definition = {
+      id: "api-autotest.gateway.base_url", key: "gateway.base_url", display_name: "Gateway Base URL",
+      description: "", owner_type: "tool", owner_id: "api-autotest", group_key: "gateway", value_type: "string",
+      sensitivity: "normal", required: true, default_value: null, validation_schema: {},
+      apply_mode: "next_task", editable: true, sort_order: 1, value_scope: "system", credential_provider_type: null,
+    };
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const url = String(input);
+      if (url.endsWith("/auth/me")) return jsonResponse(auth);
+      if (url.endsWith("/tools")) return jsonResponse({ items: [allTools[2]] });
+      if (url.includes("/runtime-scopes?")) return jsonResponse({ items: [{ id: "tps_dating_dev_test", environment_id: "dev", tool_id: "api-autotest", platform_project_id: "project_dating", platform_project_name: "Dating", project_id: "dating", display_name: "Dating AI Assistant", target_env: "test", status: "active", is_default: true, revision: 1, active_release: { id: "rel_v7", version: 7, status: "active" } }] });
+      if (url.includes("/config/definitions")) return jsonResponse([definition]);
+      if (url.includes("/config/releases?")) return jsonResponse([{ id: "rel_v7", environment_id: "dev", owner_type: "tool_project_scope", owner_id: "tps_dating_dev_test", version: 7, revision: 1, status: "active", created_by: "admin", published_by: "admin", created_at: "2026-08-29T00:00:00Z", published_at: "2026-08-29T00:00:00Z", items: [{ definition_id: definition.id, value: "https://gateway.spark-jam.top" }] }]);
+      if (url.includes("/me/credentials?")) return jsonResponse([{ id: "ucred_dating", tool_id: "api-autotest", environment_id: "dev", runtime_scope_id: "tps_dating_dev_test", provider_type: "gateway_session", status: "action_required", current_version: 23, expires_at: "2026-08-29T08:36:30Z", refresh_expires_at: "2026-09-27T08:36:30Z", last_checked_at: "2026-08-29T09:07:30Z", last_error_code: "CREDENTIAL_REFRESH_HTTPSTATUSERROR", fields: [{ key: "AUTH_TOKEN", display_name: "Access Token", required: true, configured: true }] }]);
+      return jsonResponse({});
+    });
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "个人凭证（不属于普通 Release）" })).toBeInTheDocument();
+    // 配置主体会先完成渲染，个人凭证状态随后异步加载；等待状态行出现再断言，
+    // 避免把正常的分阶段加载误判为“凭证未展示”。
+    expect(await screen.findByText("Gateway Session")).toBeInTheDocument();
+    expect(screen.getByText("CREDENTIAL_REFRESH_HTTPSTATUSERROR", { exact: false })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "管理 Gateway Session" })).toHaveAttribute(
+      "href",
+      "/account/credentials?scope_id=tps_dating_dev_test&provider_type=gateway_session",
+    );
+    expect(screen.queryByText("secret-sentinel")).not.toBeInTheDocument();
   });
 
   it("个人凭证版本冲突保留未提交输入并展示稳定错误码", async () => {
@@ -627,6 +1219,550 @@ describe("第三阶段 AI 测试工作台", () => {
     expect(window.location.pathname).toBe("/account/llm");
   });
 
+  it("注册模式明确为 open 时显示注册链接", async () => {
+    window.history.replaceState({}, "", "/login");
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const url = String(input);
+      if (url.endsWith("/auth/registration-status")) return jsonResponse({ mode: "open" });
+      if (url.endsWith("/version.json")) return jsonResponse({ runtime_environment: "dev" });
+      return jsonResponse({ code: "AUTH_REQUIRED", message: "请先登录" }, 401);
+    });
+
+    render(<App />);
+
+    expect(await screen.findByRole("link", { name: "创建测试人员账号" })).toBeInTheDocument();
+  });
+
+  it("注册页以唯一注册标题命名表单区域", async () => {
+    window.history.replaceState({}, "", "/register");
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const url = String(input);
+      if (url.endsWith("/auth/registration-status")) return jsonResponse({ mode: "open" });
+      if (url.endsWith("/version.json")) return jsonResponse({ runtime_environment: "dev" });
+      return jsonResponse({ code: "AUTH_REQUIRED", message: "请先登录" }, 401);
+    });
+
+    render(<App />);
+
+    const panel = await screen.findByRole("region", { name: "创建测试人员账号" });
+    expect(within(panel).getByRole("heading", { name: "创建测试人员账号" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "欢迎回来" })).not.toBeInTheDocument();
+  });
+
+  it.each(["disabled", "invite"])("注册模式 %s 时隐藏入口并阻止直达提交", async (mode) => {
+    window.history.replaceState({}, "", "/register");
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const url = String(input);
+      if (url.endsWith("/auth/registration-status")) return jsonResponse({ mode });
+      if (url.endsWith("/version.json")) return jsonResponse({ runtime_environment: "dev" });
+      return jsonResponse({ code: "AUTH_REQUIRED", message: "请先登录" }, 401);
+    });
+
+    render(<App />);
+
+    expect(await screen.findByRole("region", { name: "暂未开放注册" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "欢迎回来" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "创建账号" })).not.toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/auth/register"))).toBe(false);
+  });
+
+  it.each([
+    ["未知模式", { mode: "future-mode" }],
+    ["错误响应", { mode: 1 }],
+  ])("注册状态返回%s时默认关闭", async (_label, payload) => {
+    window.history.replaceState({}, "", "/login");
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const url = String(input);
+      if (url.endsWith("/auth/registration-status")) return jsonResponse(payload);
+      if (url.endsWith("/version.json")) return jsonResponse({ runtime_environment: "dev" });
+      return jsonResponse({ code: "AUTH_REQUIRED", message: "请先登录" }, 401);
+    });
+
+    render(<App />);
+
+    await screen.findByRole("heading", { name: "欢迎回来" });
+    await waitFor(() => expect(screen.queryByRole("link", { name: "创建测试人员账号" })).not.toBeInTheDocument());
+  });
+
+  it("注册状态查询失败时默认关闭但不阻塞已登录工作台", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const url = String(input);
+      if (url.endsWith("/auth/me")) return jsonResponse(auth);
+      if (url.endsWith("/auth/registration-status")) return jsonResponse({ code: "UNAVAILABLE" }, 503);
+      if (url.endsWith("/tools")) return jsonResponse({ items: [] });
+      return jsonResponse({ runtime_environment: "dev" });
+    });
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "AI 测试与质量工程工作台" })).toBeInTheDocument();
+  });
+
+  it("初次匿名 auth me 401 不显示会话过期提示", async () => {
+    window.history.replaceState({}, "", "/login");
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const url = String(input);
+      if (url.endsWith("/auth/registration-status")) return jsonResponse({ mode: "open" });
+      if (url.endsWith("/version.json")) return jsonResponse({ runtime_environment: "dev" });
+      return jsonResponse({ code: "AUTH_REQUIRED", message: "请先登录" }, 401);
+    });
+
+    render(<App />);
+
+    await screen.findByRole("heading", { name: "欢迎回来" });
+    expect(screen.queryByText("登录状态已过期，请重新登录。")).not.toBeInTheDocument();
+  });
+
+  it("已有会话后受保护 tools 的 AUTH_REQUIRED 只显示一次过期提示", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const url = String(input);
+      if (url.endsWith("/auth/me")) return jsonResponse(auth);
+      if (url.endsWith("/auth/registration-status")) return jsonResponse({ mode: "open" });
+      if (url.endsWith("/tools")) return jsonResponse({ code: "AUTH_REQUIRED", message: "需要登录" }, 401);
+      if (url.endsWith("/version.json")) return jsonResponse({ runtime_environment: "dev" });
+      return jsonResponse({});
+    });
+
+    render(<App />);
+
+    expect(await screen.findByText("登录状态已过期，请重新登录。")).toBeInTheDocument();
+    expect(screen.getAllByText("登录状态已过期，请重新登录。")).toHaveLength(1);
+    expect(localStorage.getItem("tp_session_seen")).toBeNull();
+    expect(sessionStorage.getItem("tp_auth_expired_notice")).toBeNull();
+  });
+
+  it("登录成功后迟到的旧代 401 不得清空新认证态", async () => {
+    window.history.replaceState({}, "", "/login");
+    const oldTools = deferredResponse();
+    let toolsCalls = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url = String(input);
+      if (url.endsWith("/auth/me")) return jsonResponse({ code: "AUTH_REQUIRED" }, 401);
+      if (url.endsWith("/auth/registration-status")) return jsonResponse({ mode: "open" });
+      if (url.endsWith("/auth/login") && init?.method === "POST") return jsonResponse(auth);
+      if (url.endsWith("/tools")) {
+        toolsCalls += 1;
+        return toolsCalls === 1 ? oldTools.promise : jsonResponse({ items: [] });
+      }
+      return jsonResponse({ runtime_environment: "dev" });
+    });
+    render(<App />);
+    await screen.findByRole("heading", { name: "欢迎回来" });
+
+    const oldGeneration = currentAuthGeneration();
+    const lateRequest = request("/api/v1/tools").catch((error) => error);
+    fireEvent.change(screen.getByPlaceholderText("请输入用户名"), { target: { value: "admin" } });
+    fireEvent.change(screen.getByPlaceholderText("请输入密码"), { target: { value: "legacy-password-over-18" } });
+    fireEvent.click(screen.getByRole("button", { name: "登录" }));
+    expect(await screen.findByRole("heading", { name: "AI 测试与质量工程工作台" })).toBeInTheDocument();
+    expect(currentAuthGeneration()).toBeGreaterThan(oldGeneration);
+
+    oldTools.resolve(new Response(JSON.stringify({ code: "AUTH_REQUIRED", message: "需要登录" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    }));
+    await lateRequest;
+    expect(screen.getByRole("heading", { name: "AI 测试与质量工程工作台" })).toBeInTheDocument();
+    expect(screen.queryByText("登录状态已过期，请重新登录。")).not.toBeInTheDocument();
+  });
+
+  it("登录成功后迟到的旧 auth me 401 不得覆盖新认证态", async () => {
+    window.history.replaceState({}, "", "/login");
+    const oldMe = deferredResponse();
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url = String(input);
+      if (url.endsWith("/auth/me")) return oldMe.promise;
+      if (url.endsWith("/auth/registration-status")) return jsonResponse({ mode: "open" });
+      if (url.endsWith("/auth/login") && init?.method === "POST") return jsonResponse(auth);
+      if (url.endsWith("/tools")) return jsonResponse({ items: [] });
+      return jsonResponse({ runtime_environment: "dev" });
+    });
+    render(<App />);
+    await screen.findByRole("heading", { name: "欢迎回来" });
+    fireEvent.change(screen.getByPlaceholderText("请输入用户名"), { target: { value: "admin" } });
+    fireEvent.change(screen.getByPlaceholderText("请输入密码"), { target: { value: "legacy-password-over-18" } });
+    fireEvent.click(screen.getByRole("button", { name: "登录" }));
+    await waitFor(() => expect(localStorage.getItem("tp_session_seen")).toBe("1"));
+
+    oldMe.resolve(new Response(JSON.stringify({ code: "AUTH_REQUIRED", message: "需要登录" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    }));
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "AI 测试与质量工程工作台" })).toBeInTheDocument();
+    });
+    expect(screen.queryByText("登录状态已过期，请重新登录。")).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ["INVALID_CREDENTIALS", "用户名或密码错误"],
+    ["ACCOUNT_LOCKED", "登录尝试过多，请稍后再试"],
+  ])("登录错误码 %s 使用固定安全文案", async (code, message) => {
+    window.history.replaceState({}, "", "/login");
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const url = String(input);
+      if (url.endsWith("/auth/registration-status")) return jsonResponse({ mode: "open" });
+      if (url.endsWith("/auth/login")) return jsonResponse({ code, message: "不可信后端详情" }, 401);
+      if (url.endsWith("/version.json")) return jsonResponse({ runtime_environment: "dev" });
+      return jsonResponse({ code: "AUTH_REQUIRED" }, 401);
+    });
+    render(<App />);
+    await screen.findByRole("heading", { name: "欢迎回来" });
+    fireEvent.change(screen.getByPlaceholderText("请输入用户名"), { target: { value: "admin" } });
+    fireEvent.change(screen.getByPlaceholderText("请输入密码"), { target: { value: "wrong-password" } });
+    fireEvent.click(screen.getByRole("button", { name: "登录" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(message);
+    expect(screen.getByRole("alert")).not.toHaveTextContent("不可信后端详情");
+  });
+
+  it("AuthProvider 卸载后移除 AUTH_REQUIRED 事件监听", async () => {
+    mockAuthenticatedCatalog([]);
+    const view = render(<App />);
+    await screen.findByRole("heading", { name: "AI 测试与质量工程工作台" });
+    expect(localStorage.getItem("tp_session_seen")).toBe("1");
+    const generation = currentAuthGeneration();
+
+    view.unmount();
+    window.dispatchEvent(new CustomEvent(AUTH_REQUIRED_EVENT, { detail: { generation } }));
+
+    expect(localStorage.getItem("tp_session_seen")).toBe("1");
+    expect(sessionStorage.getItem("tp_auth_expired_notice")).toBeNull();
+  });
+
+  it.each([
+    ["六位", "密码密码密码"],
+    ["十八位", "密码密码密码密码密码密码密码密码密码"],
+  ])("注册支持%s Unicode code point 密码", async (_label, password) => {
+    window.history.replaceState({}, "", "/register");
+    let registerBody: Record<string, unknown> | null = null;
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url = String(input);
+      if (url.endsWith("/auth/me")) return jsonResponse({ code: "AUTH_REQUIRED" }, 401);
+      if (url.endsWith("/auth/registration-status")) return jsonResponse({ mode: "open" });
+      if (url.endsWith("/auth/register")) {
+        registerBody = JSON.parse(String(init?.body));
+        return jsonResponse(auth, 201);
+      }
+      if (url.endsWith("/tools")) return jsonResponse({ items: [] });
+      return jsonResponse({ runtime_environment: "dev" });
+    });
+    render(<App />);
+    await screen.findByRole("heading", { name: "创建测试人员账号" });
+    fireEvent.change(screen.getByLabelText("用户名"), { target: { value: "unicode-user" } });
+    fireEvent.change(screen.getByLabelText("显示名称"), { target: { value: "Unicode 用户" } });
+    fireEvent.change(screen.getByLabelText("密码"), { target: { value: password } });
+    fireEvent.change(screen.getByLabelText("确认密码"), { target: { value: password } });
+    fireEvent.click(screen.getByRole("button", { name: "创建账号" }));
+
+    await waitFor(() => expect(registerBody).toEqual({
+      username: "unicode-user",
+      display_name: "Unicode 用户",
+      password,
+    }));
+  });
+
+  it.each(["12345", "1234567890123456789"])("注册拒绝 5/19 位密码 %s 且不请求 API", async (password) => {
+    window.history.replaceState({}, "", "/register");
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const url = String(input);
+      if (url.endsWith("/auth/registration-status")) return jsonResponse({ mode: "open" });
+      if (url.endsWith("/version.json")) return jsonResponse({ runtime_environment: "dev" });
+      return jsonResponse({ code: "AUTH_REQUIRED" }, 401);
+    });
+    render(<App />);
+    await screen.findByRole("heading", { name: "创建测试人员账号" });
+    fireEvent.change(screen.getByLabelText("用户名"), { target: { value: "invalid-user" } });
+    fireEvent.change(screen.getByLabelText("显示名称"), { target: { value: "无效用户" } });
+    fireEvent.change(screen.getByLabelText("密码"), { target: { value: password } });
+    fireEvent.change(screen.getByLabelText("确认密码"), { target: { value: password } });
+    fireEvent.click(screen.getByRole("button", { name: "创建账号" }));
+
+    expect(await screen.findByText("密码长度必须为 6 到 18 个字符")).toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/auth/register"))).toBe(false);
+  });
+
+  it("注册确认密码不一致时不发送请求并正确关联错误", async () => {
+    window.history.replaceState({}, "", "/register");
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const url = String(input);
+      if (url.endsWith("/auth/registration-status")) return jsonResponse({ mode: "open" });
+      if (url.endsWith("/version.json")) return jsonResponse({ runtime_environment: "dev" });
+      return jsonResponse({ code: "AUTH_REQUIRED" }, 401);
+    });
+    render(<App />);
+    await screen.findByRole("heading", { name: "创建测试人员账号" });
+    fireEvent.change(screen.getByLabelText("用户名"), { target: { value: "mismatch-user" } });
+    fireEvent.change(screen.getByLabelText("显示名称"), { target: { value: "不一致用户" } });
+    fireEvent.change(screen.getByLabelText("密码"), { target: { value: "123456" } });
+    fireEvent.change(screen.getByLabelText("确认密码"), { target: { value: "654321" } });
+    fireEvent.click(screen.getByRole("button", { name: "创建账号" }));
+
+    const confirmation = screen.getByLabelText("确认密码");
+    expect(await screen.findByText("两次输入的密码不一致")).toHaveAttribute("id", "register-confirm-password-error");
+    expect(confirmation).toHaveAttribute("aria-describedby", "register-confirm-password-error");
+    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/auth/register"))).toBe(false);
+  });
+
+  it("注册拒绝仅含空格的显示名称并清空两个密码", async () => {
+    window.history.replaceState({}, "", "/register");
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const url = String(input);
+      if (url.endsWith("/auth/registration-status")) return jsonResponse({ mode: "open" });
+      if (url.endsWith("/version.json")) return jsonResponse({ runtime_environment: "dev" });
+      return jsonResponse({ code: "AUTH_REQUIRED" }, 401);
+    });
+    render(<App />);
+    await screen.findByRole("heading", { name: "创建测试人员账号" });
+    fireEvent.change(screen.getByLabelText("用户名"), { target: { value: "blank-name" } });
+    fireEvent.change(screen.getByLabelText("显示名称"), { target: { value: "   " } });
+    fireEvent.change(screen.getByLabelText("密码"), { target: { value: "123456" } });
+    fireEvent.change(screen.getByLabelText("确认密码"), { target: { value: "123456" } });
+    fireEvent.click(screen.getByRole("button", { name: "创建账号" }));
+
+    expect(await screen.findByText("显示名称不能为空")).toHaveAttribute("id", "register-display-name-error");
+    expect(screen.getByLabelText("密码")).toHaveValue("");
+    expect(screen.getByLabelText("确认密码")).toHaveValue("");
+    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/auth/register"))).toBe(false);
+  });
+
+  it("注册失败清空两个密码并保留用户名和显示名称", async () => {
+    window.history.replaceState({}, "", "/register");
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const url = String(input);
+      if (url.endsWith("/auth/registration-status")) return jsonResponse({ mode: "open" });
+      if (url.endsWith("/auth/register")) return jsonResponse({ code: "REGISTRATION_RATE_LIMITED", message: "内部阈值" }, 429);
+      if (url.endsWith("/version.json")) return jsonResponse({ runtime_environment: "dev" });
+      return jsonResponse({ code: "AUTH_REQUIRED" }, 401);
+    });
+    render(<App />);
+    await screen.findByRole("heading", { name: "创建测试人员账号" });
+    fireEvent.change(screen.getByLabelText("用户名"), { target: { value: "preserved-user" } });
+    fireEvent.change(screen.getByLabelText("显示名称"), { target: { value: "保留身份" } });
+    fireEvent.change(screen.getByLabelText("密码"), { target: { value: "123456" } });
+    fireEvent.change(screen.getByLabelText("确认密码"), { target: { value: "123456" } });
+    fireEvent.click(screen.getByRole("button", { name: "创建账号" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("操作过于频繁，请稍后重试");
+    expect(screen.getByLabelText("用户名")).toHaveValue("preserved-user");
+    expect(screen.getByLabelText("显示名称")).toHaveValue("保留身份");
+    expect(screen.getByLabelText("密码")).toHaveValue("");
+    expect(screen.getByLabelText("确认密码")).toHaveValue("");
+  });
+
+  it("登录表单不拒绝存量 19 位以上密码", async () => {
+    window.history.replaceState({}, "", "/login");
+    let loginBody: Record<string, unknown> | null = null;
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url = String(input);
+      if (url.endsWith("/auth/registration-status")) return jsonResponse({ mode: "open" });
+      if (url.endsWith("/auth/login")) { loginBody = JSON.parse(String(init?.body)); return jsonResponse(auth); }
+      if (url.endsWith("/tools")) return jsonResponse({ items: [] });
+      if (url.endsWith("/version.json")) return jsonResponse({ runtime_environment: "dev" });
+      return jsonResponse({ code: "AUTH_REQUIRED" }, 401);
+    });
+    render(<App />);
+    await screen.findByRole("heading", { name: "欢迎回来" });
+    const legacyPassword = "legacy-password-over-eighteen";
+    fireEvent.change(screen.getByPlaceholderText("请输入用户名"), { target: { value: "admin" } });
+    fireEvent.change(screen.getByPlaceholderText("请输入密码"), { target: { value: legacyPassword } });
+    fireEvent.click(screen.getByRole("button", { name: "登录" }));
+
+    await waitFor(() => expect(loginBody).toEqual({ username: "admin", password: legacyPassword }));
+  });
+
+  it("setup 使用共享 6 到 18 位密码规则", async () => {
+    window.history.replaceState({}, "", "/setup");
+    let setupBody: Record<string, unknown> | null = null;
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url = String(input);
+      if (url.endsWith("/auth/registration-status")) return jsonResponse({ mode: "disabled" });
+      if (url.endsWith("/setup")) { setupBody = JSON.parse(String(init?.body)); return jsonResponse(auth); }
+      if (url.endsWith("/tools")) return jsonResponse({ items: [] });
+      return jsonResponse({ code: "AUTH_REQUIRED" }, 401);
+    });
+    render(<App />);
+    await screen.findByRole("heading", { name: "初始化平台管理员" });
+    fireEvent.change(screen.getByLabelText("Bootstrap Token"), { target: { value: "bootstrap-token" } });
+    fireEvent.change(screen.getByLabelText("用户名"), { target: { value: "admin" } });
+    fireEvent.change(screen.getByLabelText("显示名"), { target: { value: "管理员" } });
+    fireEvent.change(screen.getByLabelText("密码"), { target: { value: "123456" } });
+    fireEvent.click(screen.getByRole("button", { name: "创建管理员" }));
+
+    await waitFor(() => expect(setupBody).not.toBeNull());
+  });
+
+  it("用户改密使用共享 6 到 18 位密码规则", async () => {
+    window.history.replaceState({}, "", "/account/password");
+    let changeBody: Record<string, unknown> | null = null;
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url = String(input);
+      if (url.endsWith("/auth/me")) return jsonResponse(auth);
+      if (url.endsWith("/auth/registration-status")) return jsonResponse({ mode: "open" });
+      if (url.endsWith("/tools")) return jsonResponse({ items: [] });
+      if (url.endsWith("/auth/change-password")) { changeBody = JSON.parse(String(init?.body)); return jsonResponse({}); }
+      return jsonResponse({});
+    });
+    render(<App />);
+    await screen.findByRole("heading", { name: "修改密码" });
+    fireEvent.change(screen.getByLabelText("当前密码"), { target: { value: "legacy-current-password" } });
+    fireEvent.change(screen.getByLabelText("新密码"), { target: { value: "123456" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存并撤销其他会话" }));
+
+    await waitFor(() => expect(changeBody).not.toBeNull());
+  });
+
+  it.each(["12345", "1234567890123456789"])("setup 拒绝越界新密码 %s 且不请求 API", async (password) => {
+    window.history.replaceState({}, "", "/setup");
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const url = String(input);
+      if (url.endsWith("/auth/registration-status")) return jsonResponse({ mode: "disabled" });
+      return jsonResponse({ code: "AUTH_REQUIRED" }, 401);
+    });
+    render(<App />);
+    await screen.findByRole("heading", { name: "初始化平台管理员" });
+    fireEvent.change(screen.getByLabelText("Bootstrap Token"), { target: { value: "bootstrap-token" } });
+    fireEvent.change(screen.getByLabelText("用户名"), { target: { value: "admin" } });
+    fireEvent.change(screen.getByLabelText("显示名"), { target: { value: "管理员" } });
+    fireEvent.change(screen.getByLabelText("密码"), { target: { value: password } });
+    fireEvent.click(screen.getByRole("button", { name: "创建管理员" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("密码长度必须为 6 到 18 个字符");
+    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/setup"))).toBe(false);
+  });
+
+  it.each(["12345", "1234567890123456789"])("用户改密拒绝越界新密码 %s 且不请求 API", async (password) => {
+    window.history.replaceState({}, "", "/account/password");
+    const fetchMock = mockAuthenticatedCatalog([]);
+    render(<App />);
+    await screen.findByRole("heading", { name: "修改密码" });
+    fireEvent.change(screen.getByLabelText("当前密码"), { target: { value: "legacy-current-password" } });
+    fireEvent.change(screen.getByLabelText("新密码"), { target: { value: password } });
+    fireEvent.click(screen.getByRole("button", { name: "保存并撤销其他会话" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("密码长度必须为 6 到 18 个字符");
+    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/auth/change-password"))).toBe(false);
+  });
+
+  it.each(["123456", "123456789012345678"])("固定角色管理员建号接受边界密码 %s", async (password) => {
+    window.history.replaceState({}, "", "/admin/users");
+    let createdBody: Record<string, unknown> | null = null;
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url = String(input);
+      if (url.endsWith("/auth/me")) return jsonResponse(auth);
+      if (url.endsWith("/auth/registration-status")) return jsonResponse({ mode: "open" });
+      if (url.endsWith("/tools")) return jsonResponse({ items: [] });
+      if (url.endsWith("/admin/users") && init?.method === "POST") {
+        createdBody = JSON.parse(String(init.body));
+        return jsonResponse({ id: "created-user" }, 201);
+      }
+      if (url.endsWith("/admin/users")) return jsonResponse([]);
+      return jsonResponse({});
+    });
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "创建用户" }));
+    const dialog = screen.getByRole("dialog", { name: "创建用户" });
+    fireEvent.change(within(dialog).getByLabelText("用户名"), { target: { value: "boundary-user" } });
+    fireEvent.change(within(dialog).getByLabelText("显示名称"), { target: { value: "边界用户" } });
+    fireEvent.change(within(dialog).getByLabelText("初始密码"), { target: { value: password } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "确认创建" }));
+
+    await waitFor(() => expect(createdBody).not.toBeNull());
+  });
+
+  it("注册提交中禁止重复请求", async () => {
+    window.history.replaceState({}, "", "/register");
+    const pendingRegister = deferredResponse();
+    let registerCalls = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const url = String(input);
+      if (url.endsWith("/auth/me")) return jsonResponse({ code: "AUTH_REQUIRED" }, 401);
+      if (url.endsWith("/auth/registration-status")) return jsonResponse({ mode: "open" });
+      if (url.endsWith("/auth/register")) { registerCalls += 1; return pendingRegister.promise; }
+      if (url.endsWith("/tools")) return jsonResponse({ items: [] });
+      return jsonResponse({ runtime_environment: "dev" });
+    });
+    render(<App />);
+    await screen.findByRole("heading", { name: "创建测试人员账号" });
+    fireEvent.change(screen.getByLabelText("用户名"), { target: { value: "single-submit" } });
+    fireEvent.change(screen.getByLabelText("显示名称"), { target: { value: "单次提交" } });
+    fireEvent.change(screen.getByLabelText("密码"), { target: { value: "123456" } });
+    fireEvent.change(screen.getByLabelText("确认密码"), { target: { value: "123456" } });
+    const submit = screen.getByRole("button", { name: "创建账号" });
+    fireEvent.click(submit);
+    fireEvent.click(await screen.findByRole("button", { name: "正在创建…" }));
+
+    expect(registerCalls).toBe(1);
+    pendingRegister.resolve(new Response(JSON.stringify(auth), {
+      status: 201,
+      headers: { "Content-Type": "application/json" },
+    }));
+    expect(await screen.findByRole("heading", { name: "AI 测试与质量工程工作台" })).toBeInTheDocument();
+  });
+
+  it("注册成功自动进入工作台并只加载服务端可见工具", async () => {
+    window.history.replaceState({}, "", "/register");
+    const publicTool = allTools[3];
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const url = String(input);
+      if (url.endsWith("/auth/me")) return jsonResponse({ code: "AUTH_REQUIRED" }, 401);
+      if (url.endsWith("/auth/registration-status")) return jsonResponse({ mode: "open" });
+      if (url.endsWith("/auth/register")) return jsonResponse({ ...auth, role: "tester", roles: ["tester"], platform_permissions: [], tool_permissions: { [publicTool.id]: ["tool.view"] } }, 201);
+      if (url.endsWith("/tools")) return jsonResponse({ items: [publicTool] });
+      return jsonResponse({ tool_id: publicTool.id, status: "healthy" });
+    });
+    render(<App />);
+    await screen.findByRole("heading", { name: "创建测试人员账号" });
+    fireEvent.change(screen.getByLabelText("用户名"), { target: { value: "public-user" } });
+    fireEvent.change(screen.getByLabelText("显示名称"), { target: { value: "公共用户" } });
+    fireEvent.change(screen.getByLabelText("密码"), { target: { value: "123456" } });
+    fireEvent.change(screen.getByLabelText("确认密码"), { target: { value: "123456" } });
+    fireEvent.click(screen.getByRole("button", { name: "创建账号" }));
+
+    expect(await screen.findByRole("heading", { name: publicTool.name })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: allTools[0].name })).not.toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/tools"))).toBe(true);
+  });
+
+  it("主动退出清除曾登录标记且不显示过期提示", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const url = String(input);
+      if (url.endsWith("/auth/me")) return jsonResponse(auth);
+      if (url.endsWith("/auth/registration-status")) return jsonResponse({ mode: "open" });
+      if (url.endsWith("/auth/logout")) return Promise.resolve(new Response(null, { status: 204 }));
+      if (url.endsWith("/tools")) return jsonResponse({ items: [] });
+      return jsonResponse({ runtime_environment: "dev" });
+    });
+    render(<App />);
+    await screen.findByRole("heading", { name: "AI 测试与质量工程工作台" });
+    fireEvent.click(screen.getByRole("button", { name: "退出" }));
+
+    expect(await screen.findByRole("heading", { name: "欢迎回来" })).toBeInTheDocument();
+    expect(screen.queryByText("登录状态已过期，请重新登录。")).not.toBeInTheDocument();
+    expect(localStorage.getItem("tp_session_seen")).toBeNull();
+    expect(sessionStorage.getItem("tp_auth_expired_notice")).toBeNull();
+  });
+
+  it("登录拒绝外部 next 并回到站内首页", async () => {
+    window.history.replaceState({}, "", "/login?next=%2F%2Fevil.example");
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const url = String(input);
+      if (url.endsWith("/auth/me")) return jsonResponse({ code: "AUTH_REQUIRED" }, 401);
+      if (url.endsWith("/auth/registration-status")) return jsonResponse({ mode: "open" });
+      if (url.endsWith("/auth/login")) return jsonResponse(auth);
+      if (url.endsWith("/tools")) return jsonResponse({ items: [] });
+      return jsonResponse({ runtime_environment: "dev" });
+    });
+    render(<App />);
+    await screen.findByRole("heading", { name: "欢迎回来" });
+    fireEvent.change(screen.getByPlaceholderText("请输入用户名"), { target: { value: "admin" } });
+    fireEvent.change(screen.getByPlaceholderText("请输入密码"), { target: { value: "legacy-password-over-18" } });
+    fireEvent.click(screen.getByRole("button", { name: "登录" }));
+
+    await screen.findByRole("heading", { name: "AI 测试与质量工程工作台" });
+    expect(window.location.pathname).toBe("/");
+  });
+
   it("AC-01：注册页固定创建测试人员且不暴露角色字段", async () => {
     window.history.replaceState({}, "", "/register");
     const registeredAuth = {
@@ -643,6 +1779,7 @@ describe("第三阶段 AI 测试工作台", () => {
     vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
       const url = String(input);
       if (url.endsWith("/auth/me")) return jsonResponse({ code: "AUTH_REQUIRED", message: "请先登录" }, 401);
+      if (url.endsWith("/auth/registration-status")) return jsonResponse({ mode: "open" });
       if (url.endsWith("/auth/register")) return jsonResponse(registeredAuth);
       if (url.endsWith("/tools")) return jsonResponse({ items: [] });
       if (url.endsWith("/health/live")) return jsonResponse({ runtime_environment: "dev" });
@@ -654,7 +1791,8 @@ describe("第三阶段 AI 测试工作台", () => {
     expect(screen.queryByLabelText("角色")).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("用户名"), { target: { value: "new-tester" } });
     fireEvent.change(screen.getByLabelText("显示名称"), { target: { value: "新测试人员" } });
-    fireEvent.change(screen.getByLabelText("密码"), { target: { value: "correct-horse-battery" } });
+    fireEvent.change(screen.getByLabelText("密码"), { target: { value: "correct-pass-123" } });
+    fireEvent.change(screen.getByLabelText("确认密码"), { target: { value: "correct-pass-123" } });
     fireEvent.click(screen.getByRole("button", { name: "创建账号" }));
     expect(await screen.findByRole("heading", { name: "AI 测试与质量工程工作台" })).toBeInTheDocument();
   });

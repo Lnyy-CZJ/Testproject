@@ -1,0 +1,6 @@
+id: UpdateUserPreferences
+name: 更新 Dating 用户偏好
+credential_profile: anonymous_session
+request:
+  service_name: tool.dating.DatingAssistantService
+  method_name: UpdateUserPreferences

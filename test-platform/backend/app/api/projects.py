@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -88,6 +88,53 @@ def _locked_managed_project(database: Session, context: AuthContext, project_id:
     if project is None:
         raise PlatformError(404, "NOT_FOUND", "请求的资源不存在")
     return _managed_project(database, context, project_id)
+
+
+def _locked_membership_scope(
+    database: Session,
+    context: AuthContext,
+    project_id: str,
+    *,
+    username_normalized: str | None = None,
+    user_id: str | None = None,
+) -> tuple[Project, User]:
+    """按“目标用户 → 项目”的固定顺序锁定一次成员关系写入范围。
+
+    先做项目管理范围检查，可避免未授权管理员借用户名查询枚举全平台用户；
+    随后才取得目标用户锁和项目锁，并在锁内再次检查项目管理范围。角色修改
+    同样锁定目标用户，因此角色变更与成员关系增删不会基于彼此的旧状态提交。
+
+    ``username_normalized`` 用于精确添加，``user_id`` 用于移除；调用方必须且
+    只能提供其中一个。不可见项目、用户不存在都沿用统一的 404 语义。
+    """
+
+    _managed_project(database, context, project_id)
+    if (username_normalized is None) == (user_id is None):
+        raise ValueError("username_normalized 与 user_id 必须且只能提供一个")
+    condition = (
+        User.username_normalized == username_normalized
+        if username_normalized is not None
+        else User.id == user_id
+    )
+    user = database.scalar(select(User).where(condition).with_for_update())
+    if user is None:
+        raise PlatformError(404, "NOT_FOUND", "请求的资源不存在")
+    project = database.scalar(select(Project).where(Project.id == project_id).with_for_update())
+    if project is None:
+        raise PlatformError(404, "NOT_FOUND", "请求的资源不存在")
+    _managed_project(database, context, project_id)
+    return project, user
+
+
+def _bump_permission_version(database: Session, user_id: str) -> None:
+    """以数据库表达式递增权限版本，避免并发事务发生读改写丢失更新。"""
+
+    database.execute(
+        update(User)
+        .where(User.id == user_id)
+        .values(permission_version=User.permission_version + 1)
+        .execution_options(synchronize_session=False)
+    )
 
 
 @router.get("", response_model=list[ProjectResponse])
@@ -199,16 +246,20 @@ def list_members(project_id: str, context: Annotated[AuthContext, Depends(curren
 
 @router.post("/{project_id}/members", response_model=ProjectMemberResponse, status_code=201)
 def add_member(project_id: str, payload: ProjectMemberRequest, request: Request, context: Annotated[AuthContext, Depends(require_csrf)], database: Annotated[Session, Depends(get_db)]) -> ProjectMemberResponse:
-    _locked_managed_project(database, context, project_id)
-    user = database.scalar(select(User).where(User.username_normalized == normalize_username(payload.username)))
-    if user is None or user.platform_role != "tester":
+    project, user = _locked_membership_scope(
+        database,
+        context,
+        project_id,
+        username_normalized=normalize_username(payload.username),
+    )
+    # 账号状态和固定角色必须在用户、项目均锁定后校验，防止与角色修改竞态。
+    if user.status != "active" or user.platform_role != "tester":
         raise PlatformError(404, "NOT_FOUND", "请求的资源不存在")
     if database.get(ProjectMembership, (project_id, user.id)):
         raise PlatformError(409, "PROJECT_RELATION_EXISTS", "用户已在项目中")
     row = ProjectMembership(project_id=project_id, user_id=user.id, relation="member", created_by_user_id=context.user.id)
     database.add(row)
-    user.permission_version += 1
-    project = database.get(Project, project_id)
+    _bump_permission_version(database, user.id)
     project.revision += 1
     project.authorization_epoch += 1
     add_audit_event(database, action="project.member.add", resource_type="project", resource_id=project_id, outcome="success", request=request, actor=context.user, after={"user_id": user.id, "reason": payload.reason})
@@ -231,15 +282,12 @@ def add_member(project_id: str, payload: ProjectMemberRequest, request: Request,
 
 @router.delete("/{project_id}/members/{user_id}", status_code=204)
 def remove_member(project_id: str, user_id: str, payload: ProjectRelationRemoveRequest, request: Request, context: Annotated[AuthContext, Depends(require_csrf)], database: Annotated[Session, Depends(get_db)]) -> None:
-    _locked_managed_project(database, context, project_id)
+    project, user = _locked_membership_scope(database, context, project_id, user_id=user_id)
     row = database.get(ProjectMembership, (project_id, user_id))
     if row is None or row.relation != "member":
         raise PlatformError(404, "NOT_FOUND", "请求的资源不存在")
     database.delete(row)
-    user = database.get(User, user_id)
-    if user:
-        user.permission_version += 1
-    project = database.get(Project, project_id)
+    _bump_permission_version(database, user.id)
     project.revision += 1
     project.authorization_epoch += 1
     add_audit_event(database, action="project.member.remove", resource_type="project", resource_id=project_id, outcome="success", request=request, actor=context.user, before={"user_id": user_id, "reason": payload.reason})
@@ -270,11 +318,14 @@ def add_manager(
 ) -> ProjectMemberResponse:
     """平台管理员通过完整用户名为项目分配固定角色 admin。"""
 
-    _locked_managed_project(database, context, project_id)
-    user = database.scalar(select(User).where(
-        User.username_normalized == normalize_username(payload.username)
-    ))
-    if user is None or user.platform_role != "admin":
+    project, user = _locked_membership_scope(
+        database,
+        context,
+        project_id,
+        username_normalized=normalize_username(payload.username),
+    )
+    # disabled 管理员不能通过项目关系重新获得任何管理范围。
+    if user.status != "active" or user.platform_role != "admin":
         raise PlatformError(404, "NOT_FOUND", "请求的资源不存在")
     if database.get(ProjectMembership, (project_id, user.id)):
         raise PlatformError(409, "PROJECT_RELATION_EXISTS", "用户已在项目中")
@@ -285,8 +336,7 @@ def add_manager(
         created_by_user_id=context.user.id,
     )
     database.add(row)
-    user.permission_version += 1
-    project = database.get(Project, project_id)
+    _bump_permission_version(database, user.id)
     project.revision += 1
     project.authorization_epoch += 1
     add_audit_event(database, action="project.manager.add", resource_type="project", resource_id=project_id, outcome="success", request=request, actor=context.user, after={"user_id": user.id, "reason": payload.reason})
@@ -318,15 +368,12 @@ def remove_manager(
 ) -> None:
     """移除负责人关系，但不改变该用户的全局固定角色。"""
 
-    _locked_managed_project(database, context, project_id)
+    project, user = _locked_membership_scope(database, context, project_id, user_id=user_id)
     row = database.get(ProjectMembership, (project_id, user_id))
     if row is None or row.relation != "manager":
         raise PlatformError(404, "NOT_FOUND", "请求的资源不存在")
     database.delete(row)
-    user = database.get(User, user_id)
-    if user:
-        user.permission_version += 1
-    project = database.get(Project, project_id)
+    _bump_permission_version(database, user.id)
     project.revision += 1
     project.authorization_epoch += 1
     add_audit_event(database, action="project.manager.remove", resource_type="project", resource_id=project_id, outcome="success", request=request, actor=context.user, before={"user_id": user_id, "reason": payload.reason})

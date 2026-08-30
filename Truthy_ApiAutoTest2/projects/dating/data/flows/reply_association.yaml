@@ -1,0 +1,78 @@
+name: Dating Reply 人物关联幂等更新
+tags: [dating, reply, association, media, interactive, explicit]
+inputs:
+  media_files:
+    type: files
+    required: true
+    min_items: 1
+    max_items: 9
+    allowed_content_types: [image/jpeg, image/png, image/webp]
+    max_size_bytes: 7000000
+    label: Reply 图片
+    description: 选择 1～9 张图片生成 Reply，再验证人物关联更新
+steps:
+  - id: get_preferences
+    api: GetUserPreferences
+    extract:
+      preferences_complete: $.preferences_complete
+      preferences_version: $.version
+  - id: update_preferences
+    api: UpdateUserPreferences
+    skip_if: {variable: preferences_complete, equals: true}
+  - id: get_upload_config
+    api: GetMediaUploadConfig
+    extract:
+      upload_allowed_content_types: $.allowed_content_types
+      upload_min_asset_count: $.min_asset_count
+      upload_max_asset_count: $.max_asset_count
+      upload_max_size_bytes: $.max_size_bytes
+  - id: validate_media_files
+    action:
+      type: validate_binary_inputs
+      files: "{{media_files}}"
+      allowed_content_types: "{{upload_allowed_content_types}}"
+      min_items: "{{upload_min_asset_count}}"
+      max_items: "{{upload_max_asset_count}}"
+      max_size_bytes: "{{upload_max_size_bytes}}"
+  - id: upload_media_files
+    foreach:
+      items: "{{media_files}}"
+      item: media_file
+      collect: {asset_ids: "{{asset_id}}"}
+      steps:
+        - id: prepare_upload
+          api: PrepareMediaUpload
+          extract:
+            asset_id: $.asset_id
+            upload_url: $.upload_url
+            required_headers: $.required_headers
+        - id: upload_binary
+          action:
+            type: signed_binary_upload
+            url: "{{upload_url}}"
+            headers: "{{required_headers}}"
+            input_file: "{{media_file.relative_path}}"
+            method: PUT
+            success_statuses: [200, 204]
+        - id: complete_upload
+          api: CompleteMediaUpload
+  - id: create_reply
+    api: CreateReplyTask
+    extract: {reply_task_id: $.task_id}
+  - id: poll_reply
+    api: GetTask
+    until:
+      path: $.status
+      equals: succeeded
+      terminate_on: [rejected, failed]
+      fail_on_termination: true
+      interval_seconds: "{{analysis_poll_interval_seconds}}"
+      timeout_seconds: "{{analysis_timeout_seconds}}"
+  - id: get_reply_result
+    api: GetTaskResult
+  - id: associate_person
+    api: UpdateReplyAssociation
+  - id: repeat_same_association
+    api: UpdateReplyAssociation
+  - id: change_association
+    api: UpdateReplyAssociation

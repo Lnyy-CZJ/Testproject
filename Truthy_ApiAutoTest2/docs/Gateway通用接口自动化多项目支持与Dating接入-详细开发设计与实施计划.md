@@ -69,7 +69,7 @@
 | Flow 执行、轮询、终止清理和媒体 PUT | `utils/custom/flow_runner.py` | 保留状态机，将旧媒体动作升级为通用签名上传动作 |
 | Flask Base Path 壳服务 | `web/app.py` | 扩充页面与 API，继续使用 Blueprint `url_prefix` |
 | 任务启动、取消、超时、恢复 | `web/task_manager.py` | 增加项目、Scope、快照与测试资产选择，不重写执行状态机 |
-| 任务 JSON、JUnit、Allure、脱敏日志 | `web/task_store.py`、`junit_report.py`、报告脚本 | 增加项目目录与不可变快照元数据 |
+| 任务 JSON、JUnit、Allure、原始日志 | `web/task_store.py`、`junit_report.py`、报告脚本 | 增加项目目录与不可变快照元数据，执行文本不做字段级改写 |
 | 平台 Runtime Context/快照规划与物化 | `test-platform/backend/app/api/internal.py` | 从工具级配置扩展为 Scope 级配置 |
 | 平台 Release、Secret、Credential | `models/configuration.py`、`api/configuration.py` | 复用 owner 模型并新增 Runtime Scope 绑定 |
 | 平台配置控制面 | `frontend/src/App.tsx` 的 `ConfigPage` | 增加 Scope 选择器，不在工具内复制页面 |
@@ -168,7 +168,7 @@ flowchart LR
 | 项目 Manifest 与测试资产 | 不存储、不编辑 | 唯一实现与版本管理 |
 | 七类接口自动化页面 | 只提供入口和代理 | 唯一实现 |
 | 任务状态机、执行、取消、结果 | 不复制 | 唯一实现 |
-| 日志/JUnit/Allure | 授权代理或链接 | 生成、隔离、脱敏、绑定任务 |
+| 日志/JUnit/Allure | 授权代理或链接 | 生成、隔离、保留原文、绑定任务 |
 
 ### 5.2 核心运行链路
 
@@ -193,7 +193,7 @@ sequenceDiagram
     W->>E: 项目上下文 + 临时快照传输
     E->>G: 仅调用 Scope 对应 Gateway
     G-->>E: 响应
-    E-->>W: 脱敏日志、JUnit、Allure
+    E-->>W: 原始日志、JUnit、Allure
     W-->>B: 项目与快照绑定的任务详情
 ```
 
@@ -426,7 +426,7 @@ Truthy_ApiAutoTest2/
 │       ├── data/{api,apis,cases,flows,scenarios}/
 │       └── fixtures/
 ├── runtime/<project_id>/<task_id>/
-├── logs/<project_id>/<target_env>/
+├── logs/<project_id>/<target_env>/<YYYY-MM-DD>/<timestamp>_<target_env>_<pid>.log
 ├── reports/task-reports/<project_id>/<task_id>/
 └── tasks/<task_id>.json
 ```
@@ -437,7 +437,8 @@ Truthy_ApiAutoTest2/
 
 新增 `utils/custom/project_registry.py`，包含：
 
-- `ProjectManifest`：不可变 dataclass，保存 schema、ID、展示名、能力、配置契约和脱敏扩展。
+- `ProjectManifest`：不可变 dataclass，保存 schema、ID、展示名、能力和配置契约；
+  `redaction.extra_keys` 仅为旧 schema 兼容保留，不参与日志内容改写。
 - `ProjectPackage`：Manifest 与已验证项目根路径。
 - `ProjectRegistry.discover(projects_root)`：只扫描一级目录，按 ID 排序。
 - `ProjectRegistry.get(project_id)`：安全解析，拒绝 `/`、`..`、绝对路径和符号链接越界。
@@ -479,7 +480,8 @@ ProjectRuntimeContext(
 2. 子进程只接收 `APIAUTOTEST_CONFIG_SOURCE=platform` 和 `APIAUTOTEST_RUNTIME_SNAPSHOT_FILE=<受控路径>`。
 3. loader 校验 schema、task/project/scope 一致性后一次读入内存。
 4. 任务终态删除快照文件；启动恢复时清理无活跃任务的残留文件。
-5. 任务 JSON、日志和报告不保存快照明文；只保存非敏感 selector/版本元数据。
+5. 任务 JSON 不保存完整快照明文，只保存 selector/版本元数据；运行中的实际请求、
+   响应、Header、Token 与异常允许按原文进入已授权任务的日志和报告。
 
 这是一种短生命周期 IPC，不是可编辑本地配置，也不能作为平台失败时的回退。
 
@@ -531,6 +533,7 @@ redaction:
 ```
 
 Manifest 不包含 test/prod、URL、Token、Secret、超时值或默认 Scope。
+`redaction.extra_keys` 当前仅用于兼容已锁定的 schema，不产生脱敏行为。
 
 ### 9.2 11 个 API
 
@@ -565,6 +568,12 @@ P1：
 
 `run_on_termination` 的清理步骤必须在 UI 明示“终止后仍执行”。轮询间隔和总超时只取当前 Release；公共引擎没有 Dating 常量。
 
+会话预检在业务 API 前执行，固定使用两小时边界：access token 未过期且剩余时间
+大于两小时直接复用；未过期且剩余时间小于或等于两小时时才调用一次
+`RefreshSession`；已过期、缺失或过期时间无效时直接调用
+`CreateAnonymousSession`。临期刷新失败、refresh token 无效或缺少刷新 API 时只回退
+创建一次。恰好两小时属于刷新区间，禁止 access token 已过期后仍优先刷新。
+
 ### 9.4 通用签名上传
 
 将现有 `prepared_media_upload` 实现抽象为注册动作 `signed_binary_upload`：
@@ -572,7 +581,8 @@ P1：
 - 输入：签名 URL、允许的 Header、fixture 相对路径、内容类型、可选长度。
 - URL/Header 从前置 API 的提取结果获取；fixture 只能来自当前项目包。
 - 限制允许的 HTTP 方法为配置声明值，P0 为 PUT；不转发 Gateway 身份 Header。
-- 日志只记录域名、状态码、耗时和脱敏错误，不记录查询签名或完整 URL。
+- 日志和 Allure 按原文记录完整签名 URL、请求 Header、状态码、耗时和异常；上传
+  二进制正文仍不写入任何文本日志或报告附件。
 - 签名过期、外部 4xx/5xx、超时统一归类 `EXTERNAL_UPLOAD_FAILED`，保留稳定子原因。
 - 迁移期旧动作名可映射到新注册动作并告警；项目资产迁移完成后删除别名。
 
@@ -587,7 +597,8 @@ P1：
 - `base.html` 负责平台页头、只读环境徽标、项目快速选择、侧栏、主内容、全局错误和 Base Path 注入。
 - 各页面使用 Jinja block；不引入 React/Vue 或新 UI 依赖。
 - `app.js` 按 `body[data-page]` 初始化页面，公共封装只包含 Base Path fetch、错误展示、项目状态保存和 HTML 转义。
-- 敏感值永不进入模板、DOM、浏览器存储或 URL。
+- 配置快照与 Secret 不进入模板、浏览器存储或 URL；通过任务归属校验后，日志查看区
+  可以展示执行时产生的 Header、Token、签名 URL、请求/响应和异常原文。
 
 ### 10.2 七类页面
 
@@ -756,7 +767,8 @@ Flow 提交：
 }
 ```
 
-不持久化签名用户 Header、Secret 值、完整运行快照、上传签名 URL 或原始请求/响应。
+任务 JSON 不持久化签名用户 Header、Secret 值、完整运行快照、上传签名 URL 或原始
+请求/响应；这些执行原文只保存在该任务授权可见的日志/JUnit/Allure 产物中。
 
 ### 11.2 状态机
 
@@ -775,12 +787,14 @@ Flow 提交：
 | 项目资产 | `projects/<project_id>/...` |
 | Runtime 临时快照 | `runtime/<project_id>/<task_id>/snapshot.json` |
 | 会话 | `runtime/<project_id>/<scope_id>/<subject>/...` |
-| 日志 | `logs/<project_id>/<target_env>/<task_id>/...` |
+| 日志 | `logs/<project_id>/<target_env>/<YYYY-MM-DD>/<timestamp>_<target_env>_<pid>.log` |
 | JUnit | `reports/junit/<project_id>/<task_id>.xml` |
 | Allure | `reports/task-reports/<project_id>/<task_id>/current` |
 | 任务唯一键 | 全局 `task_id`，记录内必须含 `project_id` |
 
-所有报告读取先用任务记录解析项目，再验证 `report-meta.json` 同时绑定 `task_id + project_id`。
+任务终态按 pytest 子进程 PID 将当日目录下唯一日志写入任务记录的 `log_file`，不再
+增加任务 ID 目录。所有报告与日志读取先用任务记录解析项目；报告还要验证
+`report-meta.json` 同时绑定 `task_id + project_id`。
 
 ---
 
@@ -789,8 +803,12 @@ Flow 提交：
 - 工具只信任平台签名上下文和内部 API 解析结果；浏览器传入的 Scope、平台项目和环境字段无效。
 - Project Path 使用 resolve 后前缀校验，禁止目录穿越和跨项目 Flow/fixture 引用。
 - 平台快照文件 mode 0600、任务终态删除、崩溃恢复清理；禁止加入 Git 和报告。
-- 脱敏扩展覆盖 Authorization、Cookie、Token/Secret/Password、签名 URL 查询参数、operator 信息、会话材料和项目 Manifest 的 `extra_keys`。
+- 文件日志、终端、Web 日志、失败摘要、JUnit 和 Allure 不做字段级脱敏，保留
+  Authorization、Cookie、Token/Secret/Password、签名 URL 查询参数、operator 信息、
+  会话材料和业务结果原文；媒体二进制仍不落文本产物。
 - 列表和详情继续复用平台 own/project/global 授权决策；越权任务统一 404，避免资源枚举。
+- 因日志可能包含凭证，访问必须绑定任务权限、禁止公开缓存/分发，并按 7 天日期目录
+  清理文件日志；内容原文策略不得被误解为放宽 RBAC。
 - 所有平台 Runtime API 响应 `Cache-Control: no-store`；浏览器端不写 localStorage/sessionStorage 保存运行快照。
 - 运行前静态校验和快照预检不发 Gateway 或外部存储请求。
 - 平台 API 不可用时禁止启动任务，展示 `PROJECT_RUNTIME_CONFIG_UNAVAILABLE` 或 `CONFIG_SNAPSHOT_MATERIALIZE_FAILED`，不回退本地配置。
@@ -995,7 +1013,7 @@ Flow 提交：
 - Create: `Truthy_ApiAutoTest2/tests/test_dating_assets.py`
 - Modify: FlowRunner 相关测试
 
-- [ ] 先写失败测试：11 API 完整性、GetAnalysis 方法名裁决、Case/Flow 引用、轮询终态、成功后才取结果、终止清理、上传脱敏和 fixture 越界。
+- [ ] 先写失败测试：11 API 完整性、GetAnalysis 方法名裁决、Case/Flow 引用、轮询终态、成功后才取结果、终止清理、上传原文日志和 fixture 越界。
 - [ ] 新增 11 API 与 P0 Cases；依赖特殊数据的 Case 显式标注前置条件。
 - [ ] 新增两个 P0 Flow，配置轮询引用逻辑键而非常量。
 - [ ] 将上传动作注册为 `signed_binary_upload`，为 Truthy 旧名提供有期限别名。
@@ -1075,7 +1093,8 @@ Flow 提交：
 - [ ] 执行 0021 迁移，创建并发布 Truthy/dev/test、Dating/dev/test Scope；不创建 staging 数据。
 - [ ] 验证 dev 无 prod Scope 可选、prod 无 test Scope 可选；非法 API 请求被服务端拒绝。
 - [ ] 完成 Truthy 回归、Dating 11 API 目录、P0 单接口和两个 P0 Flow 验收。
-- [ ] 运行敏感信息扫描，确认任务 JSON、日志、JUnit、Allure、URL 和浏览器存储零明文。
+- [ ] 运行原始日志契约与权限扫描：确认日志/JUnit/Allure 保留文本原文、图片二进制
+  不落盘、任务 JSON/浏览器存储不复制完整快照，越权日志与报告访问被拒绝。
 - [ ] 添加最小 fixture 项目，只增加项目包和 Scope/Release 数据，证明公共引擎和平台业务代码零修改。
 - [ ] 输出新项目接入指南，并将临时旧动作别名/工具级读取路径列入明确清理版本。
 - [ ] Commit: `docs(autotest): document multi-project onboarding`
@@ -1096,7 +1115,7 @@ Flow 提交：
 | Truthy 回归 | 迁移前后资产清单、API/Case/Flow 数、smoke/full 结果 |
 | Dating | 11 API、P0 Cases、两个 P0 Flow、上传、轮询、清理、隐私 |
 | 隔离 | 同名 API/Case/Flow、同名 Profile、Release、会话、日志、报告 |
-| 安全 | Header/Token/Secret/签名 URL 脱敏、路径穿越、越权任务 404 |
+| 安全 | Header/Token/Secret/签名 URL 原文保留、媒体二进制不落盘、路径穿越、越权任务 404 |
 | 扩展性 | 第三个项目零公共引擎/平台业务代码修改 |
 
 ### 15.1 最终验证命令
@@ -1142,7 +1161,8 @@ python runtest.py --validate-projects
 - 按 `platform_environment/project_id/target_env/runtime_scope_id` 统计任务数、成功率和耗时。
 - 记录 Scope 解析失败、快照物化失败、Profile 缺失、外部上传失败、Flow 异步超时的稳定错误码计数。
 - 审计 Scope 创建/禁用、Release 发布/回滚、Secret/Credential 版本变化和 session write-back。
-- 日志只记录 ID/版本/状态，不记录敏感值。
+- 平台控制面审计日志只记录 ID/版本/状态；接口自动化任务执行日志则按确认需求保留
+  请求、响应、Header、Token、签名 URL 与异常原文，并受任务权限与保留期约束。
 
 ---
 
@@ -1183,6 +1203,6 @@ python runtest.py --validate-projects
 - [ ] 概览、项目切换、任务预览共用同一个预检状态模型。
 - [ ] 任务、日志、JUnit 和 Allure 绑定项目与不可变快照；重试不改旧任务。
 - [ ] Base Path、直接刷新、平台签名身份和配置深链联调通过。
-- [ ] 敏感信息扫描通过。
+- [ ] 原始日志契约、媒体二进制不落盘和日志/报告授权隔离验证通过。
 - [ ] 第三个项目零公共引擎与平台业务代码修改接入成功。
 - [ ] 实现后的字段、路径、测试命令和新项目接入文档与本设计同步。

@@ -1,0 +1,6 @@
+id: CreateReplyTask
+name: 创建 Help Me Reply 任务
+credential_profile: anonymous_session
+request:
+  service_name: tool.dating.DatingAssistantService
+  method_name: CreateReplyTask

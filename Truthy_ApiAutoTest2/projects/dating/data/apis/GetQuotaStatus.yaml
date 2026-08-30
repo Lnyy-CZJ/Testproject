@@ -1,5 +1,5 @@
 id: GetQuotaStatus
-name: 查询关系分析额度
+name: 查询 Dating 额度
 credential_profile: anonymous_session
 request:
   service_name: tool.subscription.SubscriptionService

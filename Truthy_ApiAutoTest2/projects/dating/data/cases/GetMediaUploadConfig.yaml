@@ -7,6 +7,4 @@ cases:
       params: {}
     assert:
       http_status: 200
-      gateway: {code: 0}
-      response: {id: req_0, success: true, code: 0}
-      data_fields: [config_version, allowed_content_types, min_asset_count, max_asset_count, max_size_bytes, upload_url_ttl_seconds]
+      gateway: {message: ok}

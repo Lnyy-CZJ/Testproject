@@ -18,6 +18,87 @@ test -f "$base_env"
 test -f "$release_images"
 test -f "$release_dir/versions.json"
 test -f "$release_dir/release-manifest.json"
+
+# 在任何 Compose、备份、目录创建或权限变更前，以纯文本方式解析生产 env。
+# 这里禁止 source/eval：env 中的 URL、审批编号乃至恶意命令替换都只能作为字符串。
+validate_auth_environment() {
+  python3 - "$base_env" <<'PY'
+import re
+import sys
+from pathlib import Path
+from urllib.parse import urlsplit
+
+
+def fail(message: str) -> None:
+    raise SystemExit(message)
+
+
+values: dict[str, str] = {}
+for line_number, line in enumerate(Path(sys.argv[1]).read_text(encoding="utf-8").splitlines(), 1):
+    if not line or line.startswith("#"):
+        continue
+    if "=" not in line:
+        fail(f"生产 env 第 {line_number} 行缺少 KEY=value 分隔符")
+    key, value = line.split("=", 1)
+    if not re.fullmatch(r"[A-Z][A-Z0-9_]*", key):
+        fail(f"生产 env 第 {line_number} 行 key 格式无效")
+    if key in values:
+        fail(f"生产 env 存在重复 key: {key}")
+    values[key] = value
+
+
+def required(key: str) -> str:
+    if key not in values:
+        fail(f"生产 env 缺少 {key}")
+    return values[key]
+
+
+def bounded_integer(key: str, *, minimum: int, maximum: int | None = None) -> int:
+    raw = required(key)
+    if not re.fullmatch(r"[0-9]+", raw):
+        fail(f"{key} 必须是十进制正整数")
+    value = int(raw)
+    if value < minimum or (maximum is not None and value > maximum):
+        fail(f"{key} 超出允许范围")
+    return value
+
+
+if required("SESSION_IDLE_HOURS") != "168":
+    fail("SESSION_IDLE_HOURS 必须为 168")
+if required("SESSION_ABSOLUTE_HOURS") != "168":
+    fail("SESSION_ABSOLUTE_HOURS 必须为 168")
+if required("REGISTRATION_MODE") not in {"open", "disabled", "invite"}:
+    fail("REGISTRATION_MODE 必须为 open、disabled 或 invite")
+
+bounded_integer("REGISTRATION_RATE_LIMIT", minimum=1, maximum=5)
+source_window = bounded_integer("REGISTRATION_RATE_WINDOW_MINUTES", minimum=15)
+source_lock = bounded_integer("REGISTRATION_LOCK_MINUTES", minimum=15)
+bounded_integer("REGISTRATION_GLOBAL_LIMIT", minimum=1, maximum=100)
+global_window = bounded_integer("REGISTRATION_GLOBAL_WINDOW_MINUTES", minimum=15)
+global_lock = bounded_integer("REGISTRATION_GLOBAL_LOCK_MINUTES", minimum=15)
+if source_lock < source_window:
+    fail("REGISTRATION_LOCK_MINUTES 不得短于来源窗口")
+if global_lock < global_window:
+    fail("REGISTRATION_GLOBAL_LOCK_MINUTES 不得短于全局窗口")
+
+cookie_secure = required("COOKIE_SECURE")
+if cookie_secure not in {"true", "false"}:
+    fail("COOKIE_SECURE 必须为 true 或 false")
+public_url = required("APP_PUBLIC_URL")
+risk_reference = required("SESSION_COOKIE_RISK_ACCEPTANCE_ID")
+if cookie_secure == "false":
+    if not re.fullmatch(r"[A-Z][A-Z0-9._-]{2,63}", risk_reference):
+        fail("COOKIE_SECURE=false 时必须提供格式有效的 SESSION_COOKIE_RISK_ACCEPTANCE_ID")
+    # 只确认引用格式，不回显编号，也不声称机器已验证外部审批记录内容。
+    print("检测到格式有效的人工风险审批引用")
+else:
+    parsed = urlsplit(public_url)
+    if parsed.scheme != "https" or not parsed.netloc:
+        fail("COOKIE_SECURE=true 时 APP_PUBLIC_URL 必须为 HTTPS 地址")
+PY
+}
+
+validate_auth_environment
 # 可信用户上下文是所有工具入口的共同鉴权依赖。Docker 遇到不存在的 bind
 # 源路径会静默创建目录，因此必须在任何 Compose 操作前验证真实文件形态，
 # 否则容器健康但所有 auth_request 都会返回 503。
@@ -252,6 +333,7 @@ if [[ -n "$component" ]]; then
   merge_images "$previous_images" "$changes" "$candidate_images"
   verify_component_images "$candidate_images" "$component"
   compose=(docker compose --env-file "$base_env" --env-file "$candidate_images" -p test-platform-prod -f "$release_dir/docker-compose.yml" -f "$release_dir/docker-compose.prod.yml")
+  "${compose[@]}" config --quiet
   if ! "${compose[@]}" pull "${services[@]}"; then
     exit 1
   fi
@@ -295,13 +377,13 @@ if [[ -n "$component" ]]; then
 fi
 
 compose=(docker compose --env-file "$base_env" --env-file "$release_images" -p test-platform-prod -f "$release_dir/docker-compose.yml" -f "$release_dir/docker-compose.prod.yml")
+"${compose[@]}" config --quiet
 if docker ps --format '{{.Names}}' | grep -qx 'test-platform-prod-platform-db-1'; then
   backup="$backup_root/platform-$(date -u +%Y%m%dT%H%M%SZ).dump"
   "${compose[@]}" exec -T platform-db sh -c 'pg_dump -Fc -U "$POSTGRES_USER" "$POSTGRES_DB"' >"$backup"
   chmod 600 "$backup"
 fi
 
-"${compose[@]}" config --quiet
 if "${compose[@]}" config | grep -qE '^[[:space:]]+build:'; then
   echo '生产 Compose 仍包含 build，拒绝部署' >&2
   exit 1

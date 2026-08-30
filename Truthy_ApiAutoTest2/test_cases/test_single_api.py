@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
+import os
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -18,6 +20,10 @@ import pytest
 from api.gateway_api import GatewayApi
 from utils.custom.case_loader import CaseConfigError, load_single_cases
 from utils.custom.project_registry import ProjectRegistry
+from utils.custom.runtime_overrides import (
+    RuntimeOverrideError,
+    load_execution_asset_from_environment,
+)
 from utils.third_party.allure_reporter import set_single_case_metadata, step
 
 # 指定需要调试的完整 Case ID；正式默认值为空元组，收集全部独立单接口用例。
@@ -47,6 +53,50 @@ def _load_case_params(config: pytest.Config | None = None) -> list[Any]:
         CaseConfigError: case 集合不合法或指定 ID 不存在时由 CaseLoader 抛出。
     """
     project_id = str(_getoption(config, "--project", "truthy"))
+    try:
+        execution_asset = load_execution_asset_from_environment(
+            runtime_root=PROJECT_ROOT / "runtime",
+            project_id=project_id,
+            task_id=str(_getoption(config, "--task-id", "") or ""),
+            environ=os.environ,
+        )
+    except RuntimeOverrideError as exc:
+        # 一旦 TaskManager 指定了执行文件，任何身份、路径或摘要问题都必须
+        # 终止收集，不能悄悄回退此刻磁盘上的 YAML。
+        raise CaseConfigError(f"执行资产不可用: {exc.message}") from exc
+    if execution_asset is not None:
+        asset_type = execution_asset.get("asset_type")
+        selected_case = _getoption(config, "--case")
+        selected_api = _getoption(config, "--api")
+        if asset_type == "case":
+            single_cases = [
+                deepcopy(
+                    execution_asset["resolved_execution_asset"]["single_case"]
+                )
+            ]
+        elif asset_type == "batch":
+            batch = execution_asset["resolved_execution_asset"]
+            if batch.get("batch_type") != "cases":
+                raise CaseConfigError("执行资产批次类型与单接口入口不匹配")
+            if selected_case or selected_api:
+                raise CaseConfigError("Case 批次不能同时使用 --case 或 --api")
+            # items 在 TaskManager 固化时已经按 Catalog 稳定顺序排列；这里
+            # 只能顺序读取不可变清单，禁止重新扫描或排序当前 YAML。
+            single_cases = [
+                deepcopy(item["resolved_execution_asset"]["single_case"])
+                for item in batch["items"]
+            ]
+        else:
+            raise CaseConfigError("执行资产类型与单接口入口不匹配")
+        if selected_case and single_cases[0].get("id") != str(selected_case):
+            raise CaseConfigError("执行资产与 --case 选择不一致")
+        if selected_api and single_cases[0].get("api_id") != str(selected_api):
+            raise CaseConfigError("执行资产与 --api 选择不一致")
+        return [
+            _as_pytest_param(single_case, project_id=project_id)
+            for single_case in single_cases
+        ]
+
     direct_project_root = PROJECT_ROOT if (PROJECT_ROOT / "data").is_dir() else None
     project_root = (
         direct_project_root
@@ -70,24 +120,35 @@ def _load_case_params(config: pytest.Config | None = None) -> list[Any]:
                 f"项目 {project_id} 中 API 不存在或没有 Case: {selected_api}"
             )
 
-    params: list[Any] = []
-    for single_case in loaded_cases:
-        marks = [
-            getattr(pytest.mark, tag)
-            for tag in single_case["tags"]
-        ]
-        params.append(
-            pytest.param(
-                single_case,
-                id=(
-                    single_case["id"]
-                    if direct_project_root is not None
-                    else f"{project_id}::{single_case['id']}"
-                ),
-                marks=marks,
-            )
+    return [
+        _as_pytest_param(
+            single_case,
+            project_id=None if direct_project_root is not None else project_id,
         )
-    return params
+        for single_case in loaded_cases
+    ]
+
+
+def _as_pytest_param(
+    single_case: dict[str, Any],
+    *,
+    project_id: str | None,
+) -> Any:
+    """以统一 ID 和 YAML tags 包装单接口参数。
+
+    YAML 与执行快照共用本函数，避免两条收集路径在 marker 或报告 ID 上
+    产生差异。
+    """
+
+    return pytest.param(
+        single_case,
+        id=(
+            single_case["id"]
+            if project_id is None
+            else f"{project_id}::{single_case['id']}"
+        ),
+        marks=[getattr(pytest.mark, tag) for tag in single_case["tags"]],
+    )
 
 
 def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:

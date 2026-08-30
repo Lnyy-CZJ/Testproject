@@ -1,0 +1,26 @@
+name: 上传拒绝样本并等待 rejected
+variables: {}
+step_data:
+  get_upload_config:
+    params: {}
+    assert: {http_status: 200, gateway: {message: ok}}
+  prepare_upload:
+    params:
+      client_request_id: "{{client_request_id}}"
+      content_type: "{{media_file.content_type}}"
+      size_bytes: "{{media_file.size_bytes}}"
+      purpose: chat_screenshot
+    assert: {http_status: 200, gateway: {message: ok}}
+  complete_upload:
+    params: {asset_id: "{{asset_id}}"}
+    assert: {http_status: 200, gateway: {message: ok}}
+  create_analysis:
+    params:
+      client_request_id: "{{flow_run_id}}-analysis-rejected"
+      asset_ids: "{{asset_ids}}"
+      locale: en-US
+      background: Expected rejection contract test.
+    assert: {http_status: 200, gateway: {message: ok}}
+  poll_expected_rejection:
+    params: {task_id: "{{task_id}}"}
+    assert: {http_status: 200, gateway: {message: ok}}

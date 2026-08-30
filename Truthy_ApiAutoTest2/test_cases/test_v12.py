@@ -137,8 +137,8 @@ def test_http_client_logs_elapsed_time(caplog: pytest.LogCaptureFixture) -> None
     assert "elapsed_ms" in caplog.text
 
 
-def test_file_log_masks_tokens_and_signed_url(tmp_path: Path) -> None:
-    """文件日志不得泄露请求/响应 token 或预签名 URL 查询参数。"""
+def test_file_log_preserves_tokens_and_signed_url(tmp_path: Path) -> None:
+    """文件日志必须保留请求、响应 token 与完整预签名 URL。"""
 
     class SecureSession:
         """同时提供 POST 与 PUT 的成功响应。"""
@@ -154,7 +154,10 @@ def test_file_log_masks_tokens_and_signed_url(tmp_path: Path) -> None:
             )
 
         def put(self, *args: object, **kwargs: object) -> JsonResponse:
-            return JsonResponse(200, {})
+            response = JsonResponse(200, {})
+            response.headers = {"x-cos-request-id": "raw-response-header"}
+            response.text = "raw-upload-response"
+            return response
 
     log_path = configure_logging(
         log_directory=tmp_path,
@@ -180,12 +183,13 @@ def test_file_log_masks_tokens_and_signed_url(tmp_path: Path) -> None:
     assert log_path is not None
     content = log_path.read_text(encoding="utf-8")
 
-    assert "request-token-secret" not in content
-    assert "header-secret" not in content
-    assert "response-access-secret" not in content
-    assert "signed-secret" not in content
-    assert "response-signed-secret" not in content
-    assert "***" in content
+    assert "request-token-secret" in content
+    assert "header-secret" in content
+    assert "response-access-secret" in content
+    assert "signed-secret" in content
+    assert "response-signed-secret" in content
+    assert "raw-response-header" in content
+    assert "raw-upload-response" in content
 
 
 def test_data_fields_accepts_empty_values() -> None:
@@ -239,6 +243,45 @@ def test_data_equals_reads_nested_paths() -> None:
             "items[0].candidate_id": "candidate_1",
         },
     )
+
+
+def test_runtime_context_resolves_controlled_dotted_variables() -> None:
+    """循环元素允许受控点路径读取，完整占位符必须保留原始类型。"""
+
+    from utils.custom.runtime_context import RuntimeContext
+
+    context = RuntimeContext(
+        {
+            "media_file": {
+                "relative_path": "001-image.png",
+                "size_bytes": 1024,
+            },
+            "asset_ids": ["asset-1", "asset-2"],
+        }
+    )
+
+    assert context.resolve("{{media_file.relative_path}}") == "001-image.png"
+    assert context.resolve("size={{media_file.size_bytes}}") == "size=1024"
+    assert context.resolve("{{asset_ids}}") == ["asset-1", "asset-2"]
+
+
+@pytest.mark.parametrize(
+    "expression",
+    [
+        "{{media_file.missing}}",
+        "{{media_file.relative_path.child}}",
+        "{{media_file.__class__}}",
+        "{{media_file[relative_path]}}",
+    ],
+)
+def test_runtime_context_rejects_invalid_dotted_variable_access(expression: str) -> None:
+    """变量路径只能逐层读取公开 Mapping 键，不能执行表达式或对象反射。"""
+
+    from utils.custom.runtime_context import RuntimeContext, RuntimeContextError
+
+    context = RuntimeContext({"media_file": {"relative_path": "001.png"}})
+    with pytest.raises(RuntimeContextError):
+        context.resolve(expression)
 
 
 def _write_flow_fixture(root: Path, flow: dict, scenario: dict) -> None:
@@ -388,6 +431,135 @@ def test_flow_loader_rejects_unknown_action(tmp_path: Path) -> None:
     )
 
     with pytest.raises(FlowConfigError, match="unknown"):
+        load_flow_cases(tmp_path)
+
+
+def test_flow_loader_accepts_one_level_foreach_and_nested_api_step_data(
+    tmp_path: Path,
+) -> None:
+    """foreach 子 API 仍由同名 Scenario step_data 提供完整请求与断言。"""
+
+    from utils.custom.flow_loader import load_flow_cases
+
+    _write_flow_fixture(
+        tmp_path,
+        {
+            "name": "多图上传",
+            "inputs": {
+                "media_files": {
+                    "type": "files",
+                    "required": True,
+                    "min_items": 1,
+                    "max_items": 9,
+                    "allowed_content_types": ["image/jpeg", "image/png", "image/webp"],
+                    "max_size_bytes": 7340032,
+                }
+            },
+            "steps": [
+                {
+                    "id": "upload_each",
+                    "foreach": {
+                        "items": "{{media_files}}",
+                        "item": "media_file",
+                        "collect": {"asset_ids": "{{asset_id}}"},
+                        "steps": [
+                            {
+                                "id": "prepare_upload",
+                                "api": "Demo",
+                                "extract": {"asset_id": "$.asset_id"},
+                            },
+                            {
+                                "id": "put_binary",
+                                "action": {
+                                    "type": "signed_binary_upload",
+                                    "url": "{{upload_url}}",
+                                    "headers": "{{upload_headers}}",
+                                    "input_file": "{{media_file.relative_path}}",
+                                },
+                            },
+                        ],
+                    },
+                }
+            ],
+        },
+        {
+            "name": "场景",
+            "variables": {},
+            "step_data": {
+                "prepare_upload": {
+                    "params": {"size_bytes": "{{media_file.size_bytes}}"},
+                    "assert": _runner_success_assertions(),
+                }
+            },
+        },
+    )
+
+    flow_case = load_flow_cases(tmp_path)[0]
+    assert list(flow_case["api_definitions"]) == ["Demo"]
+    assert flow_case["flow"]["inputs"]["media_files"]["max_items"] == 9
+
+
+def test_flow_loader_rejects_nested_foreach(tmp_path: Path) -> None:
+    """首期只支持一层循环，避免难以预测的变量覆盖和报告层级。"""
+
+    from utils.custom.flow_loader import FlowConfigError, load_flow_cases
+
+    nested = {
+        "id": "inner",
+        "foreach": {
+            "items": "{{media_files}}",
+            "item": "inner_file",
+            "steps": [{"id": "wait", "wait": {"seconds": 0}}],
+        },
+    }
+    _write_flow_fixture(
+        tmp_path,
+        {
+            "name": "非法嵌套",
+            "steps": [
+                {
+                    "id": "outer",
+                    "foreach": {
+                        "items": "{{media_files}}",
+                        "item": "media_file",
+                        "steps": [nested],
+                    },
+                }
+            ],
+        },
+        {"name": "场景", "variables": {}, "step_data": {}},
+    )
+
+    with pytest.raises(FlowConfigError, match="嵌套 foreach"):
+        load_flow_cases(tmp_path)
+
+
+def test_flow_loader_requires_exactly_one_signed_upload_source(tmp_path: Path) -> None:
+    """fixture 和 input_file 必须二选一，防止运行时来源产生歧义。"""
+
+    from utils.custom.flow_loader import FlowConfigError, load_flow_cases
+
+    _write_flow_fixture(
+        tmp_path,
+        {
+            "name": "非法上传来源",
+            "steps": [
+                {
+                    "id": "upload",
+                    "action": {
+                        "type": "signed_binary_upload",
+                        "url": "{{upload_url}}",
+                        "headers": "{{upload_headers}}",
+                        "fixture": "chat.png",
+                        "input_file": "{{media_file.relative_path}}",
+                    },
+                }
+            ],
+        },
+        {"name": "场景", "variables": {}, "step_data": {}},
+    )
+
+    with pytest.raises(FlowConfigError, match="fixture.*input_file.*二选一"):
         load_flow_cases(tmp_path)
 
 
@@ -874,6 +1046,114 @@ def test_flow_runner_reports_poll_timeout(tmp_path: Path) -> None:
             sleep=fake_sleep,
             monotonic=lambda: now[0],
         ).run(flow_case)
+
+
+def test_flow_runner_foreach_collects_values_in_input_order(tmp_path: Path) -> None:
+    """foreach 对每个输入执行同一 API 子步骤，并按用户选择顺序收集结果。"""
+
+    from utils.custom.flow_runner import FlowRunner
+
+    gateway = QueueGateway(
+        [
+            _gateway_response({"asset_id": "asset-1"}),
+            _gateway_response({"asset_id": "asset-2"}),
+            _gateway_response({"asset_id": "asset-3"}),
+        ]
+    )
+    flow_case = {
+        "id": "ForeachFlow",
+        "name": "循环流程",
+        "api_definitions": _runner_api_definitions(),
+        "flow": {
+            "steps": [
+                {
+                    "id": "upload_each",
+                    "foreach": {
+                        "items": "{{media_files}}",
+                        "item": "media_file",
+                        "collect": {"asset_ids": "{{asset_id}}"},
+                        "steps": [
+                            {
+                                "id": "prepare_upload",
+                                "api": "Demo",
+                                "extract": {"asset_id": "$.asset_id"},
+                            }
+                        ],
+                    },
+                }
+            ]
+        },
+        "scenario": {
+            "name": "场景",
+            "variables": {},
+            "step_data": {
+                "prepare_upload": {
+                    "params": {"name": "{{media_file.original_name}}"},
+                    "assert": _runner_success_assertions(),
+                }
+            },
+        },
+    }
+    media_files = [
+        {"original_name": f"chat_{index:02d}.png", "relative_path": f"{index:03d}.png"}
+        for index in range(1, 4)
+    ]
+
+    context = FlowRunner(
+        tmp_path,
+        gateway_factory=lambda runtime: gateway,
+        runtime_variables={"media_files": media_files},
+    ).run(flow_case)
+
+    assert context.get("asset_ids") == ["asset-1", "asset-2", "asset-3"]
+    assert context.get("media_file") is None
+    assert len(gateway.calls) == 3
+
+
+def test_flow_runner_fails_when_poll_hits_declared_failure_terminal(
+    tmp_path: Path,
+) -> None:
+    """Analysis failed/rejected 是失败终态，不能继续读取不存在的结果。"""
+
+    from utils.custom.flow_runner import FlowExecutionError, FlowRunner
+
+    gateway = QueueGateway(
+        [_gateway_response({"status": "failed"}), _gateway_response({"result": {}})]
+    )
+    flow_case = {
+        "id": "FailedAnalysis",
+        "name": "失败分析",
+        "api_definitions": _runner_api_definitions(),
+        "flow": {
+            "steps": [
+                {
+                    "id": "poll",
+                    "api": "Demo",
+                    "until": {
+                        "path": "$.status",
+                        "equals": "succeeded",
+                        "terminate_on": ["failed", "rejected"],
+                        "fail_on_termination": True,
+                        "interval_seconds": 1,
+                        "timeout_seconds": 3,
+                    },
+                },
+                {"id": "get_result", "api": "Detail"},
+            ]
+        },
+        "scenario": {
+            "name": "失败终态",
+            "variables": {},
+            "step_data": {
+                "poll": {"params": {}, "assert": _runner_success_assertions()},
+                "get_result": {"params": {}, "assert": _runner_success_assertions()},
+            },
+        },
+    }
+
+    with pytest.raises(FlowExecutionError, match="FLOW_TERMINATED.*failed"):
+        FlowRunner(tmp_path, gateway_factory=lambda runtime: gateway).run(flow_case)
+    assert len(gateway.calls) == 1
 
 
 def test_flow_runner_uploads_prepared_media(tmp_path: Path) -> None:

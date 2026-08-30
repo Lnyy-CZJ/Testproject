@@ -1,0 +1,10 @@
+api: GetUserPreferences
+cases:
+  - id: get_user_preferences_success
+    name: 获取 Dating 用户偏好成功
+    tags: [dating, smoke, preferences]
+    request:
+      params: {}
+    assert:
+      http_status: 200
+      gateway: {message: ok}

@@ -16,7 +16,7 @@
   <form class="filter-grid" id="task-filters">
     <div class="field compact-field"><label for="filter-project">项目</label><select id="filter-project" name="project_id"><option value="">全部项目</option></select></div>
     <div class="field compact-field"><label for="filter-status">状态</label><select id="filter-status" name="status"><option value="">全部状态</option><option value="pending">等待中</option><option value="running">运行中</option><option value="succeeded">成功</option><option value="failed">失败</option><option value="cancelled">已取消</option><option value="timed_out">已超时</option></select></div>
-    <div class="field compact-field"><label for="filter-run-type">执行类型</label><select id="filter-run-type" name="run_type"><option value="">全部类型</option><option value="single">单接口</option><option value="flow">Flow</option><option value="all">全部资产</option></select></div>
+    <div class="field compact-field"><label for="filter-run-type">执行类型</label><select id="filter-run-type" name="run_type"><option value="">全部类型</option><option value="single">单接口</option><option value="flow">Flow</option><option value="batch">批量</option><option value="all">历史全部资产</option></select></div>
     <div class="field compact-field"><label for="filter-date-from">开始日期</label><input id="filter-date-from" name="date_from" type="date"></div>
     <div class="field compact-field"><label for="filter-date-to">结束日期</label><input id="filter-date-to" name="date_to" type="date"></div>
     <div class="filter-actions"><button class="button primary compact" type="submit">应用筛选</button><button class="button secondary compact" id="task-filter-clear" type="button">清除</button></div>
@@ -25,7 +25,7 @@
 
 <section class="panel table-panel" aria-labelledby="task-table-heading">
   <div class="panel-heading"><div><h2 id="task-table-heading">执行记录</h2><p id="task-list-count">加载中…</p></div></div>
-  <div class="table-scroll"><table><thead><tr><th>任务 ID</th><th>项目</th><th>接口环境</th><th>执行类型 / 对象</th><th>状态</th><th>提交时间</th></tr></thead><tbody id="task-list-body"><tr><td colspan="6" class="table-state">正在读取任务记录…</td></tr></tbody></table></div>
+  <div class="table-scroll"><table><thead><tr><th>任务 ID</th><th>项目</th><th>接口环境</th><th>执行类型 / 对象</th><th>批量 / 队列</th><th>状态</th><th>提交时间</th></tr></thead><tbody id="task-list-body"><tr><td colspan="7" class="table-state">正在读取任务记录…</td></tr></tbody></table></div>
   <div class="pagination" id="task-pagination" hidden><button class="button tertiary compact" id="task-page-prev" type="button">上一页</button><span id="task-page-label">第 1 页</span><button class="button tertiary compact" id="task-page-next" type="button">下一页</button></div>
 </section>
 {% endblock %}

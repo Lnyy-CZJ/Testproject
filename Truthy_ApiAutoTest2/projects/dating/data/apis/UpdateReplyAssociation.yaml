@@ -1,0 +1,6 @@
+id: UpdateReplyAssociation
+name: 更新 Reply 结果人物关联
+credential_profile: anonymous_session
+request:
+  service_name: tool.dating.DatingAssistantService
+  method_name: UpdateReplyAssociation
