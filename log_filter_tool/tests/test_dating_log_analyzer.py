@@ -1,8 +1,19 @@
 """Dating 日志聚合器的任务生命周期与上传资源回归测试。"""
 
+import ast
+import builtins
 from collections import Counter
+import http.client
+import json
+import os
 from pathlib import Path
+import re
+import socket
+from statistics import median
+from time import perf_counter
 import unittest
+from unittest.mock import patch
+import urllib.request
 
 from dating_log_analyzer import (
     analyze_dating_log,
@@ -15,8 +26,91 @@ from gateway_log_parser import parse_interface_log
 
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "dating"
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 REPLY_TASK_ID = "dating_task_147b21ac92063a1b24bbb8f8865e3bde"
 ANALYSIS_TASK_ID = "dating_task_0e872c9510861f0b21fa76a91076f733"
+MAX_DATING_LOG_BYTES = 10 * 1024 * 1024
+
+DATING_RUNTIME_MODULES = (
+    "gateway_log_parser.py",
+    "dating_log_analyzer.py",
+    "dating_log_rules.py",
+)
+FORBIDDEN_EXTERNAL_IMPORTS = (
+    "socket",
+    "http.client",
+    "urllib.request",
+    "urllib3",
+    "requests",
+    "httpx",
+    "aiohttp",
+    "openai",
+    "anthropic",
+    "cohere",
+    "google.generativeai",
+    "google.genai",
+)
+BUSINESS_ID_KEYS = {
+    "task_id",
+    "task_ids",
+    "asset_id",
+    "asset_ids",
+    "result_id",
+    "reply_id",
+    "signal_id",
+    "event_id",
+    "message_id",
+    "evidence_message_ids",
+    "role_id",
+    "person_id",
+}
+
+
+def _dotted_name(node: ast.AST) -> str:
+    """将 AST Name/Attribute 转为点分调用名，供离线能力静态验收。"""
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        prefix = _dotted_name(node.value)
+        return f"{prefix}.{node.attr}" if prefix else node.attr
+    return ""
+
+
+def _collect_business_ids(value: object) -> set[str]:
+    """收集响应中的业务 ID；解析器内部 call_id 不属于业务 ID。"""
+    found: set[str] = set()
+
+    def visit(current: object, key: str | None = None) -> None:
+        if isinstance(current, dict):
+            for child_key, child_value in current.items():
+                visit(child_value, child_key)
+            return
+        if isinstance(current, list):
+            for item in current:
+                visit(item, key)
+            return
+        if key in BUSINESS_ID_KEYS and isinstance(current, str) and current:
+            found.add(current)
+
+    visit(value)
+    return found
+
+
+def _build_large_dating_log(base_log: str) -> str:
+    """在有效 golden 后追加纯诊断文本，构造略低于 10 MiB 的确定性日志。"""
+    target_bytes = MAX_DATING_LOG_BYTES - 1024
+    marker = "\nPERFORMANCE_PADDING="
+    padding_bytes = (
+        target_bytes
+        - len(base_log.encode("utf-8"))
+        - len(marker.encode("utf-8"))
+    )
+    if padding_bytes < 0:
+        raise ValueError("golden 日志已超过性能验收目标大小")
+    large_log = base_log + marker + ("x" * padding_bytes)
+    if len(large_log.encode("utf-8")) != target_bytes:
+        raise AssertionError("性能日志必须按字节精确构造")
+    return large_log
 
 
 def _read_fixture(name: str) -> str:
@@ -1106,6 +1200,279 @@ class DatingUploadAssociationTests(unittest.TestCase):
         self.assertEqual(by_id["asset_a"]["upload_state"], "complete")
         self.assertIsNone(by_id["asset_b"]["put_call_id"])
         self.assertEqual(by_id["asset_b"]["upload_state"], "prepare_only")
+
+
+class DatingPackagingAcceptanceTest(unittest.TestCase):
+    """锁定容器运行时文件和 Dating 环境变量，防止发布物漏装模块。"""
+
+    def test_dockerfile_copies_all_dating_runtime_modules(self):
+        """删除任一直接 COPY 都会让容器启动时无法导入完整分析链。"""
+        dockerfile = (PROJECT_ROOT / "Dockerfile").read_text(encoding="utf-8")
+        copied_sources = set()
+        for line in dockerfile.splitlines():
+            match = re.fullmatch(r"\s*COPY\s+(\S+)\s+\.\s*", line)
+            if match:
+                copied_sources.add(match.group(1))
+
+        for module_name in DATING_RUNTIME_MODULES:
+            with self.subTest(module=module_name):
+                self.assertIn(module_name, copied_sources)
+
+    def test_compose_sets_explicit_dating_runtime_environment(self):
+        """Compose 必须固定开启开关并传入 canonical 10 MiB 上限。"""
+        compose = (PROJECT_ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+        expected = {
+            "DATING_STRUCTURED_ANALYZER_ENABLED": "true",
+            "DATING_STRUCTURED_MAX_LOG_BYTES": "10485760",
+        }
+
+        for key, expected_value in expected.items():
+            with self.subTest(environment=key):
+                match = re.search(
+                    rf"(?m)^\s+{re.escape(key)}:\s*[\"']?([^\"'\s#]+)[\"']?\s*$",
+                    compose,
+                )
+                self.assertIsNotNone(match, f"Compose 缺少 {key}")
+                self.assertEqual(match.group(1), expected_value)
+
+
+class DatingOfflineAcceptanceTest(unittest.TestCase):
+    """验证 Dating 分析路径只执行本地确定性代码，不触发外部能力。"""
+
+    def test_runtime_modules_have_no_network_or_llm_imports_and_calls(self):
+        """引入网络 SDK、HTTP 客户端或已知 AI 调用时必须静态失败。"""
+        violations = []
+        forbidden_call_suffixes = (
+            "socket",
+            "create_connection",
+            "getaddrinfo",
+            "urlopen",
+            "HTTPConnection.request",
+            "HTTPSConnection.request",
+            "OpenAI",
+            "Anthropic",
+            "GenerativeModel",
+            "generate_content",
+            "chat.completions.create",
+        )
+
+        for module_name in DATING_RUNTIME_MODULES:
+            source = (PROJECT_ROOT / module_name).read_text(encoding="utf-8")
+            tree = ast.parse(source, filename=module_name)
+            for node in ast.walk(tree):
+                imported_names = []
+                if isinstance(node, ast.Import):
+                    imported_names = [alias.name for alias in node.names]
+                elif isinstance(node, ast.ImportFrom) and node.module:
+                    imported_names = [node.module]
+                for imported_name in imported_names:
+                    if any(
+                        imported_name == prefix
+                        or imported_name.startswith(prefix + ".")
+                        for prefix in FORBIDDEN_EXTERNAL_IMPORTS
+                    ):
+                        violations.append(
+                            f"{module_name}:{node.lineno} import {imported_name}"
+                        )
+
+                if isinstance(node, ast.Call):
+                    call_name = _dotted_name(node.func)
+                    if any(
+                        call_name == suffix or call_name.endswith("." + suffix)
+                        for suffix in forbidden_call_suffixes
+                    ):
+                        violations.append(
+                            f"{module_name}:{node.lineno} call {call_name}"
+                        )
+
+        self.assertEqual(violations, [])
+
+    def test_golden_analysis_succeeds_with_network_and_ai_guards(self):
+        """真实分析若触发 socket、HTTP 或运行时加载 AI SDK，应立即失败。"""
+        fixtures = (
+            ("reply_generation_multi_image_success.log", REPLY_TASK_ID),
+            ("relationship_analysis_multi_image_success.log", ANALYSIS_TASK_ID),
+        )
+        fixture_texts = [
+            (name, _read_fixture(name), expected_task_id)
+            for name, expected_task_id in fixtures
+        ]
+        real_import = builtins.__import__
+        blocked_roots = {
+            "openai",
+            "anthropic",
+            "cohere",
+            "requests",
+            "httpx",
+            "aiohttp",
+        }
+
+        def reject_external(*_args, **_kwargs):
+            raise AssertionError("Dating 分析尝试访问网络或 HTTP")
+
+        def guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
+            root = name.split(".", 1)[0]
+            google_ai = name.startswith(("google.generativeai", "google.genai")) or (
+                name == "google"
+                and any(item in {"generativeai", "genai"} for item in fromlist)
+            )
+            if root in blocked_roots or google_ai:
+                raise AssertionError(f"Dating 分析尝试加载外部 SDK: {name}")
+            return real_import(name, globals, locals, fromlist, level)
+
+        with (
+            patch.object(builtins, "__import__", side_effect=guarded_import),
+            patch.object(socket, "socket", side_effect=reject_external),
+            patch.object(socket, "create_connection", side_effect=reject_external),
+            patch.object(socket, "getaddrinfo", side_effect=reject_external),
+            patch.object(urllib.request, "urlopen", side_effect=reject_external),
+            patch.object(
+                http.client.HTTPConnection, "request", side_effect=reject_external
+            ),
+            patch.object(
+                http.client.HTTPSConnection, "request", side_effect=reject_external
+            ),
+        ):
+            for name, log_text, expected_task_id in fixture_texts:
+                with self.subTest(fixture=name):
+                    result = analyze_dating_log(log_text)
+                    self.assertTrue(result["supported"])
+                    self.assertEqual(result["task_ids"], [expected_task_id])
+
+
+class DatingDeterminismTest(unittest.TestCase):
+    """持续执行轻量确定性验收，避免性能测试默认跳过时失去回归保护。"""
+
+    def test_repeated_golden_analysis_is_identical_and_uses_sequential_call_ids(self):
+        """同一日志不得生成随机业务 ID，解析调用 ID 必须按出现顺序稳定编号。"""
+        fixtures = (
+            ("reply_generation_multi_image_success.log", REPLY_TASK_ID),
+            ("relationship_analysis_multi_image_success.log", ANALYSIS_TASK_ID),
+        )
+
+        for fixture_name, expected_task_id in fixtures:
+            log_text = _read_fixture(fixture_name)
+            first = analyze_dating_log(log_text)
+            second = analyze_dating_log(log_text)
+            with self.subTest(fixture=fixture_name):
+                self.assertEqual(first, second)
+                self.assertEqual(first["task_ids"], [expected_task_id])
+                self.assertEqual(
+                    [call["call_id"] for call in first["calls"]],
+                    [
+                        f"call_{sequence:04d}"
+                        for sequence in range(1, len(first["calls"]) + 1)
+                    ],
+                )
+                unexpected_ids = sorted(
+                    business_id
+                    for business_id in _collect_business_ids(first)
+                    if business_id not in log_text
+                )
+                self.assertEqual(
+                    unexpected_ids,
+                    [],
+                    f"输出包含日志中不存在的业务 ID: {unexpected_ids}",
+                )
+
+
+@unittest.skipUnless(
+    os.environ.get("RUN_DATING_PERF") == "1",
+    "设置 RUN_DATING_PERF=1 才运行 Dating 重压验收",
+)
+class DatingPerformanceAcceptanceTest(unittest.TestCase):
+    """可直接运行的 Dating 确定性和性能完成标准。"""
+
+    @classmethod
+    def setUpClass(cls):
+        """在计时前读取 fixture、构造大日志并预热全部分析路径。"""
+        cls.golden_cases = (
+            (
+                "reply_generation_multi_image_success.log",
+                _read_fixture("reply_generation_multi_image_success.log"),
+                REPLY_TASK_ID,
+            ),
+            (
+                "relationship_analysis_multi_image_success.log",
+                _read_fixture("relationship_analysis_multi_image_success.log"),
+                ANALYSIS_TASK_ID,
+            ),
+        )
+        cls.large_log = _build_large_dating_log(cls.golden_cases[0][1])
+        for _name, log_text, _expected_task_id in cls.golden_cases:
+            analyze_dating_log(log_text)
+        analyze_dating_log(cls.large_log)
+
+    def test_golden_results_are_deterministic_and_median_is_within_500ms(self):
+        """两份 golden 重复输出必须逐字节稳定，且各自中位数不超过 500ms。"""
+        for name, log_text, expected_task_id in self.golden_cases:
+            serialized_results = []
+            elapsed_samples = []
+            latest_result = None
+            for _ in range(5):
+                started = perf_counter()
+                latest_result = analyze_dating_log(log_text)
+                elapsed_samples.append(perf_counter() - started)
+                serialized_results.append(
+                    json.dumps(
+                        latest_result,
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    )
+                )
+
+            with self.subTest(fixture=name):
+                self.assertTrue(all(
+                    result == serialized_results[0]
+                    for result in serialized_results[1:]
+                ))
+                self.assertEqual(latest_result["task_ids"], [expected_task_id])
+                self.assertEqual(
+                    latest_result["task_snapshot"]["task_id"], expected_task_id
+                )
+                unexpected_ids = sorted(
+                    business_id
+                    for business_id in _collect_business_ids(latest_result)
+                    if business_id not in log_text
+                )
+                self.assertEqual(
+                    unexpected_ids,
+                    [],
+                    f"输出包含日志中不存在的业务 ID: {unexpected_ids}",
+                )
+                self.assertLessEqual(
+                    median(elapsed_samples),
+                    0.5,
+                    f"{name} 分析中位数超过 500ms",
+                )
+
+    def test_near_10mib_log_is_stable_and_finishes_within_two_seconds(self):
+        """略低于 10 MiB 的有效 Dating 日志必须稳定且单次分析不超过 2 秒。"""
+        self.assertLessEqual(
+            len(self.large_log.encode("utf-8")), MAX_DATING_LOG_BYTES
+        )
+        serialized_results = []
+        elapsed_samples = []
+        for _ in range(2):
+            started = perf_counter()
+            result = analyze_dating_log(self.large_log)
+            elapsed_samples.append(perf_counter() - started)
+            serialized_results.append(
+                json.dumps(
+                    result,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
+            )
+
+        self.assertTrue(result["supported"])
+        self.assertEqual(result["task_ids"], [REPLY_TASK_ID])
+        self.assertEqual(serialized_results[0], serialized_results[1])
+        self.assertLessEqual(
+            max(elapsed_samples), 2.0, "近 10 MiB 日志分析超过 2 秒"
+        )
 
 
 if __name__ == "__main__":

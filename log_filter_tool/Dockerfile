@@ -22,6 +22,10 @@ COPY app.py .
 COPY people_search_analyzer.py .
 COPY people_search_rules.py .
 COPY people_search_ai.py .
+# Dating 结构化分析保持三层职责独立；镜像必须显式携带公共解析、聚合与规则模块。
+COPY gateway_log_parser.py .
+COPY dating_log_analyzer.py .
+COPY dating_log_rules.py .
 COPY templates/ templates/
 COPY skills/ skills/
 COPY log_default.log .
