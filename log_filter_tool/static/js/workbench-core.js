@@ -282,7 +282,7 @@
    */
   function refreshStaleIndicators(message) {
     var activeOwner = canonicalModeName(state.activeMode) || "general";
-    var filterStale = Boolean(state.filterDirty || isOwnerStale("general"));
+    var filterStale = Boolean(state.filterDirty);
     var activeStale = isOwnerStale(activeOwner);
     var staleText = message || "日志已修改，当前结果可能已过期，请重新分析。";
     var stale = getElement("analysis-stale");
@@ -577,7 +577,7 @@
     var result = getElement("result-text");
     var filterHasResult = Boolean(result && String(result.value || ""));
     state.ownerFreshness[owner] = false;
-    if (owner === "general" || filterHasResult || state.filterDirty) {
+    if (filterHasResult || state.filterDirty) {
       state.ownerFreshness.general = false;
       state.filterDirty = true;
       setOwnerExportsDisabled("general", true);
