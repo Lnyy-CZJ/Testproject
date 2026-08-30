@@ -885,6 +885,28 @@ class WorkbenchShellTest(unittest.TestCase):
                 assert(fixture.exportFilteredButton.disabled, "业务失败重新启用了旧结果导出");
                 assert(fixture.actionMessage.textContent.includes("业务失败"),
                   "业务失败未显示错误消息");
+              } else if (scenario === "async-success-keeps-filter-stale") {
+                const api = fixture.window.LogWorkbench;
+                api.markAnalysisFresh();
+                fixture.logText.value = "changed after filter";
+                fixture.logText.dispatch("input");
+                assert(api.state.dirty && fixture.exportFilteredButton.disabled,
+                  "People/Dating 回归的前置 stale 状态未建立");
+                for (const modeName of ["people", "dating"]) {
+                  api.registerAnalysisMode(modeName, {
+                    analyze() {
+                      return Promise.resolve({ok: true, mode: modeName});
+                    }
+                  });
+                  fixture.modeSelect.value = modeName;
+                  await api.analyzeSelectedMode();
+                  assert(api.state.dirty,
+                    modeName + " 成功时错误清除了 Filter stale");
+                  assert(fixture.exportFilteredButton.disabled,
+                    modeName + " 成功时错误重新启用了旧 Filter 导出");
+                  assert(fixture.resultText.value === "filtered result",
+                    modeName + " 成功时不应改写 Filter result-text");
+                }
               } else if (scenario === "phase-lock") {
                 const api = fixture.window.LogWorkbench;
                 let analyzeCount = 0;
@@ -1370,6 +1392,10 @@ class WorkbenchShellTest(unittest.TestCase):
         """业务失败保持 stale；通用 POST 与异步分析共享入口锁。"""
         self._run_task_three_review_harness("async-failure")
         self._run_task_three_review_harness("phase-lock")
+
+    def test_task_three_async_modes_do_not_freshen_filter_result(self):
+        """People/Dating 成功也不能清除未更新 result-text 的 Filter stale。"""
+        self._run_task_three_review_harness("async-success-keeps-filter-stale")
 
     def test_task_three_disabled_dating_flag_hides_dating_endpoint_capability(self):
         """Dating 关闭时页面不得输出可被核心误读的 Dating endpoint。"""

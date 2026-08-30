@@ -670,8 +670,12 @@
           activateResultPanel();
           return {ok: false, message: invalidMessage};
         }
-        if (revisionAtStart === state.inputRevision) markAnalysisFresh();
-        else markAnalysisStale("分析期间日志已修改，结果可能已过期，请重新分析。");
+        if (revisionAtStart !== state.inputRevision) {
+          markAnalysisStale("分析期间日志已修改，结果可能已过期，请重新分析。");
+        }
+        // People/Dating 只更新各自的结果面板，不会写入 result-text；它们成功时
+        // 不能替通用 Filter 清 stale。通用 Filter 成功走原生 POST，由新页面结果
+        // 建立 freshness，避免这里把两个生命周期混在一起。
         activateResultPanel();
         return result;
       })
