@@ -520,6 +520,9 @@ class WorkbenchShellTest(unittest.TestCase):
               api.analyzeSelectedMode();
               assert(requestSubmitCount === 1,
                 "general 模式未通过现有表单 requestSubmit");
+              // 该沙箱只记录 requestSubmit，不执行浏览器导航；真实页面会在 POST
+              // 后离开当前文档，因此这里只恢复生命周期状态以继续测试异步模式。
+              api.state.phase = "idle";
 
               let analyzeCount = 0;
               let resolveAnalysis;
@@ -592,6 +595,429 @@ class WorkbenchShellTest(unittest.TestCase):
         )
         completed = subprocess.run(
             [node, "-e", harness, str(core_path), scenario],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(
+            0,
+            completed.returncode,
+            completed.stderr or completed.stdout,
+        )
+
+    def _run_task_three_review_harness(self, scenario):
+        """加载 core 与真实 filter 脚本，验证复审指出的跨脚本行为合同。"""
+        node = shutil.which("node")
+        self.assertIsNotNone(node, "需要 Node.js 执行 Task 3 复审行为合同测试")
+        core_path = Path(__file__).resolve().parents[1] / "static/js/workbench-core.js"
+        filter_path = Path(__file__).resolve().parents[1] / "static/js/workbench-filter.js"
+        harness = textwrap.dedent(
+            r"""
+            const fs = require("fs");
+            const vm = require("vm");
+
+            class FakeClassList {
+              constructor() { this.values = new Set(); }
+              add(name) { this.values.add(name); }
+              remove(name) { this.values.delete(name); }
+              toggle(name, force) {
+                const shouldHave = force === undefined ? !this.values.has(name) : force;
+                if (shouldHave) this.values.add(name); else this.values.delete(name);
+                return shouldHave;
+              }
+              contains(name) { return this.values.has(name); }
+            }
+
+            class FakeElement {
+              constructor(id, attributes = {}) {
+                this.id = id;
+                this.attributes = {...attributes};
+                this.dataset = {};
+                this.listeners = Object.create(null);
+                this.hidden = Boolean(attributes.hidden);
+                this.disabled = Boolean(attributes.disabled);
+                this.checked = Boolean(attributes.checked);
+                this.value = attributes.value || "";
+                this.textContent = attributes.textContent || "";
+                this.classList = new FakeClassList();
+                this.style = {setProperty() {}};
+                this.selectionStart = 0;
+                this.selectionEnd = 0;
+                this.selectionCalls = [];
+                this.scrollTop = 0;
+                this.focusCount = 0;
+              }
+              addEventListener(type, listener) {
+                (this.listeners[type] ||= []).push(listener);
+              }
+              dispatch(type, event = {}) {
+                if (!event.target) event.target = this;
+                (this.listeners[type] || []).slice().forEach(listener => listener(event));
+              }
+              getAttribute(name) {
+                return Object.prototype.hasOwnProperty.call(this.attributes, name)
+                  ? String(this.attributes[name]) : null;
+              }
+              setAttribute(name, value) { this.attributes[name] = String(value); }
+              removeAttribute(name) { delete this.attributes[name]; }
+              contains(target) { return target === this || (target && target.parent === this); }
+              closest() { return null; }
+              focus() { this.focusCount += 1; }
+              click() { this.dispatch("click", {stopPropagation() {}}); }
+              setSelectionRange(start, end) {
+                this.selectionStart = start;
+                this.selectionEnd = end;
+                this.selectionCalls.push([start, end]);
+              }
+              scrollIntoView() {}
+              getBoundingClientRect() { return {left: 0, width: 1000}; }
+            }
+
+            function assert(condition, message) {
+              if (!condition) throw new Error(message);
+            }
+
+            function createFixture(readyState, initialResult) {
+              const root = new FakeElement("log-workbench");
+              root.dataset = {
+                indexUrl: "/",
+                exportUrl: "/export",
+                peopleSearchUrl: "/people",
+                datingUrl: "/dating"
+              };
+              const form = new FakeElement("log-filter-form");
+              const modeSelect = new FakeElement("analysis-mode", {value: "general"});
+              const analyzeButton = new FakeElement("analyze-log-btn", {
+                textContent: "分析日志"
+              });
+              const logText = new FakeElement("log_text");
+              logText.value = "zero\nneedle\nline needle\nend";
+              const resultText = new FakeElement("result-text");
+              resultText.value = initialResult;
+              const rawView = new FakeElement("raw-log-view");
+              const filteredView = new FakeElement("filtered-log-view", {hidden: true});
+              const rawViewButton = new FakeElement("raw-log-view-btn", {
+                "aria-selected": "true"
+              });
+              const filteredViewButton = new FakeElement("filtered-log-view-btn", {
+                "aria-selected": "false"
+              });
+              const searchInput = new FakeElement("result-search");
+              const searchCount = new FakeElement("search-count");
+              const actionMessage = new FakeElement("action-message", {hidden: true});
+              const toast = new FakeElement("workbench-toast", {hidden: true});
+              const focusStatus = new FakeElement("log-focus-status");
+              const staleStatus = new FakeElement("analysis-stale", {hidden: true});
+              const lineCount = new FakeElement("log-line-count");
+              const byteCount = new FakeElement("log-byte-count");
+              const exportLogButton = new FakeElement("export-log-content-btn", {
+                textContent: "导出日志"
+              });
+              const exportFilteredButton = new FakeElement("export-filtered-result-btn", {
+                textContent: "导出过滤结果"
+              });
+              const copyButton = new FakeElement("copy-btn", {textContent: "复制过滤结果"});
+              const toggle = new FakeElement("method-toggle");
+              const dropdown = new FakeElement("method-dropdown");
+              const container = new FakeElement("multi-select");
+              const toggleText = new FakeElement("method-toggle-text");
+              const allMethod = new FakeElement("all-method", {checked: true});
+              const methodOne = new FakeElement("method-one", {value: "GetMe"});
+              const methodTwo = new FakeElement("method-two", {value: "GetTask"});
+              const methods = [allMethod, methodOne, methodTwo];
+              const selectAll = new FakeElement("btn-select-all");
+              const deselectAll = new FakeElement("btn-deselect-all");
+              const previousButton = new FakeElement("search-prev-btn");
+              const nextButton = new FakeElement("search-next-btn");
+              const loadingMask = new FakeElement("workbench-loading-mask", {hidden: true});
+              const elements = {
+                "log-workbench": root,
+                "log-filter-form": form,
+                "log-analysis-form": form,
+                "analysis-mode": modeSelect,
+                "analyze-log-btn": analyzeButton,
+                "log_text": logText,
+                "result-text": resultText,
+                "raw-log-view": rawView,
+                "filtered-log-view": filteredView,
+                "raw-log-view-btn": rawViewButton,
+                "filtered-log-view-btn": filteredViewButton,
+                "result-search": searchInput,
+                "search-count": searchCount,
+                "action-message": actionMessage,
+                "workbench-toast": toast,
+                "log-focus-status": focusStatus,
+                "analysis-stale": staleStatus,
+                "log-line-count": lineCount,
+                "log-byte-count": byteCount,
+                "export-log-content-btn": exportLogButton,
+                "export-filtered-result-btn": exportFilteredButton,
+                "copy-btn": copyButton,
+                "method-toggle": toggle,
+                "method-dropdown": dropdown,
+                "multi-select": container,
+                "method-toggle-text": toggleText,
+                "btn-select-all": selectAll,
+                "btn-deselect-all": deselectAll,
+                "search-prev-btn": previousButton,
+                "search-next-btn": nextButton,
+                "workbench-loading-mask": loadingMask
+              };
+              dropdown.querySelectorAll = selector => {
+                if (selector === 'input[name="method"]') return methods;
+                if (selector === 'input[name="method"]:checked') return methods.filter(item => item.checked);
+                if (selector === 'input[name="method"]:not([data-is-all="1"])') return methods.slice(1);
+                return [];
+              };
+              dropdown.querySelector = selector =>
+                selector === 'input[data-is-all="1"]' ? allMethod : null;
+              root.querySelectorAll = () => [];
+              form.requestSubmitCount = 0;
+              form.submitCount = 0;
+              form.requestSubmit = () => { form.requestSubmitCount += 1; };
+              form.submit = () => { form.submitCount += 1; };
+
+              const documentListeners = Object.create(null);
+              const document = {
+                readyState,
+                getElementById(id) { return elements[id] || null; },
+                querySelector(selector) {
+                  return selector === '#method-dropdown input[data-is-all="1"]' ? allMethod : null;
+                },
+                addEventListener(type, listener) {
+                  (documentListeners[type] ||= []).push(listener);
+                },
+                removeEventListener(type, listener) {
+                  documentListeners[type] = (documentListeners[type] || []).filter(
+                    registered => registered !== listener
+                  );
+                },
+                dispatch(type, event = {}) {
+                  (documentListeners[type] || []).slice().forEach(listener => listener(event));
+                }
+              };
+              Object.defineProperty(document, "cookie", {
+                get() { return "tp_csrf=csrf%20token"; }
+              });
+
+              const fetchCalls = [];
+              let pendingFetchResolve = null;
+              let copiedText = null;
+              const window = {
+                getComputedStyle() { return {lineHeight: "20px"}; },
+                navigator: {
+                  clipboard: {
+                    writeText(value) { copiedText = value; return Promise.resolve(); }
+                  }
+                },
+                fetch(url, options) {
+                  fetchCalls.push({url, options});
+                  if (readyState === "race") {
+                    return new Promise(resolve => { pendingFetchResolve = resolve; });
+                  }
+                  return Promise.resolve({
+                    ok: true,
+                    text: () => Promise.resolve(JSON.stringify({path: "/tmp/export.log"}))
+                  });
+                }
+              };
+              const context = {
+                window,
+                document,
+                Promise,
+                Array,
+                Object,
+                String,
+                Number,
+                Math,
+                Set,
+                TypeError,
+                JSON,
+                setTimeout,
+                clearTimeout,
+                console
+              };
+              return {
+                root, form, modeSelect, analyzeButton, logText, resultText,
+                rawView, filteredView, rawViewButton, filteredViewButton,
+                searchInput, searchCount, actionMessage, toast, focusStatus,
+                staleStatus, exportLogButton, exportFilteredButton, copyButton,
+                toggle, dropdown, container, toggleText, allMethod, methodOne,
+                methodTwo, selectAll, deselectAll, previousButton, nextButton,
+                loadingMask, document, window, context, fetchCalls,
+                get pendingFetchResolve() { return pendingFetchResolve; },
+                setPendingFetchResolve(value) { pendingFetchResolve = value; },
+                get copiedText() { return copiedText; }
+              };
+            }
+
+            function loadScript(path, fixture) {
+              vm.runInNewContext(fs.readFileSync(path, "utf8"), fixture.context);
+            }
+
+            function wait(milliseconds) {
+              return new Promise(resolve => setTimeout(resolve, milliseconds));
+            }
+
+            (async () => {
+              const scenario = process.argv[3];
+              const fixture = createFixture(
+                scenario === "filter-init" ? "loading" :
+                  scenario === "export-race" ? "race" : "complete",
+                scenario === "filter-empty" ? "" : "filtered result"
+              );
+              const corePath = process.argv[1];
+              const filterPath = process.argv[2];
+              loadScript(corePath, fixture);
+
+              if (scenario === "async-failure") {
+                const api = fixture.window.LogWorkbench;
+                fixture.logText.value = "changed";
+                fixture.logText.dispatch("input");
+                api.registerAnalysisMode("people", {
+                  analyze() { return Promise.resolve({ok: false, message: "业务失败"}); }
+                });
+                fixture.modeSelect.value = "people";
+                await api.analyzeSelectedMode();
+                await Promise.resolve();
+                assert(api.state.dirty, "业务失败错误地清除了 stale 状态");
+                assert(!fixture.staleStatus.hidden, "业务失败未保留 stale 提示");
+                assert(fixture.exportFilteredButton.disabled, "业务失败重新启用了旧结果导出");
+                assert(fixture.actionMessage.textContent.includes("业务失败"),
+                  "业务失败未显示错误消息");
+              } else if (scenario === "phase-lock") {
+                const api = fixture.window.LogWorkbench;
+                let analyzeCount = 0;
+                let resolveAnalysis;
+                const pending = new Promise(resolve => { resolveAnalysis = resolve; });
+                api.registerAnalysisMode("people", {
+                  analyze() {
+                    analyzeCount += 1;
+                    return pending.then(() => ({ok: true}));
+                  }
+                });
+                fixture.modeSelect.value = "people";
+                const running = api.analyzeSelectedMode();
+                fixture.modeSelect.value = "general";
+                api.analyzeSelectedMode();
+                assert(fixture.form.requestSubmitCount === 0,
+                  "异步 loading 期间通用模式仍发起 POST");
+                resolveAnalysis();
+                await running;
+                fixture.modeSelect.value = "general";
+                api.analyzeSelectedMode();
+                assert(api.state.phase === "submitting",
+                  "通用 POST 未进入 submitting 锁定状态");
+                fixture.modeSelect.value = "people";
+                api.analyzeSelectedMode();
+                assert(analyzeCount === 1, "通用 POST 期间异步模式仍被启动");
+              } else {
+                loadScript(filterPath, fixture);
+                const api = fixture.window.LogWorkbench;
+                if (scenario === "filter-init") {
+                  const cachedExport = api.exportLog;
+                  assert(typeof cachedExport === "function",
+                    "DOMContentLoaded 前 api.exportLog 尚未可供内联脚本缓存");
+                  fixture.document.dispatch("DOMContentLoaded");
+                  await cachedExport("analysis_report", "report body");
+                  assert(fixture.fetchCalls.length === 1, "缓存的导出引用未发起请求");
+                  assert(fixture.fetchCalls[0].options.headers["X-CSRF-Token"] === "csrf token",
+                    "缓存导出未携带 CSRF");
+                }
+                if (scenario === "filter-empty") {
+                  assert(fixture.exportFilteredButton.disabled,
+                    "初始无过滤结果时导出按钮未禁用");
+                  assert(fixture.filteredViewButton.disabled,
+                    "初始无过滤结果时过滤视图未禁用");
+                }
+                if (scenario === "filter-controls") {
+                  fixture.toggle.dispatch("keydown", {
+                    key: "Enter", preventDefault() {}
+                  });
+                  assert(fixture.dropdown.classList.contains("open"),
+                    "method 下拉 Enter 未打开");
+                  fixture.methodOne.checked = true;
+                  fixture.methodOne.dispatch("change");
+                  assert(!fixture.allMethod.checked && fixture.toggleText.textContent === "GetMe",
+                    "method 单选未同步全部状态与文案");
+                  fixture.document.dispatch("click", {target: new FakeElement("outside")});
+                  assert(fixture.form.requestSubmitCount === 1,
+                    "method 选择变化后外部点击未自动提交");
+                  fixture.toggle.dispatch("keydown", {
+                    key: "Space", preventDefault() {}
+                  });
+                  fixture.toggle.dispatch("keydown", {
+                    key: "Escape", preventDefault() {}
+                  });
+                  fixture.selectAll.dispatch("click", {preventDefault() {}});
+                  assert(fixture.methodOne.checked && fixture.methodTwo.checked && !fixture.allMethod.checked,
+                    "全选未保留 method 多选行为");
+                  fixture.deselectAll.dispatch("click", {preventDefault() {}});
+                  assert(fixture.allMethod.checked && !fixture.methodOne.checked && !fixture.methodTwo.checked,
+                    "取消全选未恢复全部 method");
+
+                  fixture.searchInput.value = "needle";
+                  fixture.searchInput.dispatch("input");
+                  assert(fixture.searchCount.textContent === "4 行",
+                    "debounce 前不应提前刷新搜索结果");
+                  await wait(180);
+                  assert(fixture.logText.selectionStart === 5 && fixture.logText.selectionEnd === 11,
+                    "debounce 后未选择第一处字符串偏移");
+                  fixture.searchInput.dispatch("keydown", {
+                    key: "Enter", shiftKey: false, preventDefault() {}
+                  });
+                  assert(fixture.logText.selectionStart === 17 && fixture.logText.selectionEnd === 23,
+                    "Enter 未前进到下一处匹配");
+                  fixture.searchInput.dispatch("keydown", {
+                    key: "Enter", shiftKey: true, preventDefault() {}
+                  });
+                  assert(fixture.logText.selectionStart === 5 && fixture.logText.selectionEnd === 11,
+                    "Shift+Enter 未回到上一处匹配");
+
+                  fixture.logText.value = "one\r\ntwo\r\nthree";
+                  api.focusLogLines(2, 3);
+                  assert(fixture.logText.selectionStart === 5 && fixture.logText.selectionEnd === 15,
+                    "CRLF 行号定位未使用真实偏移");
+                  fixture.logText.dispatch("input");
+                  assert(api.state.dirty && fixture.exportFilteredButton.disabled,
+                    "日志修改未标 stale 或禁用旧结果导出");
+                  assert(fixture.resultText.value === "filtered result",
+                    "日志修改不应清空旧过滤结果");
+                  await api.copyResult();
+                  assert(fixture.copiedText === "filtered result", "复制未读取只读 textarea 值");
+                  await api.exportLog("log_content");
+                  const call = fixture.fetchCalls[fixture.fetchCalls.length - 1];
+                  assert(call.url === "/export" && call.options.method === "POST",
+                    "导出未使用 data endpoint 和 POST");
+                  assert(call.options.headers["X-CSRF-Token"] === "csrf token",
+                    "导出请求未携带 CSRF");
+                  assert(JSON.parse(call.options.body).content === fixture.logText.value,
+                    "日志导出未读取当前 textarea 字符串");
+                }
+                if (scenario === "export-race") {
+                  api.markAnalysisFresh();
+                  const exporting = api.exportLog("filtered_result");
+                  fixture.logText.value = "changed\nlog";
+                  fixture.logText.dispatch("input");
+                  assert(fixture.exportFilteredButton.disabled,
+                    "竞态测试中日志修改未立即禁用导出");
+                  fixture.pendingFetchResolve({
+                    ok: true,
+                    text: () => Promise.resolve(JSON.stringify({path: "/tmp/export.log"}))
+                  });
+                  await exporting;
+                  assert(fixture.exportFilteredButton.disabled,
+                    "导出 finally 无条件重新启用了 stale 结果");
+                }
+              }
+            })().catch(error => {
+              console.error(error.stack || error.message);
+              process.exitCode = 1;
+            });
+            """
+        )
+        completed = subprocess.run(
+            [node, "-e", harness, str(core_path), str(filter_path), scenario],
             check=False,
             capture_output=True,
             text=True,
@@ -926,6 +1352,34 @@ class WorkbenchShellTest(unittest.TestCase):
     def test_task_three_core_searches_text_and_focuses_real_log_lines(self):
         """搜索、行号定位和日志编辑 stale 都基于 textarea 的真实文本。"""
         self._run_task_three_core_harness("search-focus-stale")
+
+    def test_task_three_filter_exports_are_available_before_dom_ready(self):
+        """外部过滤脚本必须先暴露 API，避免既有内联适配器缓存 undefined。"""
+        self._run_task_three_review_harness("filter-init")
+
+    def test_task_three_filter_controls_use_real_dom_behavior(self):
+        """真实加载过滤脚本并覆盖 method、搜索、复制、导出和 CRLF 定位。"""
+        self._run_task_three_review_harness("filter-controls")
+
+    def test_task_three_empty_result_and_export_race_keep_export_disabled(self):
+        """空结果立即禁用导出，日志竞态结束后也不能重新启用 stale 导出。"""
+        self._run_task_three_review_harness("filter-empty")
+        self._run_task_three_review_harness("export-race")
+
+    def test_task_three_async_errors_keep_stale_and_phase_lock_modes(self):
+        """业务失败保持 stale；通用 POST 与异步分析共享入口锁。"""
+        self._run_task_three_review_harness("async-failure")
+        self._run_task_three_review_harness("phase-lock")
+
+    def test_task_three_disabled_dating_flag_hides_dating_endpoint_capability(self):
+        """Dating 关闭时页面不得输出可被核心误读的 Dating endpoint。"""
+        app = create_app()
+        app.config["TESTING"] = True
+        app.config["DATING_STRUCTURED_ANALYZER_ENABLED"] = False
+        html = app.test_client().get("/").get_data(as_text=True)
+
+        self.assertNotIn('data-dating-url="', html)
+        self.assertNotIn('value="dating"', html)
 
 
 if __name__ == "__main__":

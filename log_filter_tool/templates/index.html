@@ -929,7 +929,9 @@
       data-index-url="{{ url_for('tool.index') }}"
       data-export-url="{{ url_for('tool.export_log') }}"
       data-people-search-url="{{ url_for('tool.analyze_people_search') }}"
-      data-dating-url="{{ url_for('tool.analyze_dating') }}"
+      {% if dating_analyzer_enabled %}
+        data-dating-url="{{ url_for('tool.analyze_dating') }}"
+      {% endif %}
     >
       <section
         class="workbench-pane workbench-log-pane"
@@ -993,7 +995,7 @@
           </div>
           <div class="result-tools">
             <button type="button" id="copy-btn">复制过滤结果</button>
-            <button type="button" id="export-filtered-result-btn">导出过滤结果</button>
+            <button type="button" id="export-filtered-result-btn"{% if not result_text %} disabled aria-disabled="true"{% endif %}>导出过滤结果</button>
           </div>
         </section>
 
@@ -1581,7 +1583,7 @@
 
         if (!logText.trim()) {
           showActionMessage('日志内容为空，请先粘贴日志再分析', true);
-          return Promise.resolve();
+          return Promise.resolve({ok: false, message: '日志内容为空，请先粘贴日志再分析'});
         }
 
         button.disabled = true;
@@ -1613,11 +1615,13 @@
             section.scrollIntoView({block: 'start'});
             section.focus({preventScroll: true});
             showActionMessage('分析完成：' + (data.verdict || ''), false);
+            return {ok: true, data: data};
           })
           .catch(function(error) {
             reportEl.textContent = '';
             statusEl.textContent = '失败';
             showActionMessage(error.message, true);
+            return {ok: false, message: error.message, error: error};
           })
           .finally(function() {
             button.disabled = false;
@@ -1909,7 +1913,7 @@
 
         if (!logText.trim()) {
           renderDatingError('日志内容为空，请先粘贴日志再分析。', 'EMPTY_LOG', 400);
-          return;
+          return {ok: false, message: '日志内容为空，请先粘贴日志再分析。'};
         }
 
         setDatingLoading(true);
@@ -1944,6 +1948,7 @@
           renderDatingAnalysis(payload);
           section.scrollIntoView({block: 'start'});
           section.focus({preventScroll: true});
+          return {ok: true, data: payload};
         } catch (error) {
           resetDatingResult();
           renderDatingError(
@@ -1951,6 +1956,7 @@
             error.errorCode || 'ANALYSIS_INTERNAL_ERROR',
             error.statusCode || 500
           );
+          return {ok: false, message: error.message, error: error};
         } finally {
           setDatingLoading(false);
         }

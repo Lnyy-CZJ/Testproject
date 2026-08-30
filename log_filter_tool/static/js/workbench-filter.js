@@ -108,6 +108,7 @@
       }
       return Promise.resolve(null);
     }
+    var revisionAtStart = api.state ? Number(api.state.inputRevision) || 0 : 0;
     var content = exportContent(exportType, overrideContent);
     var buttonId = exportType === "log_content"
       ? "export-log-content-btn"
@@ -141,7 +142,13 @@
       return null;
     }).finally(function restoreExportButton() {
       if (button) {
-        button.disabled = false;
+        // 导出请求期间日志可能发生 input；finally 重新计算状态，不能把 stale
+        // 结果错误恢复成可导出。结果为空时也必须维持初始禁用语义。
+        var result = getElement("result-text");
+        var hasResult = Boolean(result && String(result.value || ""));
+        var stale = exportType === "filtered_result" && api.state &&
+          (api.state.dirty || Number(api.state.inputRevision) !== revisionAtStart);
+        button.disabled = Boolean(stale || (exportType === "filtered_result" && !hasResult));
         button.textContent = originalText;
       }
     });
@@ -268,10 +275,14 @@
     if (typeof api.init === "function") api.init();
     bindMethodSelector();
     bindGenericControls();
-    api.exportLog = exportLog;
-    api.copyResult = copyResult;
-    api.submitGeneralFilter = submitGeneralFilter;
   }
+
+  // 模板中的既有业务脚本紧随本文件执行，并会缓存 exportLog。API 必须在
+  // DOMContentLoaded 之前暴露；事件绑定仍延后到 DOM 就绪，避免初始化时序竞态。
+  api.exportLog = exportLog;
+  api.copyResult = copyResult;
+  api.submitGeneralFilter = submitGeneralFilter;
+  api.initFilter = initialize;
 
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", initialize, {once: true});

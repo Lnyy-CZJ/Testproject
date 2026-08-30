@@ -21,6 +21,9 @@
     "people-search": "people"
   };
   var analysisInFlight = null;
+  // requestSubmit 会同步触发表单 submit 事件；用短生命周期标记区分统一入口
+  // 自己发起的那一次提交与用户在 submitting 状态下的重复提交。
+  var nativeSubmitInProgress = false;
   var actionMessageTimer = null;
   var searchTimer = null;
   var searchMatches = [];
@@ -292,6 +295,19 @@
     }
   }
 
+  /**
+   * 只有适配器明确返回可用结果时才允许清理 stale。
+   * ``undefined`` 也视为失败：旧的 People/Dating 适配器因此在模板中返回
+   * ``{ok: true/false}``，而第三方适配器仍可返回任意非空成功 payload。
+   */
+  function isSuccessfulAnalysisResult(result) {
+    if (result === undefined || result === null || result === false) return false;
+    if (typeof result !== "object") return true;
+    if (result.ok === false || result.success === false || result.valid === false) return false;
+    if (result.ok === true || result.success === true || result.valid === true) return true;
+    return !result.error;
+  }
+
   function invalidateSearch() {
     searchSource = null;
     searchSourceText = "";
@@ -466,9 +482,12 @@
   function initializeLogViews() {
     var rawButton = getElement("raw-log-view-btn");
     var filteredButton = getElement("filtered-log-view-btn");
+    var exportButton = getElement("export-filtered-result-btn");
     var result = getElement("result-text");
+    var hasResult = Boolean(result && String(result.value || ""));
+    if (exportButton) exportButton.disabled = !hasResult;
     if (filteredButton) {
-      filteredButton.disabled = !result || !String(result.value || "");
+      filteredButton.disabled = !hasResult;
       filteredButton.setAttribute("aria-disabled", String(filteredButton.disabled));
       filteredButton.addEventListener("click", function showFilteredLog() {
         setActiveLogView("filtered", false);
@@ -595,13 +614,24 @@
       showPersistentError(new Error("日志过滤表单不可用。"));
       return false;
     }
-    if (typeof form.requestSubmit === "function") {
-      form.requestSubmit();
-      return true;
-    }
-    if (typeof form.submit === "function") {
-      form.submit();
-      return true;
+    try {
+      if (typeof form.requestSubmit === "function") {
+        state.phase = "submitting";
+        nativeSubmitInProgress = true;
+        form.requestSubmit();
+        return true;
+      }
+      if (typeof form.submit === "function") {
+        state.phase = "submitting";
+        nativeSubmitInProgress = false;
+        form.submit();
+        return true;
+      }
+    } catch (error) {
+      nativeSubmitInProgress = false;
+      state.phase = "idle";
+      showPersistentError(error);
+      return false;
     }
     showPersistentError(new Error("浏览器不支持表单提交。"));
     return false;
@@ -632,11 +662,25 @@
     }
     analysisInFlight = Promise.resolve(runResult)
       .then(function completeAnalysis(result) {
+        if (!isSuccessfulAnalysisResult(result)) {
+          var invalidMessage = result && result.message
+            ? result.message : "分析未生成有效结果，请检查日志后重试。";
+          markAnalysisStale(invalidMessage);
+          showPersistentError(new Error(invalidMessage));
+          activateResultPanel();
+          return {ok: false, message: invalidMessage};
+        }
         if (revisionAtStart === state.inputRevision) markAnalysisFresh();
+        else markAnalysisStale("分析期间日志已修改，结果可能已过期，请重新分析。");
         activateResultPanel();
         return result;
       })
       .catch(function handleAnalysisFailure(error) {
+        // Promise reject 同样代表没有生成可用结果；即使日志本身没有再次 input，
+        // 也要保留 stale 并禁用旧结果导出，避免失败请求误用历史结果。
+        var failureMessage = error && error.message
+          ? error.message : "分析失败，请稍后重试。";
+        markAnalysisStale(failureMessage);
         showPersistentError(error);
         activateResultPanel();
         return null;
@@ -664,6 +708,9 @@
     var submitButton = getElement("analyze-log-btn");
     var loadingMask = getElement("workbench-loading-mask");
     var form = currentForm();
+    if (state.phase === "loading" || state.phase === "submitting") {
+      return analysisInFlight || false;
+    }
     if (!root || !modeSelect) {
       showPersistentError(new Error("分析工作台不可用。"));
       return false;
@@ -696,7 +743,16 @@
         showToast("请选择可用的分析模式。");
         return;
       }
-      if (mode.nativeSubmit) return;
+      if (mode.nativeSubmit) {
+        if (state.phase === "loading" ||
+            (state.phase === "submitting" && !nativeSubmitInProgress)) {
+          event.preventDefault();
+          return;
+        }
+        nativeSubmitInProgress = false;
+        state.phase = "submitting";
+        return;
+      }
       event.preventDefault();
       analyzeSelectedMode();
     });
