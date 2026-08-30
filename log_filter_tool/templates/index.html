@@ -982,7 +982,7 @@
         <section>
           <div class="field-header">
             <label for="log_text">日志内容</label>
-            <button type="button" id="export-log-content-btn" onclick="exportLog('log_content')">导出日志</button>
+            <button type="button" id="export-log-content-btn">导出日志</button>
           </div>
           <textarea id="log_text" name="log_text" placeholder="把日志粘贴到这里">{{ log_text }}</textarea>
         </section>
@@ -1018,9 +1018,9 @@
 
           <div class="toolbar-buttons">
             <button type="submit" id="analyze-log-btn">分析日志</button>
-            <button type="button" id="analyze-people-search-btn" onclick="analyzePeopleSearch()" hidden>分析检索链路</button>
+            <button type="button" id="analyze-people-search-btn" hidden>分析检索链路</button>
             {% if dating_analyzer_enabled %}
-              <button type="button" id="analyze-dating-btn" onclick="analyzeDatingLog()" hidden>Dating 结构化分析</button>
+              <button type="button" id="analyze-dating-btn" hidden>Dating 结构化分析</button>
             {% endif %}
           </div>
 
@@ -1086,12 +1086,12 @@
           <div class="result-tools">
             <div class="search-controls">
               <input class="search-input" id="result-search" type="search" placeholder="搜索过滤结果" aria-label="搜索过滤结果">
-              <button type="button" id="search-prev-btn" onclick="moveSearchMatch(-1)">上一个</button>
-              <button type="button" id="search-next-btn" onclick="moveSearchMatch(1)">下一个</button>
+              <button type="button" id="search-prev-btn">上一个</button>
+              <button type="button" id="search-next-btn">下一个</button>
               <span class="search-count" id="search-count">0/0</span>
             </div>
-            <button type="button" id="copy-btn" onclick="copyResult()">复制</button>
-            <button type="button" id="export-filtered-result-btn" onclick="exportLog('filtered_result')">导出日志</button>
+            <button type="button" id="copy-btn">复制</button>
+            <button type="button" id="export-filtered-result-btn">导出日志</button>
           </div>
         </div>
         <pre id="result-text">{{ result_text }}</pre>
@@ -1188,8 +1188,8 @@
           <h2>检索链路分析</h2>
           <div class="result-tools">
             <span class="stats" id="people-search-status">未分析</span>
-            <button type="button" id="copy-report-btn" onclick="copyReport()">复制报告</button>
-            <button type="button" id="export-report-btn" onclick="exportReport()">导出Markdown</button>
+            <button type="button" id="copy-report-btn">复制报告</button>
+            <button type="button" id="export-report-btn">导出Markdown</button>
           </div>
         </div>
         <div class="people-analysis-overview" id="people-analysis-overview">
@@ -1235,9 +1235,9 @@
               <div class="stats" id="dating-status">未分析</div>
             </div>
             <div class="result-tools" aria-label="Dating 报告操作">
-              <button id="copy-dating-report-btn" type="button" disabled onclick="copyDatingReport()">复制报告</button>
-              <button id="export-dating-report-btn" type="button" disabled onclick="exportDatingReport()">导出 Markdown</button>
-              <button id="export-dating-json-btn" type="button" disabled onclick="exportDatingJson()">导出 JSON</button>
+              <button id="copy-dating-report-btn" type="button" disabled>复制报告</button>
+              <button id="export-dating-report-btn" type="button" disabled>导出 Markdown</button>
+              <button id="export-dating-json-btn" type="button" disabled>导出 JSON</button>
             </div>
           </div>
 
@@ -1288,7 +1288,7 @@
               <div class="dating-field-controls">
                 <div>
                   <label for="dating-field-filter">Presence</label>
-                  <select id="dating-field-filter" onchange="resetAndRenderDatingFields()">
+                  <select id="dating-field-filter">
                     <option value="ALL">全部</option>
                     <option value="PRESENT">PRESENT</option>
                     <option value="NULL">NULL</option>
@@ -1301,9 +1301,9 @@
                 </div>
                 <div>
                   <label for="dating-field-search">Path / Value 搜索</label>
-                  <input id="dating-field-search" class="search-input" type="search" placeholder="输入字段路径或值" oninput="resetAndRenderDatingFields()">
+                  <input id="dating-field-search" class="search-input" type="search" placeholder="输入字段路径或值">
                 </div>
-                <button id="dating-field-more" class="dating-more-button" type="button" onclick="showMoreDatingFields()" hidden>显示更多字段</button>
+                <button id="dating-field-more" class="dating-more-button" type="button" hidden>显示更多字段</button>
               </div>
               <div class="table-scroll">
                 <table id="dating-field-table" class="dating-field-table">
@@ -1378,9 +1378,10 @@
       <p>选择分析结果中的记录后，可在此查看完整上下文。</p>
     </aside>
     <div class="workbench-toast toast" id="workbench-toast" role="status" aria-live="polite" hidden></div>
-    <div class="workbench-loading-mask" id="workbench-loading-mask" role="status" aria-live="polite" aria-busy="true" hidden>
+    <div class="workbench-loading-mask" id="workbench-loading-mask" role="status" aria-live="polite" aria-busy="false" hidden>
       <span>正在分析日志</span>
     </div>
+    <script src="{{ url_for('tool.static', filename='js/workbench-core.js') }}"></script>
     <script>
       (function() {
         var toggle = document.getElementById('method-toggle');
@@ -1830,7 +1831,7 @@
 
         if (!logText.trim()) {
           showActionMessage('日志内容为空，请先粘贴日志再分析', true);
-          return;
+          return Promise.resolve();
         }
 
         button.disabled = true;
@@ -1839,7 +1840,7 @@
         section.hidden = false;
 
         var analyzeUrl = {{ url_for('tool.analyze_people_search')|tojson }};
-        fetch(analyzeUrl, {
+        return fetch(analyzeUrl, {
           method: 'POST',
           headers: {'Content-Type': 'application/json', 'X-CSRF-Token': readCookie('tp_csrf')},
           body: JSON.stringify({log_text: logText})
@@ -3392,7 +3393,51 @@
         );
       }
       {% endif %}
+
+      /**
+       * 为固定 DOM 控件安装事件监听器。所有业务操作均从这里显式绑定，模板不再
+       * 依赖字符串事件属性，便于后续启用严格 CSP 并保持处理函数可测试。
+       */
+      function bindWorkbenchEvent(elementId, eventName, handler) {
+        var element = document.getElementById(elementId);
+        if (element) element.addEventListener(eventName, handler);
+      }
+
+      bindWorkbenchEvent('export-log-content-btn', 'click', function() {
+        exportLog('log_content');
+      });
+      bindWorkbenchEvent('analyze-people-search-btn', 'click', analyzePeopleSearch);
+      bindWorkbenchEvent('search-prev-btn', 'click', function() {
+        moveSearchMatch(-1);
+      });
+      bindWorkbenchEvent('search-next-btn', 'click', function() {
+        moveSearchMatch(1);
+      });
+      bindWorkbenchEvent('copy-btn', 'click', copyResult);
+      bindWorkbenchEvent('export-filtered-result-btn', 'click', function() {
+        exportLog('filtered_result');
+      });
+      bindWorkbenchEvent('copy-report-btn', 'click', copyReport);
+      bindWorkbenchEvent('export-report-btn', 'click', exportReport);
+
+      {% if dating_analyzer_enabled %}
+      bindWorkbenchEvent('analyze-dating-btn', 'click', analyzeDatingLog);
+      bindWorkbenchEvent('copy-dating-report-btn', 'click', copyDatingReport);
+      bindWorkbenchEvent('export-dating-report-btn', 'click', exportDatingReport);
+      bindWorkbenchEvent('export-dating-json-btn', 'click', exportDatingJson);
+      bindWorkbenchEvent('dating-field-filter', 'change', resetAndRenderDatingFields);
+      bindWorkbenchEvent('dating-field-search', 'input', resetAndRenderDatingFields);
+      bindWorkbenchEvent('dating-field-more', 'click', showMoreDatingFields);
+      {% endif %}
+
+      /*
+       * 核心脚本已同步建立命名空间；业务层只注册真实分析函数并返回其 Promise，
+       * 由统一入口持有防重、loading 与结果标签切换的完整生命周期。
+       */
+      window.LogWorkbench.registerMode('people-search', {run: analyzePeopleSearch});
+      {% if dating_analyzer_enabled %}
+      window.LogWorkbench.registerMode('dating', {run: analyzeDatingLog});
+      {% endif %}
     </script>
-    <script src="{{ url_for('tool.static', filename='js/workbench-core.js') }}"></script>
   </body>
 </html>

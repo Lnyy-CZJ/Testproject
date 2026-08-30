@@ -3,7 +3,7 @@
  *
  * 职责：
  * 1. 暴露稳定的 ``window.LogWorkbench`` 命名空间和模式注册接口；
- * 2. 将显式选择的分析模式路由到既有 Flask 表单或分析函数；
+ * 2. 将显式选择的分析模式路由到 Flask 表单或已注册的业务适配器；
  * 3. 初始化可访问标签页与支持键盘的双栏 resizer。
  *
  * 本文件不解析日志内容，也不根据日志内容推断模式。具体业务渲染继续由
@@ -51,38 +51,13 @@
     toast.hidden = false;
   }
 
-  /** 调用模板中保留的既有分析入口，并在入口不可用时提供可见错误。 */
-  function invokeExistingAnalyzer(functionName) {
-    var analyzer = global[functionName];
-    if (typeof analyzer !== "function") {
-      showToast("当前分析模式暂不可用，请刷新页面后重试。");
-      return false;
-    }
-    analyzer();
-    return true;
-  }
-
   /**
-   * 注册 Task 1 提供的三个固定模式。模式只响应用户选择，不读取日志内容做推断。
-   * Dating option 由模板功能开关决定是否出现，保留注册项便于后续模块复用。
+   * 注册壳层原生处理的过滤模式。People/Dating 在核心脚本加载后由业务脚本适配，
+   * 这样核心不会依赖尚未声明的页面全局函数。
    */
   function registerDefaultModes() {
     if (!getMode("filter")) {
       registerMode("filter", {nativeSubmit: true});
-    }
-    if (!getMode("people-search")) {
-      registerMode("people-search", {
-        run: function runPeopleSearch() {
-          return invokeExistingAnalyzer("analyzePeopleSearch");
-        }
-      });
-    }
-    if (!getMode("dating")) {
-      registerMode("dating", {
-        run: function runDatingAnalysis() {
-          return invokeExistingAnalyzer("analyzeDatingLog");
-        }
-      });
     }
   }
 
@@ -185,12 +160,40 @@
   }
 
   /**
+   * 统一控制异步分析期间的主按钮、模式选择器与全局 loading 遮罩。
+   * 状态在调用业务适配器之前同步写入，连续 submit 因而无法穿透 busy 锁。
+   */
+  function setAnalysisBusy(root, modeSelect, submitButton, loadingMask, isBusy, idleText) {
+    root.setAttribute("aria-busy", isBusy ? "true" : "false");
+    modeSelect.disabled = isBusy;
+    if (submitButton) {
+      submitButton.disabled = isBusy;
+      submitButton.textContent = isBusy ? "分析中..." : idleText;
+      submitButton.setAttribute("aria-busy", isBusy ? "true" : "false");
+    }
+    if (loadingMask) {
+      loadingMask.hidden = !isBusy;
+      loadingMask.setAttribute("aria-busy", isBusy ? "true" : "false");
+    }
+  }
+
+  /** People/Dating 完成后统一激活结果标签，保证错误或成功信息都可立即看到。 */
+  function activateResultPanel(root) {
+    var resultTab = document.getElementById("resultTab");
+    if (resultTab) activateTab(resultTab, root);
+  }
+
+  /**
    * 根据用户选择执行模式。filter 保留浏览器原生表单提交，其余模式阻止提交后
-   * 调用既有异步分析入口，因此不会重复 POST 或改变已有 CSRF 合同。
+   * 调用异步业务适配器。壳层持有完整 Promise 生命周期，防止重复 POST，并在
+   * 成功或失败结束后恢复入口状态和展示 resultPanel。
    */
   function initializeModeSubmission(root) {
     var form = document.getElementById("log-analysis-form");
     var modeSelect = document.getElementById("analysis-mode");
+    var submitButton = document.getElementById("analyze-log-btn");
+    var loadingMask = document.getElementById("workbench-loading-mask");
+    var analysisInFlight = false;
     if (!form || !modeSelect) return;
 
     form.addEventListener("submit", function handleWorkbenchSubmit(event) {
@@ -202,7 +205,32 @@
       }
       if (mode.nativeSubmit) return;
       event.preventDefault();
-      mode.run({root: root, form: form, endpoints: namespace.endpoints});
+      if (analysisInFlight) return;
+
+      analysisInFlight = true;
+      var idleButtonText = submitButton ? submitButton.textContent : "分析日志";
+      setAnalysisBusy(root, modeSelect, submitButton, loadingMask, true, idleButtonText);
+
+      var runResult;
+      try {
+        runResult = mode.run({root: root, form: form, endpoints: namespace.endpoints});
+      } catch (error) {
+        runResult = Promise.reject(error);
+      }
+
+      Promise.resolve(runResult)
+        .catch(function handleAnalysisFailure(error) {
+          showToast(error && error.message ? error.message : "分析失败，请稍后重试。");
+        })
+        .then(function showAnalysisResult() {
+          activateResultPanel(root);
+        })
+        .finally(function restoreAnalysisControls() {
+          analysisInFlight = false;
+          setAnalysisBusy(
+            root, modeSelect, submitButton, loadingMask, false, idleButtonText
+          );
+        });
     });
   }
 
@@ -234,6 +262,7 @@
   namespace.registerMode = registerMode;
   namespace.getMode = getMode;
   namespace.activateTab = activateTab;
+  namespace.activateResultPanel = activateResultPanel;
   namespace.showToast = showToast;
   namespace.init = initialize;
   global.LogWorkbench = namespace;
