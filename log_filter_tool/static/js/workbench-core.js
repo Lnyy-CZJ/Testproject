@@ -205,7 +205,14 @@
           }
         }
         if (!response.ok) {
-          throw new Error(payload.message || "请求失败，请稍后重试。");
+          var requestError = new Error(payload.message || "请求失败，请稍后重试。");
+          // 保留 People 422 的检测结果给适配器展示；这是内部 Error 元数据，
+          // 不改变任何后端响应契约，也不会把服务端值当作 HTML 写入页面。
+          if (Array.isArray(payload.detected_task_ids)) {
+            requestError.detected_task_ids = payload.detected_task_ids.slice();
+          }
+          if (payload.error_code) requestError.error_code = payload.error_code;
+          throw requestError;
         }
         return payload;
       });
@@ -502,28 +509,46 @@
   }
 
   /**
+   * 设置右侧统一结果 header；所有模式都通过这个公共入口更新标题和副标题。
+   *
+   * @param {string} title 业务状态标题，必须由调用方提供纯文本。
+   * @param {string} subtitle 业务状态副标题，必须由调用方提供纯文本。
+   * @returns {boolean} 至少找到一个 header 节点时返回 true。
+   */
+  function setResultHeader(title, subtitle) {
+    var heading = getElement("workbench-result-heading");
+    var subheading = getElement("workbench-result-subheading");
+    if (heading) heading.textContent = title === null || title === undefined ? "" : String(title);
+    if (subheading) {
+      subheading.textContent = subtitle === null || subtitle === undefined ? "" : String(subtitle);
+    }
+    return Boolean(heading || subheading);
+  }
+
+  /**
    * 在原始 textarea 中选择真实行范围，并反馈同一范围到 status/toast。
    *
    * @param {number} startLine 1-based 起始行，越界值会夹取到日志范围。
    * @param {number} endLine 1-based 结束行，缺省时等于起始行。
    * @returns {{startLine:number,endLine:number,selectionStart:number,selectionEnd:number}|false}
-   *   成功返回定位信息；缺少原始 textarea 时返回 false。
+   *   成功返回定位信息；行号缺失、反向、非整数、越界或缺少原始 textarea 时返回 false。
    *
    * 行偏移来自原始字符串中的 CR/LF 实际位置，而不是服务端过滤结果中的行号。
    * method 筛选不是“全部”时只警告可能隐藏目标，不静默改变用户的筛选条件。
+   * 对非法范围直接拒绝而不是夹到末行，避免上游错误证据被伪装成真实定位。
    */
   function focusLogLines(startLine, endLine) {
     var textarea = getElement("log_text");
     if (!textarea) return false;
     var text = String(textarea.value || "");
     var starts = lineStartsFor(text);
-    var totalLines = Math.max(1, starts.length);
-    var requestedStart = Number(startLine);
-    var requestedEnd = Number(endLine);
-    var safeStart = Number.isFinite(requestedStart) ? Math.floor(requestedStart) : 1;
-    var safeEnd = Number.isFinite(requestedEnd) ? Math.floor(requestedEnd) : safeStart;
-    safeStart = Math.max(1, Math.min(safeStart, totalLines));
-    safeEnd = Math.max(safeStart, Math.min(safeEnd, totalLines));
+    var totalLines = text ? starts.length : 0;
+    var safeStart = startLine;
+    var safeEnd = endLine === undefined ? startLine : endLine;
+    if (!Number.isInteger(safeStart) || !Number.isInteger(safeEnd) ||
+        safeStart < 1 || safeEnd < safeStart || safeEnd > totalLines) {
+      return false;
+    }
     var selectionStart = starts[safeStart - 1];
     var selectionEnd = text.length;
     if (safeEnd < starts.length) {
@@ -970,6 +995,7 @@
   namespace.markAnalysisFresh = markAnalysisFresh;
   namespace.setAvailableTabs = setAvailableTabs;
   namespace.activateTab = activateTab;
+  namespace.setResultHeader = setResultHeader;
   namespace.activateResultPanel = activateResultPanel;
   namespace.showToast = showToast;
   namespace.showActionMessage = showActionMessage;

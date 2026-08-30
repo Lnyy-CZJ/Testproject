@@ -1626,11 +1626,11 @@ class WorkbenchShellTest(unittest.TestCase):
             (async () => {
               const adapter = registered.people || registered["people-search"];
               assert(adapter && typeof adapter.analyze === "function", "People 模式未注册");
-              await adapter.analyze({root, logText: "request body", signal: null});
+              await adapter.analyze({root, logText: "first\nsecond\nthird", signal: null});
               assert(requestCalls.length === 1, "People 未发起一次 JSON 请求");
               assert(requestCalls[0].url === "/people-search/analyze", "People 未使用 root.dataset.peopleUrl");
               assert(requestCalls[0].options.method === "POST", "People 请求未使用 POST");
-              assert(requestCalls[0].options.body.log_text === "request body", "People 请求未携带当前日志");
+              assert(requestCalls[0].options.body.log_text === "first\nsecond\nthird", "People 请求未携带当前日志");
               assert(availableTabs.length === 1 && availableTabs[0].join(",") === "overviewPanel,interfacesPanel,resultPanel,checksPanel",
                 "People 未声明四个工作台 panel");
               assert(elements.timelinePanel.hidden, "People 不应显示任务时间线 panel");
@@ -1669,6 +1669,370 @@ class WorkbenchShellTest(unittest.TestCase):
         )
         completed = subprocess.run(
             [node, "-e", harness, str(adapter_path)],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(0, completed.returncode, completed.stderr or completed.stdout)
+
+    def test_people_adapter_and_core_use_real_request_lifecycle_and_clear_failures(self):
+        """真实加载 core/People 后覆盖初始化、请求安全、证据边界和失败清理。"""
+        node = shutil.which("node")
+        self.assertIsNotNone(node, "需要 Node.js 执行 People/core 集成行为测试")
+        core_path = Path(__file__).resolve().parents[1] / "static/js/workbench-core.js"
+        adapter_path = Path(__file__).resolve().parents[1] / "static/js/workbench-people.js"
+        harness = textwrap.dedent(
+            r"""
+            const fs = require("fs");
+            const vm = require("vm");
+
+            class FakeClassList {
+              constructor() { this.values = new Set(); }
+              toggle(name, force) {
+                const shouldHave = force === undefined ? !this.values.has(name) : force;
+                if (shouldHave) this.values.add(name); else this.values.delete(name);
+                return shouldHave;
+              }
+            }
+
+            class FakeElement {
+              constructor(tagName, id = "", attributes = {}) {
+                this.tagName = tagName.toUpperCase();
+                this.id = id;
+                this.attributes = {...attributes};
+                this.children = [];
+                this.listeners = Object.create(null);
+                this.classList = new FakeClassList();
+                this.dataset = Object.create(null);
+                this.hidden = Boolean(attributes.hidden);
+                this.disabled = Boolean(attributes.disabled);
+                this.value = attributes.value || "";
+                this.checked = Boolean(attributes.checked);
+                this._textContent = attributes.textContent || "";
+                this.selectionStart = 0;
+                this.selectionEnd = 0;
+                this.scrollTop = 0;
+                this.style = {setProperty() {}};
+              }
+
+              get textContent() {
+                return this._textContent + this.children.map(child => child.textContent || "").join("");
+              }
+
+              set textContent(value) {
+                this._textContent = String(value ?? "");
+                this.children = [];
+              }
+
+              appendChild(child) {
+                this.children.push(child);
+                child.parentNode = this;
+                return child;
+              }
+
+              addEventListener(type, listener) {
+                (this.listeners[type] ||= []).push(listener);
+              }
+
+              dispatch(type, event = {}) {
+                if (!event.target) event.target = this;
+                return Promise.all((this.listeners[type] || []).map(listener => listener(event)));
+              }
+
+              setAttribute(name, value) { this.attributes[name] = String(value); }
+
+              getAttribute(name) {
+                return Object.prototype.hasOwnProperty.call(this.attributes, name)
+                  ? this.attributes[name] : null;
+              }
+
+              setSelectionRange(start, end) {
+                this.selectionStart = start;
+                this.selectionEnd = end;
+              }
+
+              focus() {}
+              scrollIntoView() {}
+              getBoundingClientRect() { return {left: 0, width: 1000}; }
+
+              querySelectorAll(selector) {
+                const found = [];
+                const visit = node => {
+                  (node.children || []).forEach(child => {
+                    if (selector === "button" && child.tagName === "BUTTON") found.push(child);
+                    visit(child);
+                  });
+                };
+                visit(this);
+                return found;
+              }
+            }
+
+            function textOf(node) { return String(node && node.textContent || ""); }
+
+            const elements = Object.create(null);
+            const add = (tag, id, attributes = {}) => {
+              const element = new FakeElement(tag, id, attributes);
+              elements[id] = element;
+              return element;
+            };
+
+            const root = add("main", "log-workbench");
+            root.dataset = {
+              indexUrl: "/",
+              exportUrl: "/export",
+              peopleUrl: "/people-search/analyze",
+              datingUrl: "/dating"
+            };
+            const tabDefinitions = [
+              ["overviewTab", "overviewPanel", false],
+              ["interfacesTab", "interfacesPanel", false],
+              ["timelineTab", "timelinePanel", false],
+              ["resultTab", "resultPanel", true],
+              ["checksTab", "checksPanel", false]
+            ];
+            const tabs = tabDefinitions.map(([id, panelId, selected]) =>
+              add("button", id, {
+                "aria-controls": panelId,
+                "aria-selected": String(selected),
+                tabIndex: selected ? 0 : -1
+              })
+            );
+            const panels = tabDefinitions.map(([, panelId, selected]) =>
+              add("section", panelId, {hidden: !selected})
+            );
+            root.querySelectorAll = selector =>
+              selector === '[role="tab"][aria-controls]' ? tabs : [];
+
+            const form = add("form", "log-filter-form");
+            form.requestSubmit = () => {};
+            const modeSelect = add("select", "analysis-mode", {value: "general"});
+            const analyzeButton = add("button", "analyze-log-btn", {textContent: "分析日志"});
+            const loadingMask = add("div", "workbench-loading-mask", {hidden: true});
+            const logText = add("textarea", "log_text");
+            logText.value = "first\nsecond\nthird";
+            const resultText = add("textarea", "result-text");
+            resultText.value = "FILTER_RESULT";
+            add("div", "raw-log-view");
+            add("div", "filtered-log-view", {hidden: true});
+            add("button", "raw-log-view-btn", {"aria-selected": "true"});
+            add("button", "filtered-log-view-btn", {"aria-selected": "false"});
+            const actionMessage = add("div", "action-message", {hidden: true});
+            add("div", "workbench-toast", {hidden: true});
+            add("div", "analysis-stale", {hidden: true});
+            add("div", "log-line-count");
+            add("div", "log-byte-count");
+            const filteredExport = add("button", "export-filtered-result-btn");
+            const heading = add("h2", "workbench-result-heading", {textContent: "分析结果"});
+            const subheading = add("p", "workbench-result-subheading", {
+              textContent: "等待分析"
+            });
+            const peopleOverview = add("div", "people-overview", {hidden: true});
+            const peopleInterfaces = add("div", "people-interfaces", {hidden: true});
+            const peopleResult = add("div", "people-result", {hidden: true});
+            const peopleChecks = add("div", "people-checks", {hidden: true});
+            const verdictPanel = add("section", "people-verdict-panel");
+            const verdictTitle = add("h3", "people-verdict-title");
+            const taskSummary = add("p", "people-task-summary");
+            const aiStatus = add("p", "people-ai-status");
+            const peopleStatus = add("span", "people-search-status");
+            const coverage = add("div", "people-coverage-list");
+            const issueList = add("ul", "people-issue-list");
+            const timeline = add("div", "people-timeline");
+            const diagnosis = add("dl", "people-diagnosis-list");
+            const cost = add("div", "people-cost-summary");
+            const report = add("pre", "people-search-report");
+            const checks = add("ol", "people-check-list");
+            const copyButton = add("button", "copy-report-btn", {disabled: true});
+            const exportButton = add("button", "export-report-btn", {disabled: true});
+            const datingSurface = add("div", "dating-analysis");
+
+            const successData = {
+              verdict: "ISSUES_FOUND",
+              task: {
+                full_name: "<Alice>", task_id: "task-success", final_status: "FAILED",
+                candidate_count: 0, result_type: "NO_RESULT", no_result_reason: "NO_MATCH",
+                clue_types: ["FULL_NAME"]
+              },
+              coverage: {create_task: true, get_task: true, candidate_list: false,
+                candidate_detail: false, debug: true, cost_summary: true},
+              ai: {status: "DISABLED"},
+              timeline: [{provider: "provider-old", operation: "lookup", status: "failed",
+                result_details: {safe: "detail"}, http_status: 500, cache_hit: false}],
+              diagnosis: {final_status: "FAILED", stop_reason: "PROVIDERS_EXHAUSTED"},
+              cost: {total_estimated_cost_microunit: 12},
+              checks: [
+                {outcome: "FAIL", rule_id: "R-VALID", title: "valid", actual: "a", expected: "e",
+                  evidence: [{method: "GetTask", json_path: "status", line_start: 2, line_end: 3}]},
+                {outcome: "WARN", rule_id: "R-OUT", title: "out", actual: "a", expected: "e",
+                  evidence: [{method: "GetTask", json_path: "status", line_start: 4, line_end: 4}]},
+                {outcome: "UNKNOWN", rule_id: "R-REVERSE", title: "reverse", actual: "a", expected: "e",
+                  evidence: [{method: "GetTask", json_path: "status", line_start: 3, line_end: 2}]},
+                {outcome: "PASS", rule_id: "R-MISSING", title: "missing", actual: "a", expected: "e",
+                  evidence: [{method: "GetTask", json_path: "missing"}]}
+              ],
+              report_markdown: "# People success"
+            };
+            const responses = [
+              {ok: true, status: 200, text: () => Promise.resolve(JSON.stringify({data: successData}))},
+              {ok: false, status: 422, text: () => Promise.resolve(JSON.stringify({
+                code: 1,
+                message: "日志包含多个 People 任务",
+                error_code: "MULTIPLE_TASKS_FOUND",
+                detected_task_ids: ["task-a", "task-b"]
+              }))}
+            ];
+            const fetchCalls = [];
+            function fetch(url, options) {
+              fetchCalls.push({url, options});
+              return Promise.resolve(responses.shift());
+            }
+
+            const documentListeners = Object.create(null);
+            const document = {
+              readyState: "loading",
+              getElementById(id) { return elements[id] || null; },
+              createElement(tag) { return new FakeElement(tag); },
+              createTextNode(value) { return {textContent: String(value), children: []}; },
+              querySelector() { return null; },
+              addEventListener(type, listener) {
+                (documentListeners[type] ||= []).push(listener);
+              },
+              removeEventListener(type, listener) {
+                documentListeners[type] = (documentListeners[type] || []).filter(
+                  registered => registered !== listener
+                );
+              },
+              dispatch(type, event = {}) {
+                (documentListeners[type] || []).slice().forEach(listener => listener(event));
+              }
+            };
+            Object.defineProperty(document, "cookie", {
+              get() { return "tp_csrf=csrf-token"; }
+            });
+
+            const window = {
+              fetch,
+              navigator: {clipboard: {writeText: () => Promise.resolve()}},
+              getComputedStyle() { return {lineHeight: "20px"}; }
+            };
+            const context = {
+              window, document, Promise, Array, Object, String, Number, Math, JSON, Set,
+              TypeError, console, setTimeout, clearTimeout
+            };
+            vm.createContext(context);
+            vm.runInContext(fs.readFileSync(process.argv[1], "utf8"), context);
+            vm.runInContext(fs.readFileSync(process.argv[2], "utf8"), context);
+
+            const api = window.LogWorkbench;
+            const failures = [];
+            function check(condition, message) {
+              if (!condition) failures.push(message);
+            }
+
+            let headerCalls = 0;
+            if (typeof api.setResultHeader === "function") {
+              const coreSetResultHeader = api.setResultHeader;
+              api.setResultHeader = function wrappedSetResultHeader(title, subtitle) {
+                headerCalls += 1;
+                return coreSetResultHeader(title, subtitle);
+              };
+            } else {
+              failures.push("core 未暴露 setResultHeader");
+            }
+
+            (async () => {
+            document.dispatch("DOMContentLoaded");
+            check(root.dataset.workbenchInitialized === "true", "真实 DOMContentLoaded 未初始化 core");
+            check((form.listeners.submit || []).length === 1, "真实初始化未绑定统一 submit");
+
+            modeSelect.value = "people";
+            api.markAnalysisFresh();
+            const successRun = api.analyzeSelectedMode();
+            await successRun;
+            check(fetchCalls.length === 1, "People 未通过真实 core 发起一次 fetch");
+            check(fetchCalls[0] && fetchCalls[0].url === "/people-search/analyze",
+              "真实 requestJson 未使用 People endpoint");
+            check(fetchCalls[0] && fetchCalls[0].options.method === "POST",
+              "真实 requestJson 未使用 POST");
+            check(fetchCalls[0] && fetchCalls[0].options.headers["X-CSRF-Token"] === "csrf-token",
+              "真实 requestJson 未从 Cookie 读取 CSRF");
+            check(fetchCalls[0] && fetchCalls[0].options.headers["Content-Type"] === "application/json",
+              "真实 requestJson 未设置 JSON Content-Type");
+            check(fetchCalls[0] && JSON.parse(fetchCalls[0].options.body).log_text === logText.value,
+              "真实 requestJson 未发送当前原始日志");
+            check(headerCalls === 1, "People 未调用 core 的 setResultHeader");
+            check(taskSummary.textContent.includes("<Alice>") &&
+              taskSummary.textContent.includes("task-success") &&
+              taskSummary.textContent.includes("candidate_count=0") &&
+              !taskSummary.textContent.includes("尚无 People Insight 任务结果"),
+              "People task summary 未使用真实 task 字段");
+            check(heading.textContent === "发现已确认异常" &&
+              subheading.textContent.includes("task-success"),
+              "统一 header 未使用真实 People 结论");
+
+            const findCheck = marker => checks.children.find(item => textOf(item).includes(marker));
+            const validItem = findCheck("R-VALID");
+            const outOfRangeItem = findCheck("R-OUT");
+            const reverseItem = findCheck("R-REVERSE");
+            const missingItem = findCheck("R-MISSING");
+            check(validItem && validItem.querySelectorAll("button").length === 1,
+              "有效 evidence 未生成定位按钮");
+            check(outOfRangeItem && outOfRangeItem.querySelectorAll("button").length === 0 &&
+              textOf(outOfRangeItem).includes("日志证据不足"),
+              "越界 evidence 不应生成定位按钮");
+            check(reverseItem && reverseItem.querySelectorAll("button").length === 0 &&
+              textOf(reverseItem).includes("日志证据不足"),
+              "反向 evidence 不应生成定位按钮");
+            check(missingItem && missingItem.querySelectorAll("button").length === 0 &&
+              textOf(missingItem).includes("日志证据不足"),
+              "缺失 evidence 不应生成定位按钮");
+            if (validItem && validItem.querySelectorAll("button")[0]) {
+              await validItem.querySelectorAll("button")[0].dispatch("click");
+            }
+            check(logText.selectionStart === 6 && logText.selectionEnd === 18,
+              "有效 evidence 未通过真实 core 定位日志");
+            const selectionBeforeInvalid = [logText.selectionStart, logText.selectionEnd];
+            check(api.focusLogLines(4, 4) === false, "core 未拒绝越界行号");
+            check(api.focusLogLines(3, 2) === false, "core 未拒绝反向行号");
+            check(logText.selectionStart === selectionBeforeInvalid[0] &&
+              logText.selectionEnd === selectionBeforeInvalid[1],
+              "非法行号仍改变了原日志选择");
+
+            datingSurface.textContent = "dating result";
+            api.markAnalysisFresh();
+            const failureRun = api.analyzeSelectedMode();
+            await failureRun;
+            check(fetchCalls.length === 2, "People 失败重试未通过真实 requestJson");
+            check((peopleStatus.textContent + actionMessage.textContent).includes("task-a") &&
+              (peopleStatus.textContent + actionMessage.textContent).includes("task-b"),
+              "422 错误未显示真实 detected_task_ids");
+            check(peopleOverview.hidden && peopleInterfaces.hidden &&
+              peopleResult.hidden && peopleChecks.hidden,
+              "People 失败后旧 surface 仍可见");
+            check(!textOf(taskSummary).includes("task-success") &&
+              !textOf(timeline).includes("provider-old") &&
+              !textOf(checks).includes("R-VALID"),
+              "People 失败后旧 verdict/timeline/checks 仍残留");
+            check(heading.textContent !== "发现已确认异常" &&
+              !subheading.textContent.includes("task-success"),
+              "People 失败后统一 header 仍残留旧结论");
+            check(resultText.value === "FILTER_RESULT", "People 失败清理了 Filter result-text");
+            check(datingSurface.textContent === "dating result", "People 失败清理了 Dating surface");
+            check(api.state.dirty === false && filteredExport.disabled === false,
+              "People 失败污染了 Filter freshness");
+            check(copyButton.disabled && exportButton.disabled,
+              "People 失败后报告操作仍保持可用");
+
+            if (failures.length) throw new Error(failures.join("\n"));
+            })().catch(error => {
+              console.error(error.stack || error.message);
+              process.exitCode = 1;
+            });
+            """
+        )
+        completed = subprocess.run(
+            [node, "-e", harness, str(core_path), str(adapter_path)],
             check=False,
             capture_output=True,
             text=True,

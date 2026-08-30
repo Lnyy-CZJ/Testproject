@@ -148,6 +148,12 @@
       " · clues=" + clues;
   }
 
+  /** 任务摘要必须来自本轮响应的 task，不能继续显示模板的初始占位文案。 */
+  function renderTaskSummary(data) {
+    var summary = getElement("people-task-summary");
+    if (summary) summary.textContent = taskSubtitle(data.task);
+  }
+
   function renderVerdict(data) {
     var verdict = data.verdict || "INCOMPLETE_EVIDENCE";
     var label = verdictLabels[verdict] || String(verdict);
@@ -285,21 +291,29 @@
     }
   }
 
+  /** 按当前原始日志的换行符计算 1-based 可定位行数。 */
+  function countLogLines(text) {
+    var value = String(text || "");
+    return value ? value.split(/\r\n|\r|\n/).length : 0;
+  }
+
   function normalizeOutcome(outcome) {
     var value = String(outcome || "UNKNOWN").toUpperCase();
     return Object.prototype.hasOwnProperty.call(outcomeLabels, value) ? value : "UNKNOWN";
   }
 
-  function validEvidenceRange(evidence) {
+  /** 只接受当前日志内的真实整数范围，拒绝越界、反向和数字字符串。 */
+  function validEvidenceRange(evidence, lineCount) {
     if (!evidence || typeof evidence !== "object") return null;
-    var start = Number(evidence.line_start);
-    var end = Number(evidence.line_end);
-    if (!Number.isInteger(start) || !Number.isInteger(end) || start < 1 || end < start) return null;
+    var start = evidence.line_start;
+    var end = evidence.line_end;
+    if (!Number.isInteger(start) || !Number.isInteger(end) || start < 1 ||
+        end < start || end > lineCount) return null;
     return {start: start, end: end};
   }
 
   /** Evidence 没有同时给出真实行号时，明确降级，不从 json_path 或 method 猜测位置。 */
-  function renderEvidence(container, evidenceList) {
+  function renderEvidence(container, evidenceList, lineCount) {
     var evidence = Array.isArray(evidenceList) ? evidenceList : [];
     if (!evidence.length) {
       container.appendChild(createElement("span", "evidence-unavailable", "日志证据不足"));
@@ -311,7 +325,7 @@
         ? displayValue(item.method) + " " + displayValue(item.json_path)
         : "未知证据";
       wrapper.appendChild(createElement("span", "evidence-reference", "证据：" + reference));
-      var range = validEvidenceRange(item);
+      var range = validEvidenceRange(item, lineCount);
       if (!range) {
         wrapper.appendChild(createElement("span", "evidence-unavailable", "日志证据不足"));
       } else {
@@ -326,7 +340,7 @@
     });
   }
 
-  function renderChecks(data) {
+  function renderChecks(data, lineCount) {
     var container = clearNode(getElement("people-check-list"));
     if (!container) return;
     var checks = Array.isArray(data.checks) ? data.checks : [];
@@ -350,7 +364,7 @@
       item.appendChild(createElement("p", "check-actual", "实际：" + displayValue(check.actual)));
       item.appendChild(createElement("p", "check-expected", "期望：" + displayValue(check.expected)));
       var evidenceContainer = createElement("div", "check-evidence");
-      renderEvidence(evidenceContainer, check.evidence);
+      renderEvidence(evidenceContainer, check.evidence, lineCount);
       item.appendChild(evidenceContainer);
       container.appendChild(item);
     });
@@ -380,6 +394,7 @@
   function renderPeopleAnalysis(data) {
     data = data && typeof data === "object" ? data : {};
     showPeopleSurfaces();
+    renderTaskSummary(data);
     renderVerdict(data);
     renderAiStatus(data);
     renderCoverage(data);
@@ -394,12 +409,47 @@
     var exportButton = getElement("export-report-btn");
     if (copyButton) copyButton.disabled = !reportText;
     if (exportButton) exportButton.disabled = !reportText;
-    renderChecks(data);
+    renderChecks(data, countLogLines(arguments.length > 1 ? arguments[1] : ""));
   }
 
-  function renderPeopleError(message) {
+  function formatPeopleError(error) {
+    var message = typeof error === "string"
+      ? error
+      : error && error.message ? error.message : "People 分析失败，请稍后重试。";
+    var ids = error && Array.isArray(error.detected_task_ids) ? error.detected_task_ids : [];
+    if (ids.length) {
+      message += "（检测到 task_id：" + ids.map(function formatTaskId(value) {
+        return displayValue(value);
+      }).join("、") + "）";
+    }
+    return message;
+  }
+
+  /** 清理本适配器拥有的叶节点并隐藏 People surface，保留固定 DOM 结构供下一轮复用。 */
+  function clearPeopleSurfaces() {
+    ["people-overview", "people-interfaces", "people-result", "people-checks"].forEach(function hideSurface(id) {
+      var surface = getElement(id);
+      if (surface) surface.hidden = true;
+    });
+    ["people-verdict-title", "people-task-summary", "people-ai-status", "people-search-status",
+      "people-coverage-list", "people-issue-list", "people-timeline", "people-diagnosis-list",
+      "people-cost-summary", "people-search-report", "people-check-list"].forEach(function clearLeaf(id) {
+      clearNode(getElement(id));
+    });
+    var verdictPanel = getElement("people-verdict-panel");
+    if (verdictPanel) verdictPanel.setAttribute("data-verdict", "INCOMPLETE_EVIDENCE");
+    var copyButton = getElement("copy-report-btn");
+    var exportButton = getElement("export-report-btn");
+    if (copyButton) copyButton.disabled = true;
+    if (exportButton) exportButton.disabled = true;
+  }
+
+  function renderPeopleError(error) {
+    var message = formatPeopleError(error);
+    clearPeopleSurfaces();
     var status = getElement("people-search-status");
-    if (status) status.textContent = "失败";
+    if (status) status.textContent = "失败：" + message;
+    setPeopleResultHeader("People 分析失败", message);
     if (typeof api.showActionMessage === "function") api.showActionMessage(message, true, true);
   }
 
@@ -416,6 +466,7 @@
     var logText = context.logText === undefined
       ? (getElement("log_text") ? getElement("log_text").value : "")
       : String(context.logText || "");
+    clearPeopleSurfaces();
     if (!String(logText).trim()) {
       var emptyMessage = "日志内容为空，请先粘贴日志再分析";
       renderPeopleError(emptyMessage);
@@ -437,12 +488,12 @@
     }).then(function handlePeopleResponse(payload) {
       var data = payload && payload.data;
       if (!data || typeof data !== "object") throw new Error("People 分析未返回有效结果。");
-      renderPeopleAnalysis(data);
+      renderPeopleAnalysis(data, logText);
       if (typeof api.showActionMessage === "function") api.showActionMessage("分析完成：" + String(data.verdict || ""), false);
       return {ok: true, data: data};
     }).catch(function handlePeopleError(error) {
-      var message = error && error.message ? error.message : "People 分析失败，请稍后重试。";
-      renderPeopleError(message);
+      var message = formatPeopleError(error);
+      renderPeopleError(error);
       return {ok: false, message: message, error: error};
     });
   }
@@ -476,10 +527,7 @@
   }
 
   function resetPeopleSearch() {
-    ["people-overview", "people-interfaces", "people-result", "people-checks"].forEach(function hideSurface(id) {
-      var surface = getElement(id);
-      if (surface) surface.hidden = true;
-    });
+    clearPeopleSurfaces();
   }
 
   function initialize() {
