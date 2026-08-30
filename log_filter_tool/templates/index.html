@@ -929,6 +929,7 @@
       data-index-url="{{ url_for('tool.index') }}"
       data-export-url="{{ url_for('tool.export_log') }}"
       data-people-url="{{ url_for('tool.analyze_people_search') }}"
+      data-initial-state="{{ 'success' if result_text else 'idle' }}"
       {% if dating_analyzer_enabled %}
         data-dating-url="{{ url_for('tool.analyze_dating') }}"
       {% endif %}
@@ -1074,7 +1075,21 @@
             <h2 id="workbench-result-heading">分析结果</h2>
             <p id="workbench-result-subheading">在固定标签中查看概览、调用链路、原始结果和检查项。</p>
           </div>
+          <span class="analysis-stale" id="workbench-result-stale" role="status" aria-live="polite" hidden>结果已过期</span>
         </div>
+
+        <section id="workbench-analysis-state" class="workbench-analysis-state state-{{ 'success' if result_text else 'idle' }}" data-state="{{ 'success' if result_text else 'idle' }}" role="status" aria-live="polite">
+          <span id="workbench-analysis-state-message">{{ '分析完成。' if result_text else '等待分析。' }}</span>
+          <div id="workbench-result-loading" class="workbench-result-loading" hidden aria-hidden="true">
+            <span>正在整理日志证据…</span>
+          </div>
+          <p id="workbench-result-empty" class="workbench-result-empty" hidden>没有可展示的分析结果。</p>
+          <section id="workbench-result-error" class="workbench-result-error" role="alert" hidden>
+            <strong id="workbench-result-error-code"></strong>
+            <p id="workbench-result-error-message"></p>
+            <button type="button" id="workbench-retry-btn">重试</button>
+          </section>
+        </section>
 
         <div class="workbench-tabs" role="tablist" aria-label="日志分析结果">
           <button type="button" id="overviewTab" role="tab" aria-controls="overviewPanel" aria-selected="false" tabindex="-1">概览</button>
@@ -1377,6 +1392,14 @@
         <section id="checksPanel" class="workbench-tab-panel" role="tabpanel" aria-labelledby="checksTab" tabindex="0" hidden>
           <section id="people-checks" class="analysis-panel" aria-labelledby="people-checks-heading" hidden>
             <h3 id="people-checks-heading">People 规则检查</h3>
+            <div id="people-check-filter" class="check-filter" role="group" aria-label="People 检查结果筛选">
+              <button type="button" data-outcome="ALL" aria-pressed="true">全部 0</button>
+              <button type="button" data-outcome="FAIL" aria-pressed="false">FAIL 0</button>
+              <button type="button" data-outcome="WARN" aria-pressed="false">WARN 0</button>
+              <button type="button" data-outcome="UNKNOWN" aria-pressed="false">UNKNOWN 0</button>
+              <button type="button" data-outcome="PASS" aria-pressed="false">PASS 0</button>
+              <button type="button" data-outcome="NA" aria-pressed="false">NA 0</button>
+            </div>
             <ol class="issue-list" id="people-check-list"></ol>
           </section>
           <p class="workbench-empty-state" id="people-checks-empty">运行 People 分析后，此处展示一致性检查与可追溯证据。</p>
@@ -1414,9 +1437,14 @@
       </section>
     </main>
 
-    <aside class="workbench-drawer drawer" id="workbench-drawer" role="dialog" aria-modal="false" aria-labelledby="workbench-drawer-title" tabindex="-1" hidden>
-      <h2 id="workbench-drawer-title">日志详情</h2>
-      <p>选择分析结果中的记录后，可在此查看完整上下文。</p>
+    <div class="workbench-drawer-backdrop" id="workbench-drawer-backdrop" hidden></div>
+    <aside class="workbench-drawer drawer" id="workbench-drawer" role="dialog" aria-modal="true" aria-labelledby="workbench-drawer-title" tabindex="-1" hidden>
+      <div class="workbench-drawer__header">
+        <h2 id="workbench-drawer-title">日志详情</h2>
+        <button type="button" id="workbench-drawer-close" aria-label="关闭日志详情">关闭</button>
+      </div>
+      <p class="workbench-drawer__description">选择分析结果中的记录后，可在此查看完整上下文。</p>
+      <div id="workbench-drawer-content" class="workbench-drawer__content"></div>
     </aside>
     <div class="workbench-toast toast" id="workbench-toast" role="status" aria-live="polite" hidden></div>
     <div class="workbench-loading-mask" id="workbench-loading-mask" role="status" aria-live="polite" aria-busy="false" hidden>

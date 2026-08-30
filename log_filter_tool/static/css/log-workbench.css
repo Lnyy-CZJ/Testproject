@@ -343,6 +343,74 @@ body {
   text-align: center;
 }
 
+.workbench-analysis-state {
+  display: grid;
+  gap: var(--wb-space-3);
+  margin: var(--wb-space-4) var(--wb-space-5) 0;
+  padding: var(--wb-space-3) var(--wb-space-4);
+  border: 1px solid var(--wb-color-border);
+  border-radius: var(--wb-radius-control);
+  background: var(--wb-color-surface-muted);
+  color: var(--wb-color-text-secondary);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.workbench-analysis-state.state-success {
+  border-color: rgb(20 122 61 / 28%);
+  background: rgb(20 122 61 / 7%);
+  color: var(--wb-color-success);
+}
+
+.workbench-analysis-state.state-error {
+  border-color: rgb(198 41 46 / 34%);
+  background: rgb(198 41 46 / 6%);
+  color: var(--wb-color-danger);
+}
+
+.workbench-analysis-state.state-stale {
+  border-color: rgb(138 90 0 / 34%);
+  background: rgb(138 90 0 / 7%);
+  color: var(--wb-color-warning);
+}
+
+.workbench-result-loading {
+  min-height: 40px;
+  border-radius: var(--wb-radius-control);
+  background: linear-gradient(90deg, var(--wb-color-surface-muted), var(--wb-color-surface), var(--wb-color-surface-muted));
+}
+
+.workbench-result-empty {
+  margin: 0;
+}
+
+.workbench-result-error {
+  display: grid;
+  gap: var(--wb-space-2);
+  justify-items: start;
+}
+
+.workbench-result-error p {
+  margin: 0;
+}
+
+.workbench-result-error button {
+  min-height: var(--wb-control-height);
+}
+
+.analysis-stale {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 0 var(--wb-space-2);
+  border: 1px solid rgb(138 90 0 / 34%);
+  border-radius: 999px;
+  background: rgb(138 90 0 / 7%);
+  color: var(--wb-color-warning);
+  font-size: 12px;
+  font-weight: 650;
+}
+
 .workbench-drawer {
   position: fixed;
   top: 0;
@@ -356,6 +424,111 @@ body {
   background: var(--wb-color-surface);
   color: var(--wb-color-text);
   box-shadow: var(--wb-shadow-floating);
+}
+
+.workbench-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--wb-layer-drawer) - 1);
+  background: rgb(29 29 31 / 22%);
+}
+
+.workbench-drawer__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--wb-space-3);
+  margin-bottom: var(--wb-space-3);
+}
+
+.workbench-drawer__header h2 {
+  margin: 0;
+}
+
+.workbench-drawer__header button {
+  min-height: 32px;
+  padding: 0 var(--wb-space-3);
+  border: 1px solid var(--wb-color-border-strong);
+  background: var(--wb-color-surface);
+  color: var(--wb-color-text);
+}
+
+.workbench-drawer__description {
+  margin-bottom: var(--wb-space-5) !important;
+}
+
+.workbench-drawer__content {
+  display: grid;
+  gap: var(--wb-space-4);
+}
+
+.workbench-drawer__field {
+  margin: 0;
+  padding-top: var(--wb-space-3);
+  border-top: 1px solid var(--wb-color-border);
+}
+
+.workbench-drawer__field h3 {
+  margin: 0 0 var(--wb-space-2);
+  color: var(--wb-color-text-secondary);
+  font-size: 12px;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.workbench-drawer__field p,
+.workbench-drawer__field pre {
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  font-family: var(--wb-font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.workbench-drawer__field pre {
+  max-height: 320px;
+  overflow: auto;
+  padding: var(--wb-space-3);
+  border: 1px solid var(--wb-color-border);
+  border-radius: var(--wb-radius-control);
+  background: var(--wb-color-surface-muted);
+}
+
+.check-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--wb-space-2);
+  margin: 0 0 var(--wb-space-4);
+}
+
+.check-filter button {
+  min-height: 30px;
+  padding: 0 var(--wb-space-3);
+  border: 1px solid var(--wb-color-border-strong);
+  background: var(--wb-color-surface);
+  color: var(--wb-color-text-secondary);
+  font-size: 12px;
+}
+
+.check-filter button[aria-pressed="true"] {
+  border-color: var(--wb-color-accent);
+  background: var(--wb-color-accent-soft);
+  color: var(--wb-color-accent);
+}
+
+.check-outcome {
+  display: inline-flex;
+  width: fit-content;
+  min-height: 22px;
+  align-items: center;
+  padding: 0 var(--wb-space-2);
+  border-radius: 999px;
+  background: var(--wb-color-surface-muted);
+  color: var(--wb-color-text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .03em;
 }
 
 .workbench-drawer h2 {

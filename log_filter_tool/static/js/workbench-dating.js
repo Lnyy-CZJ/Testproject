@@ -195,6 +195,17 @@
     if (jsonButton) jsonButton.disabled = Boolean(isLoading) || !latestDatingAnalysis;
   }
 
+  /** 日志修订后结果仍可核对，但所有 Dating 结果导出必须失效。 */
+  function markDatingStale() {
+    var copyButton = getElement('copy-dating-report-btn');
+    var reportButton = getElement('export-dating-report-btn');
+    var jsonButton = getElement('export-dating-json-btn');
+    if (copyButton) copyButton.disabled = true;
+    if (reportButton) reportButton.disabled = true;
+    if (jsonButton) jsonButton.disabled = true;
+    setText('dating-status', latestDatingAnalysis ? '结果已过期，仅供查看' : '等待分析');
+  }
+
   /** 请求期间显示可感知状态；结束时只按当前任务结果恢复导出按钮。 */
   function setDatingLoading(isLoading) {
     var status = getElement('dating-status');
@@ -406,14 +417,14 @@
       var emptyError = new Error(DATING_ERROR_MESSAGES.EMPTY_LOG);
       emptyError.error_code = 'EMPTY_LOG';
       renderDatingError(emptyError);
-      return Promise.resolve({ok: false, message: DATING_ERROR_MESSAGES.EMPTY_LOG});
+      return Promise.resolve({ok: false, message: DATING_ERROR_MESSAGES.EMPTY_LOG, error: emptyError});
     }
     if (!root || !root.dataset || !root.dataset.datingUrl ||
         typeof api.requestJson !== 'function') {
       var endpointError = new Error(DATING_ERROR_MESSAGES.ANALYSIS_INTERNAL_ERROR);
       endpointError.error_code = 'ANALYSIS_INTERNAL_ERROR';
       renderDatingError(endpointError);
-      return Promise.resolve({ok: false, message: endpointError.message});
+      return Promise.resolve({ok: false, message: endpointError.message, error: endpointError});
     }
 
     setDatingLoading(true);
@@ -422,6 +433,9 @@
       body: {log_text: logText, task_id: null},
       signal: context.signal || undefined
     }).then(function handleDatingResponse(payload) {
+      if (typeof context.isCurrent === 'function' && !context.isCurrent()) {
+        return {ok: false, stale: true};
+      }
       if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
         throw new Error(DATING_ERROR_MESSAGES.ANALYSIS_INTERNAL_ERROR);
       }
@@ -434,11 +448,16 @@
       }
       return {ok: true, data: payload};
     }).catch(function handleDatingError(error) {
+      if (typeof context.isCurrent === 'function' && !context.isCurrent()) {
+        return {ok: false, stale: true};
+      }
       resetDatingResult();
       var info = renderDatingError(error);
       return {ok: false, message: info.message, error: error};
     }).finally(function restoreDatingState() {
-      setDatingLoading(false);
+      if (typeof context.isCurrent !== 'function' || context.isCurrent()) {
+        setDatingLoading(false);
+      }
     });
   }
 
@@ -1402,14 +1421,16 @@
     var container = clearDatingNode('dating-check-list');
     if (!container) return;
     var filterElement = getElement('dating-check-filter');
-    var filter = filterElement ? String(filterElement.value || 'ALL') : 'ALL';
+    var filter = filterElement ? String(filterElement.value || 'ALL').toUpperCase() : 'ALL';
     var safeChecks = (Array.isArray(checks) ? checks : []).map(function preserveCheck(check, index) {
       return {check: check || {}, index: index};
     }).sort(function sortChecks(left, right) {
       return datingCheckOrder(normalizeDatingOutcome(left.check.outcome)) -
         datingCheckOrder(normalizeDatingOutcome(right.check.outcome)) || left.index - right.index;
     }).filter(function filterCheck(entry) {
-      return filter === 'ALL' || normalizeDatingOutcome(entry.check.outcome) === filter;
+      var outcome = normalizeDatingOutcome(entry.check.outcome);
+      return filter === 'ALL' || outcome === filter ||
+        (filter === 'NA' && outcome === 'NOT_APPLICABLE');
     });
     if (!safeChecks.length) {
       container.appendChild(createDatingTextElement('p', 'dating-muted', '当前筛选条件下没有规则检查。'));
@@ -1423,7 +1444,8 @@
       details.className = 'dating-check ' + outcome.toLowerCase();
       details.open = outcome === 'FAIL' || outcome === 'WARN';
       var summary = document.createElement('summary');
-      appendDatingText(summary, outcome + ' · ' + (check.rule_id || 'UNKNOWN-RULE') +
+      summary.appendChild(createDatingTextElement('span', 'check-outcome', outcome === 'NOT_APPLICABLE' ? 'NA' : outcome));
+      appendDatingText(summary, ' · ' + (check.rule_id || 'UNKNOWN-RULE') +
         ' · ' + (check.title || '未命名检查'));
       details.appendChild(summary);
       var body = document.createElement('div');
@@ -1577,9 +1599,11 @@
     run: analyzeDatingLog,
     reset: resetDatingResult,
     // Dating 的错误码、后端原文和处理建议都在 Overview；输入修订只清理
-    // Dating 自己的结果与导出状态，不触碰 Filter/People 的 owner。
+    // Dating 自己的结果与导出状态，不触碰 Filter/People 的 owner。历史接口
+    // onInputRevision: resetDatingResult 仍保留为显式重置语义；日志修订走 stale
+    // hook，让旧结果保持可查看但不可导出。
     errorPanel: 'overviewPanel',
-    onInputRevision: resetDatingResult
+    onInputRevision: markDatingStale
   };
 
   if (typeof api.registerAnalysisMode === 'function') {

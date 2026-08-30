@@ -2521,5 +2521,500 @@ class WorkbenchShellTest(unittest.TestCase):
         self.assertEqual(0, completed.returncode, completed.stderr or completed.stdout)
 
 
+    def test_task_six_drawer_and_status_contracts_are_accessible(self):
+        """Task 6 壳层必须包含可访问 drawer、互斥状态区和键盘关闭入口。"""
+        html = self.client.get("/").get_data(as_text=True)
+        core = Path("static/js/workbench-core.js").read_text(encoding="utf-8")
+        css = Path("static/css/log-workbench.css").read_text(encoding="utf-8")
+
+        for marker in (
+            'id="workbench-drawer"',
+            'role="dialog"',
+            'aria-modal="true"',
+            'id="workbench-drawer-backdrop"',
+            'id="workbench-drawer-close"',
+            'id="workbench-analysis-state"',
+            'role="status" aria-live="polite"',
+            'id="workbench-retry-btn"',
+            'data-outcome="WARN"',
+        ):
+            self.assertIn(marker, html)
+
+        for marker in (
+            "function openInterfaceDrawer",
+            "function closeInterfaceDrawer",
+            "event.key === 'Escape'",
+            "lastFocusedElement",
+            "inert",
+        ):
+            self.assertIn(marker, core)
+
+        self.assertIn(":focus-visible", css)
+        self.assertNotIn("outline: none", css)
+
+
+    def _run_task_six_core_harness(self, scenario):
+        """在最小但可交互 DOM 中验证 drawer 与异步状态机的真实副作用。"""
+        node = shutil.which("node")
+        self.assertIsNotNone(node, "需要 Node.js 执行 Task 6 core 行为合同测试")
+        core_path = Path(__file__).resolve().parents[1] / "static/js/workbench-core.js"
+        harness = textwrap.dedent(
+            r"""
+            const fs = require("fs");
+            const vm = require("vm");
+
+            class FakeClassList {
+              constructor() { this.values = new Set(); }
+              add(name) { this.values.add(name); }
+              remove(name) { this.values.delete(name); }
+              toggle(name, force) {
+                const shouldHave = force === undefined ? !this.values.has(name) : force;
+                if (shouldHave) this.values.add(name); else this.values.delete(name);
+                return shouldHave;
+              }
+              contains(name) { return this.values.has(name); }
+            }
+
+            class FakeElement {
+              constructor(tagName, id = "", attributes = {}) {
+                this.tagName = String(tagName).toUpperCase();
+                this.id = id;
+                this.attributes = {...attributes};
+                this.children = [];
+                this.parentNode = null;
+                this.listeners = Object.create(null);
+                this.classList = new FakeClassList();
+                this.dataset = Object.create(null);
+                this.hidden = Boolean(attributes.hidden);
+                this.disabled = Boolean(attributes.disabled);
+                this.inert = Boolean(attributes.inert);
+                this.value = attributes.value || "";
+                this._textContent = attributes.textContent || "";
+                this.tabIndex = Number(attributes.tabIndex || 0);
+                this.focusCount = 0;
+                this.style = {setProperty() {}};
+              }
+
+              appendChild(child) {
+                this.children.push(child);
+                child.parentNode = this;
+                return child;
+              }
+
+              get textContent() {
+                return this._textContent + this.children.map(child => child.textContent || "").join("");
+              }
+
+              set textContent(value) {
+                this._textContent = String(value ?? "");
+                this.children = [];
+              }
+
+              removeChild(child) {
+                this.children = this.children.filter(item => item !== child);
+              }
+
+              addEventListener(type, listener) {
+                (this.listeners[type] ||= []).push(listener);
+              }
+
+              removeEventListener(type, listener) {
+                this.listeners[type] = (this.listeners[type] || []).filter(
+                  registered => registered !== listener
+                );
+              }
+
+              dispatch(type, event = {}) {
+                if (!event.target) event.target = this;
+                return Promise.all((this.listeners[type] || []).map(listener => listener(event)));
+              }
+
+              setAttribute(name, value) { this.attributes[name] = String(value); }
+              getAttribute(name) {
+                return Object.prototype.hasOwnProperty.call(this.attributes, name)
+                  ? String(this.attributes[name]) : null;
+              }
+              removeAttribute(name) { delete this.attributes[name]; }
+              focus() { this.focusCount += 1; document.activeElement = this; }
+              setSelectionRange() {}
+              scrollIntoView() {}
+              getBoundingClientRect() { return {left: 0, width: 1000}; }
+
+              contains(target) {
+                if (target === this) return true;
+                return this.children.some(child => child.contains && child.contains(target));
+              }
+
+              querySelectorAll(selector) {
+                const found = [];
+                const matches = node => {
+                  if (selector === "button" && node.tagName === "BUTTON") return true;
+                  if (selector === "pre" && node.tagName === "PRE") return true;
+                  return false;
+                };
+                const visit = node => {
+                  (node.children || []).forEach(child => {
+                    if (matches(child)) found.push(child);
+                    visit(child);
+                  });
+                };
+                visit(this);
+                return found;
+              }
+            }
+
+            function assert(condition, message) {
+              if (!condition) throw new Error(message);
+            }
+
+            const elements = Object.create(null);
+            const add = (tag, id, attributes = {}) => {
+              const element = new FakeElement(tag, id, attributes);
+              elements[id] = element;
+              return element;
+            };
+
+            const root = add("main", "log-workbench");
+            root.dataset = {indexUrl: "/", exportUrl: "/export"};
+            root.querySelectorAll = () => [];
+            add("form", "log-filter-form");
+            const modeSelect = add("select", "analysis-mode", {value: "people"});
+            const analyzeButton = add("button", "analyze-log-btn", {textContent: "分析日志"});
+            const loadingMask = add("div", "workbench-loading-mask", {hidden: true});
+            const logText = add("textarea", "log_text");
+            logText.value = "old log";
+            add("textarea", "result-text", {value: "existing result"});
+            add("div", "raw-log-view");
+            add("div", "filtered-log-view", {hidden: true});
+            add("button", "raw-log-view-btn");
+            add("button", "filtered-log-view-btn", {disabled: true});
+            add("input", "result-search");
+            add("span", "search-count");
+            add("div", "action-message", {hidden: true});
+            add("div", "workbench-toast", {hidden: true});
+            add("div", "log-focus-status");
+            add("div", "analysis-stale", {hidden: true});
+            add("span", "log-line-count");
+            add("span", "log-byte-count");
+            add("div", "workbench-result-heading", {textContent: "分析结果"});
+            add("div", "workbench-result-subheading");
+            const state = add("div", "workbench-analysis-state", {hidden: false});
+            const stateMessage = add("span", "workbench-analysis-state-message");
+            state.appendChild(stateMessage);
+            const stateSkeleton = add("div", "workbench-result-loading", {hidden: true});
+            const errorPanel = add("section", "workbench-result-error", {hidden: true});
+            const errorCode = add("strong", "workbench-result-error-code");
+            const errorMessage = add("p", "workbench-result-error-message");
+            const retryButton = add("button", "workbench-retry-btn");
+            errorPanel.appendChild(errorCode);
+            errorPanel.appendChild(errorMessage);
+            errorPanel.appendChild(retryButton);
+            const drawer = add("aside", "workbench-drawer", {hidden: true});
+            const drawerTitle = add("h2", "workbench-drawer-title");
+            const drawerClose = add("button", "workbench-drawer-close");
+            drawer.appendChild(drawerTitle);
+            drawer.appendChild(drawerClose);
+            const backdrop = add("div", "workbench-drawer-backdrop", {hidden: true});
+            const trigger = add("button", "trigger");
+
+            const documentListeners = Object.create(null);
+            const document = {
+              readyState: "complete",
+              activeElement: trigger,
+              getElementById(id) { return elements[id] || null; },
+              createElement(tag) { return new FakeElement(tag); },
+              createTextNode(value) { return new FakeElement("text", "", {textContent: String(value)}); },
+              querySelector() { return null; },
+              addEventListener(type, listener) { (documentListeners[type] ||= []).push(listener); },
+              removeEventListener(type, listener) {
+                documentListeners[type] = (documentListeners[type] || []).filter(
+                  registered => registered !== listener
+                );
+              },
+              dispatch(type, event = {}) {
+                if (!event.target) event.target = document;
+                return Promise.all((documentListeners[type] || []).map(listener => listener(event)));
+              }
+            };
+            Object.defineProperty(document, "cookie", {get() { return ""; }});
+
+            const window = {
+              getComputedStyle() { return {lineHeight: "20px"}; },
+              navigator: {clipboard: {writeText: () => Promise.resolve()}},
+              AbortController
+            };
+            const context = {
+              window, document, Promise, Array, Object, String, Number, Math, JSON, Set,
+              TypeError, AbortController, console, setTimeout, clearTimeout
+            };
+            vm.createContext(context);
+            vm.runInContext(fs.readFileSync(process.argv[1], "utf8"), context);
+            const api = window.LogWorkbench;
+
+            (async () => {
+              if (process.argv[2] === "drawer") {
+                api.openInterfaceDrawer({
+                  title: "<unsafe title>", method: "GET",
+                  response: {marker: "<script>alert(1)</script>", status: 200}
+                }, trigger);
+                assert(!drawer.hidden, "drawer 未打开");
+                assert(drawer.getAttribute("aria-modal") === "true", "drawer 未声明 aria-modal=true");
+                assert(root.inert === true && root.getAttribute("aria-hidden") === "true",
+                  "打开 drawer 后主工作区未隔离");
+                assert(backdrop.hidden === false, "drawer backdrop 未显示");
+                assert(document.activeElement === drawerClose, "打开 drawer 后焦点未进入关闭按钮");
+                assert(drawer.textContent.includes("<script>alert(1)</script>"),
+                  "drawer 未保留服务端值文本");
+                assert(drawer.querySelectorAll("pre").some(pre =>
+                  pre.textContent.includes("<script>alert(1)</script>")),
+                  "对象值未通过 JSON 文本写入 pre");
+                assert(drawer.querySelectorAll("script").length === 0,
+                  "不可信 drawer 值创建了 script 节点");
+
+                await drawerClose.dispatch("click");
+                assert(drawer.hidden && backdrop.hidden, "关闭按钮未统一关闭 drawer");
+                assert(root.inert === false && root.getAttribute("aria-hidden") === null,
+                  "关闭 drawer 后背景隔离未恢复");
+                assert(document.activeElement === trigger, "关闭 drawer 后未恢复触发焦点");
+
+                api.openInterfaceDrawer({method: "POST"}, trigger);
+                await document.dispatch("keydown", {
+                  key: "Escape", preventDefault() {}
+                });
+                assert(drawer.hidden, "Escape 未统一关闭 drawer");
+
+                api.openInterfaceDrawer({method: "PUT"}, trigger);
+                await backdrop.dispatch("click", {target: backdrop});
+                assert(drawer.hidden, "backdrop 未统一关闭 drawer");
+              } else if (process.argv[2] === "async") {
+                let resolveOld;
+                let calls = 0;
+                const oldMarker = add("p", "old-result-marker");
+                api.registerAnalysisMode("people", {
+                  analyze(context) {
+                    calls += 1;
+                    if (calls === 1) {
+                      return new Promise(resolve => {
+                        resolveOld = () => resolve({ok: true});
+                      }).then(result => {
+                        if (context.isCurrent && context.isCurrent()) oldMarker.textContent = "old";
+                        return result;
+                      });
+                    }
+                    return Promise.resolve({ok: false, message: "后端错误", error: {
+                      error_code: "BACKEND_TIMEOUT", message: "后端错误"
+                    }});
+                  }
+                });
+                api.analyzeSelectedMode();
+                assert(api.state.phase === "loading" && !loadingMask.hidden && analyzeButton.disabled,
+                  "异步分析未进入 loading 且锁定主按钮");
+                logText.value = "new log";
+                await logText.dispatch("input");
+                assert(api.state.dirty === true && api.state.phase === "idle",
+                  "编辑日志未取消/标记旧异步请求");
+                resolveOld();
+                await Promise.resolve();
+                await Promise.resolve();
+                assert(oldMarker.textContent === "", "旧请求结果回写到当前页面");
+
+                await api.analyzeSelectedMode();
+                assert(state.getAttribute("data-state") === "error" && !errorPanel.hidden,
+                  "后端失败未进入 error 状态");
+                assert(errorCode.textContent.includes("BACKEND_TIMEOUT") &&
+                  errorMessage.textContent.includes("后端错误") && !retryButton.disabled,
+                  "error 状态未显示后端 code/message 与重试入口");
+                await retryButton.dispatch("click");
+                assert(state.getAttribute("data-state") === "error",
+                  "失败后重试不应伪造成功状态");
+              } else {
+                throw new Error("未知 Task 6 core 场景: " + process.argv[2]);
+              }
+            })().catch(error => {
+              console.error(error.stack || error.message);
+              process.exitCode = 1;
+            });
+            """
+        )
+        completed = subprocess.run(
+            [node, "-e", harness, str(core_path), scenario],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(0, completed.returncode, completed.stderr or completed.stdout)
+
+
+    def test_task_six_core_drawer_and_async_states(self):
+        """共享 drawer 与旧请求隔离必须由 core 的真实 DOM 副作用保证。"""
+        self._run_task_six_core_harness("drawer")
+        self._run_task_six_core_harness("async")
+
+
+    def test_task_six_people_drawer_and_outcome_filter(self):
+        """People Provider 行使用真实字段打开 drawer，检查筛选显示空态而非成功。"""
+        node = shutil.which("node")
+        self.assertIsNotNone(node, "需要 Node.js 执行 Task 6 People 行为合同测试")
+        adapter_path = Path(__file__).resolve().parents[1] / "static/js/workbench-people.js"
+        harness = textwrap.dedent(
+            r"""
+            const fs = require("fs");
+            const vm = require("vm");
+
+            class FakeElement {
+              constructor(tagName, id = "") {
+                this.tagName = String(tagName).toUpperCase();
+                this.id = id;
+                this.children = [];
+                this.listeners = Object.create(null);
+                this.attributes = Object.create(null);
+                this.hidden = false;
+                this.disabled = false;
+                this.value = "";
+                this.textContent = "";
+              }
+              appendChild(child) { this.children.push(child); return child; }
+              addEventListener(type, listener) { (this.listeners[type] ||= []).push(listener); }
+              dispatch(type, event = {}) {
+                if (!event.target) event.target = this;
+                return Promise.all((this.listeners[type] || []).map(listener => listener(event)));
+              }
+              setAttribute(name, value) { this.attributes[name] = String(value); }
+              getAttribute(name) { return this.attributes[name] || null; }
+              querySelectorAll(selector) {
+                const found = [];
+                const visit = node => {
+                  (node.children || []).forEach(child => {
+                    if (selector === "button" && child.tagName === "BUTTON") found.push(child);
+                    visit(child);
+                  });
+                };
+                visit(this);
+                return found;
+              }
+              focus() {}
+            }
+
+            function textOf(node) {
+              return String(node && node.textContent || "") +
+                (node && node.children || []).map(textOf).join(" ");
+            }
+            function assert(condition, message) {
+              if (!condition) throw new Error(message);
+            }
+
+            const elements = Object.create(null);
+            const add = (tag, id) => {
+              const element = new FakeElement(tag, id);
+              elements[id] = element;
+              return element;
+            };
+            const root = add("main", "log-workbench");
+            root.dataset = {peopleUrl: "/people-search/analyze"};
+            const logText = add("textarea", "log_text");
+            logText.value = "one\ntwo\nthree";
+            add("h2", "workbench-result-heading");
+            add("p", "workbench-result-subheading");
+            ["overviewPanel", "interfacesPanel", "timelinePanel", "resultPanel", "checksPanel"].forEach(
+              id => add("section", id)
+            );
+            ["overviewTab", "interfacesTab", "timelineTab", "resultTab", "checksTab"].forEach(
+              id => add("button", id)
+            );
+            add("div", "people-overview");
+            add("section", "people-verdict-panel");
+            add("h3", "people-verdict-title");
+            add("p", "people-task-summary");
+            add("p", "people-ai-status");
+            add("div", "people-coverage-list");
+            add("ul", "people-issue-list");
+            add("div", "people-timeline");
+            add("dl", "people-diagnosis-list");
+            add("div", "people-cost-summary");
+            add("pre", "people-search-report");
+            const checkList = add("ol", "people-check-list");
+            const checkFilter = add("div", "people-check-filter");
+            checkFilter.value = "WARN";
+            const warnFilterButton = add("button", "people-filter-warn");
+            warnFilterButton.dataset = {outcome: "WARN"};
+            checkFilter.appendChild(warnFilterButton);
+            add("button", "copy-report-btn");
+            add("button", "export-report-btn");
+
+            const drawerModels = [];
+            const api = {
+              state: {},
+              registerAnalysisMode(name, definition) { this.definition = definition; },
+              setAvailableTabs() {},
+              activateTab() {},
+              setResultHeader() {},
+              focusLogLines() {},
+              showActionMessage() {},
+              requestJson() {
+                return Promise.resolve({data: {
+                  verdict: "INCOMPLETE_EVIDENCE",
+                  task: {task_id: "task-1", full_name: "Alice"},
+                  coverage: {},
+                  timeline: [{provider: "Provider-A", operation: "lookup", status: "FAILED",
+                    result_details: {marker: "<unsafe>"}, http_status: 502,
+                    cache_hit: false, cost_status: "UNPRICED",
+                    estimated_cost_microunit: null}],
+                  diagnosis: {}, cost: {}, checks: [
+                    {outcome: "WARN", rule_id: "R-WARN", title: "warning", actual: "a",
+                      expected: "e", evidence: []},
+                    {outcome: "PASS", rule_id: "R-PASS", title: "pass", actual: "a",
+                      expected: "e", evidence: []}
+                  ], report_markdown: ""
+                }});
+              },
+              openInterfaceDrawer(model) { drawerModels.push(model); },
+              exportLog() { return Promise.resolve({}); }
+            };
+            const document = {
+              readyState: "complete",
+              getElementById(id) { return elements[id] || null; },
+              createElement(tag) { return new FakeElement(tag); },
+              createTextNode(value) { return new FakeElement("text", "", {textContent: String(value)}); },
+              addEventListener() {}
+            };
+            const window = {LogWorkbench: api, navigator: {clipboard: {writeText: () => Promise.resolve()}}};
+            const context = {window, document, Promise, Array, Object, String, Number, Math, JSON,
+              Set, TypeError, console};
+            vm.createContext(context);
+            vm.runInContext(fs.readFileSync(process.argv[1], "utf8"), context);
+
+            (async () => {
+              const result = await api.definition.analyze({root, logText: logText.value});
+              assert(result && result.ok === true, "People 分析未完成");
+              const rowButton = elements["people-timeline"].querySelectorAll("button")[0];
+              assert(rowButton, "People Provider timeline 行未提供 drawer 触发器");
+              await rowButton.dispatch("click");
+              assert(drawerModels.length === 1 && drawerModels[0].provider === "Provider-A" &&
+                drawerModels[0].operation === "lookup" && drawerModels[0].http_status === 502 &&
+                drawerModels[0].result_details.marker === "<unsafe>",
+                "People drawer 未使用真实 Provider 字段");
+              await checkFilter.dispatch("change");
+              assert(checkList.children.length === 1 && textOf(checkList).includes("R-WARN") &&
+                !textOf(checkList).includes("R-PASS"), "People outcome 筛选未生效");
+              checkFilter.value = "FAIL";
+              await checkFilter.dispatch("change");
+              assert(textOf(checkList).includes("暂无规则检查结果") ||
+                textOf(checkList).includes("当前筛选条件下没有规则检查"),
+                "无匹配检查项未显示 empty 状态");
+            })().catch(error => {
+              console.error(error.stack || error.message);
+              process.exitCode = 1;
+            });
+            """
+        )
+        completed = subprocess.run(
+            [node, "-e", harness, str(adapter_path)],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(0, completed.returncode, completed.stderr or completed.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()

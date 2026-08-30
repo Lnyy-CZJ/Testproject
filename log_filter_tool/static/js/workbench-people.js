@@ -69,6 +69,10 @@
     NA: "NA"
   };
 
+  var latestPeopleChecks = [];
+  var latestPeopleLineCount = 0;
+  var peopleCheckFilterInitialized = false;
+
   function getElement(id) {
     return document.getElementById(id);
   }
@@ -88,7 +92,10 @@
 
   /** 清空一个由本适配器拥有的固定容器，不触碰日志或其他模式的状态。 */
   function clearNode(node) {
-    if (node) node.textContent = "";
+    if (!node) return node;
+    node.textContent = "";
+    // 行为测试的轻量 DOM 用数组保存 children；真实浏览器由 textContent 负责移除子节点。
+    if (Array.isArray(node.children)) node.children.length = 0;
     return node;
   }
 
@@ -225,6 +232,38 @@
     }).join(" · ") || "—";
   }
 
+  /** Provider 行使用后端已经抽取的字段；不存在的日志上下文明确标记为不足。 */
+  function buildPeopleDrawerPayload(call) {
+    call = call && typeof call === "object" ? call : {};
+    var operation = call.operation || call.provider_operation;
+    var source = call.source && typeof call.source === "object" ? call.source : null;
+    return {
+      title: "Provider 调用详情",
+      provider: call.provider,
+      operation: operation,
+      status: call.status,
+      http_status: call.http_status,
+      cache_hit: call.cache_hit,
+      cost_status: call.cost_status,
+      estimated_cost_microunit: call.estimated_cost_microunit,
+      result_class: call.result_class,
+      result_details: call.result_details,
+      request: call.request || null,
+      response: call.response || null,
+      evidence: source || "日志证据不足"
+    };
+  }
+
+  function openPeopleCallDrawer(call, trigger) {
+    var payload = buildPeopleDrawerPayload(call);
+    if (typeof api.openInterfaceDrawer === "function") {
+      api.openInterfaceDrawer(payload, trigger);
+    } else if (typeof api.showActionMessage === "function") {
+      api.showActionMessage("接口详情抽屉不可用。", true);
+    }
+    return payload;
+  }
+
   /** Provider 链路只渲染到 interfacesPanel，保留业务结果和技术诊断两组字段。 */
   function renderTimeline(data) {
     var container = clearNode(getElement("people-timeline"));
@@ -256,10 +295,20 @@
         .filter(function keepCost(value) { return value !== "" && value !== null && value !== undefined; })
         .join(" · ") || "—";
       var row = createElement("tr");
-      [index + 1, call.provider, call.operation, call.status, business,
+      var sequenceCell = createElement("td");
+      var trigger = createElement("button", "people-row-toggle", index + 1);
+      trigger.type = "button";
+      trigger.setAttribute("aria-label", "打开 Provider 接口详情");
+      trigger.setAttribute("aria-expanded", "false");
+      trigger.addEventListener("click", function openCallDetails() {
+        openPeopleCallDrawer(call, trigger);
+      });
+      sequenceCell.appendChild(trigger);
+      row.appendChild(sequenceCell);
+      [call.provider, call.operation, call.status, business,
         formatCallDetails(call.result_details), call.http_status,
         call.cache_hit ? "是" : "否", cost].forEach(function renderCell(value, cellIndex) {
-          var cell = createElement("td", cellIndex === 5 ? "diagnostic-cell" : "", displayValue(value));
+          var cell = createElement("td", cellIndex === 4 ? "diagnostic-cell" : "", displayValue(value));
           row.appendChild(cell);
         });
       tbody.appendChild(row);
@@ -340,16 +389,64 @@
     });
   }
 
-  function renderChecks(data, lineCount) {
+  function getPeopleCheckFilterValue() {
+    var filter = getElement("people-check-filter");
+    var value = filter && filter.value ? String(filter.value).toUpperCase() : "ALL";
+    return value || "ALL";
+  }
+
+  function peopleOutcomeMatches(outcome, filter) {
+    if (filter === "ALL") return true;
+    if (filter === "NA") return outcome === "NA" || outcome === "NOT_APPLICABLE";
+    return outcome === filter;
+  }
+
+  /** 按 outcome 更新文字 badge；筛选控件不依赖颜色来表达状态。 */
+  function renderPeopleCheckFilter() {
+    var filter = getElement("people-check-filter");
+    if (!filter || typeof filter.querySelectorAll !== "function") return;
+    var counts = {ALL: latestPeopleChecks.length, FAIL: 0, WARN: 0, UNKNOWN: 0, PASS: 0, NA: 0};
+    latestPeopleChecks.forEach(function countCheck(check) {
+      var outcome = normalizeOutcome(check && check.outcome);
+      if (outcome === "NOT_APPLICABLE") outcome = "NA";
+      if (Object.prototype.hasOwnProperty.call(counts, outcome)) counts[outcome] += 1;
+    });
+    Array.from(filter.querySelectorAll("button")).forEach(function updateFilterButton(button) {
+      var outcome = String(button.dataset && button.dataset.outcome || "ALL").toUpperCase();
+      var label = outcome === "ALL" ? "全部" : (outcomeLabels[outcome] || outcome);
+      button.textContent = label + " " + (counts[outcome] || 0);
+      button.setAttribute("aria-pressed", String(getPeopleCheckFilterValue() === outcome));
+    });
+  }
+
+  function initializePeopleCheckFilter() {
+    var filter = getElement("people-check-filter");
+    if (!filter || peopleCheckFilterInitialized) return;
+    peopleCheckFilterInitialized = true;
+    if (!filter.value) filter.value = "ALL";
+    if (typeof filter.querySelectorAll === "function") {
+      Array.from(filter.querySelectorAll("button")).forEach(function bindFilterButton(button) {
+        button.addEventListener("click", function selectOutcome() {
+          filter.value = String(button.dataset && button.dataset.outcome || "ALL").toUpperCase();
+          renderPeopleChecks();
+        });
+      });
+    }
+    filter.addEventListener("change", renderPeopleChecks);
+  }
+
+  function renderPeopleChecks() {
     var container = clearNode(getElement("people-check-list"));
     if (!container) return;
-    var checks = Array.isArray(data.checks) ? data.checks : [];
-    var ordered = checks.map(function preserveOrder(check, index) {
+    var filter = getPeopleCheckFilterValue();
+    var ordered = latestPeopleChecks.map(function preserveOrder(check, index) {
       return {check: check || {}, index: index};
     }).sort(function sortChecks(left, right) {
       var leftOutcome = normalizeOutcome(left.check.outcome);
       var rightOutcome = normalizeOutcome(right.check.outcome);
       return (outcomeOrder[leftOutcome] - outcomeOrder[rightOutcome]) || (left.index - right.index);
+    }).filter(function filterCheck(entry) {
+      return peopleOutcomeMatches(normalizeOutcome(entry.check.outcome), filter);
     });
     if (!ordered.length) {
       container.appendChild(createElement("li", "issue-item", "暂无规则检查结果。"));
@@ -364,10 +461,18 @@
       item.appendChild(createElement("p", "check-actual", "实际：" + displayValue(check.actual)));
       item.appendChild(createElement("p", "check-expected", "期望：" + displayValue(check.expected)));
       var evidenceContainer = createElement("div", "check-evidence");
-      renderEvidence(evidenceContainer, check.evidence, lineCount);
+      renderEvidence(evidenceContainer, check.evidence, latestPeopleLineCount);
       item.appendChild(evidenceContainer);
       container.appendChild(item);
     });
+    renderPeopleCheckFilter();
+  }
+
+  function renderChecks(data, lineCount) {
+    latestPeopleChecks = Array.isArray(data.checks) ? data.checks.slice() : [];
+    latestPeopleLineCount = lineCount;
+    initializePeopleCheckFilter();
+    renderPeopleChecks();
   }
 
   function setPeopleTabs() {
@@ -410,6 +515,16 @@
     if (copyButton) copyButton.disabled = !reportText;
     if (exportButton) exportButton.disabled = !reportText;
     renderChecks(data, countLogLines(arguments.length > 1 ? arguments[1] : ""));
+  }
+
+  /** 日志变化后保留旧结果供核对，但禁止 People 报告复制和导出。 */
+  function markPeopleStale() {
+    var copyButton = getElement("copy-report-btn");
+    var exportButton = getElement("export-report-btn");
+    if (copyButton) copyButton.disabled = true;
+    if (exportButton) exportButton.disabled = true;
+    var status = getElement("people-search-status");
+    if (status && latestPeopleChecks.length >= 0) status.textContent = "结果已过期，仅供查看";
   }
 
   function formatPeopleError(error) {
@@ -483,15 +598,21 @@
     if (status) status.textContent = "分析中";
     return api.requestJson(root.dataset.peopleUrl, {
       method: "POST",
-      body: {log_text: context.logText},
+      body: {log_text: logText},
       signal: context.signal || undefined
     }).then(function handlePeopleResponse(payload) {
+      if (typeof context.isCurrent === "function" && !context.isCurrent()) {
+        return {ok: false, stale: true};
+      }
       var data = payload && payload.data;
       if (!data || typeof data !== "object") throw new Error("People 分析未返回有效结果。");
       renderPeopleAnalysis(data, logText);
       if (typeof api.showActionMessage === "function") api.showActionMessage("分析完成：" + String(data.verdict || ""), false);
       return {ok: true, data: data};
     }).catch(function handlePeopleError(error) {
+      if (typeof context.isCurrent === "function" && !context.isCurrent()) {
+        return {ok: false, stale: true};
+      }
       var message = formatPeopleError(error);
       renderPeopleError(error);
       return {ok: false, message: message, error: error};
@@ -528,6 +649,8 @@
 
   function resetPeopleSearch() {
     clearPeopleSurfaces();
+    latestPeopleChecks = [];
+    latestPeopleLineCount = 0;
   }
 
   function initialize() {
@@ -540,7 +663,8 @@
   var definition = {
     analyze: analyzePeopleSearch,
     run: analyzePeopleSearch,
-    reset: resetPeopleSearch
+    reset: resetPeopleSearch,
+    onInputRevision: markPeopleStale
   };
 
   /* 兼容 Task 1/3 的新旧注册入口；核心会把 people-search 别名解析到 people。 */

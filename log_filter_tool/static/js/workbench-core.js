@@ -21,6 +21,26 @@
     "people-search": "people"
   };
   var analysisInFlight = null;
+  var activeAnalysis = null;
+  var analysisSequence = 0;
+  var drawerInitialized = false;
+  var analysisStateValues = {
+    idle: true,
+    loading: true,
+    success: true,
+    error: true,
+    stale: true,
+    empty: true
+  };
+  var analysisExportIds = [
+    "copy-btn",
+    "export-filtered-result-btn",
+    "copy-report-btn",
+    "export-report-btn",
+    "copy-dating-report-btn",
+    "export-dating-report-btn",
+    "export-dating-json-btn"
+  ];
   // requestSubmit 会同步触发表单 submit 事件；用短生命周期标记区分统一入口
   // 自己发起的那一次提交与用户在 submitting 状态下的重复提交。
   var nativeSubmitInProgress = false;
@@ -36,6 +56,8 @@
   state.activeTab = state.activeTab || "overview";
   state.activeLogView = state.activeLogView || "raw";
   state.phase = state.phase || "idle";
+  state.analysisState = state.analysisState || "idle";
+  state.status = state.status || state.analysisState;
   state.dirty = Boolean(state.dirty);
   state.inputRevision = Number(state.inputRevision) || 0;
   state.lastFocusedElement = state.lastFocusedElement || null;
@@ -148,6 +170,224 @@
     var message = error && error.message ? error.message : "分析失败，请稍后重试。";
     showActionMessage(message, true, true);
     showToast(message);
+  }
+
+  /**
+   * 统一维护分析生命周期状态；状态节点只保留一个 canonical data-state。
+   *
+   * 参数说明：next 只能是 idle/loading/success/error/stale/empty 之一；details
+   * 可提供 errorCode、errorMessage 或 message。返回值为最终采用的状态名。
+   * 关键约束：各状态的 loading、empty、error 子节点互斥显示，旧结果不会因为
+   * stale 状态而被清空，错误状态只展示错误信息与重试入口。
+   */
+  function setAnalysisState(next, details) {
+    var normalized = String(next || "idle").toLowerCase();
+    if (!analysisStateValues[normalized]) normalized = "idle";
+    details = details && typeof details === "object" ? details : {};
+    state.analysisState = normalized;
+    state.status = normalized;
+
+    var stateElement = getElement("workbench-analysis-state");
+    var stateMessage = getElement("workbench-analysis-state-message");
+    var loadingElement = getElement("workbench-result-loading");
+    var emptyElement = getElement("workbench-result-empty");
+    var errorElement = getElement("workbench-result-error");
+    var errorCodeElement = getElement("workbench-result-error-code");
+    var errorMessageElement = getElement("workbench-result-error-message");
+    var retryButton = getElement("workbench-retry-btn");
+
+    if (stateElement) {
+      stateElement.setAttribute("data-state", normalized);
+      if (stateElement.dataset) stateElement.dataset.state = normalized;
+      stateElement.className = "workbench-analysis-state state-" + normalized;
+    }
+    if (stateMessage) {
+      var messages = {
+        idle: "等待分析。",
+        loading: "正在分析日志…",
+        success: "分析完成。",
+        error: "分析失败，请检查错误信息后重试。",
+        stale: "日志已修改，当前结果仅供核对，请重新分析。",
+        empty: "没有可展示的分析结果。"
+      };
+      stateMessage.textContent = String(details.message || messages[normalized]);
+    }
+    if (loadingElement) loadingElement.hidden = normalized !== "loading";
+    if (emptyElement) emptyElement.hidden = normalized !== "empty";
+    if (errorElement) errorElement.hidden = normalized !== "error";
+    if (errorCodeElement) {
+      errorCodeElement.textContent = normalized === "error"
+        ? String(details.errorCode || details.error_code || "ANALYSIS_ERROR") : "";
+    }
+    if (errorMessageElement) {
+      errorMessageElement.textContent = normalized === "error"
+        ? String(details.errorMessage || details.message || "分析失败，请稍后重试。") : "";
+    }
+    if (retryButton) {
+      retryButton.disabled = normalized !== "error";
+      retryButton.setAttribute("aria-disabled", String(retryButton.disabled));
+    }
+    return normalized;
+  }
+
+  /** 分析结果导出按钮的统一禁用入口；原始日志导出不属于当前模式结果。 */
+  function setAnalysisExportsDisabled(disabled) {
+    analysisExportIds.forEach(function updateExportButton(id) {
+      var button = getElement(id);
+      if (!button) return;
+      button.disabled = Boolean(disabled);
+      button.setAttribute("aria-disabled", String(Boolean(disabled)));
+    });
+  }
+
+  function safeDrawerValue(value) {
+    if (value === null || value === undefined || value === "") return "—";
+    return String(value);
+  }
+
+  /**
+   * 将 drawer model 渲染为安全的固定 DOM。
+   *
+   * 原子值只写入 textContent；对象、数组和 JSON 序列化失败的兜底文本写入
+   * pre.textContent。这样服务端返回的尖括号、脚本片段和属性字符都不会成为 DOM。
+   */
+  function renderInterfaceDrawerModel(model) {
+    var drawer = getElement("workbench-drawer");
+    if (!drawer) return false;
+    var title = getElement("workbench-drawer-title");
+    var content = getElement("workbench-drawer-content");
+    if (!content) {
+      if (!drawer.__logWorkbenchContent) {
+        drawer.__logWorkbenchContent = document.createElement("div");
+        drawer.__logWorkbenchContent.className = "workbench-drawer__content";
+        drawer.appendChild(drawer.__logWorkbenchContent);
+      }
+      content = drawer.__logWorkbenchContent;
+    }
+    if (title) title.textContent = model && model.title ? String(model.title) : "日志详情";
+    content.textContent = "";
+    var source = model && typeof model === "object" ? model : {value: model};
+    Object.keys(source).forEach(function renderDrawerField(key) {
+      if (key === "title") return;
+      var field = document.createElement("section");
+      field.className = "workbench-drawer__field";
+      var label = document.createElement("h3");
+      label.textContent = key;
+      field.appendChild(label);
+      var value = source[key];
+      if (value && typeof value === "object") {
+        var pre = document.createElement("pre");
+        var serialized;
+        try {
+          serialized = JSON.stringify(value, null, 2);
+        } catch (error) {
+          serialized = "[值无法展示]";
+        }
+        pre.textContent = serialized === undefined ? "—" : String(serialized);
+        field.appendChild(pre);
+      } else {
+        var text = document.createElement("p");
+        text.textContent = safeDrawerValue(value);
+        field.appendChild(text);
+      }
+      content.appendChild(field);
+    });
+    return true;
+  }
+
+  function setWorkbenchInert(isInert) {
+    var root = getElement("log-workbench");
+    if (!root) return;
+    root.inert = Boolean(isInert);
+    if (isInert) {
+      root.setAttribute("inert", "");
+      root.setAttribute("aria-hidden", "true");
+    } else {
+      root.removeAttribute("inert");
+      root.removeAttribute("aria-hidden");
+    }
+  }
+
+  /** 只在首次初始化时绑定共享 drawer 的三种关闭入口和键盘焦点约束。 */
+  function initializeInterfaceDrawer() {
+    if (drawerInitialized) return;
+    var drawer = getElement("workbench-drawer");
+    var closeButton = getElement("workbench-drawer-close");
+    var backdrop = getElement("workbench-drawer-backdrop");
+    if (!drawer) return;
+    drawerInitialized = true;
+    if (closeButton) closeButton.addEventListener("click", closeInterfaceDrawer);
+    if (backdrop) {
+      backdrop.addEventListener("click", function closeOnBackdrop(event) {
+        if (!event || !event.target || event.target === backdrop) closeInterfaceDrawer();
+      });
+    }
+    document.addEventListener("keydown", function handleDrawerKeydown(event) {
+      if (drawer.hidden) return;
+      if (event.key === 'Escape') {
+        if (event.preventDefault) event.preventDefault();
+        closeInterfaceDrawer();
+        return;
+      }
+      if (event.key !== "Tab" || typeof drawer.querySelectorAll !== "function") return;
+      var focusable = Array.from(drawer.querySelectorAll("button")).filter(function isEnabled(button) {
+        return !button.disabled && !button.hidden;
+      });
+      if (!focusable.length) return;
+      var first = focusable[0];
+      var last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        if (event.preventDefault) event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        if (event.preventDefault) event.preventDefault();
+        first.focus();
+      }
+    });
+  }
+
+  /**
+   * 打开共享接口详情 drawer。
+   *
+   * @param {object} model 已脱敏的详情模型；所有字段均按安全文本渲染。
+   * @param {HTMLElement} trigger 触发按钮，用于记录和恢复关闭后的焦点。
+   * @returns {boolean} 找到 drawer 并成功打开时返回 true。
+   */
+  function openInterfaceDrawer(model, trigger) {
+    initializeInterfaceDrawer();
+    var drawer = getElement("workbench-drawer");
+    if (!drawer) return false;
+    state.lastFocusedElement = trigger || document.activeElement || null;
+    state.drawerTrigger = trigger || null;
+    renderInterfaceDrawerModel(model);
+    drawer.setAttribute("aria-modal", "true");
+    drawer.hidden = false;
+    var backdrop = getElement("workbench-drawer-backdrop");
+    if (backdrop) backdrop.hidden = false;
+    setWorkbenchInert(true);
+    if (trigger) trigger.setAttribute("aria-expanded", "true");
+    var closeButton = getElement("workbench-drawer-close");
+    if (closeButton && typeof closeButton.focus === "function") closeButton.focus();
+    else if (typeof drawer.focus === "function") drawer.focus();
+    return true;
+  }
+
+  /** 共享关闭实现；按钮、backdrop 和 Escape 都调用此函数恢复同一份 UI 状态。 */
+  function closeInterfaceDrawer() {
+    var drawer = getElement("workbench-drawer");
+    var backdrop = getElement("workbench-drawer-backdrop");
+    if (!drawer) return false;
+    drawer.hidden = true;
+    if (backdrop) backdrop.hidden = true;
+    setWorkbenchInert(false);
+    if (state.drawerTrigger) state.drawerTrigger.setAttribute("aria-expanded", "false");
+    var lastFocusedElement = state.lastFocusedElement;
+    state.drawerTrigger = null;
+    state.lastFocusedElement = null;
+    if (lastFocusedElement && typeof lastFocusedElement.focus === "function") {
+      lastFocusedElement.focus();
+    }
+    return true;
   }
 
   /** 读取同源 CSRF Cookie，仅用于写请求 Header；不保存任何 UI 状态。 */
@@ -273,14 +513,17 @@
   /** 标记分析结果可能过期；旧结果保留用于核对，但禁止继续导出。 */
   function markAnalysisStale(message) {
     var stale = getElement("analysis-stale");
-    var exportButton = getElement("export-filtered-result-btn");
     var text = message || "日志已修改，过滤结果可能已过期，请重新分析。";
     state.dirty = true;
+    if (activeAnalysis && activeAnalysis.revision !== state.inputRevision) {
+      cancelActiveAnalysis();
+    }
     if (stale) {
       stale.textContent = text;
       stale.hidden = false;
     }
-    if (exportButton) exportButton.disabled = true;
+    setAnalysisExportsDisabled(true);
+    setAnalysisState("stale", {message: text});
   }
 
   /**
@@ -320,6 +563,7 @@
       filteredButton.disabled = !hasResult;
       filteredButton.setAttribute("aria-disabled", String(!hasResult));
     }
+    setAnalysisState(hasResult ? "success" : "empty");
   }
 
   /**
@@ -659,6 +903,48 @@
     }
   }
 
+  /** 取消当前异步分析并立即释放统一入口；旧 Promise 的 finally 不得影响下一轮。 */
+  function cancelActiveAnalysis() {
+    var analysis = activeAnalysis;
+    if (!analysis) return false;
+    analysis.cancelled = true;
+    if (analysis.controller && typeof analysis.controller.abort === "function") {
+      analysis.controller.abort();
+    }
+    activeAnalysis = null;
+    analysisInFlight = null;
+    state.phase = "idle";
+    setAnalysisBusy(
+      analysis.root,
+      analysis.modeSelect,
+      analysis.submitButton,
+      analysis.loadingMask,
+      false,
+      analysis.idleText
+    );
+    return true;
+  }
+
+  function isCurrentAnalysis(analysis) {
+    return Boolean(analysis && activeAnalysis === analysis && !analysis.cancelled &&
+      analysis.revision === state.inputRevision && state.phase === "loading");
+  }
+
+  function analysisErrorDetails(result) {
+    var error = result && result.error ? result.error : result;
+    var code = error && (error.error_code || error.errorCode || error.code);
+    var message = result && result.message || error && error.message;
+    return {
+      errorCode: code ? String(code) : "ANALYSIS_ERROR",
+      errorMessage: message ? String(message) : "分析失败，请稍后重试。"
+    };
+  }
+
+  function isEmptyAnalysisResult(result) {
+    var details = analysisErrorDetails(result);
+    return Boolean(result && (result.empty === true || details.errorCode === "EMPTY_LOG"));
+  }
+
   function currentForm() {
     return getElement("log-filter-form") || getElement("log-analysis-form");
   }
@@ -676,12 +962,16 @@
     try {
       if (typeof form.requestSubmit === "function") {
         state.phase = "submitting";
+        setAnalysisState("loading");
+        setAnalysisExportsDisabled(true);
         nativeSubmitInProgress = true;
         form.requestSubmit();
         return true;
       }
       if (typeof form.submit === "function") {
         state.phase = "submitting";
+        setAnalysisState("loading");
+        setAnalysisExportsDisabled(true);
         nativeSubmitInProgress = false;
         form.submit();
         return true;
@@ -702,15 +992,30 @@
     var revisionAtStart = state.inputRevision;
     var controller = typeof global.AbortController === "function"
       ? new global.AbortController() : null;
+    var analysis = {
+      id: ++analysisSequence,
+      revision: revisionAtStart,
+      controller: controller,
+      root: root,
+      modeSelect: modeSelect,
+      submitButton: submitButton,
+      loadingMask: loadingMask,
+      idleText: idleText,
+      cancelled: false
+    };
+    activeAnalysis = analysis;
     var context = {
       root: root,
       form: form,
       endpoints: namespace.endpoints,
       logText: currentLogText(),
-      signal: controller ? controller.signal : null
+      signal: controller ? controller.signal : null,
+      /** 适配器在写 DOM 前调用，确保旧响应无法污染当前结果。 */
+      isCurrent: function isCurrent() { return isCurrentAnalysis(analysis); }
     };
     var runner = typeof mode.analyze === "function" ? mode.analyze : mode.run;
     state.phase = "loading";
+    setAnalysisState("loading");
     setAnalysisBusy(root, modeSelect, submitButton, loadingMask, true, idleText);
 
     var runResult;
@@ -719,46 +1024,58 @@
     } catch (error) {
       runResult = Promise.reject(error);
     }
-    analysisInFlight = Promise.resolve(runResult)
+    var promise = Promise.resolve(runResult)
       .then(function completeAnalysis(result) {
+        if (!isCurrentAnalysis(analysis)) return {ok: false, stale: true};
         if (!isSuccessfulAnalysisResult(result)) {
-          var invalidMessage = result && result.message
-            ? result.message : "分析未生成有效结果，请检查日志后重试。";
-          // 业务失败属于 People/Dating 自己的生命周期；不能把没有改写
-          // result-text 的失败误判成 Filter stale。日志 input 事件才是 Filter
-          // freshness 的 owner，适配器失败只通过自己的面板和错误提示反馈。
+          var invalidDetails = analysisErrorDetails(result);
+          var invalidMessage = invalidDetails.errorMessage || "分析未生成有效结果，请检查日志后重试。";
+          setAnalysisState(isEmptyAnalysisResult(result) ? "empty" : "error", {
+            errorCode: invalidDetails.errorCode,
+            errorMessage: invalidMessage,
+            message: invalidMessage
+          });
           showPersistentError(new Error(invalidMessage));
           activateAnalysisFailurePanel(mode);
-          return {ok: false, message: invalidMessage};
+          return {
+            ok: false,
+            message: invalidMessage,
+            error: {error_code: invalidDetails.errorCode, message: invalidMessage}
+          };
         }
-        var modeHandledStale = false;
         if (revisionAtStart !== state.inputRevision) {
           markAnalysisStale("分析期间日志已修改，结果可能已过期，请重新分析。");
-          // 输入事件通常已经清理过一次；这里再调用一次是为了覆盖请求返回
-          // 先于事件回调完成的竞态，防止响应把刚清理的 Dating 结果重新写回。
-          modeHandledStale = notifyActiveModeInputRevision(mode);
+          notifyActiveModeInputRevision(mode);
+          return {ok: false, stale: true};
         }
-        // People/Dating 只更新各自的结果面板，不会写入 result-text；它们成功时
-        // 不能替通用 Filter 清 stale。通用 Filter 成功走原生 POST，由新页面结果
-        // 建立 freshness，避免这里把两个生命周期混在一起。
-        if (!modeHandledStale) activateResultPanel();
+        setAnalysisState("success");
+        activateResultPanel();
         return result;
       })
       .catch(function handleAnalysisFailure(error) {
-        // Promise reject 同样只属于异步模式 owner；如果日志没有发生 input，
-        // 必须保留 Filter 原有 freshness，允许用户在同一份日志上重试。
+        if (!isCurrentAnalysis(analysis)) return {ok: false, stale: true};
         var failureMessage = error && error.message
           ? error.message : "分析失败，请稍后重试。";
+        var failureDetails = analysisErrorDetails(error);
+        setAnalysisState("error", {
+          errorCode: failureDetails.errorCode,
+          errorMessage: failureMessage,
+          message: failureMessage
+        });
         showPersistentError(error);
         activateAnalysisFailurePanel(mode);
-        return null;
+        return {ok: false, message: failureMessage, error: error};
       })
       .finally(function restoreAnalysisControls() {
+        if (activeAnalysis !== analysis) return;
         state.phase = "idle";
         setAnalysisBusy(root, modeSelect, submitButton, loadingMask, false, idleText);
+        activeAnalysis = null;
         analysisInFlight = null;
       });
-    return analysisInFlight;
+    analysis.promise = promise;
+    analysisInFlight = promise;
+    return promise;
   }
 
   /**
@@ -819,6 +1136,7 @@
         }
         nativeSubmitInProgress = false;
         state.phase = "submitting";
+        setAnalysisState("loading");
         return;
       }
       event.preventDefault();
@@ -1008,6 +1326,14 @@
     if (!root || root.dataset.workbenchInitialized === "true") return;
     root.dataset.workbenchInitialized = "true";
     namespace.endpoints = readEndpoints(root);
+    initializeInterfaceDrawer();
+    setAnalysisState(state.analysisState);
+    var retryButton = getElement("workbench-retry-btn");
+    if (retryButton) {
+      retryButton.addEventListener("click", function retryAnalysis() {
+        return analyzeSelectedMode();
+      });
+    }
     initializeTabs(root);
     initializeResizer(root);
     initializeLogViews();
@@ -1034,6 +1360,9 @@
   namespace.setAvailableTabs = setAvailableTabs;
   namespace.activateTab = activateTab;
   namespace.setResultHeader = setResultHeader;
+  namespace.openInterfaceDrawer = openInterfaceDrawer;
+  namespace.closeInterfaceDrawer = closeInterfaceDrawer;
+  namespace.setAnalysisState = setAnalysisState;
   namespace.activateResultPanel = activateResultPanel;
   namespace.showToast = showToast;
   namespace.showActionMessage = showActionMessage;
