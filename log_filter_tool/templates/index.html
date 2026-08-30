@@ -1085,29 +1085,67 @@
         </div>
 
         <section id="overviewPanel" class="workbench-tab-panel" role="tabpanel" aria-labelledby="overviewTab" tabindex="0" hidden>
-          <section id="people-overview" class="people-analysis-overview" aria-labelledby="people-verdict-title" hidden>
-            <div class="verdict-panel" id="people-verdict-panel" data-verdict="INCOMPLETE_EVIDENCE">
-              <div class="result-header">
-                <div>
-                  <h3 class="verdict-title" id="people-verdict-title">等待分析</h3>
-                  <p class="verdict-detail" id="people-task-summary">尚无 People Insight 任务结果。</p>
-                  <p class="ai-status" id="people-ai-status">AI 分析状态：等待分析</p>
+          <div id="people-search-analysis">
+            <section id="people-overview" class="people-analysis-overview" aria-labelledby="people-verdict-title" hidden>
+              <div class="verdict-panel" id="people-verdict-panel" data-verdict="INCOMPLETE_EVIDENCE">
+                <div class="result-header">
+                  <div>
+                    <h3 class="verdict-title" id="people-verdict-title">等待分析</h3>
+                    <p class="verdict-detail" id="people-task-summary">尚无 People Insight 任务结果。</p>
+                    <p class="ai-status" id="people-ai-status">AI 分析状态：等待分析</p>
+                  </div>
+                  <span class="stats" id="people-search-status">未分析</span>
                 </div>
-                <span class="stats" id="people-search-status">未分析</span>
+              </div>
+              <div class="analysis-grid">
+                <section class="analysis-panel">
+                  <h3>日志覆盖度</h3>
+                  <div class="coverage-list" id="people-coverage-list"></div>
+                </section>
+                <section class="analysis-panel">
+                  <h3>问题摘要</h3>
+                  <ul class="issue-list" id="people-issue-list"></ul>
+                </section>
               </div>
             </div>
-            <div class="analysis-grid">
-              <section class="analysis-panel">
-                <h3>日志覆盖度</h3>
-                <div class="coverage-list" id="people-coverage-list"></div>
-              </section>
-              <section class="analysis-panel">
-                <h3>问题摘要</h3>
-                <ul class="issue-list" id="people-issue-list"></ul>
+            <p class="workbench-empty-state" id="people-overview-empty">运行 People 分析后，此处展示当前日志的关键结论。</p>
+          </div>
+          {% if dating_analyzer_enabled %}
+          <section id="dating-analysis" class="dating-workbench" tabindex="-1" aria-labelledby="dating-heading" hidden>
+            <div class="result-header">
+              <div>
+                <h2 id="dating-heading">Dating 结构化分析</h2>
+                <div class="stats" id="dating-status">未分析</div>
+              </div>
+              <div class="result-tools" aria-label="Dating 报告操作">
+                <button id="copy-dating-report-btn" type="button" disabled>复制报告</button>
+                <button id="export-dating-report-btn" type="button" disabled>导出 Markdown</button>
+                <button id="export-dating-json-btn" type="button" disabled>导出 JSON</button>
+              </div>
+            </div>
+
+            <div id="dating-state" role="status" aria-live="polite" class="dating-state">
+              等待分析。请选择 Dating 模式并点击“分析日志”。
+            </div>
+
+            <div id="dating-content" class="dating-content" hidden>
+              <section id="dating-overview" class="dating-section" aria-labelledby="dating-summary-heading" hidden>
+                <div id="dating-verdict" class="dating-verdict incomplete">
+                  <h3 id="dating-summary-heading">等待分析</h3>
+                  <p id="dating-verdict-detail">尚无可展示的任务状态。</p>
+                  <p id="dating-next-action">下一步：粘贴日志并开始分析。</p>
+                </div>
+                <dl id="dating-summary" class="dating-summary-grid" aria-label="总体摘要"></dl>
+                <div class="dating-section-heading">
+                  <h3>上传摘要</h3>
+                  <p>与接口链路和任务资源保持同一事实来源</p>
+                </div>
+                <div id="dating-upload-list" class="dating-upload-list"></div>
+                <dl id="dating-lifecycle-metrics" class="dating-lifecycle-metrics" aria-label="生命周期指标"></dl>
               </section>
             </div>
           </section>
-          <p class="workbench-empty-state" id="people-overview-empty">运行 People 分析后，此处展示当前日志的关键结论。</p>
+          {% endif %}
         </section>
         <section id="interfacesPanel" class="workbench-tab-panel" role="tabpanel" aria-labelledby="interfacesTab" tabindex="0" hidden>
           <section id="people-interfaces" class="analysis-panel" aria-labelledby="people-interfaces-heading" hidden>
@@ -1115,9 +1153,53 @@
             <div class="table-scroll" id="people-timeline"></div>
           </section>
           <p class="workbench-empty-state" id="people-interfaces-empty">运行 People 分析后，此处展示 Provider 调用与业务响应摘要。</p>
+          {% if dating_analyzer_enabled %}
+          <section id="dating-interfaces" class="dating-section" aria-labelledby="dating-interfaces-heading" hidden>
+            <div class="dating-section-heading">
+              <h3 id="dating-interfaces-heading">Dating 接口执行链路</h3>
+              <p id="dating-call-count">0 条 · HTTP / Gateway / SubResponse 分层</p>
+            </div>
+            <div class="table-scroll">
+              <table id="dating-interface-table" class="dating-interface-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>请求时间</th>
+                    <th>Service</th>
+                    <th>Method</th>
+                    <th>Transport</th>
+                    <th>HTTP</th>
+                    <th>Gateway</th>
+                    <th>SubResponse</th>
+                    <th>Result</th>
+                    <th>Parse</th>
+                    <th>耗时</th>
+                    <th>任务/资源</th>
+                    <th>行号</th>
+                  </tr>
+                </thead>
+                <tbody id="dating-interface-table-body"></tbody>
+              </table>
+            </div>
+          </section>
+          {% endif %}
         </section>
         <section id="timelinePanel" class="workbench-tab-panel" role="tabpanel" aria-labelledby="timelineTab" tabindex="0" hidden>
           <p class="workbench-empty-state">运行分析后，此处展示按时间排序的日志事件。</p>
+          {% if dating_analyzer_enabled %}
+          <section id="dating-timeline" class="dating-section" aria-labelledby="dating-timeline-heading" hidden>
+            <div class="dating-section-heading">
+              <h3 id="dating-timeline-heading">Dating 任务时间线</h3>
+              <p>保留每一次 Poll；停滞信息只来自 diagnostics</p>
+            </div>
+            <h4>上传链路</h4>
+            <div id="dating-timeline-upload-list" class="dating-upload-list"></div>
+            <h4>Progress diagnostics</h4>
+            <div id="dating-progress-diagnostics" class="dating-result-summary"></div>
+            <h4>完整 Poll 时间线</h4>
+            <ol id="dating-task-timeline" class="dating-timeline"></ol>
+          </section>
+          {% endif %}
         </section>
         <section id="resultPanel" class="workbench-tab-panel" role="tabpanel" aria-labelledby="resultTab" tabindex="0">
 
@@ -1233,141 +1315,61 @@
       </section>
 
       {% if dating_analyzer_enabled %}
-        <section id="dating-analysis" class="dating-workbench" tabindex="-1" aria-labelledby="dating-heading" hidden>
-          <div class="result-header">
-            <div>
-              <h2 id="dating-heading">Dating 结构化分析</h2>
-              <div class="stats" id="dating-status">未分析</div>
+        <section id="dating-result" class="dating-section" aria-labelledby="dating-result-heading" hidden>
+          <div class="dating-section-heading">
+            <h3 id="dating-result-heading">Result 业务摘要</h3>
+            <p id="dating-schema-status">Schema 待识别</p>
+          </div>
+          <dl id="dating-result-summary" class="dating-result-summary"></dl>
+          <div id="dating-result-sections" class="dating-result-sections"></div>
+          <details id="dating-raw-result-details" class="dating-details">
+            <summary>查看原始脱敏 JSON</summary>
+            <pre id="dating-raw-result-json" class="dating-report"></pre>
+          </details>
+          <details id="dating-field-tree-details" class="dating-details">
+            <summary>查看原始字段树</summary>
+            <div id="dating-field-tree" aria-label="Result 原始字段树"></div>
+          </details>
+          <section class="dating-section" aria-labelledby="dating-field-heading">
+            <div class="dating-section-heading">
+              <h4 id="dating-field-heading">Result 字段索引</h4>
+              <p id="dating-field-count" aria-live="polite">0 个字段</p>
             </div>
-            <div class="result-tools" aria-label="Dating 报告操作">
-              <button id="copy-dating-report-btn" type="button" disabled>复制报告</button>
-              <button id="export-dating-report-btn" type="button" disabled>导出 Markdown</button>
-              <button id="export-dating-json-btn" type="button" disabled>导出 JSON</button>
+            <div class="dating-field-controls">
+              <div>
+                <label for="dating-field-filter">Presence</label>
+                <select id="dating-field-filter">
+                  <option value="ALL">全部</option>
+                  <option value="PRESENT">PRESENT</option>
+                  <option value="NULL">NULL</option>
+                  <option value="EMPTY_STRING">EMPTY_STRING</option>
+                  <option value="EMPTY_ARRAY">EMPTY_ARRAY</option>
+                  <option value="EMPTY_OBJECT">EMPTY_OBJECT</option>
+                  <option value="MISSING">MISSING</option>
+                  <option value="UNKNOWN_SCHEMA_FIELD">未知 Schema 字段</option>
+                </select>
+              </div>
+              <div>
+                <label for="dating-field-search">Path / Value 搜索</label>
+                <input id="dating-field-search" class="search-input" type="search" placeholder="输入字段路径或值">
+              </div>
+              <button id="dating-field-more" class="dating-more-button" type="button" hidden>显示更多字段</button>
             </div>
-          </div>
-
-          <div id="dating-state" role="status" aria-live="polite" class="dating-state">
-            等待分析。粘贴 Dating 日志后点击“Dating 结构化分析”。
-          </div>
-
-          <div id="dating-content" class="dating-content" hidden>
-            <section class="dating-section" aria-labelledby="dating-summary-heading">
-              <div id="dating-verdict" class="dating-verdict incomplete">
-                <h3 id="dating-summary-heading">等待分析</h3>
-                <p id="dating-verdict-detail">尚无可展示的任务状态。</p>
-                <p id="dating-next-action">下一步：粘贴日志并开始分析。</p>
-              </div>
-              <dl id="dating-summary" class="dating-summary-grid" aria-label="总体摘要"></dl>
-            </section>
-
-            <section class="dating-section" aria-labelledby="dating-lifecycle-heading">
-              <div class="dating-section-heading">
-                <h3 id="dating-lifecycle-heading">上传与任务生命周期</h3>
-                <p>保留每次 Poll，不合并重复状态</p>
-              </div>
-              <dl id="dating-lifecycle-metrics" class="dating-lifecycle-metrics"></dl>
-              <h4>上传链路</h4>
-              <div id="dating-upload-list" class="dating-upload-list"></div>
-              <h4>完整 Poll 时间线</h4>
-              <ol id="dating-task-timeline" class="dating-timeline"></ol>
-            </section>
-
-            <section class="dating-section" aria-labelledby="dating-result-heading">
-              <div class="dating-section-heading">
-                <h3 id="dating-result-heading">Result 业务摘要</h3>
-                <p id="dating-schema-status">Schema 待识别</p>
-              </div>
-              <dl id="dating-result-summary" class="dating-result-summary"></dl>
-              <div id="dating-result-sections" class="dating-result-sections"></div>
-              <details id="dating-field-tree-details" class="dating-details">
-                <summary>查看原始字段树</summary>
-                <div id="dating-field-tree" aria-label="Result 原始字段树"></div>
-              </details>
-            </section>
-
-            <section class="dating-section" aria-labelledby="dating-field-heading">
-              <div class="dating-section-heading">
-                <h3 id="dating-field-heading">Result 字段索引</h3>
-                <p id="dating-field-count" aria-live="polite">0 个字段</p>
-              </div>
-              <div class="dating-field-controls">
-                <div>
-                  <label for="dating-field-filter">Presence</label>
-                  <select id="dating-field-filter">
-                    <option value="ALL">全部</option>
-                    <option value="PRESENT">PRESENT</option>
-                    <option value="NULL">NULL</option>
-                    <option value="EMPTY_STRING">EMPTY_STRING</option>
-                    <option value="EMPTY_ARRAY">EMPTY_ARRAY</option>
-                    <option value="EMPTY_OBJECT">EMPTY_OBJECT</option>
-                    <option value="MISSING">MISSING</option>
-                    <option value="UNKNOWN_SCHEMA_FIELD">未知 Schema 字段</option>
-                  </select>
-                </div>
-                <div>
-                  <label for="dating-field-search">Path / Value 搜索</label>
-                  <input id="dating-field-search" class="search-input" type="search" placeholder="输入字段路径或值">
-                </div>
-                <button id="dating-field-more" class="dating-more-button" type="button" hidden>显示更多字段</button>
-              </div>
-              <div class="table-scroll">
-                <table id="dating-field-table" class="dating-field-table">
-                  <thead>
-                    <tr>
-                      <th>Path</th>
-                      <th>Type</th>
-                      <th>Presence</th>
-                      <th>Value</th>
-                      <th>Source</th>
-                    </tr>
-                  </thead>
-                  <tbody id="dating-field-table-body"></tbody>
-                </table>
-              </div>
-            </section>
-
-            <details id="dating-interface-details" class="dating-section dating-details">
-              <summary>接口执行链路（默认折叠） <span id="dating-call-count"></span></summary>
-              <div class="table-scroll">
-                <table id="dating-interface-table" class="dating-interface-table">
-                  <thead>
-                    <tr>
-                      <th>#</th>
-                      <th>请求时间</th>
-                      <th>Service</th>
-                      <th>Method</th>
-                      <th>HTTP</th>
-                      <th>Gateway</th>
-                      <th>SubResponse</th>
-                      <th>耗时</th>
-                      <th>任务/资源</th>
-                      <th>结果</th>
-                      <th>行号</th>
-                    </tr>
-                  </thead>
-                  <tbody id="dating-interface-table-body"></tbody>
-                </table>
-              </div>
-            </details>
-
-            <section class="dating-section" aria-labelledby="dating-check-heading">
-              <div class="dating-section-heading">
-                <h3 id="dating-check-heading">一致性检查与证据</h3>
-                <p>FAIL → WARN → UNKNOWN → PASS → NA</p>
-              </div>
-              <div id="dating-check-list" class="dating-check-list"></div>
-            </section>
-
-            <details class="dating-section dating-details">
-              <summary>解析警告 <span id="dating-warning-count"></span></summary>
-              <ul id="dating-parse-warnings" class="dating-warning-list"></ul>
-            </details>
-
-            <details class="dating-section dating-details">
-              <summary>固定 Markdown 报告</summary>
-              <pre id="dating-report" class="dating-report"></pre>
-            </details>
-          </div>
+            <div class="table-scroll">
+              <table id="dating-field-table" class="dating-field-table">
+                <thead>
+                  <tr>
+                    <th>Path</th>
+                    <th>Type</th>
+                    <th>Presence</th>
+                    <th>Value</th>
+                    <th>Source</th>
+                  </tr>
+                </thead>
+                <tbody id="dating-field-table-body"></tbody>
+              </table>
+            </div>
+          </section>
         </section>
       {% endif %}
         </section>
@@ -1378,6 +1380,36 @@
             <ol class="issue-list" id="people-check-list"></ol>
           </section>
           <p class="workbench-empty-state" id="people-checks-empty">运行 People 分析后，此处展示一致性检查与可追溯证据。</p>
+          {% if dating_analyzer_enabled %}
+          <section id="dating-checks" class="dating-section" aria-labelledby="dating-check-heading" hidden>
+            <div class="dating-section-heading">
+              <h3 id="dating-check-heading">Dating 一致性检查与证据</h3>
+              <p>FAIL → WARN → UNKNOWN → PASS → NA</p>
+            </div>
+            <div class="dating-field-controls">
+              <div>
+                <label for="dating-check-filter">检查筛选</label>
+                <select id="dating-check-filter">
+                  <option value="ALL">全部</option>
+                  <option value="FAIL">FAIL</option>
+                  <option value="WARN">WARN</option>
+                  <option value="UNKNOWN">UNKNOWN</option>
+                  <option value="PASS">PASS</option>
+                  <option value="NA">NA</option>
+                </select>
+              </div>
+            </div>
+            <div id="dating-check-list" class="dating-check-list"></div>
+            <details id="dating-parse-warning-details" class="dating-details">
+              <summary>解析警告 <span id="dating-warning-count"></span></summary>
+              <ul id="dating-parse-warnings" class="dating-warning-list"></ul>
+            </details>
+            <details id="dating-report-details" class="dating-details">
+              <summary>固定 Markdown 报告</summary>
+              <pre id="dating-report" class="dating-report"></pre>
+            </details>
+          </section>
+          {% endif %}
         </section>
       </section>
     </main>
@@ -1393,1517 +1425,8 @@
     <script src="{{ url_for('tool.static', filename='js/workbench-core.js') }}"></script>
     <script src="{{ url_for('tool.static', filename='js/workbench-filter.js') }}"></script>
     <script src="{{ url_for('tool.static', filename='js/workbench-people.js') }}"></script>
-    <script>
-      /* 通用交互与 People 适配器均已外置；以下桥接只供尚未迁移的 Dating 代码使用。 */
-      var showActionMessage = window.LogWorkbench.showActionMessage;
-      var readCookie = window.LogWorkbench.readCookie;
-      var exportLog = window.LogWorkbench.exportLog;
-
-      /** 兼容仍在本模板中的 Dating 调用点，实际行号算法由 core 统一维护。 */
-      function focusLogLines(startLine, endLine) {
-        return window.LogWorkbench.focusLogLines(startLine, endLine);
-      }
-
-      /* 保留该键盘契约的语义说明；实际 listener 位于 workbench-filter.js。 */
-      // e.key === 'Enter' || e.key === ' '
-
-      {% if dating_analyzer_enabled %}
-      /*
-       * Dating 使用独立状态，绝不复用 Filter 的 resultRawText 或 People 报告节点。
-       * 服务端返回值只能进入 textContent/createTextNode，避免日志内容变成 HTML。
-       */
-      var latestDatingAnalysis = null;
-      var latestDatingReport = '';
-      var latestDatingFields = [];
-      var datingExpandedPaths = Object.create(null);
-      var datingTreeLimits = Object.create(null);
-      var datingVisibleFieldCount = 200;
-      var pendingDatingFieldTreeFields = [];
-      var pendingDatingCalls = [];
-      var pendingDatingPutAssetMap = Object.create(null);
-      var datingFieldTreeMaterialized = false;
-      var datingCallsMaterialized = false;
-      var datingLazyListenersAttached = false;
-      var datingAnalyzeUrl = {{ url_for('tool.analyze_dating')|tojson }};
-      var datingExportUrl = {{ url_for('tool.export_log')|tojson }};
-
-      /**
-       * 将任意服务端值转换为纯文本并追加到节点。
-       * @param {Node} parent 目标 DOM 节点。
-       * @param {*} value 已由后端脱敏的结构化值。
-       * @returns {Node} 原目标节点，便于调用方继续组装。
-       */
-      function appendDatingText(parent, value) {
-        var text;
-        if (value === null) {
-          text = 'null';
-        } else if (value === undefined) {
-          text = '—';
-        } else if (typeof value === 'string') {
-          text = value === '' ? '空字符串' : value;
-        } else if (typeof value === 'object') {
-          try {
-            text = JSON.stringify(value, null, 2);
-          } catch (error) {
-            text = String(value);
-          }
-        } else {
-          text = String(value);
-        }
-        parent.appendChild(document.createTextNode(text));
-        return parent;
-      }
-
-      /** 清空并返回 Dating 专属节点，不影响页面其他模式。 */
-      function clearDatingNode(id) {
-        var node = document.getElementById(id);
-        node.textContent = '';
-        return node;
-      }
-
-      /** 创建只包含纯文本的节点，className 仅来自前端固定样式。 */
-      function createDatingTextElement(tagName, className, value) {
-        var node = document.createElement(tagName);
-        if (className) {
-          node.className = className;
-        }
-        appendDatingText(node, value);
-        return node;
-      }
-
-      /** 向摘要 dl 追加一个稳定的 label/value 对。 */
-      function appendDatingDefinition(parent, label, value) {
-        var group = document.createElement('div');
-        var displayValue = value === '' ? '空字符串' : value;
-        group.className = 'dating-summary-item';
-        group.appendChild(createDatingTextElement('dt', '', label));
-        group.appendChild(createDatingTextElement(
-          'dd', '', displayValue === undefined ? '—' : displayValue
-        ));
-        parent.appendChild(group);
-      }
-
-      /**
-       * 返回便于单行扫描的事实值。对象仍使用 JSON 文本，不生成 HTML。
-       * @param {*} value 字段、检查或调用中的值。
-       * @returns {string} 稳定文本。
-       */
-      function datingCompactValue(value) {
-        if (value === null) return 'null';
-        if (value === undefined) return '—';
-        if (typeof value === 'string') return value;
-        if (typeof value === 'object') {
-          try {
-            return JSON.stringify(value);
-          } catch (error) {
-            return String(value);
-          }
-        }
-        return String(value);
-      }
-
-      /** 根据 result_call_id 从事实调用中读取 result_id，不从全文猜测。 */
-      function findDatingResultId(calls, resultCallId) {
-        var resultCall = (Array.isArray(calls) ? calls : []).find(function(call) {
-          return call.call_id === resultCallId;
-        });
-        var data = resultCall && resultCall.response && resultCall.response.data;
-        return data && data.result_id !== undefined ? data.result_id : null;
-      }
-
-      /**
-       * 从已完成的上传关联构建 PUT call_id → asset_id 映射。
-       * 同一 PUT 若异常地出现多个 asset，仅保留日志顺序中的首个事实，避免前端猜测。
-       */
-      function buildDatingPutAssetMap(taskSnapshot) {
-        var putAssetMap = Object.create(null);
-        var assets = taskSnapshot && Array.isArray(taskSnapshot.input_assets)
-          ? taskSnapshot.input_assets : [];
-        assets.forEach(function(asset) {
-          if (!asset || !asset.put_call_id || asset.asset_id === null ||
-              asset.asset_id === undefined || asset.asset_id === '') {
-            return;
-          }
-          var putCallId = String(asset.put_call_id);
-          if (!Object.prototype.hasOwnProperty.call(putAssetMap, putCallId)) {
-            putAssetMap[putCallId] = String(asset.asset_id);
-          }
-        });
-        return putAssetMap;
-      }
-
-      /** 原始字段树只在用户首次展开对应 details 时创建。 */
-      function materializeDatingFieldTreeOnce() {
-        if (datingFieldTreeMaterialized) return;
-        datingFieldTreeMaterialized = true;
-        renderDatingFieldTree(pendingDatingFieldTreeFields);
-      }
-
-      /** 接口调用表只在用户首次展开对应 details 时创建。 */
-      function materializeDatingCallsOnce() {
-        if (datingCallsMaterialized) return;
-        datingCallsMaterialized = true;
-        renderDatingCalls(pendingDatingCalls, pendingDatingPutAssetMap);
-      }
-
-      /**
-       * 保存当前响应的重型分区数据，并为两个折叠区安装一次性 toggle 入口。
-       * 每轮分析都会重置物化标记，但事件监听器在页面生命周期内只绑定一次。
-       */
-      function setupDatingLazySections(taskSnapshot, calls) {
-        pendingDatingFieldTreeFields = Array.isArray(taskSnapshot.result_fields)
-          ? taskSnapshot.result_fields.slice() : [];
-        pendingDatingCalls = Array.isArray(calls) ? calls.slice() : [];
-        pendingDatingPutAssetMap = buildDatingPutAssetMap(taskSnapshot);
-        datingFieldTreeMaterialized = false;
-        datingCallsMaterialized = false;
-        datingExpandedPaths = Object.create(null);
-        datingTreeLimits = Object.create(null);
-
-        var fieldTreeDetails = document.getElementById('dating-field-tree-details');
-        var interfaceDetails = document.getElementById('dating-interface-details');
-        fieldTreeDetails.open = false;
-        interfaceDetails.open = false;
-        clearDatingNode('dating-field-tree');
-        clearDatingNode('dating-interface-table-body');
-        document.getElementById('dating-call-count').textContent =
-          '共 ' + pendingDatingCalls.length + ' 条 · 展开后加载';
-
-        if (!datingLazyListenersAttached) {
-          fieldTreeDetails.addEventListener('toggle', function() {
-            if (fieldTreeDetails.open) materializeDatingFieldTreeOnce();
-          });
-          interfaceDetails.addEventListener('toggle', function() {
-            if (interfaceDetails.open) materializeDatingCallsOnce();
-          });
-          datingLazyListenersAttached = true;
-        }
-      }
-
-      /**
-       * 控制 Dating 请求期按钮和状态；完成后仅按当前结果决定导出可用性。
-       * @param {boolean} isLoading 是否正在等待分析接口。
-       */
-      function setDatingLoading(isLoading) {
-        var analyzeButton = document.getElementById('analyze-dating-btn');
-        var copyButton = document.getElementById('copy-dating-report-btn');
-        var reportButton = document.getElementById('export-dating-report-btn');
-        var jsonButton = document.getElementById('export-dating-json-btn');
-        var status = document.getElementById('dating-status');
-        var state = document.getElementById('dating-state');
-
-        analyzeButton.disabled = isLoading;
-        analyzeButton.textContent = isLoading ? '分析中...' : 'Dating 结构化分析';
-        copyButton.disabled = isLoading || !latestDatingReport;
-        reportButton.disabled = isLoading || !latestDatingReport;
-        jsonButton.disabled = isLoading || !latestDatingAnalysis;
-        if (isLoading) {
-          status.textContent = '分析中';
-          state.className = 'dating-state loading';
-          state.textContent = '正在解析接口和结果字段…';
-        }
-      }
-
-      /** 清除上一轮 Dating 结果，错误请求不能继续显示为旧成功结果。 */
-      function resetDatingResult() {
-        latestDatingAnalysis = null;
-        latestDatingReport = '';
-        latestDatingFields = [];
-        pendingDatingFieldTreeFields = [];
-        pendingDatingCalls = [];
-        pendingDatingPutAssetMap = Object.create(null);
-        datingFieldTreeMaterialized = false;
-        datingCallsMaterialized = false;
-        datingExpandedPaths = Object.create(null);
-        datingTreeLimits = Object.create(null);
-        datingVisibleFieldCount = 200;
-        document.getElementById('dating-content').hidden = true;
-        document.getElementById('dating-field-tree-details').open = false;
-        document.getElementById('dating-interface-details').open = false;
-        clearDatingNode('dating-field-tree');
-        clearDatingNode('dating-interface-table-body');
-        clearDatingNode('dating-report');
-        document.getElementById('copy-dating-report-btn').disabled = true;
-        document.getElementById('export-dating-report-btn').disabled = true;
-        document.getElementById('export-dating-json-btn').disabled = true;
-      }
-
-      /**
-       * 展示稳定 HTTP/error_code 和可执行提示，不暴露异常堆栈。
-       * @param {string} message 后端安全错误信息。
-       * @param {string} errorCode 稳定错误码。
-       * @param {number} statusCode HTTP 状态码。
-       */
-      function renderDatingError(message, errorCode, statusCode) {
-        var section = document.getElementById('dating-analysis');
-        var status = document.getElementById('dating-status');
-        var state = clearDatingNode('dating-state');
-        var actionByStatus = {
-          400: '请检查日志内容后重新分析。',
-          413: '请缩小日志到 10 MiB 以内后重试。',
-          422: '请确认日志包含 Dating 调用；多任务日志需指定单个 task_id。',
-          500: '请保留原日志并稍后重试；服务端已记录内部异常。'
-        };
-        var stableCode = errorCode || (
-          statusCode === 413 ? 'LOG_TOO_LARGE' :
-          statusCode === 422 ? 'UNSUPPORTED_LOG' :
-          statusCode === 500 ? 'ANALYSIS_INTERNAL_ERROR' : 'EMPTY_LOG'
-        );
-
-        section.hidden = false;
-        status.textContent = '失败 · ' + String(statusCode || 400) + ' · ' + stableCode;
-        state.className = 'dating-state error';
-        state.appendChild(createDatingTextElement(
-          'strong', '', String(statusCode || 400) + ' · ' + stableCode
-        ));
-        state.appendChild(createDatingTextElement('p', '', message || 'Dating 日志分析失败'));
-        state.appendChild(createDatingTextElement(
-          'p', '', actionByStatus[statusCode] || actionByStatus[400]
-        ));
-        section.scrollIntoView({block: 'start'});
-        section.focus({preventScroll: true});
-      }
-
-      /**
-       * 调用本地确定性 Dating API。请求开始即清空旧结果，确保失败态不混淆。
-       */
-      async function analyzeDatingLog() {
-        var logText = document.getElementById('log_text').value;
-        var section = document.getElementById('dating-analysis');
-        section.hidden = false;
-        resetDatingResult();
-
-        if (!logText.trim()) {
-          renderDatingError('日志内容为空，请先粘贴日志再分析。', 'EMPTY_LOG', 400);
-          return {ok: false, message: '日志内容为空，请先粘贴日志再分析。'};
-        }
-
-        setDatingLoading(true);
-        try {
-          var response = await fetch(datingAnalyzeUrl, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-CSRF-Token': readCookie('tp_csrf')
-            },
-            body: JSON.stringify({log_text: logText, task_id: null})
-          });
-          var payload;
-          try {
-            payload = await response.json();
-          } catch (parseError) {
-            payload = {};
-          }
-          if (!response.ok) {
-            var requestError = new Error(payload.message || 'Dating 日志分析失败');
-            requestError.errorCode = payload.error_code || '';
-            requestError.statusCode = response.status;
-            if (Array.isArray(payload.task_ids) && payload.task_ids.length) {
-              requestError.message += '：' + payload.task_ids.join('、');
-            }
-            throw requestError;
-          }
-
-          latestDatingAnalysis = payload;
-          latestDatingReport = typeof payload.report_markdown === 'string'
-            ? payload.report_markdown : '';
-          renderDatingAnalysis(payload);
-          section.scrollIntoView({block: 'start'});
-          section.focus({preventScroll: true});
-          return {ok: true, data: payload};
-        } catch (error) {
-          resetDatingResult();
-          renderDatingError(
-            error.message,
-            error.errorCode || 'ANALYSIS_INTERNAL_ERROR',
-            error.statusCode || 500
-          );
-          return {ok: false, message: error.message, error: error};
-        } finally {
-          setDatingLoading(false);
-        }
-      }
-
-      /**
-       * 只负责组织各事实分区；Schema 和规则判断均来自服务端。
-       * @param {Object} data Dating API 的已脱敏成功响应。
-       */
-      function renderDatingAnalysis(data) {
-        var taskSnapshot = data.task_snapshot || {};
-        var lifecycle = taskSnapshot.lifecycle || {};
-        var baseSummary = data.summary || {};
-        var inputAssets = Array.isArray(taskSnapshot.input_assets)
-          ? taskSnapshot.input_assets : [];
-        var summary = {
-          verdict: data.verdict,
-          task_type: taskSnapshot.task_type,
-          task_id: taskSnapshot.task_id,
-          result_id: findDatingResultId(data.calls, taskSnapshot.result_call_id),
-          schema_version: taskSnapshot.schema_version,
-          final_status: lifecycle.final_status,
-          duration_ms: lifecycle.duration_ms,
-          gateway_call_count: baseSummary.gateway_call_count,
-          upload_call_count: baseSummary.upload_call_count,
-          asset_count: inputAssets.length,
-          poll_count: lifecycle.poll_count,
-          http_error_count: baseSummary.http_error_count,
-          business_error_count: baseSummary.business_error_count,
-          check_fail_count: baseSummary.check_fail_count,
-          check_warn_count: baseSummary.check_warn_count
-        };
-
-        document.getElementById('dating-content').hidden = false;
-        var state = document.getElementById('dating-state');
-        state.className = 'dating-state success';
-        state.textContent = '分析完成：' + (data.verdict || '完成') + '。';
-        renderDatingSummary(summary);
-        renderDatingLifecycle(taskSnapshot);
-        renderDatingResult(taskSnapshot);
-        renderDatingFields(taskSnapshot.result_fields || []);
-        setupDatingLazySections(taskSnapshot, data.calls || []);
-        renderDatingChecks(data.checks || []);
-        renderDatingParseWarnings(data.parse_warnings || []);
-        clearDatingNode('dating-report').textContent = latestDatingReport;
-        document.getElementById('dating-status').textContent =
-          (data.verdict || '完成') + ' · task_id=' + (taskSnapshot.task_id || '—');
-      }
-
-      /**
-       * 渲染当前结论、下一步和高价值摘要，状态文本与颜色同时表达语义。
-       * @param {Object} summary 由成功响应事实组装的摘要。
-       */
-      function renderDatingSummary(summary) {
-        var verdictLabels = {
-          NO_ISSUES: '未发现问题',
-          WARNINGS_FOUND: '存在需要确认项',
-          ISSUES_FOUND: '发现已确认异常',
-          INCOMPLETE_LOG: '日志证据不足'
-        };
-        var verdictClasses = {
-          NO_ISSUES: 'no-issues',
-          WARNINGS_FOUND: 'warnings',
-          ISSUES_FOUND: 'issues',
-          INCOMPLETE_LOG: 'incomplete'
-        };
-        var nextActions = {
-          NO_ISSUES: '下一步：可继续核对生命周期和最终字段。',
-          WARNINGS_FOUND: '下一步：先核对 WARN 检查项及其原日志证据。',
-          ISSUES_FOUND: '下一步：先处理 FAIL 检查项，再核对关联调用。',
-          INCOMPLETE_LOG: '下一步：补齐缺失的请求、响应或任务终态日志。'
-        };
-        var verdict = summary.verdict || 'INCOMPLETE_LOG';
-        var verdictPanel = document.getElementById('dating-verdict');
-        verdictPanel.className = 'dating-verdict ' + (verdictClasses[verdict] || 'incomplete');
-        document.getElementById('dating-summary-heading').textContent =
-          verdictLabels[verdict] || verdict;
-        document.getElementById('dating-verdict-detail').textContent =
-          '最终状态 ' + (summary.final_status || '未知') +
-          ' · FAIL ' + String(summary.check_fail_count || 0) +
-          ' · WARN ' + String(summary.check_warn_count || 0);
-        document.getElementById('dating-next-action').textContent =
-          nextActions[verdict] || nextActions.INCOMPLETE_LOG;
-
-        var container = clearDatingNode('dating-summary');
-        [
-          ['任务类型', summary.task_type],
-          ['task_id', summary.task_id],
-          ['result_id', summary.result_id],
-          ['schema_version', summary.schema_version],
-          ['最终状态', summary.final_status],
-          ['任务耗时', summary.duration_ms === null || summary.duration_ms === undefined ? '—' : summary.duration_ms + ' ms'],
-          ['Gateway', summary.gateway_call_count],
-          ['PUT', summary.upload_call_count],
-          ['Asset', summary.asset_count],
-          ['Poll', summary.poll_count],
-          ['HTTP / Business Error', String(summary.http_error_count || 0) + ' / ' + String(summary.business_error_count || 0)],
-          ['FAIL / WARN', String(summary.check_fail_count || 0) + ' / ' + String(summary.check_warn_count || 0)]
-        ].forEach(function(entry) {
-          appendDatingDefinition(container, entry[0], entry[1]);
-        });
-      }
-
-      /** 从当前 Dating 响应中按 call_id 读取事实调用。 */
-      function findDatingCall(callId) {
-        if (!callId || !latestDatingAnalysis || !Array.isArray(latestDatingAnalysis.calls)) {
-          return null;
-        }
-        return latestDatingAnalysis.calls.find(function(call) {
-          return call.call_id === callId;
-        }) || null;
-      }
-
-      /**
-       * 创建可键盘操作的原日志行号定位按钮。
-       * @param {number} startLine 起始行（1-based）。
-       * @param {number} endLine 结束行（1-based）。
-       * @param {string} label 可选的阶段名称。
-       */
-      function createDatingLineButton(startLine, endLine, label) {
-        if (!Number.isFinite(Number(startLine)) || Number(startLine) < 1) {
-          return createDatingTextElement('span', 'dating-muted', '日志证据不足');
-        }
-        var safeStart = Number(startLine);
-        var safeEnd = Number.isFinite(Number(endLine)) && Number(endLine) >= safeStart
-          ? Number(endLine) : safeStart;
-        var button = document.createElement('button');
-        button.type = 'button';
-        button.className = 'dating-line-button';
-        button.textContent = (label ? label + ' ' : '') + 'L' + safeStart +
-          (safeEnd === safeStart ? '' : '–' + safeEnd);
-        button.addEventListener('click', function() {
-          focusLogLines(safeStart, safeEnd);
-        });
-        return button;
-      }
-
-      /* 行号定位由 workbench-core.js 统一实现；此处只保留 Dating 的调用兼容桥。 */
-
-      /** 为 upload 阶段追加对应调用的请求/响应行号。 */
-      function appendDatingCallLines(parent, callId, label) {
-        var call = findDatingCall(callId);
-        if (!call) return;
-        var request = call.request || {};
-        var response = call.response || {};
-        if (request.line_start) {
-          parent.appendChild(createDatingLineButton(
-            request.line_start, request.line_end, label + ' 请求'
-          ));
-        }
-        if (response.line_start) {
-          parent.appendChild(createDatingLineButton(
-            response.line_start, response.line_end, label + ' 响应'
-          ));
-        }
-      }
-
-      /**
-       * 展示上传关联、生命周期诊断和每一条 Poll；不做状态去重。
-       * @param {Object} taskSnapshot 服务端任务快照。
-       */
-      function renderDatingLifecycle(taskSnapshot) {
-        var lifecycle = taskSnapshot.lifecycle || {};
-        var diagnostics = taskSnapshot.progress_diagnostics || {};
-        var metrics = clearDatingNode('dating-lifecycle-metrics');
-        var terminalText = lifecycle.terminal === false
-          ? '任务未到终态或日志截断'
-          : lifecycle.terminal === true ? '任务已到终态' : '终态未知';
-        [
-          ['生命周期', terminalText],
-          ['Poll 次数', lifecycle.poll_count],
-          ['不同进度', Array.isArray(diagnostics.distinct_progress_values) ? diagnostics.distinct_progress_values.join('、') : '—'],
-          ['未变化 Poll', diagnostics.unchanged_poll_count],
-          ['任务耗时', lifecycle.duration_ms === null || lifecycle.duration_ms === undefined ? '—' : lifecycle.duration_ms + ' ms']
-        ].forEach(function(entry) {
-          appendDatingDefinition(metrics, entry[0], entry[1]);
-        });
-
-        var uploadList = clearDatingNode('dating-upload-list');
-        var assets = Array.isArray(taskSnapshot.input_assets) ? taskSnapshot.input_assets : [];
-        if (!assets.length) {
-          uploadList.appendChild(createDatingTextElement(
-            'p', 'dating-muted', '没有可关联的上传资源。'
-          ));
-        }
-        assets.forEach(function(asset, assetIndex) {
-          var item = document.createElement('article');
-          item.className = 'dating-upload-item';
-          item.appendChild(createDatingTextElement(
-            'h4', '', String(assetIndex + 1) + '. ' + (asset.asset_id || 'orphan PUT')
-          ));
-          item.appendChild(createDatingTextElement(
-            'p', 'dating-upload-chain',
-            'Prepare ' + (asset.prepare_status || '未知') +
-            ' → PUT ' + (asset.put_http_status === null || asset.put_http_status === undefined ? '未知' : asset.put_http_status) +
-            ' → Complete ' + (asset.complete_status || '未知') +
-            ' → Used by Task ' + (asset.used_by_task ? '是' : '否')
-          ));
-          item.appendChild(createDatingTextElement(
-            'p', 'dating-upload-meta',
-            '关联状态=' + (asset.upload_state || 'unknown') +
-            ' · content_type=' + (asset.content_type || '—') +
-            ' · size=' + (asset.size_bytes === null || asset.size_bytes === undefined ? '—' : asset.size_bytes + ' bytes')
-          ));
-          var lines = document.createElement('div');
-          lines.className = 'result-tools';
-          appendDatingCallLines(lines, asset.prepare_call_id, 'Prepare');
-          appendDatingCallLines(lines, asset.put_call_id, 'PUT');
-          appendDatingCallLines(lines, asset.complete_call_id, 'Complete');
-          if (lines.childNodes.length) item.appendChild(lines);
-          if (Array.isArray(asset.warnings) && asset.warnings.length) {
-            item.appendChild(createDatingTextElement(
-              'p', 'dating-muted', 'Warnings: ' + datingCompactValue(asset.warnings)
-            ));
-          }
-          uploadList.appendChild(item);
-        });
-
-        var timeline = clearDatingNode('dating-task-timeline');
-        var samples = Array.isArray(taskSnapshot.status_samples)
-          ? taskSnapshot.status_samples : [];
-        if (!samples.length) {
-          timeline.appendChild(createDatingTextElement(
-            'li', 'dating-muted', '日志中没有 Poll 状态样本。'
-          ));
-        }
-        samples.forEach(function(sample, sampleIndex) {
-          var item = document.createElement('li');
-          item.appendChild(createDatingTextElement(
-            'span', 'dating-timeline-sequence', '#' + String(sampleIndex + 1)
-          ));
-          item.appendChild(createDatingTextElement(
-            'span', 'dating-mono', sample.timestamp || '时间未知'
-          ));
-          item.appendChild(createDatingTextElement(
-            'span', '', (sample.status || 'unknown') + ' / ' + (sample.phase || 'unknown')
-          ));
-          item.appendChild(createDatingTextElement(
-            'span', '', sample.progress_percent === null || sample.progress_percent === undefined
-              ? '进度未知' : String(sample.progress_percent) + '%'
-          ));
-          item.appendChild(createDatingLineButton(
-            sample.line_start, sample.line_end, 'Poll'
-          ));
-          timeline.appendChild(item);
-        });
-      }
-
-      /** 使用固定文本区分缺失、null、空字符串及空容器。 */
-      function datingSchemaValue(value) {
-        if (value === null) return 'null';
-        if (value === undefined) return '字段缺失';
-        if (value === '') return '空字符串';
-        if (Array.isArray(value) && !value.length) return '空数组 []';
-        if (value && typeof value === 'object' && !Object.keys(value).length) {
-          return '空对象 {}';
-        }
-        return datingCompactValue(value);
-      }
-
-      /**
-       * 创建首次展开才生成 body 的结果分组，避免已知 Schema 的长数组阻塞首屏。
-       * renderer 只能返回使用纯文本 API 构建的节点。
-       */
-      function appendDatingLazyDetails(parent, summaryText, renderer) {
-        var details = document.createElement('details');
-        details.className = 'dating-result-section';
-        var summary = document.createElement('summary');
-        appendDatingText(summary, summaryText);
-        var body = document.createElement('div');
-        var materialized = false;
-        details.addEventListener('toggle', function() {
-          if (!details.open || materialized) return;
-          materialized = true;
-          body.appendChild(renderer());
-        });
-        details.appendChild(summary);
-        details.appendChild(body);
-        parent.appendChild(details);
-      }
-
-      /** 返回按 rank 升序、同 rank 保持服务端顺序的角色副本。 */
-      function sortDatingRolesByRank(roles) {
-        return (Array.isArray(roles) ? roles : []).map(function(role, index) {
-          return {role: role || {}, index: index};
-        }).sort(function(left, right) {
-          var leftRank = Number(left.role.rank);
-          var rightRank = Number(right.role.rank);
-          leftRank = Number.isFinite(leftRank) ? leftRank : Number.POSITIVE_INFINITY;
-          rightRank = Number.isFinite(rightRank) ? rightRank : Number.POSITIVE_INFINITY;
-          return leftRank === rightRank ? left.index - right.index : leftRank - rightRank;
-        }).map(function(entry) {
-          return entry.role;
-        });
-      }
-
-      /** 创建 Reply v1 单个角色的事实详情。 */
-      function renderDatingReplyRole(role) {
-        var body = document.createElement('div');
-        var facts = document.createElement('dl');
-        facts.className = 'dating-result-summary';
-        [
-          ['role_id', role.role_id],
-          ['name', role.role_name],
-          ['rank', role.rank],
-          ['selection_rule_id', role.selection_rule_id],
-          ['reasons', role.selection_reasons],
-          ['coach note', role.coach_note]
-        ].forEach(function(entry) {
-          appendDatingDefinition(facts, entry[0], datingSchemaValue(entry[1]));
-        });
-        body.appendChild(facts);
-
-        body.appendChild(createDatingTextElement('h4', '', 'Replies'));
-        var replies = role.replies;
-        if (!Array.isArray(replies)) {
-          body.appendChild(createDatingTextElement(
-            'p', 'dating-muted', datingSchemaValue(replies)
-          ));
-        } else if (!replies.length) {
-          body.appendChild(createDatingTextElement('p', 'dating-muted', '空数组 []'));
-        } else {
-          var tableWrap = document.createElement('div');
-          tableWrap.className = 'table-scroll';
-          var table = document.createElement('table');
-          table.className = 'dating-field-table';
-          var head = document.createElement('thead');
-          var headRow = document.createElement('tr');
-          ['reply_id', 'text', 'is_top_pick'].forEach(function(label) {
-            headRow.appendChild(createDatingTextElement('th', '', label));
-          });
-          head.appendChild(headRow);
-          table.appendChild(head);
-          var tableBody = document.createElement('tbody');
-          replies.forEach(function(reply) {
-            reply = reply || {};
-            var row = document.createElement('tr');
-            row.appendChild(createDatingTextElement(
-              'td', 'dating-mono', datingSchemaValue(reply.reply_id)
-            ));
-            row.appendChild(createDatingTextElement(
-              'td', 'dating-value-cell', datingSchemaValue(reply.text)
-            ));
-            row.appendChild(createDatingTextElement(
-              'td', '', datingSchemaValue(reply.is_top_pick)
-            ));
-            tableBody.appendChild(row);
-          });
-          table.appendChild(tableBody);
-          tableWrap.appendChild(table);
-          body.appendChild(tableWrap);
-        }
-
-        var topPick = role.top_pick;
-        body.appendChild(createDatingTextElement('h4', '', 'top_pick 引用'));
-        if (!topPick || typeof topPick !== 'object' || Array.isArray(topPick)) {
-          body.appendChild(createDatingTextElement(
-            'p', 'dating-muted', datingSchemaValue(topPick)
-          ));
-        } else {
-          var topPickFacts = document.createElement('dl');
-          topPickFacts.className = 'dating-result-summary';
-          appendDatingDefinition(
-            topPickFacts, 'reply_id', datingSchemaValue(topPick.reply_id)
-          );
-          appendDatingDefinition(
-            topPickFacts, 'text', datingSchemaValue(topPick.text)
-          );
-          body.appendChild(topPickFacts);
-        }
-
-        body.appendChild(createDatingTextElement('h4', '', 'alternatives 引用'));
-        var alternatives = role.alternatives;
-        var alternativeList = document.createElement('ul');
-        if (!Array.isArray(alternatives)) {
-          alternativeList.appendChild(createDatingTextElement(
-            'li', 'dating-muted', datingSchemaValue(alternatives)
-          ));
-        } else if (!alternatives.length) {
-          alternativeList.appendChild(createDatingTextElement('li', 'dating-muted', '空数组 []'));
-        }
-        (Array.isArray(alternatives) ? alternatives : []).forEach(function(alternative) {
-          alternative = alternative || {};
-          alternativeList.appendChild(createDatingTextElement(
-            'li', '', datingSchemaValue(alternative.reply_id) + ' · ' +
-              datingSchemaValue(alternative.text)
-          ));
-        });
-        body.appendChild(alternativeList);
-        return body;
-      }
-
-      /** 创建 Reply v1 角色列表；角色摘要按 rank 排序，详情按需物化。 */
-      function renderDatingReplyResult(resultPayload) {
-        var container = document.createElement('div');
-        if (!resultPayload || typeof resultPayload !== 'object' || Array.isArray(resultPayload)) {
-          container.appendChild(createDatingTextElement(
-            'p', 'dating-muted', 'Reply Result 不是对象，专属视图不可用。'
-          ));
-          return container;
-        }
-        var rolesValue = resultPayload.roles;
-        var roles = sortDatingRolesByRank(rolesValue);
-        if (!Array.isArray(rolesValue)) {
-          container.appendChild(createDatingTextElement(
-            'p', 'dating-muted', 'roles：' + datingSchemaValue(rolesValue)
-          ));
-        } else if (!roles.length) {
-          container.appendChild(createDatingTextElement('p', 'dating-muted', 'roles：空数组 []'));
-        }
-        roles.forEach(function(role) {
-          appendDatingLazyDetails(
-            container,
-            'rank=' + datingSchemaValue(role.rank) + ' · ' +
-              datingSchemaValue(role.role_id) + ' · ' + datingSchemaValue(role.role_name),
-            function() { return renderDatingReplyRole(role); }
-          );
-        });
-        return container;
-      }
-
-      /** 为 Analysis v1 的 Overview 生成固定字段和空值状态。 */
-      function renderDatingAnalysisOverview(overview) {
-        var container = document.createElement('section');
-        container.appendChild(createDatingTextElement('h4', '', 'Overview 原文'));
-        var facts = document.createElement('dl');
-        facts.className = 'dating-result-summary';
-        [
-          ['insight_title', overview.insight_title],
-          ['insight_summary', overview.insight_summary],
-          ['relationship_stage', overview.relationship_stage],
-          ['current_state', overview.current_state],
-          ['reliability_level', overview.reliability_level]
-        ].forEach(function(entry) {
-          appendDatingDefinition(facts, entry[0], datingSchemaValue(entry[1]));
-        });
-        container.appendChild(facts);
-
-        container.appendChild(createDatingTextElement('h4', '', 'next_steps'));
-        var nextSteps = overview.next_steps;
-        if (!nextSteps || typeof nextSteps !== 'object' || Array.isArray(nextSteps)) {
-          container.appendChild(createDatingTextElement(
-            'p', 'dating-muted', datingSchemaValue(nextSteps)
-          ));
-        } else {
-          var nextStepFacts = document.createElement('dl');
-          nextStepFacts.className = 'dating-result-summary';
-          ['action', 'communication', 'observation'].forEach(function(key) {
-            appendDatingDefinition(
-              nextStepFacts, key, datingSchemaValue(nextSteps[key])
-            );
-          });
-          container.appendChild(nextStepFacts);
-        }
-
-        container.appendChild(createDatingTextElement('h4', '', 'Dashboard'));
-        var dashboard = overview.dashboard;
-        if (!dashboard || typeof dashboard !== 'object' || Array.isArray(dashboard) ||
-            !Object.keys(dashboard).length) {
-          container.appendChild(createDatingTextElement(
-            'p', 'dating-muted', datingSchemaValue(dashboard)
-          ));
-          return container;
-        }
-        [
-          ['message_counts', ['user', 'other']],
-          ['effort', ['you_score', 'them_score']],
-          ['match_degree', ['score', 'level']],
-          ['keywords', ['user_focus', 'other_focus']]
-        ].forEach(function(group) {
-          container.appendChild(createDatingTextElement('h5', '', group[0]));
-          var groupValue = dashboard[group[0]];
-          var groupFacts = document.createElement('dl');
-          groupFacts.className = 'dating-result-summary';
-          if (!groupValue || typeof groupValue !== 'object' || Array.isArray(groupValue) ||
-              !Object.keys(groupValue).length) {
-            appendDatingDefinition(groupFacts, '状态', datingSchemaValue(groupValue));
-          } else {
-            group[1].forEach(function(key) {
-              appendDatingDefinition(groupFacts, key, datingSchemaValue(groupValue[key]));
-            });
-          }
-          container.appendChild(groupFacts);
-        });
-        return container;
-      }
-
-      /** 创建 signal_id/text/evidence_message_ids 的事实列表。 */
-      function renderDatingSignalItems(items) {
-        var container = document.createElement('div');
-        if (!Array.isArray(items)) {
-          container.appendChild(createDatingTextElement(
-            'p', 'dating-muted', datingSchemaValue(items)
-          ));
-          return container;
-        }
-        var safeItems = items;
-        if (!safeItems.length) {
-          container.appendChild(createDatingTextElement('p', 'dating-muted', '空数组 []'));
-        }
-        safeItems.forEach(function(item) {
-          item = item || {};
-          var facts = document.createElement('dl');
-          facts.className = 'dating-result-summary';
-          appendDatingDefinition(facts, 'signal_id', datingSchemaValue(item.signal_id));
-          appendDatingDefinition(facts, 'text', datingSchemaValue(item.text));
-          appendDatingDefinition(
-            facts, 'evidence_message_ids', datingSchemaValue(item.evidence_message_ids)
-          );
-          container.appendChild(facts);
-        });
-        return container;
-      }
-
-      /** 创建 key event 的 event/takeaway/evidence_message_ids 事实列表。 */
-      function renderDatingEventItems(items) {
-        var container = document.createElement('div');
-        if (!Array.isArray(items)) {
-          container.appendChild(createDatingTextElement(
-            'p', 'dating-muted', datingSchemaValue(items)
-          ));
-          return container;
-        }
-        var safeItems = items;
-        if (!safeItems.length) {
-          container.appendChild(createDatingTextElement('p', 'dating-muted', '空数组 []'));
-        }
-        safeItems.forEach(function(item) {
-          item = item || {};
-          var facts = document.createElement('dl');
-          facts.className = 'dating-result-summary';
-          appendDatingDefinition(facts, 'event_id', datingSchemaValue(item.event_id));
-          appendDatingDefinition(facts, 'event', datingSchemaValue(item.event));
-          appendDatingDefinition(facts, 'takeaway', datingSchemaValue(item.takeaway));
-          appendDatingDefinition(
-            facts, 'evidence_message_ids', datingSchemaValue(item.evidence_message_ids)
-          );
-          container.appendChild(facts);
-        });
-        return container;
-      }
-
-      /** 创建 Analysis v1 的 Overview、signals 和 key events 事实视图。 */
-      function renderDatingAnalysisResult(resultPayload) {
-        var container = document.createElement('div');
-        if (!resultPayload || typeof resultPayload !== 'object' || Array.isArray(resultPayload)) {
-          container.appendChild(createDatingTextElement(
-            'p', 'dating-muted', 'Analysis Result 不是对象，专属视图不可用。'
-          ));
-          return container;
-        }
-        var overview = resultPayload.overview;
-        if (!overview || typeof overview !== 'object' || Array.isArray(overview)) {
-          container.appendChild(createDatingTextElement(
-            'p', 'dating-muted', 'Overview：' + datingSchemaValue(overview)
-          ));
-        } else {
-          container.appendChild(renderDatingAnalysisOverview(overview));
-        }
-
-        var signals = resultPayload.chat_signals;
-        signals = signals && typeof signals === 'object' && !Array.isArray(signals)
-          ? signals : {};
-        container.appendChild(createDatingTextElement(
-          'p', 'dating-muted', 'signal_summary：' + datingSchemaValue(signals.signal_summary)
-        ));
-        [
-          ['positive_signals', signals.positive_signals],
-          ['watch_signals', signals.watch_signals],
-          ['risk_signals', signals.risk_signals]
-        ].forEach(function(group) {
-          appendDatingLazyDetails(
-            container, group[0] + ' · ' +
-              (Array.isArray(group[1]) ? group[1].length : datingSchemaValue(group[1])),
-            function() { return renderDatingSignalItems(group[1]); }
-          );
-        });
-
-        var events = resultPayload.key_events;
-        events = events && typeof events === 'object' && !Array.isArray(events)
-          ? events : {};
-        [
-          ['turning_points', events.turning_points],
-          ['hidden_meanings', events.hidden_meanings],
-          ['did_well', events.did_well],
-          ['could_improve', events.could_improve]
-        ].forEach(function(group) {
-          appendDatingLazyDetails(
-            container, group[0] + ' · ' +
-              (Array.isArray(group[1]) ? group[1].length : datingSchemaValue(group[1])),
-            function() { return renderDatingEventItems(group[1]); }
-          );
-        });
-        return container;
-      }
-
-      /**
-       * 根据服务端 schema_version 分派固定事实视图；未知 Schema 不推断结构。
-       * 原始字段树由独立折叠区首次打开时按需构建。
-       */
-      function renderDatingResult(taskSnapshot) {
-        var schemaVersion = taskSnapshot.schema_version || 'UNKNOWN_SCHEMA';
-        var schemaStatus = taskSnapshot.schema_status || 'UNKNOWN_SCHEMA';
-        var knownReply = schemaVersion === 'dating.reply_generation.v1' &&
-          schemaStatus !== 'UNKNOWN_SCHEMA';
-        var knownAnalysis = schemaVersion === 'dating.relationship_analysis.v1' &&
-          schemaStatus !== 'UNKNOWN_SCHEMA';
-        document.getElementById('dating-result-heading').textContent = knownReply
-          ? 'Reply v1 业务摘要' : knownAnalysis
-            ? 'Analysis v1 业务摘要' : '未知 Schema · 通用字段树';
-        document.getElementById('dating-schema-status').textContent =
-          schemaVersion + ' · ' + schemaStatus;
-
-        var resultSummary = clearDatingNode('dating-result-summary');
-        var sectionsContainer = clearDatingNode('dating-result-sections');
-        if (!knownReply && !knownAnalysis) {
-          sectionsContainer.appendChild(createDatingTextElement(
-            'p', 'dating-muted', 'UNKNOWN_SCHEMA：仅提供通用字段树和字段索引。'
-          ));
-          return;
-        }
-
-        var summary = taskSnapshot.result_summary || {};
-        var summaryKeys = Object.keys(summary);
-        if (!summaryKeys.length) {
-          resultSummary.appendChild(createDatingTextElement(
-            'div', 'dating-muted', '没有可展示的 Schema 专属摘要。'
-          ));
-        }
-        summaryKeys.forEach(function(key) {
-          appendDatingDefinition(resultSummary, key, datingSchemaValue(summary[key]));
-        });
-
-        var resultPayload = taskSnapshot.result_payload;
-        sectionsContainer.appendChild(knownReply
-          ? renderDatingReplyResult(resultPayload)
-          : renderDatingAnalysisResult(resultPayload));
-      }
-
-      /** 将字段 presence 映射为固定文本和前端允许的样式类。 */
-      function createDatingPresence(field) {
-        var node = document.createElement('span');
-        var presence = field && field.presence ? field.presence : 'UNKNOWN';
-        var className = 'dating-presence';
-        if (presence === 'MISSING') className += ' missing';
-        if (presence === 'NULL') className += ' null';
-        if (field && field.schema_known === false) className += ' unknown';
-        node.className = className;
-        node.textContent = presence + (field && field.schema_known === false ? ' · 未知字段' : '');
-        return node;
-      }
-
-      /** 对字段值使用 PRD 的空值语义，避免把 MISSING 伪装为空字符串。 */
-      function datingFieldValue(field) {
-        if (!field) return '—';
-        if (field.presence === 'MISSING') return '字段缺失';
-        if (field.presence === 'NULL') return 'null';
-        if (field.presence === 'EMPTY_STRING') return '空字符串';
-        if (field.presence === 'EMPTY_ARRAY') return '空数组 []';
-        if (field.presence === 'EMPTY_OBJECT') return '空对象 {}';
-        if (field.value_type === 'array' && Array.isArray(field.value)) {
-          return '数组，共 ' + field.value.length + ' 项';
-        }
-        if (field.value_type === 'object' && field.value && typeof field.value === 'object') {
-          return '对象，共 ' + Object.keys(field.value).length + ' 个键';
-        }
-        return datingCompactValue(field.value);
-      }
-
-      /**
-       * 生成可展开的原始字段树；每个 parent_path 首次最多渲染 20 个子节点。
-       * @param {Array} fields 服务端扁平字段索引。
-       */
-      function renderDatingFieldTree(fields) {
-        var safeFields = Array.isArray(fields) ? fields : [];
-        var container = clearDatingNode('dating-field-tree');
-        var childrenByParent = Object.create(null);
-        var fieldByPath = Object.create(null);
-
-        safeFields.forEach(function(field) {
-          var parentKey = field.parent_path === null || field.parent_path === undefined
-            ? '__ROOT__' : String(field.parent_path);
-          if (!childrenByParent[parentKey]) childrenByParent[parentKey] = [];
-          childrenByParent[parentKey].push(field);
-          if (field.path && !fieldByPath[field.path]) fieldByPath[field.path] = field;
-        });
-
-        if (!safeFields.length) {
-          container.appendChild(createDatingTextElement(
-            'p', 'dating-muted', 'Result 字段树为空。'
-          ));
-          return;
-        }
-
-        function renderChildren(parentPath, list) {
-          var key = parentPath === null ? '__ROOT__' : String(parentPath);
-          var children = childrenByParent[key] || [];
-          var limit = datingTreeLimits[key] || 20;
-          children.slice(0, limit).forEach(function(field) {
-            var item = document.createElement('li');
-            item.className = 'dating-field-node';
-            var line = document.createElement('div');
-            line.className = 'dating-field-node-line';
-            var fieldChildren = childrenByParent[String(field.path)] || [];
-            var pathButton = document.createElement('button');
-            pathButton.type = 'button';
-            pathButton.className = 'dating-path-button';
-            pathButton.textContent = field.path || field.key || '未命名字段';
-            pathButton.setAttribute('aria-expanded',
-              fieldChildren.length && datingExpandedPaths[field.path] ? 'true' : 'false');
-            pathButton.addEventListener('click', function() {
-              if (!fieldChildren.length) return;
-              datingExpandedPaths[field.path] = !datingExpandedPaths[field.path];
-              renderDatingFieldTree(safeFields);
-            });
-            line.appendChild(pathButton);
-            line.appendChild(createDatingPresence(field));
-            line.appendChild(createDatingTextElement(
-              'span', 'dating-muted', datingFieldValue(field)
-            ));
-            var source = field.source || {};
-            line.appendChild(createDatingLineButton(
-              source.line_start, source.line_end, source.location_precision || 'Source'
-            ));
-            item.appendChild(line);
-            if (fieldChildren.length && datingExpandedPaths[field.path]) {
-              var nested = document.createElement('ul');
-              renderChildren(field.path, nested);
-              item.appendChild(nested);
-            }
-            list.appendChild(item);
-          });
-
-          if (children.length > limit) {
-            var moreItem = document.createElement('li');
-            var moreButton = document.createElement('button');
-            moreButton.type = 'button';
-            moreButton.className = 'dating-more-button';
-            moreButton.textContent = '加载后续 ' + Math.min(20, children.length - limit) +
-              ' 个节点（剩余 ' + (children.length - limit) + '）';
-            moreButton.addEventListener('click', function() {
-              datingTreeLimits[key] = limit + 20;
-              renderDatingFieldTree(safeFields);
-            });
-            moreItem.appendChild(moreButton);
-            list.appendChild(moreItem);
-          }
-        }
-
-        var rootList = document.createElement('ul');
-        rootList.className = 'dating-field-tree';
-        renderChildren(null, rootList);
-        container.appendChild(rootList);
-      }
-
-      /** 展开字段及其 parent_path 祖先，然后将原始字段树带入可见区。 */
-      function expandDatingParentPath(parentPath) {
-        var currentPath = parentPath;
-        var guard = 0;
-        while (currentPath && guard < 50) {
-          datingExpandedPaths[currentPath] = true;
-          var parentField = latestDatingFields.find(function(field) {
-            return field.path === currentPath;
-          });
-          currentPath = parentField ? parentField.parent_path : null;
-          guard += 1;
-        }
-        var details = document.getElementById('dating-field-tree-details');
-        details.open = true;
-        if (datingFieldTreeMaterialized) {
-          renderDatingFieldTree(latestDatingFields);
-        } else {
-          materializeDatingFieldTreeOnce();
-        }
-        details.scrollIntoView({block: 'start'});
-      }
-
-      /** Presence/search 改变时从第一页重新渲染字段索引。 */
-      function resetAndRenderDatingFields() {
-        datingVisibleFieldCount = 200;
-        renderDatingFields();
-      }
-
-      /** 按固定批次增加字段索引可见行，避免一次创建 20,000 行。 */
-      function showMoreDatingFields() {
-        datingVisibleFieldCount += 200;
-        renderDatingFields();
-      }
-
-      /**
-       * 渲染可搜索、可按 presence 筛选的字段索引。
-       * @param {Array} fields 新分析结果的字段；省略时复用当前独立状态。
-       */
-      function renderDatingFields(fields) {
-        if (Array.isArray(fields)) {
-          latestDatingFields = fields.slice();
-          datingVisibleFieldCount = 200;
-        }
-        var filter = document.getElementById('dating-field-filter').value;
-        var query = document.getElementById('dating-field-search').value.trim().toLowerCase();
-        var filtered = latestDatingFields.filter(function(field) {
-          var presenceMatches = filter === 'ALL' ||
-            (filter === 'UNKNOWN_SCHEMA_FIELD'
-              ? field.schema_known === false
-              : field.presence === filter);
-          if (!presenceMatches) return false;
-          if (!query) return true;
-          return String(field.path || '').toLowerCase().indexOf(query) !== -1 ||
-            datingCompactValue(field.value).toLowerCase().indexOf(query) !== -1;
-        });
-        var visible = filtered.slice(0, datingVisibleFieldCount);
-        var body = clearDatingNode('dating-field-table-body');
-
-        if (!visible.length) {
-          var emptyRow = document.createElement('tr');
-          var emptyCell = createDatingTextElement(
-            'td', 'dating-muted', '当前筛选条件下没有字段。'
-          );
-          emptyCell.colSpan = 5;
-          emptyRow.appendChild(emptyCell);
-          body.appendChild(emptyRow);
-        }
-
-        visible.forEach(function(field) {
-          var row = document.createElement('tr');
-          var pathCell = document.createElement('td');
-          var pathButton = document.createElement('button');
-          pathButton.type = 'button';
-          pathButton.className = 'dating-path-button';
-          pathButton.textContent = field.path || '未命名字段';
-          pathButton.addEventListener('click', function() {
-            expandDatingParentPath(field.parent_path || field.path);
-          });
-          pathCell.appendChild(pathButton);
-          if (field.label && field.label !== field.key) {
-            pathCell.appendChild(createDatingTextElement(
-              'div', 'dating-muted', field.label
-            ));
-          }
-          row.appendChild(pathCell);
-          row.appendChild(createDatingTextElement('td', 'dating-mono', field.value_type || 'unknown'));
-          var presenceCell = document.createElement('td');
-          presenceCell.appendChild(createDatingPresence(field));
-          row.appendChild(presenceCell);
-          row.appendChild(createDatingTextElement(
-            'td', 'dating-value-cell', datingFieldValue(field)
-          ));
-          var sourceCell = document.createElement('td');
-          var source = field.source || {};
-          sourceCell.appendChild(createDatingTextElement(
-            'div', 'dating-mono', (source.method || 'method 未知') +
-              (source.call_id ? ' · ' + source.call_id : '')
-          ));
-          sourceCell.appendChild(createDatingLineButton(
-            source.line_start, source.line_end, source.location_precision || 'Source'
-          ));
-          row.appendChild(sourceCell);
-          body.appendChild(row);
-        });
-
-        document.getElementById('dating-field-count').textContent =
-          '匹配 ' + filtered.length + ' / ' + latestDatingFields.length +
-          '，当前显示 ' + visible.length;
-        var moreButton = document.getElementById('dating-field-more');
-        moreButton.hidden = visible.length >= filtered.length;
-        moreButton.textContent = moreButton.hidden
-          ? '显示更多字段'
-          : '显示更多（剩余 ' + (filtered.length - visible.length) + '）';
-      }
-
-      /**
-       * 从 documented params/data 路径提取 task_id/asset_id；PUT 仅使用后端已关联的映射。
-       */
-      function datingCallReference(call, putAssetMap) {
-        var requestParams = call && call.request && call.request.params || {};
-        var responseData = call && call.response && call.response.data || {};
-        putAssetMap = putAssetMap || Object.create(null);
-        return requestParams.task_id || responseData.task_id ||
-          requestParams.asset_id || responseData.asset_id ||
-          (call && call.call_id && putAssetMap[call.call_id]) || '—';
-      }
-
-      /** 追加调用详情中的一个纯文本 JSON 区块。 */
-      function appendDatingCallDetail(parent, heading, value) {
-        var group = document.createElement('section');
-        group.appendChild(createDatingTextElement('h4', '', heading));
-        var pre = document.createElement('pre');
-        appendDatingText(pre, value === undefined ? null : value);
-        group.appendChild(pre);
-        parent.appendChild(group);
-      }
-
-      /**
-       * 展示 HTTP、Gateway、SubResponse 三层事实值与可展开原始结构。
-       * @param {Array} calls 解析器保留日志顺序的调用列表。
-       */
-      function renderDatingCalls(calls) {
-        var safeCalls = Array.isArray(calls) ? calls : [];
-        var putAssetMap = arguments.length > 1 && arguments[1]
-          ? arguments[1] : Object.create(null);
-        var body = clearDatingNode('dating-interface-table-body');
-        document.getElementById('dating-call-count').textContent =
-          '共 ' + safeCalls.length + ' 条';
-
-        if (!safeCalls.length) {
-          var emptyRow = document.createElement('tr');
-          var emptyCell = createDatingTextElement(
-            'td', 'dating-muted', '没有可展示的接口调用。'
-          );
-          emptyCell.colSpan = 11;
-          emptyRow.appendChild(emptyCell);
-          body.appendChild(emptyRow);
-          return;
-        }
-
-        safeCalls.forEach(function(call, callIndex) {
-          var request = call.request || {};
-          var response = call.response || {};
-          var gateway = response.gateway || {};
-          var subResponse = response.sub_response || {};
-          var row = document.createElement('tr');
-          var sequenceCell = document.createElement('td');
-          var toggle = document.createElement('button');
-          toggle.type = 'button';
-          toggle.className = 'dating-row-toggle';
-          toggle.textContent = String(call.sequence === undefined ? callIndex + 1 : call.sequence);
-          toggle.setAttribute('aria-expanded', 'false');
-          sequenceCell.appendChild(toggle);
-          row.appendChild(sequenceCell);
-          [
-            request.timestamp || '—',
-            call.service_name || '—',
-            call.method_name || '—',
-            response.http_status === null || response.http_status === undefined
-              ? 'HTTP 未知' : 'HTTP ' + response.http_status,
-            gateway.code === null || gateway.code === undefined
-              ? 'Gateway 未知' : 'code=' + gateway.code,
-            subResponse.success === null || subResponse.success === undefined
-              ? 'SubResponse 未知'
-              : 'success=' + String(subResponse.success) + ' / code=' + datingCompactValue(subResponse.code),
-            response.elapsed_ms === null || response.elapsed_ms === undefined
-              ? '—' : response.elapsed_ms + ' ms',
-            datingCallReference(call, putAssetMap),
-            call.result_class || 'unknown'
-          ].forEach(function(value, cellIndex) {
-            row.appendChild(createDatingTextElement(
-              'td', cellIndex === 1 || cellIndex === 2 || cellIndex === 7 ? 'dating-mono' : '', value
-            ));
-          });
-          var lineCell = document.createElement('td');
-          if (request.line_start) {
-            lineCell.appendChild(createDatingLineButton(
-              request.line_start, request.line_end, '请求'
-            ));
-          }
-          if (response.line_start) {
-            lineCell.appendChild(createDatingLineButton(
-              response.line_start, response.line_end, '响应'
-            ));
-          }
-          if (!lineCell.childNodes.length) {
-            appendDatingText(lineCell, '日志证据不足');
-          }
-          row.appendChild(lineCell);
-          body.appendChild(row);
-
-          var detailRow = document.createElement('tr');
-          detailRow.hidden = true;
-          detailRow.className = 'dating-call-detail-row';
-          var detailCell = document.createElement('td');
-          detailCell.colSpan = 11;
-          var detailMaterialized = false;
-
-          /** 当前调用的 JSON 详情只在该行首次展开时创建。 */
-          function materializeDatingCallDetailOnce() {
-            if (detailMaterialized) return;
-            detailMaterialized = true;
-            var detail = document.createElement('div');
-            detail.className = 'dating-call-detail';
-            appendDatingCallDetail(detail, '请求 params', request.params || {});
-            appendDatingCallDetail(detail, 'Gateway envelope', response.gateway || null);
-            appendDatingCallDetail(
-              detail, 'SubResponse data',
-              response.data === undefined ? null : response.data
-            );
-            appendDatingCallDetail(detail, 'Parser warnings', call.warnings || []);
-            detailCell.appendChild(detail);
-          }
-
-          detailRow.appendChild(detailCell);
-          body.appendChild(detailRow);
-          toggle.addEventListener('click', function() {
-            if (detailRow.hidden) materializeDatingCallDetailOnce();
-            detailRow.hidden = !detailRow.hidden;
-            toggle.setAttribute('aria-expanded', detailRow.hidden ? 'false' : 'true');
-          });
-        });
-      }
-
-      /** 规则结果使用固定允许列表排序，后端未知 outcome 放在末尾。 */
-      function datingCheckOrder(outcome) {
-        var order = {FAIL: 0, WARN: 1, UNKNOWN: 2, PASS: 3, NA: 4};
-        return Object.prototype.hasOwnProperty.call(order, outcome) ? order[outcome] : 5;
-      }
-
-      /**
-       * 展示 40 条检查及 evidence；FAIL/WARN 默认展开以支持异常优先排查。
-       * @param {Array} checks 规则引擎输出。
-       */
-      function renderDatingChecks(checks) {
-        var container = clearDatingNode('dating-check-list');
-        var safeChecks = Array.isArray(checks) ? checks.slice() : [];
-        safeChecks.sort(function(left, right) {
-          return datingCheckOrder(left.outcome) - datingCheckOrder(right.outcome);
-        });
-        if (!safeChecks.length) {
-          container.appendChild(createDatingTextElement(
-            'p', 'dating-muted', '没有可展示的规则检查。'
-          ));
-          return;
-        }
-
-        safeChecks.forEach(function(check) {
-          var details = document.createElement('details');
-          var outcome = ['FAIL', 'WARN', 'UNKNOWN', 'PASS', 'NA'].indexOf(check.outcome) !== -1
-            ? check.outcome : 'UNKNOWN';
-          details.className = 'dating-check ' + outcome.toLowerCase();
-          details.open = outcome === 'FAIL' || outcome === 'WARN';
-          var summary = document.createElement('summary');
-          appendDatingText(summary,
-            outcome + ' · ' + (check.rule_id || 'UNKNOWN-RULE') +
-            ' · ' + (check.title || '未命名检查'));
-          details.appendChild(summary);
-          var body = document.createElement('div');
-          body.className = 'dating-check-body';
-          var actual = document.createElement('pre');
-          appendDatingText(actual, check.actual);
-          var expected = document.createElement('pre');
-          appendDatingText(expected, check.expected);
-          var actualGroup = document.createElement('div');
-          actualGroup.appendChild(createDatingTextElement('strong', '', 'Actual'));
-          actualGroup.appendChild(actual);
-          body.appendChild(actualGroup);
-          var expectedGroup = document.createElement('div');
-          expectedGroup.appendChild(createDatingTextElement('strong', '', 'Expected'));
-          expectedGroup.appendChild(expected);
-          body.appendChild(expectedGroup);
-
-          var evidenceHeading = createDatingTextElement('strong', '', 'Evidence');
-          body.appendChild(evidenceHeading);
-          var evidenceList = document.createElement('ul');
-          evidenceList.className = 'dating-evidence-list';
-          var evidence = Array.isArray(check.evidence) ? check.evidence : [];
-          if (!evidence.length) {
-            evidenceList.appendChild(createDatingTextElement(
-              'li', 'dating-evidence-item', '日志证据不足'
-            ));
-          }
-          evidence.forEach(function(item) {
-            var evidenceItem = document.createElement('li');
-            evidenceItem.className = 'dating-evidence-item';
-            evidenceItem.appendChild(createDatingTextElement(
-              'div', 'dating-mono',
-              (item.method || item.call_id || '调用未知') +
-              ' · ' + (item.json_path || '路径未知')
-            ));
-            evidenceItem.appendChild(createDatingTextElement(
-              'div', 'dating-value-cell', datingCompactValue(item.value)
-            ));
-            evidenceItem.appendChild(createDatingLineButton(
-              item.line_start, item.line_end, '证据'
-            ));
-            evidenceList.appendChild(evidenceItem);
-          });
-          body.appendChild(evidenceList);
-          details.appendChild(body);
-          container.appendChild(details);
-        });
-      }
-
-      /** 展示解析警告；对象警告若带行号则同样可定位。 */
-      function renderDatingParseWarnings(warnings) {
-        var safeWarnings = Array.isArray(warnings) ? warnings : [];
-        var list = clearDatingNode('dating-parse-warnings');
-        document.getElementById('dating-warning-count').textContent =
-          '共 ' + safeWarnings.length + ' 条';
-        if (!safeWarnings.length) {
-          list.appendChild(createDatingTextElement(
-            'li', 'dating-muted', '没有解析警告。'
-          ));
-        }
-        safeWarnings.forEach(function(warning) {
-          var item = document.createElement('li');
-          item.className = 'dating-evidence-item';
-          appendDatingText(item, datingCompactValue(warning));
-          if (warning && typeof warning === 'object' && warning.line_start) {
-            item.appendChild(createDatingLineButton(
-              warning.line_start, warning.line_end, '警告'
-            ));
-          }
-          list.appendChild(item);
-        });
-      }
-
-      /** 复制后端固定 Markdown；无当前结果时保持按钮禁用并拒绝空操作。 */
-      function copyDatingReport() {
-        if (!latestDatingReport) return;
-        navigator.clipboard.writeText(latestDatingReport)
-          .then(function() {
-            showActionMessage('Dating Markdown 报告已复制。', false);
-          })
-          .catch(function() {
-            showActionMessage('复制失败，请检查浏览器剪贴板权限。', true);
-          });
-      }
-
-      /**
-       * 调用既有导出接口保存 Dating 内容；URL 由 Flask 生成并携带 base path。
-       */
-      async function exportDatingContent(exportType, content, button) {
-        if (!content) return;
-        var originalText = button.textContent;
-        button.disabled = true;
-        button.textContent = '导出中...';
-        try {
-          var response = await fetch(datingExportUrl, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-CSRF-Token': readCookie('tp_csrf')
-            },
-            body: JSON.stringify({export_type: exportType, content: content})
-          });
-          var payload = await response.json();
-          if (!response.ok) throw new Error(payload.message || '导出失败');
-          showActionMessage('已保存：' + payload.path, false);
-        } catch (error) {
-          showActionMessage(error.message, true);
-        } finally {
-          button.disabled = false;
-          button.textContent = originalText;
-        }
-      }
-
-      /** 导出完整、已脱敏的固定 Markdown 文档。 */
-      function exportDatingReport() {
-        exportDatingContent(
-          'dating_analysis_report',
-          latestDatingReport,
-          document.getElementById('export-dating-report-btn')
-        );
-      }
-
-      /** 导出与 API 当前响应一致的已脱敏 JSON。 */
-      function exportDatingJson() {
-        exportDatingContent(
-          'dating_analysis_json',
-          latestDatingAnalysis ? JSON.stringify(latestDatingAnalysis, null, 2) : '',
-          document.getElementById('export-dating-json-btn')
-        );
-      }
-      {% endif %}
-
-      /**
-       * 为固定 DOM 控件安装事件监听器。所有业务操作均从这里显式绑定，模板不再
-       * 依赖字符串事件属性，便于后续启用严格 CSP 并保持处理函数可测试。
-       */
-      function bindWorkbenchEvent(elementId, eventName, handler) {
-        var element = document.getElementById(elementId);
-        if (element) element.addEventListener(eventName, handler);
-      }
-
-      {% if dating_analyzer_enabled %}
-      bindWorkbenchEvent('analyze-dating-btn', 'click', analyzeDatingLog);
-      bindWorkbenchEvent('copy-dating-report-btn', 'click', copyDatingReport);
-      bindWorkbenchEvent('export-dating-report-btn', 'click', exportDatingReport);
-      bindWorkbenchEvent('export-dating-json-btn', 'click', exportDatingJson);
-      bindWorkbenchEvent('dating-field-filter', 'change', resetAndRenderDatingFields);
-      bindWorkbenchEvent('dating-field-search', 'input', resetAndRenderDatingFields);
-      bindWorkbenchEvent('dating-field-more', 'click', showMoreDatingFields);
-      {% endif %}
-
-      {% if dating_analyzer_enabled %}
-      window.LogWorkbench.registerMode('dating', {run: analyzeDatingLog});
-      {% endif %}
-    </script>
+    {% if dating_analyzer_enabled %}
+    <script src="{{ url_for('tool.static', filename='js/workbench-dating.js') }}"></script>
+    {% endif %}
   </body>
 </html>

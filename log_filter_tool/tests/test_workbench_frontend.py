@@ -1454,6 +1454,258 @@ class WorkbenchShellTest(unittest.TestCase):
         self.assertNotIn('data-dating-url="', html)
         self.assertNotIn('value="dating"', html)
 
+    def test_dating_adapter_uses_core_endpoint_and_keeps_every_poll_sample(self):
+        """Dating 适配器必须走核心请求、展示五个 panel，并保留重复 Poll。"""
+        node = shutil.which("node")
+        self.assertIsNotNone(node, "需要 Node.js 执行 Dating 适配器行为测试")
+        adapter_path = Path(__file__).resolve().parents[1] / "static/js/workbench-dating.js"
+        self.assertTrue(adapter_path.exists(), "Task 5 必须创建 Dating 静态适配器")
+        if not adapter_path.exists():
+            return
+
+        harness = textwrap.dedent(
+            r"""
+            const fs = require("fs");
+            const vm = require("vm");
+
+            class FakeElement {
+              constructor(tagName, id = "", attributes = {}) {
+                this.tagName = String(tagName).toUpperCase();
+                this.id = id;
+                this.attributes = {...attributes};
+                this.children = [];
+                this.listeners = Object.create(null);
+                this.hidden = Boolean(attributes.hidden);
+                this.disabled = Boolean(attributes.disabled);
+                this.value = attributes.value ?? "";
+                this.open = Boolean(attributes.open);
+                this._textContent = attributes.textContent || "";
+              }
+
+              get textContent() {
+                return this._textContent + this.children.map(child => child.textContent || "").join("");
+              }
+
+              set textContent(value) {
+                this._textContent = String(value ?? "");
+                this.children = [];
+              }
+
+              appendChild(child) {
+                this.children.push(child);
+                child.parentNode = this;
+                return child;
+              }
+
+              addEventListener(type, listener) {
+                (this.listeners[type] ||= []).push(listener);
+              }
+
+              async dispatch(type, event = {}) {
+                if (!event.target) event.target = this;
+                const results = (this.listeners[type] || []).map(listener => listener(event));
+                return Promise.all(results);
+              }
+
+              setAttribute(name, value) { this.attributes[name] = String(value); }
+              getAttribute(name) {
+                return Object.prototype.hasOwnProperty.call(this.attributes, name)
+                  ? this.attributes[name] : null;
+              }
+              focus() {}
+              scrollIntoView() {}
+
+              querySelectorAll(selector) {
+                const found = [];
+                const visit = node => {
+                  (node.children || []).forEach(child => {
+                    if (selector === "button" && child.tagName === "BUTTON") found.push(child);
+                    visit(child);
+                  });
+                };
+                visit(this);
+                return found;
+              }
+            }
+
+            function textOf(node) { return String(node && node.textContent || ""); }
+            function assert(condition, message) {
+              if (!condition) throw new Error(message);
+            }
+
+            const ids = [
+              "log-workbench", "analysis-mode", "log_text", "dating-analysis", "dating-status",
+              "dating-state", "dating-content", "dating-overview", "dating-interfaces",
+              "dating-timeline", "dating-result", "dating-checks", "dating-verdict",
+              "dating-summary-heading", "dating-verdict-detail", "dating-next-action",
+              "dating-summary", "dating-lifecycle-metrics", "dating-upload-list",
+              "dating-progress-diagnostics", "dating-task-timeline", "dating-result-heading",
+              "dating-schema-status", "dating-result-summary", "dating-result-sections",
+              "dating-field-tree-details", "dating-field-tree", "dating-field-filter",
+              "dating-field-search", "dating-field-more", "dating-field-table-body",
+              "dating-interface-table-body", "dating-call-count", "dating-check-list",
+              "dating-check-filter", "dating-parse-warnings", "dating-warning-count",
+              "dating-report", "copy-dating-report-btn", "export-dating-report-btn",
+              "export-dating-json-btn", "dating-report-details"
+            ];
+            const elements = Object.create(null);
+            for (const id of ids) {
+              elements[id] = new FakeElement(id === "log-workbench" ? "main" : "div", id);
+            }
+            elements["analysis-mode"].value = "dating";
+            elements["log_text"].value = "raw\nlog";
+            elements["dating-field-filter"].value = "ALL";
+            elements["dating-field-search"].value = "";
+            elements["dating-field-tree-details"].open = false;
+            elements["dating-analysis"].hidden = true;
+            elements["dating-content"].hidden = true;
+            elements["dating-overview"].hidden = true;
+            elements["dating-interfaces"].hidden = true;
+            elements["dating-timeline"].hidden = true;
+            elements["dating-result"].hidden = true;
+            elements["dating-checks"].hidden = true;
+
+            const root = elements["log-workbench"];
+            root.dataset = {datingUrl: "/prefix/dating/analyze"};
+            const requests = [];
+            const tabs = [];
+            let drawerModel = null;
+            const registered = Object.create(null);
+            const api = {
+              registerAnalysisMode(name, definition) { registered[name] = definition; },
+              setAvailableTabs(ids) { tabs.push(ids.slice()); },
+              setResultHeader() {},
+              focusLogLines() {},
+              showActionMessage() {},
+              requestJson(url, options) {
+                requests.push({url, options});
+                return Promise.resolve({
+                  verdict: "WARNINGS_FOUND",
+                  summary: {
+                    gateway_call_count: 1, upload_call_count: 0,
+                    http_error_count: 0, business_error_count: 0,
+                    check_fail_count: 0, check_warn_count: 1
+                  },
+                  calls: [{
+                    call_id: "call-1", sequence: 1, transport: "gateway",
+                    service_name: "DatingService", method_name: "GetTask",
+                    result_class: "success", parse_status: "PARSED",
+                    request: {
+                      timestamp: "2026-08-30T00:00:00Z", line_start: 1, line_end: 2,
+                      params: {task_id: "task-1", marker: "<unsafe>"},
+                      headers: {"X-Test": "safe"}
+                    },
+                    response: {
+                      line_start: 3, line_end: 4, http_status: 200, elapsed_ms: 4,
+                      gateway: {code: 0},
+                      sub_response: {success: true, code: 0},
+                      data: {task_id: "task-1", result_id: "result-1", marker: "<unsafe>"},
+                      headers: {"Content-Type": "application/json"}
+                    },
+                    warnings: []
+                  }],
+                  task_snapshot: {
+                    task_type: "reply_generation", task_id: "task-1",
+                    schema_version: "dating.reply_generation.v1", schema_status: "KNOWN",
+                    lifecycle: {
+                      terminal: true, final_status: "succeeded", poll_count: 11,
+                      duration_ms: 11781
+                    },
+                    input_assets: [],
+                    status_samples: Array.from({length: 11}, (_, index) => ({
+                      timestamp: "2026-08-30T00:00:0" + index + "Z",
+                      status: "processing", phase: "analyzing", progress_percent: 50,
+                      line_start: index + 10, line_end: index + 10
+                    })),
+                    progress_diagnostics: {
+                      distinct_progress_values: [50], unchanged_poll_count: 10,
+                      stall_detected: true
+                    },
+                    result_payload: {schema_version: "dating.reply_generation.v1", roles: []},
+                    result_summary: {},
+                    result_fields: [{
+                      path: "result", parent_path: null, value: {}, value_type: "object",
+                      presence: "PRESENT", schema_known: true,
+                      source: {method: "GetTaskResult", line_start: 5, line_end: 6}
+                    }]
+                  },
+                  checks: [], parse_warnings: [], report_markdown: "# Dating report"
+                });
+              },
+              openInterfaceDrawer(model) { drawerModel = model; }
+            };
+
+            const document = {
+              readyState: "complete",
+              getElementById(id) { return elements[id] || null; },
+              createElement(tag) { return new FakeElement(tag); },
+              createTextNode(value) { return new FakeElement("text", "", {textContent: String(value)}); },
+              addEventListener() {}
+            };
+            const window = {LogWorkbench: api, navigator: {clipboard: {writeText: () => Promise.resolve()}}};
+            const context = {
+              window, document, Promise, Array, Object, String, Number, Math, JSON, Set,
+              TypeError, console
+            };
+            vm.createContext(context);
+            vm.runInContext(fs.readFileSync(process.argv[1], "utf8"), context);
+
+            (async () => {
+              const adapter = registered.dating;
+              assert(adapter && typeof adapter.analyze === "function", "Dating 模式未注册");
+              const result = await adapter.analyze({root, logText: "raw\nlog"});
+              assert(result && result.ok === true, "Dating 分析未返回成功结果");
+              assert(requests.length === 1 && requests[0].url === "/prefix/dating/analyze",
+                "Dating 未使用 root.dataset.datingUrl");
+              const requestBody = typeof requests[0].options.body === "string"
+                ? JSON.parse(requests[0].options.body) : requests[0].options.body;
+              assert(requestBody.log_text === "raw\nlog",
+                "Dating 请求未携带当前日志");
+              assert(tabs[tabs.length - 1].join(",") ===
+                "overviewPanel,interfacesPanel,timelinePanel,resultPanel,checksPanel",
+                "Dating 未启用五个标准 panel");
+              assert(elements["dating-task-timeline"].children.length === 11,
+                "Dating 合并或遗漏了重复 Poll 状态样本");
+              assert(textOf(elements["dating-progress-diagnostics"]).includes("10"),
+                "Dating 未展示 progress diagnostics");
+
+              const rowButton = elements["dating-interface-table-body"].querySelectorAll("button")[0];
+              assert(rowButton, "Dating 接口行未提供详情触发器");
+              await rowButton.dispatch("click");
+              assert(drawerModel && drawerModel.method === "GetTask" &&
+                drawerModel.service === "DatingService" && drawerModel.transport === "gateway" &&
+                drawerModel.result_class === "success" && drawerModel.parse_status === "PARSED",
+                "Dating drawer payload 缺少调用元数据");
+              assert(drawerModel.request.params.marker === "<unsafe>" &&
+                drawerModel.response.data.marker === "<unsafe>" &&
+                drawerModel.http.status === 200 && drawerModel.gateway.code === 0 &&
+                drawerModel.sub_response.success === true && drawerModel.elapsed_ms === 4 &&
+                drawerModel.request.headers["X-Test"] === "safe",
+                "Dating drawer payload 缺少脱敏调用详情");
+
+              elements["dating-overview"].hidden = false;
+              elements["dating-overview"].textContent = "old dating result";
+              elements["analysis-mode"].value = "people";
+              await elements["analysis-mode"].dispatch("change");
+              assert(elements["dating-overview"].hidden && textOf(elements["dating-overview"]) === "",
+                "切换 People 后仍残留 Dating 内容");
+              assert(tabs[tabs.length - 1].join(",") ===
+                "overviewPanel,interfacesPanel,resultPanel,checksPanel",
+                "切换 People 后仍残留 Dating 时间线标签");
+            })().catch(error => {
+              console.error(error.stack || error.message);
+              process.exitCode = 1;
+            });
+            """
+        )
+        completed = subprocess.run(
+            [node, "-e", harness, str(adapter_path)],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(0, completed.returncode, completed.stderr or completed.stdout)
+
     def test_people_adapter_requests_and_renders_only_people_workbench_surfaces(self):
         """People 适配器应保留确定性结论、真实证据和报告的面板边界。"""
         node = shutil.which("node")

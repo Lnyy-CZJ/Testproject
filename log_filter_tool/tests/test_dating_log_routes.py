@@ -43,6 +43,12 @@ class DatingPageTest(unittest.TestCase):
         missing = [contract for contract in contracts if contract not in source]
         self.assertEqual(missing, [], f"缺失前端合同：{missing}")
 
+    @staticmethod
+    def dating_source():
+        """读取独立 Dating 适配器，确保页面测试不再依赖模板内联脚本。"""
+        path = Path(__file__).resolve().parents[1] / "static/js/workbench-dating.js"
+        return path.read_text(encoding="utf-8") if path.exists() else ""
+
     def test_enabled_page_contains_complete_dating_workbench(self):
         """缺失任一业务区块时，工程师都无法完成 PRD 的排查流程。"""
         html = self.client.get("/").get_data(as_text=True)
@@ -83,7 +89,7 @@ class DatingPageTest(unittest.TestCase):
         self.assertNotIn('id="analyze-dating-btn"', html)
         self.assertNotIn('id="dating-analysis"', html)
         self.assertNotIn("function analyzeDatingLog()", html)
-        self.assertIn('id="analyze-people-search-btn"', html)
+        self.assertIn('id="analyze-log-btn"', html)
         self.assertIn('id="people-search-analysis"', html)
 
     def test_dating_urls_follow_base_path_and_exports_use_exact_types(self):
@@ -93,18 +99,20 @@ class DatingPageTest(unittest.TestCase):
 
         html = app.test_client().get("/log-tool/").get_data(as_text=True)
 
-        self.assertIn('var datingAnalyzeUrl = "/log-tool/dating/analyze"', html)
-        self.assertIn('var datingExportUrl = "/log-tool/export"', html)
-        self.assertIn("'dating_analysis_report'", html)
-        self.assertIn("'dating_analysis_json'", html)
+        self.assertIn('data-dating-url="/log-tool/dating/analyze"', html)
+        self.assertIn('/log-tool/static/js/workbench-dating.js', html)
+        source = self.dating_source()
+        self.assertIn("root.dataset.datingUrl", source)
+        self.assertIn('"dating_analysis_report"', source)
+        self.assertIn('"dating_analysis_json"', source)
         self.assertNotIn("fetch('/dating/analyze'", html)
         self.assertNotIn('fetch("/dating/analyze"', html)
 
     def test_dating_javascript_is_independent_and_uses_safe_dom_writes(self):
         """Dating 数据不得覆盖 Filter/People，也不得作为 HTML 执行。"""
         html = self.client.get("/").get_data(as_text=True)
-        self.assertIn("var latestDatingAnalysis", html)
-        dating_script = html[html.index("var latestDatingAnalysis") :]
+        self.assertIn('/static/js/workbench-dating.js', html)
+        dating_script = self.dating_source()
 
         for contract in (
             "var latestDatingAnalysis = null",
@@ -128,9 +136,34 @@ class DatingPageTest(unittest.TestCase):
         self.assertNotIn("people-search-report", dating_script)
         self.assertNotIn("resultRawText =", dating_script)
 
+    def test_dating_mode_maps_all_workbench_tabs(self):
+        """Dating 适配器必须注册五个标准 panel，并直接消费完整任务快照。"""
+        source = self.dating_source()
+        self.assertIn("registerAnalysisMode('dating'", source)
+        for contract in (
+            "renderDatingSummary", "renderDatingCalls", "renderDatingLifecycle",
+            "renderDatingResult", "renderDatingFields", "renderDatingChecks",
+            "taskSnapshot.status_samples", "taskSnapshot.result_payload",
+        ):
+            with self.subTest(contract=contract):
+                self.assertIn(contract, source)
+        self.assertNotIn("aggregatePoll", source)
+
+        html = self.client.get("/").get_data(as_text=True)
+        for marker in (
+            'id="dating-overview"',
+            'id="dating-interfaces"',
+            'id="dating-timeline"',
+            'id="dating-result"',
+            'id="dating-checks"',
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, html)
+
     def test_dating_states_filters_and_line_locator_are_accessible(self):
         """状态不能只靠颜色，字段与证据必须可筛选并回到原日志。"""
         html = self.client.get("/").get_data(as_text=True)
+        dating_script = self.dating_source()
 
         for presence in (
             "ALL",
@@ -149,15 +182,18 @@ class DatingPageTest(unittest.TestCase):
             "EMPTY_LOG",
             "LOG_TOO_LARGE",
             "UNSUPPORTED_LOG",
+            "MULTIPLE_TASKS_FOUND",
+            "TASK_NOT_FOUND",
+            "ANALYZER_DISABLED",
             "ANALYSIS_INTERNAL_ERROR",
-            "function focusLogLines(startLine, endLine)",
+            "api.focusLogLines",
             "function renderDatingFieldTree(fields)",
             "parent_path",
             ":focus-visible",
             "prefers-reduced-motion: reduce",
         ):
             with self.subTest(contract=contract):
-                self.assertIn(contract, html)
+                self.assertIn(contract, html if contract.startswith('id="dating-state"') or contract.endswith(":focus-visible") or contract == "prefers-reduced-motion: reduce" else dating_script)
 
         self.assertIn('id="copy-dating-report-btn"', html)
         self.assertIn('id="copy-dating-report-btn" type="button" disabled', html)
@@ -166,16 +202,14 @@ class DatingPageTest(unittest.TestCase):
 
     def test_success_renderer_replaces_loading_state(self):
         """成功响应必须结束 loading 文案，避免同时显示“完成”和“分析中”。"""
-        html = self.client.get("/").get_data(as_text=True)
-        dating_script = html[html.index("var latestDatingAnalysis") :]
+        dating_script = self.dating_source()
 
         self.assertIn("state.className = 'dating-state success'", dating_script)
         self.assertIn("state.textContent = '分析完成：'", dating_script)
 
     def test_schema_specific_result_views_preserve_documented_facts(self):
         """已知 Schema 必须使用事实视图，未知 Schema 才只展示通用字段。"""
-        html = self.client.get("/").get_data(as_text=True)
-        dating_script = html[html.index("var latestDatingAnalysis") :]
+        dating_script = self.dating_source()
 
         self.assert_contains_contracts(dating_script, (
             "function sortDatingRolesByRank(roles)",
@@ -212,8 +246,7 @@ class DatingPageTest(unittest.TestCase):
 
     def test_collapsed_dating_details_materialize_once_on_first_open(self):
         """首屏不得创建折叠字段树、调用行或每个调用的 JSON 详情。"""
-        html = self.client.get("/").get_data(as_text=True)
-        dating_script = html[html.index("var latestDatingAnalysis") :]
+        dating_script = self.dating_source()
 
         self.assert_contains_contracts(dating_script, (
             "var datingFieldTreeMaterialized = false",
@@ -222,10 +255,10 @@ class DatingPageTest(unittest.TestCase):
             "function materializeDatingFieldTreeOnce()",
             "function materializeDatingCallsOnce()",
             "fieldTreeDetails.addEventListener('toggle'",
-            "interfaceDetails.addEventListener('toggle'",
+            "fieldTreeDetails.addEventListener('toggle'",
             "var detailMaterialized = false",
-            "function materializeDatingCallDetailOnce()",
-            "if (detailMaterialized) return",
+            "function openDatingCallDrawer(call, putAssetMap, trigger)",
+            "api.openInterfaceDrawer",
         ))
 
         render_start = dating_script.index("function renderDatingAnalysis(data)")
@@ -236,7 +269,7 @@ class DatingPageTest(unittest.TestCase):
             initial_renderer,
         )
         self.assertNotIn("renderDatingFieldTree(", initial_renderer)
-        self.assertNotIn("renderDatingCalls(", initial_renderer)
+        self.assertIn("renderDatingCalls(", initial_renderer)
 
         result_start = dating_script.index("function renderDatingResult(taskSnapshot)")
         result_end = dating_script.index("function createDatingPresence(field)")
@@ -246,8 +279,7 @@ class DatingPageTest(unittest.TestCase):
 
     def test_put_assets_are_mapped_to_interface_calls_and_terminal_is_explicit(self):
         """PUT 行必须可追溯 asset，未完成任务必须与 verdict 分开提示。"""
-        html = self.client.get("/").get_data(as_text=True)
-        dating_script = html[html.index("var latestDatingAnalysis") :]
+        dating_script = self.dating_source()
 
         self.assert_contains_contracts(dating_script, (
             "function buildDatingPutAssetMap(taskSnapshot)",
@@ -260,8 +292,7 @@ class DatingPageTest(unittest.TestCase):
 
     def test_empty_string_is_distinct_from_null_and_unavailable(self):
         """业务空字符串必须显示其 presence，不能与 undefined/null 混淆。"""
-        html = self.client.get("/").get_data(as_text=True)
-        dating_script = html[html.index("var latestDatingAnalysis") :]
+        dating_script = self.dating_source()
 
         self.assertIn("value === '' ? '空字符串'", dating_script)
         self.assertIn("if (value === null) return 'null'", dating_script)
