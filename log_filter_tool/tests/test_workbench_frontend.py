@@ -1848,11 +1848,17 @@ class WorkbenchShellTest(unittest.TestCase):
             };
 
             const document = {
-              readyState: "complete",
+              readyState: "loading",
               getElementById(id) { return elements[id] || null; },
               createElement(tag) { return new FakeElement(tag); },
               createTextNode(value) { return new FakeElement("text", "", {textContent: String(value)}); },
-              addEventListener() {}
+              _listeners: Object.create(null),
+              addEventListener(type, listener) {
+                (this._listeners[type] ||= []).push(listener);
+              },
+              async dispatch(type) {
+                for (const listener of this._listeners[type] || []) await listener({type});
+              }
             };
             const window = {LogWorkbench: api, navigator: {clipboard: {writeText: () => Promise.resolve()}}};
             const context = {
@@ -1881,11 +1887,29 @@ class WorkbenchShellTest(unittest.TestCase):
               assert(textOf(elements["dating-progress-diagnostics"]).includes("10"),
                 "Dating 未展示 progress diagnostics");
 
+              // 回归：结果过期后，延迟初始化不能依据仍存在的旧 payload 重新启用导出。
+              assert(typeof adapter.onInputRevision === "function",
+                "Dating 必须提供日志修订 stale hook");
+              adapter.onInputRevision();
+              assert(elements["export-dating-report-btn"].disabled &&
+                elements["export-dating-json-btn"].disabled &&
+                elements["copy-dating-report-btn"].disabled,
+                "Dating 结果过期后应立即禁用全部导出");
+              await document.dispatch("DOMContentLoaded");
+              assert(elements["export-dating-report-btn"].disabled &&
+                elements["export-dating-json-btn"].disabled &&
+                elements["copy-dating-report-btn"].disabled,
+                "延迟初始化不能重新启用已过期 Dating 结果的导出");
+
               const relationshipResult = await adapter.analyze({root, logText: "relationship\nlog"});
               assert(relationshipResult && relationshipResult.ok === true,
                 "Relationship Analysis 分析未返回成功结果");
               assert(elements["dating-task-timeline"].children.length === 21,
                 "Relationship Analysis 必须保留全部 21 条 status_samples");
+              assert(!elements["export-dating-report-btn"].disabled &&
+                !elements["export-dating-json-btn"].disabled &&
+                !elements["copy-dating-report-btn"].disabled,
+                "新的 Dating 分析成功后应重新启用导出");
 
               const rowButton = elements["dating-interface-table-body"].querySelectorAll("button")[0];
               assert(rowButton, "Dating 接口行未提供详情触发器");

@@ -17,6 +17,8 @@
 
   var latestDatingAnalysis = null;
   var latestDatingReport = '';
+  // 结果数据与当前日志修订绑定；日志一旦变化，旧结果只能查看，不能再次导出。
+  var datingResultFresh = false;
   var latestDatingFields = [];
   var latestDatingChecks = [];
   var latestDatingParseWarnings = [];
@@ -190,13 +192,17 @@
     var copyButton = getElement('copy-dating-report-btn');
     var reportButton = getElement('export-dating-report-btn');
     var jsonButton = getElement('export-dating-json-btn');
-    if (copyButton) copyButton.disabled = Boolean(isLoading) || !latestDatingReport;
-    if (reportButton) reportButton.disabled = Boolean(isLoading) || !latestDatingReport;
-    if (jsonButton) jsonButton.disabled = Boolean(isLoading) || !latestDatingAnalysis;
+    // 不能只判断 payload 是否存在：初始化、请求结束等生命周期回调可能在
+    // stale 标记之后再次刷新按钮，必须同时满足“有结果、未过期、非 loading”。
+    var canExport = !Boolean(isLoading) && datingResultFresh;
+    if (copyButton) copyButton.disabled = !canExport || !latestDatingReport;
+    if (reportButton) reportButton.disabled = !canExport || !latestDatingReport;
+    if (jsonButton) jsonButton.disabled = !canExport || !latestDatingAnalysis;
   }
 
   /** 日志修订后结果仍可核对，但所有 Dating 结果导出必须失效。 */
   function markDatingStale() {
+    datingResultFresh = false;
     var copyButton = getElement('copy-dating-report-btn');
     var reportButton = getElement('export-dating-report-btn');
     var jsonButton = getElement('export-dating-json-btn');
@@ -255,6 +261,7 @@
   function resetDatingResult() {
     latestDatingAnalysis = null;
     latestDatingReport = '';
+    datingResultFresh = false;
     latestDatingFields = [];
     latestDatingChecks = [];
     latestDatingParseWarnings = [];
@@ -668,6 +675,7 @@
     renderDatingParseWarnings(data.parse_warnings || []);
     var report = getElement('dating-report');
     if (report) report.textContent = latestDatingReport;
+    datingResultFresh = true;
     setText('dating-status', (data.verdict || '完成') + ' · task_id=' + (taskSnapshot.task_id || '—'));
     updateDatingExportButtons(false);
   }
@@ -1509,7 +1517,7 @@
 
 
   function copyDatingReport() {
-    if (!latestDatingReport) return Promise.resolve(false);
+    if (!latestDatingReport || !datingResultFresh) return Promise.resolve(false);
     var clipboard = global.navigator && global.navigator.clipboard;
     if (!clipboard || typeof clipboard.writeText !== 'function') {
       if (typeof api.showActionMessage === 'function') api.showActionMessage('复制失败，请检查浏览器剪贴板权限。', true);
@@ -1526,7 +1534,7 @@
 
   /** 复用 core/filter 的 exportLog，避免 Dating 自己复制 CSRF、base path 或下载逻辑。 */
   function exportDatingContent(exportType, content, button) {
-    if (!content || typeof api.exportLog !== 'function') {
+    if (!content || !datingResultFresh || typeof api.exportLog !== 'function') {
       if (typeof api.showActionMessage === 'function') {
         api.showActionMessage(!content ? '当前没有可导出的 Dating 结果。' : '导出地址不可用。', true, true);
       }
@@ -1540,8 +1548,9 @@
     return Promise.resolve(api.exportLog(exportType, content)).finally(function restoreDatingExport() {
       if (!button) return;
       button.textContent = originalText;
+      var canExport = datingResultFresh;
       button.disabled = exportType === "dating_analysis_report"
-        ? !latestDatingReport : !latestDatingAnalysis;
+        ? !canExport || !latestDatingReport : !canExport || !latestDatingAnalysis;
     });
   }
 
