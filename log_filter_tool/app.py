@@ -416,7 +416,14 @@ def create_app(base_path=None):
     except ValueError:
         # 环境变量配置错误时回落到 10 MiB，避免应用因可选分析器无法启动。
         app.config["DATING_STRUCTURED_MAX_BYTES"] = 10 * 1024 * 1024
-    tool = Blueprint("tool", __name__)
+    # 静态资源由同一 Blueprint 提供，使根路径部署与平台子路径部署共享
+    # ``url_prefix``，避免模板硬编码路径后在 ``/log-tool`` 下产生 404。
+    tool = Blueprint(
+        "tool",
+        __name__,
+        static_folder="static",
+        static_url_path="/static",
+    )
 
     def client_token():
         """读取只读 Client Token，缺失时仅跳过审计上报。"""

@@ -27,6 +27,7 @@ COPY gateway_log_parser.py .
 COPY dating_log_analyzer.py .
 COPY dating_log_rules.py .
 COPY templates/ templates/
+COPY static/ static/
 COPY skills/ skills/
 COPY log_default.log .
 

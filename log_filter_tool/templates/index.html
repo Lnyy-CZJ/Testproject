@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Log 过滤工具</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%232457d6'/><text x='50%25' y='50%25' dominant-baseline='central' text-anchor='middle' fill='white' font-family='Arial,sans-serif' font-size='20' font-weight='bold'>L</text></svg>">
+    <link rel="stylesheet" href="{{ url_for('tool.static', filename='css/log-workbench.css') }}">
     <style>
       :root {
         color-scheme: light;
@@ -933,14 +934,50 @@
     </style>
   </head>
   <body>
-    <main>
-      <h1>质量分析 · Log 过滤工具</h1>
+    <header class="app-header">
+      <div class="app-header__inner">
+        <div>
+          <p class="app-header__context">质量分析</p>
+          <h1>Log 过滤工具</h1>
+        </div>
+        {% if platform_home_url %}
+          <a class="app-header__back-link" href="{{ platform_home_url }}">返回测试开发平台</a>
+        {% endif %}
+      </div>
+    </header>
 
-      {% if platform_home_url %}
-        <p><a href="{{ platform_home_url }}">返回测试开发平台</a></p>
-      {% endif %}
+    <main
+      class="workspace"
+      id="log-workbench"
+      data-index-url="{{ url_for('tool.index') }}"
+      data-export-url="{{ url_for('tool.export_log') }}"
+      data-people-search-url="{{ url_for('tool.analyze_people_search') }}"
+      data-dating-url="{{ url_for('tool.analyze_dating') }}"
+    >
+      <section
+        class="workbench-pane workbench-log-pane"
+        id="workbench-log-pane"
+        aria-labelledby="workbench-log-heading"
+      >
+        <div class="workbench-pane__header">
+          <div>
+            <h2 id="workbench-log-heading">分析输入</h2>
+            <p>粘贴一份日志并选择明确的分析模式。</p>
+          </div>
+          <div class="analysis-mode-control">
+            <label for="analysis-mode">分析模式</label>
+            <select id="analysis-mode" aria-describedby="analysis-mode-help">
+              <option value="filter">日志过滤</option>
+              <option value="people-search">检索链路分析</option>
+              {% if dating_analyzer_enabled %}
+                <option value="dating">Dating 结构化分析</option>
+              {% endif %}
+            </select>
+            <span id="analysis-mode-help">同一时间只分析当前这份日志。</span>
+          </div>
+        </div>
 
-      <form method="post" action="{{ url_for('tool.index') }}">
+      <form id="log-analysis-form" method="post" action="{{ url_for('tool.index') }}">
         <input type="hidden" name="_csrf" value="{{ request.cookies.get('tp_csrf', '') }}">
         <section>
           <div class="field-header">
@@ -980,10 +1017,10 @@
           </div>
 
           <div class="toolbar-buttons">
-            <button type="submit">解析日志</button>
-            <button type="button" id="analyze-people-search-btn" onclick="analyzePeopleSearch()">分析检索链路</button>
+            <button type="submit" id="analyze-log-btn">分析日志</button>
+            <button type="button" id="analyze-people-search-btn" onclick="analyzePeopleSearch()" hidden>分析检索链路</button>
             {% if dating_analyzer_enabled %}
-              <button type="button" id="analyze-dating-btn" onclick="analyzeDatingLog()">Dating 结构化分析</button>
+              <button type="button" id="analyze-dating-btn" onclick="analyzeDatingLog()" hidden>Dating 结构化分析</button>
             {% endif %}
           </div>
 
@@ -996,6 +1033,52 @@
           <div class="message">{{ message }}</div>
         {% endif %}
       </form>
+
+      </section>
+
+      <div
+        class="workspace-resizer"
+        id="workbench-resizer"
+        role="separator"
+        tabindex="0"
+        aria-label="调整日志输入与分析结果区域宽度"
+        aria-orientation="vertical"
+        aria-controls="workbench-log-pane workbench-result-pane"
+        aria-valuemin="30"
+        aria-valuemax="70"
+        aria-valuenow="44"
+      ></div>
+
+      <section
+        class="workbench-pane workbench-result-pane"
+        id="workbench-result-pane"
+        aria-labelledby="workbench-result-heading"
+      >
+        <div class="workbench-pane__header workbench-result-header">
+          <div>
+            <h2 id="workbench-result-heading">分析结果</h2>
+            <p>在固定标签中查看概览、调用链路、原始结果和检查项。</p>
+          </div>
+        </div>
+
+        <div class="workbench-tabs" role="tablist" aria-label="日志分析结果">
+          <button type="button" id="overviewTab" role="tab" aria-controls="overviewPanel" aria-selected="false" tabindex="-1">概览</button>
+          <button type="button" id="interfacesTab" role="tab" aria-controls="interfacesPanel" aria-selected="false" tabindex="-1">接口</button>
+          <button type="button" id="timelineTab" role="tab" aria-controls="timelinePanel" aria-selected="false" tabindex="-1">时间线</button>
+          <button type="button" id="resultTab" role="tab" aria-controls="resultPanel" aria-selected="true">结果</button>
+          <button type="button" id="checksTab" role="tab" aria-controls="checksPanel" aria-selected="false" tabindex="-1">检查项</button>
+        </div>
+
+        <section id="overviewPanel" class="workbench-tab-panel" role="tabpanel" aria-labelledby="overviewTab" tabindex="0" hidden>
+          <p class="workbench-empty-state">运行分析后，此处展示当前日志的关键结论。</p>
+        </section>
+        <section id="interfacesPanel" class="workbench-tab-panel" role="tabpanel" aria-labelledby="interfacesTab" tabindex="0" hidden>
+          <p class="workbench-empty-state">运行分析后，此处展示接口调用与响应摘要。</p>
+        </section>
+        <section id="timelinePanel" class="workbench-tab-panel" role="tabpanel" aria-labelledby="timelineTab" tabindex="0" hidden>
+          <p class="workbench-empty-state">运行分析后，此处展示按时间排序的日志事件。</p>
+        </section>
+        <section id="resultPanel" class="workbench-tab-panel" role="tabpanel" aria-labelledby="resultTab" tabindex="0">
 
       <section>
         <div class="result-header">
@@ -1282,7 +1365,22 @@
           </div>
         </section>
       {% endif %}
+        </section>
+
+        <section id="checksPanel" class="workbench-tab-panel" role="tabpanel" aria-labelledby="checksTab" tabindex="0" hidden>
+          <p class="workbench-empty-state">运行分析后，此处展示一致性检查与可追溯证据。</p>
+        </section>
+      </section>
     </main>
+
+    <aside class="workbench-drawer drawer" id="workbench-drawer" role="dialog" aria-modal="false" aria-labelledby="workbench-drawer-title" tabindex="-1" hidden>
+      <h2 id="workbench-drawer-title">日志详情</h2>
+      <p>选择分析结果中的记录后，可在此查看完整上下文。</p>
+    </aside>
+    <div class="workbench-toast toast" id="workbench-toast" role="status" aria-live="polite" hidden></div>
+    <div class="workbench-loading-mask" id="workbench-loading-mask" role="status" aria-live="polite" aria-busy="true" hidden>
+      <span>正在分析日志</span>
+    </div>
     <script>
       (function() {
         var toggle = document.getElementById('method-toggle');
@@ -3295,5 +3393,6 @@
       }
       {% endif %}
     </script>
+    <script src="{{ url_for('tool.static', filename='js/workbench-core.js') }}"></script>
   </body>
 </html>
