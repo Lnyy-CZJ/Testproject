@@ -154,16 +154,33 @@ class WorkbenchShellTest(unittest.TestCase):
             const panels = tabDefinitions.map(([, panelId, selected]) =>
               new FakeElement(panelId, {hidden: !selected})
             );
+            const logTabs = [
+              new FakeElement("raw-log-view-btn", {
+                "aria-controls": "raw-log-view", "aria-selected": "true"
+              }),
+              new FakeElement("filtered-log-view-btn", {
+                "aria-controls": "filtered-log-view", "aria-selected": "false"
+              })
+            ];
+            const logPanels = [
+              new FakeElement("raw-log-view", {hidden: false}),
+              new FakeElement("filtered-log-view", {hidden: true})
+            ];
             const resizer = new FakeElement("workbench-resizer", {
               "aria-valuemin": "32",
               "aria-valuemax": "55",
               "aria-valuenow": "39"
             });
             root.querySelectorAll = selector =>
-              selector === '[role="tab"][aria-controls]' ? tabs : [];
+              selector === '#analysis-result-tabs > [role="tab"][aria-controls]' ? tabs :
+              selector === '[role="tab"][aria-controls]' ? [...tabs, ...logTabs] : [];
 
             const elements = {"log-workbench": root, "workbench-resizer": resizer};
-            [...tabs, ...panels].forEach(element => { elements[element.id] = element; });
+            [...tabs, ...panels, ...logTabs, ...logPanels].forEach(element => {
+              elements[element.id] = element;
+            });
+            elements["result-text"] = new FakeElement("result-text");
+            elements["log_text"] = new FakeElement("log_text");
 
             let persistenceWrites = 0;
             const localStorage = {
@@ -285,6 +302,18 @@ class WorkbenchShellTest(unittest.TestCase):
               assert(byId("overviewTab").getAttribute("aria-selected") === "true",
                 "无效激活破坏了当前选择");
               assert(prevented === 4, "标签导航键未全部阻止默认滚动行为");
+            }
+
+            if (process.argv[2] === "tabs-isolated") {
+              api.setAvailableTabs(["overviewPanel", "resultPanel"]);
+              assert(byId("raw-log-view-btn").hidden === false,
+                "结果标签筛选不能隐藏原始日志标签");
+              assert(byId("filtered-log-view-btn").hidden === false,
+                "结果标签筛选不能隐藏过滤结果标签");
+              assert(byId("raw-log-view").hidden === false,
+                "结果标签筛选不能隐藏原始日志输入区");
+              assert(byId("filtered-log-view").hidden === true,
+                "过滤结果面板仍应由日志视图状态独立控制");
             }
 
             if (process.argv[2] === "resizer") {
@@ -1167,6 +1196,10 @@ class WorkbenchShellTest(unittest.TestCase):
         """动态标签 API 只能在可见标签中同步选择、panel 与键盘焦点。"""
         self._run_task_two_core_harness("tabs")
 
+    def test_result_tab_filter_does_not_hide_log_view_tabs(self):
+        """切换 People/Dating 结果标签时，左侧原始日志视图必须保持独立可用。"""
+        self._run_task_two_core_harness("tabs-isolated")
+
     def test_resizer_clamps_pointer_and_moves_keyboard_by_16px(self):
         """拖动与键盘调整必须夹在 32%–55%，且键盘步长为真实 16px。"""
         self._run_task_two_core_harness("resizer")
@@ -1294,6 +1327,7 @@ class WorkbenchShellTest(unittest.TestCase):
               const toast = new FakeElement("workbench-toast", {hidden: true});
               const tabs = [overviewTab, resultTab];
               root.querySelectorAll = selector =>
+                selector === '#analysis-result-tabs > [role="tab"][aria-controls]' ? tabs :
                 selector === '[role="tab"][aria-controls]' ? tabs : [];
 
               const elements = {
@@ -1469,6 +1503,7 @@ class WorkbenchShellTest(unittest.TestCase):
             const datingJson = new FakeElement("export-dating-json-btn");
             const tabs = [overviewTab, resultTab];
             root.querySelectorAll = selector =>
+              selector === '#analysis-result-tabs > [role="tab"][aria-controls]' ? tabs :
               selector === '[role="tab"][aria-controls]' ? tabs : [];
             const elements = {
               "log-workbench": root,
@@ -1595,6 +1630,7 @@ class WorkbenchShellTest(unittest.TestCase):
         self.assertIn('id="log-filter-form"', html)
         self.assertIn('id="raw-log-view-btn"', html)
         self.assertIn('id="filtered-log-view-btn"', html)
+        self.assertIn('id="analysis-result-tabs"', html)
         self.assertNotIn('class="log-line"', html)
         self.assertNotIn("<mark", html)
 
@@ -2307,6 +2343,7 @@ class WorkbenchShellTest(unittest.TestCase):
               add("section", panelId, {hidden: !selected})
             );
             root.querySelectorAll = selector =>
+              selector === '#analysis-result-tabs > [role="tab"][aria-controls]' ? tabs :
               selector === '[role="tab"][aria-controls]' ? tabs : [];
 
             const form = add("form", "log-filter-form");

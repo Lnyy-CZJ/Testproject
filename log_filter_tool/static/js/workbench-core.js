@@ -1255,10 +1255,17 @@
     if (!modes.filter && modes.general) modes.filter = modes.general;
   }
 
-  /** 返回工作台中按 DOM 顺序排列的全部结果标签。 */
+  /**
+   * 返回结果区域中按 DOM 顺序排列的标签。
+   *
+   * 左侧“原始日志/过滤结果”也使用 ARIA tab 语义，但它属于独立的日志视图，
+   * 不能被 People/Dating 的结果 panel 筛选隐藏。因此这里必须限定到结果 tablist。
+   */
   function tabButtons(root) {
     return root && typeof root.querySelectorAll === "function"
-      ? Array.from(root.querySelectorAll('[role="tab"][aria-controls]')) : [];
+      ? Array.from(root.querySelectorAll(
+        '#analysis-result-tabs > [role="tab"][aria-controls]'
+      )) : [];
   }
 
   function visibleTabButtons(root) {
