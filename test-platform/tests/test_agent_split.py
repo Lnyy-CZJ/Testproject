@@ -199,6 +199,10 @@ class AgentSplitComposeTest(unittest.TestCase):
         script = (ROOT / "scripts/deploy-prod.sh").read_text(encoding="utf-8")
         self.assertIn('if [[ "$alembic_target" != "20260824_0019" ]]; then', script)
         self.assertIn('PROJECT_ACCESS_MANIFEST', script)
+        self.assertIn('$state_dir/project-access-manifest.json', script)
+
+        release_workflow = (ROOT.parent / ".github/workflows/release.yml").read_text(encoding="utf-8")
+        self.assertIn('ALEMBIC_TARGET=" + versions["database"]["alembic_revision"]', release_workflow)
 
     def test_api_autotest_uses_asia_shanghai_for_human_readable_times(self) -> None:
         """接口自动化容器必须按北京时间生成任务 ID、日志文件名和日志正文。
