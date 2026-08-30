@@ -125,7 +125,8 @@ body {
 .workspace {
   box-sizing: border-box;
   display: grid;
-  grid-template-columns: minmax(360px, var(--left-pane)) 8px minmax(620px, 1fr);
+  /* 540px 让 1280px 最小桌面宽度仍可容纳 55% 左栏、8px 分隔条和可读右栏。 */
+  grid-template-columns: minmax(360px, var(--left-pane)) 8px minmax(540px, 1fr);
   width: 100%;
   max-width: 1440px;
   min-width: 1280px;

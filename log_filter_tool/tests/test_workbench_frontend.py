@@ -416,7 +416,7 @@ class WorkbenchShellTest(unittest.TestCase):
 
         self.assertIn(
             "grid-template-columns: minmax(360px, var(--left-pane)) "
-            "8px minmax(620px, 1fr);",
+            "8px minmax(540px, 1fr);",
             compact_css,
         )
         self.assertIn("height: calc(100vh - 72px);", compact_css)
