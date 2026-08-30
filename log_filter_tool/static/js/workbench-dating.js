@@ -1575,7 +1575,11 @@
   var definition = {
     analyze: analyzeDatingLog,
     run: analyzeDatingLog,
-    reset: resetDatingResult
+    reset: resetDatingResult,
+    // Dating 的错误码、后端原文和处理建议都在 Overview；输入修订只清理
+    // Dating 自己的结果与导出状态，不触碰 Filter/People 的 owner。
+    errorPanel: 'overviewPanel',
+    onInputRevision: resetDatingResult
   };
 
   if (typeof api.registerAnalysisMode === 'function') {

@@ -1387,6 +1387,203 @@ class WorkbenchShellTest(unittest.TestCase):
             completed.stderr or completed.stdout,
         )
 
+    def _run_task_five_core_lifecycle_harness(self, scenario):
+        """在最小 DOM 沙箱中验证 Task 5 的错误 panel 与模式 owner 生命周期。"""
+        node = shutil.which("node")
+        self.assertIsNotNone(node, "需要 Node.js 执行 Task 5 核心生命周期测试")
+        core_path = Path(__file__).resolve().parents[1] / "static/js/workbench-core.js"
+        harness = textwrap.dedent(
+            r"""
+            const fs = require("fs");
+            const vm = require("vm");
+
+            class FakeElement {
+              constructor(id, attributes = {}) {
+                this.id = id;
+                this.attributes = {...attributes};
+                this.dataset = {};
+                this.listeners = Object.create(null);
+                this.children = [];
+                this.hidden = Boolean(attributes.hidden);
+                this.disabled = Boolean(attributes.disabled);
+                this.textContent = attributes.textContent || "";
+                this.value = attributes.value || "";
+                this.tabIndex = Number(attributes.tabIndex || 0);
+                this.style = {setProperty() {}};
+              }
+
+              addEventListener(type, listener) {
+                (this.listeners[type] ||= []).push(listener);
+              }
+
+              dispatch(type, event = {}) {
+                if (!event.target) event.target = this;
+                return Promise.all((this.listeners[type] || []).map(listener => listener(event)));
+              }
+
+              getAttribute(name) {
+                return Object.prototype.hasOwnProperty.call(this.attributes, name)
+                  ? String(this.attributes[name]) : null;
+              }
+
+              setAttribute(name, value) {
+                this.attributes[name] = String(value);
+              }
+
+              removeAttribute(name) {
+                delete this.attributes[name];
+              }
+
+              focus() {}
+            }
+
+            function assert(condition, message) {
+              if (!condition) throw new Error(message);
+            }
+
+            const root = new FakeElement("log-workbench");
+            root.dataset = {indexUrl: "/", exportUrl: "/export"};
+            const overviewTab = new FakeElement("overviewTab", {
+              "aria-controls": "overviewPanel", "aria-selected": "true"
+            });
+            const resultTab = new FakeElement("resultTab", {
+              "aria-controls": "resultPanel", "aria-selected": "false"
+            });
+            const overviewPanel = new FakeElement("overviewPanel");
+            const resultPanel = new FakeElement("resultPanel", {hidden: true});
+            const form = new FakeElement("log-analysis-form");
+            const modeSelect = new FakeElement("analysis-mode", {value: "dating"});
+            const submitButton = new FakeElement("analyze-log-btn", {
+              textContent: "分析日志"
+            });
+            const loadingMask = new FakeElement("workbench-loading-mask", {hidden: true});
+            const toast = new FakeElement("workbench-toast", {hidden: true});
+            const logText = new FakeElement("log_text", {value: "raw log"});
+            const filteredResult = new FakeElement("result-text", {
+              value: "existing filter result"
+            });
+            const filterExport = new FakeElement("export-filtered-result-btn");
+            const staleMessage = new FakeElement("analysis-stale", {hidden: true});
+            const datingSurface = new FakeElement("dating-result");
+            const datingMarkdown = new FakeElement("export-dating-report-btn");
+            const datingJson = new FakeElement("export-dating-json-btn");
+            const tabs = [overviewTab, resultTab];
+            root.querySelectorAll = selector =>
+              selector === '[role="tab"][aria-controls]' ? tabs : [];
+            const elements = {
+              "log-workbench": root,
+              overviewTab, resultTab, overviewPanel, resultPanel,
+              "log-analysis-form": form,
+              "analysis-mode": modeSelect,
+              "analyze-log-btn": submitButton,
+              "workbench-loading-mask": loadingMask,
+              "workbench-toast": toast,
+              "log_text": logText,
+              "result-text": filteredResult,
+              "export-filtered-result-btn": filterExport,
+              "analysis-stale": staleMessage,
+              "dating-result": datingSurface,
+              "export-dating-report-btn": datingMarkdown,
+              "export-dating-json-btn": datingJson
+            };
+            const document = {
+              readyState: "complete",
+              getElementById(id) { return elements[id] || null; },
+              addEventListener() {}
+            };
+            const window = {};
+            vm.runInNewContext(fs.readFileSync(process.argv[1], "utf8"), {
+              window, document, Promise, Array, Object, String, Number, Math, TypeError
+            });
+
+            (async () => {
+              const api = window.LogWorkbench;
+              const scenario = process.argv[2];
+              if (scenario === "dating-error") {
+                api.registerAnalysisMode("dating", {
+                  errorPanel: "overviewPanel",
+                  analyze() {
+                    return Promise.resolve({ok: false, message: "TASK_NOT_FOUND"});
+                  }
+                });
+                modeSelect.value = "dating";
+                await api.analyzeSelectedMode();
+                assert(overviewTab.getAttribute("aria-selected") === "true",
+                  "Dating 失败后应停留在 Overview");
+                assert(resultTab.getAttribute("aria-selected") === "false",
+                  "Dating 失败后不能被核心强制切到 Result");
+
+                api.registerAnalysisMode("people", {
+                  analyze() {
+                    return Promise.resolve({ok: false, message: "PEOPLE_FAILED"});
+                  }
+                });
+                modeSelect.value = "people";
+                await api.analyzeSelectedMode();
+                assert(resultTab.getAttribute("aria-selected") === "true",
+                  "People 失败仍应保留既有 Result panel 行为");
+              } else if (scenario === "dating-stale") {
+                let datingStaleCalls = 0;
+                api.registerAnalysisMode("dating", {
+                  onInputRevision() {
+                    datingStaleCalls += 1;
+                    datingSurface.textContent = "";
+                    datingMarkdown.disabled = true;
+                    datingJson.disabled = true;
+                  },
+                  analyze() {
+                    datingSurface.textContent = "dating result";
+                    datingMarkdown.disabled = false;
+                    datingJson.disabled = false;
+                    return Promise.resolve({ok: true});
+                  }
+                });
+                modeSelect.value = "dating";
+                await api.analyzeSelectedMode();
+                assert(datingSurface.textContent === "dating result",
+                  "测试前置：Dating 应已有自己的结果");
+                assert(!datingMarkdown.disabled && !datingJson.disabled,
+                  "测试前置：Dating 导出应已启用");
+
+                logText.value = "edited log";
+                await logText.dispatch("input");
+                assert(datingStaleCalls === 1,
+                  "日志修订必须只通知当前 Dating owner 一次");
+                assert(datingSurface.textContent === "",
+                  "日志修订后不能保留 Dating 旧结果");
+                assert(datingMarkdown.disabled && datingJson.disabled,
+                  "日志修订后必须禁用 Dating Markdown/JSON 导出");
+                assert(filteredResult.value === "existing filter result",
+                  "Dating stale 不能污染 Filter 结果");
+                assert(filterExport.disabled,
+                  "日志修订后 Filter 导出仍应保持 stale 禁用");
+                assert(api.state.dirty === true,
+                  "日志修订必须保留核心 dirty 状态");
+              } else {
+                throw new Error("未知 Task 5 生命周期场景: " + scenario);
+              }
+            })().catch(error => {
+              console.error(error.stack || error.message);
+              process.exitCode = 1;
+            });
+            """
+        )
+        completed = subprocess.run(
+            [node, "-e", harness, str(core_path), scenario],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(0, completed.returncode, completed.stderr or completed.stdout)
+
+    def test_dating_async_failure_stays_overview_without_changing_people_behavior(self):
+        """Dating 失败应展示 Overview 错误；People 失败仍沿用 Result panel。"""
+        self._run_task_five_core_lifecycle_harness("dating-error")
+
+    def test_dating_input_revision_clears_only_dating_results_and_exports(self):
+        """日志修订必须调用 Dating stale owner，且不污染 Filter 既有结果。"""
+        self._run_task_five_core_lifecycle_harness("dating-stale")
+
     def test_task_three_log_pane_keeps_textareas_and_single_dispatch_button(self):
         """日志窗格只能保留两个 textarea 与一个统一分析按钮。"""
         html = self.client.get("/").get_data(as_text=True)
@@ -1454,8 +1651,8 @@ class WorkbenchShellTest(unittest.TestCase):
         self.assertNotIn('data-dating-url="', html)
         self.assertNotIn('value="dating"', html)
 
-    def test_dating_adapter_uses_core_endpoint_and_keeps_every_poll_sample(self):
-        """Dating 适配器必须走核心请求、展示五个 panel，并保留重复 Poll。"""
+    def test_dating_adapter_keeps_reply_and_relationship_poll_samples(self):
+        """Dating 适配器必须保留 Reply 11 条与 Relationship 21 条重复 Poll。"""
         node = shutil.which("node")
         self.assertIsNotNone(node, "需要 Node.js 执行 Dating 适配器行为测试")
         adapter_path = Path(__file__).resolve().parents[1] / "static/js/workbench-dating.js"
@@ -1568,6 +1765,7 @@ class WorkbenchShellTest(unittest.TestCase):
             const root = elements["log-workbench"];
             root.dataset = {datingUrl: "/prefix/dating/analyze"};
             const requests = [];
+            let requestCount = 0;
             const tabs = [];
             let drawerModel = null;
             const registered = Object.create(null);
@@ -1578,7 +1776,13 @@ class WorkbenchShellTest(unittest.TestCase):
               focusLogLines() {},
               showActionMessage() {},
               requestJson(url, options) {
+                requestCount += 1;
                 requests.push({url, options});
+                if (requestCount === 3) {
+                  const error = new Error("TASK_NOT_FOUND");
+                  error.error_code = "TASK_NOT_FOUND";
+                  return Promise.reject(error);
+                }
                 return Promise.resolve({
                   verdict: "WARNINGS_FOUND",
                   summary: {
@@ -1605,14 +1809,18 @@ class WorkbenchShellTest(unittest.TestCase):
                     warnings: []
                   }],
                   task_snapshot: {
-                    task_type: "reply_generation", task_id: "task-1",
-                    schema_version: "dating.reply_generation.v1", schema_status: "KNOWN",
+                    task_type: requestCount === 1 ? "reply_generation" : "relationship_analysis",
+                    task_id: "task-1",
+                    schema_version: requestCount === 1
+                      ? "dating.reply_generation.v1" : "dating.relationship_analysis.v1",
+                    schema_status: "KNOWN",
                     lifecycle: {
-                      terminal: true, final_status: "succeeded", poll_count: 11,
-                      duration_ms: 11781
+                      terminal: true, final_status: "succeeded",
+                      poll_count: requestCount === 1 ? 11 : 21,
+                      duration_ms: requestCount === 1 ? 11781 : 21821
                     },
                     input_assets: [],
-                    status_samples: Array.from({length: 11}, (_, index) => ({
+                    status_samples: Array.from({length: requestCount === 1 ? 11 : 21}, (_, index) => ({
                       timestamp: "2026-08-30T00:00:0" + index + "Z",
                       status: "processing", phase: "analyzing", progress_percent: 50,
                       line_start: index + 10, line_end: index + 10
@@ -1621,7 +1829,11 @@ class WorkbenchShellTest(unittest.TestCase):
                       distinct_progress_values: [50], unchanged_poll_count: 10,
                       stall_detected: true
                     },
-                    result_payload: {schema_version: "dating.reply_generation.v1", roles: []},
+                    result_payload: {
+                      schema_version: requestCount === 1
+                        ? "dating.reply_generation.v1" : "dating.relationship_analysis.v1",
+                      roles: []
+                    },
                     result_summary: {},
                     result_fields: [{
                       path: "result", parent_path: null, value: {}, value_type: "object",
@@ -1665,9 +1877,15 @@ class WorkbenchShellTest(unittest.TestCase):
                 "overviewPanel,interfacesPanel,timelinePanel,resultPanel,checksPanel",
                 "Dating 未启用五个标准 panel");
               assert(elements["dating-task-timeline"].children.length === 11,
-                "Dating 合并或遗漏了重复 Poll 状态样本");
+                "Reply 必须保留全部 11 条重复 Poll 状态样本");
               assert(textOf(elements["dating-progress-diagnostics"]).includes("10"),
                 "Dating 未展示 progress diagnostics");
+
+              const relationshipResult = await adapter.analyze({root, logText: "relationship\nlog"});
+              assert(relationshipResult && relationshipResult.ok === true,
+                "Relationship Analysis 分析未返回成功结果");
+              assert(elements["dating-task-timeline"].children.length === 21,
+                "Relationship Analysis 必须保留全部 21 条 status_samples");
 
               const rowButton = elements["dating-interface-table-body"].querySelectorAll("button")[0];
               assert(rowButton, "Dating 接口行未提供详情触发器");
@@ -1682,6 +1900,17 @@ class WorkbenchShellTest(unittest.TestCase):
                 drawerModel.sub_response.success === true && drawerModel.elapsed_ms === 4 &&
                 drawerModel.request.headers["X-Test"] === "safe",
                 "Dating drawer payload 缺少脱敏调用详情");
+
+              const failedResult = await adapter.analyze({root, logText: "failed\nlog"});
+              assert(failedResult && failedResult.ok === false,
+                "Dating 失败请求必须显式返回业务失败");
+              assert(elements["export-dating-report-btn"].disabled &&
+                elements["export-dating-json-btn"].disabled &&
+                elements["copy-dating-report-btn"].disabled,
+                "Dating 失败后不能继续导出旧 Markdown/JSON");
+              assert(textOf(elements["dating-report"]) === "" &&
+                elements["dating-task-timeline"].children.length === 0,
+                "Dating 失败后不能保留旧结果内容");
 
               elements["dating-overview"].hidden = false;
               elements["dating-overview"].textContent = "old dating result";

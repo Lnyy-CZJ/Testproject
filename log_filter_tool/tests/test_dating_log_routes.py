@@ -144,6 +144,7 @@ class DatingPageTest(unittest.TestCase):
             "renderDatingSummary", "renderDatingCalls", "renderDatingLifecycle",
             "renderDatingResult", "renderDatingFields", "renderDatingChecks",
             "taskSnapshot.status_samples", "taskSnapshot.result_payload",
+            "errorPanel: 'overviewPanel'", "onInputRevision: resetDatingResult",
         ):
             with self.subTest(contract=contract):
                 self.assertIn(contract, source)
@@ -528,6 +529,27 @@ class DatingRouteTest(unittest.TestCase):
                             for check in payload["checks"]
                         ),
                     )
+
+    def test_golden_logs_preserve_real_poll_and_result_field_counts(self):
+        """Reply 与 Relationship golden 都必须保留完整 calls、Poll 和字段计数。"""
+        expected_counts = {
+            "reply_generation_multi_image_success.log": (21, 11, 66),
+            "relationship_analysis_multi_image_success.log": (33, 21, 101),
+        }
+
+        for fixture_name, (call_count, sample_count, field_count) in expected_counts.items():
+            with self.subTest(fixture=fixture_name):
+                response = self.client.post(
+                    "/dating/analyze",
+                    json={"log_text": self._fixture(fixture_name)},
+                )
+                payload = response.get_json()
+                snapshot = payload["task_snapshot"]
+
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(len(payload["calls"]), call_count)
+                self.assertEqual(len(snapshot["status_samples"]), sample_count)
+                self.assertEqual(len(snapshot["result_fields"]), field_count)
 
     def test_dating_ordering_does_not_change_people_response_bytes(self):
         """Dating 固定顺序必须局部生效，People 继续使用 Flask 原有键排序。"""

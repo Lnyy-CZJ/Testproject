@@ -283,6 +283,26 @@
     if (exportButton) exportButton.disabled = true;
   }
 
+  /**
+   * 通知当前异步模式其自有结果已经因日志修订而失效。
+   *
+   * 参数说明：mode 可传入本次请求启动时的模式；未传入时使用 state.activeMode。
+   * 返回值：返回 true 表示当前模式接管了 stale 清理；没有 hook 时返回 false。
+   * 关键约束：只通知当前模式，避免 Dating 清理到 People 或 Filter 的结果节点。
+   */
+  function notifyActiveModeInputRevision(mode) {
+    var owner = mode || getMode(state.activeMode);
+    if (!owner || typeof owner.onInputRevision !== "function") return false;
+    try {
+      owner.onInputRevision();
+      return true;
+    } catch (error) {
+      // 适配器清理是独立生命周期；异常不能阻断核心继续标记 Filter stale。
+      showPersistentError(error);
+      return false;
+    }
+  }
+
   /** 分析完成后清除 stale，并按结果是否为空恢复过滤结果导出。 */
   function markAnalysisFresh() {
     var stale = getElement("analysis-stale");
@@ -601,13 +621,27 @@
       updateLogMetadata();
       invalidateSearch();
       markAnalysisStale();
+      notifyActiveModeInputRevision();
     });
   }
 
-  /** People/Dating 完成后统一激活结果标签，错误也必须可立即看到。 */
+  /** People/Dating 成功后统一激活结果标签。 */
   function activateResultPanel() {
     var resultTab = getElement("resultTab");
     if (resultTab) activateTab("resultPanel", false);
+  }
+
+  /**
+   * 异步模式失败时优先使用模式声明的错误 panel。
+   *
+   * Dating 的错误码和处理建议属于 Overview；未声明错误 panel 的旧模式继续
+   * 使用 Result，保持 People 及其他适配器的既有行为不变。
+   */
+  function activateAnalysisFailurePanel(mode) {
+    var failurePanel = mode && mode.errorPanel;
+    if (failurePanel && activateTab(failurePanel, false)) return true;
+    activateResultPanel();
+    return false;
   }
 
   /** 统一控制异步分析期间的入口、模式选择器与 loading 遮罩。 */
@@ -694,16 +728,20 @@
           // result-text 的失败误判成 Filter stale。日志 input 事件才是 Filter
           // freshness 的 owner，适配器失败只通过自己的面板和错误提示反馈。
           showPersistentError(new Error(invalidMessage));
-          activateResultPanel();
+          activateAnalysisFailurePanel(mode);
           return {ok: false, message: invalidMessage};
         }
+        var modeHandledStale = false;
         if (revisionAtStart !== state.inputRevision) {
           markAnalysisStale("分析期间日志已修改，结果可能已过期，请重新分析。");
+          // 输入事件通常已经清理过一次；这里再调用一次是为了覆盖请求返回
+          // 先于事件回调完成的竞态，防止响应把刚清理的 Dating 结果重新写回。
+          modeHandledStale = notifyActiveModeInputRevision(mode);
         }
         // People/Dating 只更新各自的结果面板，不会写入 result-text；它们成功时
         // 不能替通用 Filter 清 stale。通用 Filter 成功走原生 POST，由新页面结果
         // 建立 freshness，避免这里把两个生命周期混在一起。
-        activateResultPanel();
+        if (!modeHandledStale) activateResultPanel();
         return result;
       })
       .catch(function handleAnalysisFailure(error) {
@@ -712,7 +750,7 @@
         var failureMessage = error && error.message
           ? error.message : "分析失败，请稍后重试。";
         showPersistentError(error);
-        activateResultPanel();
+        activateAnalysisFailurePanel(mode);
         return null;
       })
       .finally(function restoreAnalysisControls() {
