@@ -1,0 +1,42 @@
+{
+  "schema_version": "aidating.e2e.case.v1",
+  "case_id": "analysis-stage-flirting-positive-01",
+  "task_kind": "analysis",
+  "locale": "en-IE",
+  "media": [
+    {
+      "path": "Flirting暧昧探索/example_01/chat_01.png"
+    },
+    {
+      "path": "Flirting暧昧探索/example_01/chat_02.png"
+    },
+    {
+      "path": "Flirting暧昧探索/example_01/chat_03.png"
+    },
+    {
+      "path": "Flirting暧昧探索/example_01/chat_04.png"
+    },
+    {
+      "path": "Flirting暧昧探索/example_01/chat_05.png"
+    },
+    {
+      "path": "Flirting暧昧探索/example_01/chat_06.png"
+    },
+    {
+      "path": "Flirting暧昧探索/example_01/chat_07.png"
+    },
+    {
+      "path": "Flirting暧昧探索/example_01/chat_08.png"
+    },
+    {
+      "path": "Flirting暧昧探索/example_01/chat_09.png"
+    }
+  ],
+  "analysis": {
+    "other_person_name": "Hannah"
+  },
+  "expect": {
+    "task_status": "succeeded",
+    "result_schema": "dating.relationship_analysis.v1"
+  }
+}

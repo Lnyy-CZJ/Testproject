@@ -1,0 +1,465 @@
+{
+  "schema_version": "aidating.chat-screenshot-source.v1",
+  "case_id": "analysis-stage-ended-positive-02",
+  "task_kind": "analysis",
+  "target_stage": "ENDED",
+  "positive_track": "stage_accurate",
+  "locale": "en-GB",
+  "participants": {
+    "self": {
+      "id": "self",
+      "display_name": "You",
+      "pronouns": "he/him"
+    },
+    "other": {
+      "id": "other",
+      "display_name": "Celeste",
+      "pronouns": "she/her"
+    }
+  },
+  "style_id": "sage-light",
+  "image_count": 4,
+  "pair_type": "woman-man",
+  "scenario": {
+    "slug": "return-belongings",
+    "title": "Return Belongings",
+    "premise": "After ending the relationship, they arrange to return belongings with minimal contact.",
+    "topic": "returning belongings"
+  },
+  "messages": [
+    {
+      "id": "m_001",
+      "speaker": "self",
+      "text": "Since our relationship ended, I found your jacket and the book you lent me.",
+      "type": "text",
+      "timestamp": "2026-01-08T18:00:00.000Z"
+    },
+    {
+      "id": "m_002",
+      "speaker": "other",
+      "text": "Thank you. Could you leave them with the building desk so we do not need to meet after the breakup?",
+      "type": "text",
+      "timestamp": "2026-01-08T18:04:00.000Z"
+    },
+    {
+      "id": "m_003",
+      "speaker": "self",
+      "text": "Yes, I will label the bag and send one final confirmation after I drop it off.",
+      "type": "text",
+      "timestamp": "2026-01-08T18:08:00.000Z"
+    },
+    {
+      "id": "m_004",
+      "speaker": "other",
+      "text": "That works. After the belongings are returned, there will be no more logistics between us.",
+      "type": "text",
+      "timestamp": "2026-01-08T18:12:00.000Z"
+    },
+    {
+      "id": "m_005",
+      "speaker": "self",
+      "text": "I will respect the distance because our relationship has ended.",
+      "type": "text",
+      "timestamp": "2026-01-08T18:16:00.000Z"
+    },
+    {
+      "id": "m_006",
+      "speaker": "other",
+      "text": "I understand. Can we confirm that the relationship has ended and this is only closure?",
+      "type": "text",
+      "timestamp": "2026-01-08T18:20:00.000Z"
+    },
+    {
+      "id": "m_007",
+      "speaker": "self",
+      "text": "Yes, the ending is final, and I am here only to finish things respectfully.",
+      "type": "text",
+      "timestamp": "2026-01-08T18:24:00.000Z"
+    },
+    {
+      "id": "m_008",
+      "speaker": "other",
+      "text": "Thank you for saying that clearly. I do not want mixed signals.",
+      "type": "text",
+      "timestamp": "2026-01-08T18:28:00.000Z"
+    },
+    {
+      "id": "m_009",
+      "speaker": "self",
+      "text": "Neither do I. Kindness now should not be read as reopening the relationship.",
+      "type": "text",
+      "timestamp": "2026-01-08T18:32:00.000Z"
+    },
+    {
+      "id": "m_010",
+      "speaker": "other",
+      "text": "Should we keep contact limited to the remaining practical tasks?",
+      "type": "text",
+      "timestamp": "2026-01-08T18:36:00.000Z"
+    },
+    {
+      "id": "m_011",
+      "speaker": "self",
+      "text": "Yes, and once those tasks are complete, ordinary contact should stop.",
+      "type": "text",
+      "timestamp": "2026-01-08T18:40:00.000Z"
+    },
+    {
+      "id": "m_012",
+      "speaker": "other",
+      "text": "How many practical tasks are still open?",
+      "type": "text",
+      "timestamp": "2026-01-08T18:44:00.000Z"
+    },
+    {
+      "id": "m_013",
+      "speaker": "self",
+      "text": "Three: belongings, the last shared bill, and one account transfer.",
+      "type": "text",
+      "timestamp": "2026-01-08T18:48:00.000Z"
+    },
+    {
+      "id": "m_014",
+      "speaker": "other",
+      "text": "Could we handle them in that order?",
+      "type": "text",
+      "timestamp": "2026-01-08T18:52:00.000Z"
+    },
+    {
+      "id": "m_015",
+      "speaker": "self",
+      "text": "That order works and keeps each message focused on one subject.",
+      "type": "text",
+      "timestamp": "2026-01-08T18:56:00.000Z"
+    },
+    {
+      "id": "m_016",
+      "speaker": "other",
+      "text": "I appreciate the structure because emotions are still tender.",
+      "type": "text",
+      "timestamp": "2026-01-08T19:00:00.000Z"
+    },
+    {
+      "id": "m_017",
+      "speaker": "self",
+      "text": "I do too. Clear structure lets us be civil without creating false hope.",
+      "type": "text",
+      "timestamp": "2026-01-08T19:04:00.000Z"
+    },
+    {
+      "id": "m_018",
+      "speaker": "other",
+      "text": "Then let us begin with the belongings and stay with that topic.",
+      "type": "text",
+      "timestamp": "2026-01-08T19:08:00.000Z"
+    },
+    {
+      "id": "m_019",
+      "speaker": "self",
+      "text": "Agreed. I have already gathered the items that are yours.",
+      "type": "text",
+      "timestamp": "2026-01-08T19:12:00.000Z"
+    },
+    {
+      "id": "m_020",
+      "speaker": "other",
+      "text": "What items did you find so I can check the list?",
+      "type": "text",
+      "timestamp": "2026-01-08T19:16:00.000Z"
+    },
+    {
+      "id": "m_021",
+      "speaker": "self",
+      "text": "A jacket, two books, a charger, and the small storage box.",
+      "type": "text",
+      "timestamp": "2026-01-08T19:20:00.000Z"
+    },
+    {
+      "id": "m_022",
+      "speaker": "other",
+      "text": "That matches my list. Did you find anything fragile?",
+      "type": "text",
+      "timestamp": "2026-01-08T19:24:00.000Z"
+    },
+    {
+      "id": "m_023",
+      "speaker": "self",
+      "text": "Only the framed print, and I wrapped it separately to protect it.",
+      "type": "text",
+      "timestamp": "2026-01-08T19:28:00.000Z"
+    },
+    {
+      "id": "m_024",
+      "speaker": "other",
+      "text": "Thank you. Could the boxes be left with the building desk?",
+      "type": "text",
+      "timestamp": "2026-01-08T19:32:00.000Z"
+    },
+    {
+      "id": "m_025",
+      "speaker": "self",
+      "text": "Yes, that avoids an unnecessary meeting and keeps the exchange simple.",
+      "type": "text",
+      "timestamp": "2026-01-08T19:36:00.000Z"
+    },
+    {
+      "id": "m_026",
+      "speaker": "other",
+      "text": "Which collection window will you give the desk?",
+      "type": "text",
+      "timestamp": "2026-01-08T19:40:00.000Z"
+    },
+    {
+      "id": "m_027",
+      "speaker": "self",
+      "text": "Any time after four tomorrow, and they will hold the boxes for one day.",
+      "type": "text",
+      "timestamp": "2026-01-08T19:44:00.000Z"
+    },
+    {
+      "id": "m_028",
+      "speaker": "other",
+      "text": "I can collect them before the desk closes.",
+      "type": "text",
+      "timestamp": "2026-01-08T19:48:00.000Z"
+    },
+    {
+      "id": "m_029",
+      "speaker": "self",
+      "text": "Good. I will send one confirmation after the boxes are accepted.",
+      "type": "text",
+      "timestamp": "2026-01-08T19:52:00.000Z"
+    },
+    {
+      "id": "m_030",
+      "speaker": "other",
+      "text": "No additional message is needed after I collect them.",
+      "type": "text",
+      "timestamp": "2026-01-08T19:56:00.000Z"
+    },
+    {
+      "id": "m_031",
+      "speaker": "self",
+      "text": "Understood. The desk record will be enough confirmation for me.",
+      "type": "text",
+      "timestamp": "2026-01-08T20:00:00.000Z"
+    },
+    {
+      "id": "m_032",
+      "speaker": "other",
+      "text": "Do you want your spare container returned in the same exchange?",
+      "type": "text",
+      "timestamp": "2026-01-08T20:04:00.000Z"
+    },
+    {
+      "id": "m_033",
+      "speaker": "self",
+      "text": "No, you may recycle it. It is not worth extending contact over.",
+      "type": "text",
+      "timestamp": "2026-01-08T20:08:00.000Z"
+    },
+    {
+      "id": "m_034",
+      "speaker": "other",
+      "text": "Can we move to the final shared bill now?",
+      "type": "text",
+      "timestamp": "2026-01-08T20:12:00.000Z"
+    },
+    {
+      "id": "m_035",
+      "speaker": "self",
+      "text": "Yes, I have the statement and only need to confirm the equal split.",
+      "type": "text",
+      "timestamp": "2026-01-08T20:16:00.000Z"
+    },
+    {
+      "id": "m_036",
+      "speaker": "other",
+      "text": "The equal split matches what we agreed before the ending.",
+      "type": "text",
+      "timestamp": "2026-01-08T20:20:00.000Z"
+    },
+    {
+      "id": "m_037",
+      "speaker": "self",
+      "text": "Then I will pay my half and keep the receipt with my records.",
+      "type": "text",
+      "timestamp": "2026-01-08T20:24:00.000Z"
+    },
+    {
+      "id": "m_038",
+      "speaker": "other",
+      "text": "Could you send only the amount and confirmation number?",
+      "type": "text",
+      "timestamp": "2026-01-08T20:28:00.000Z"
+    },
+    {
+      "id": "m_039",
+      "speaker": "self",
+      "text": "Yes, I will omit personal notes and send the practical details once.",
+      "type": "text",
+      "timestamp": "2026-01-08T20:32:00.000Z"
+    },
+    {
+      "id": "m_040",
+      "speaker": "other",
+      "text": "When should I expect the payment confirmation?",
+      "type": "text",
+      "timestamp": "2026-01-08T20:36:00.000Z"
+    },
+    {
+      "id": "m_041",
+      "speaker": "self",
+      "text": "By tomorrow evening, before the payment deadline.",
+      "type": "text",
+      "timestamp": "2026-01-08T20:40:00.000Z"
+    },
+    {
+      "id": "m_042",
+      "speaker": "other",
+      "text": "That timing is fine. Is any other charge pending?",
+      "type": "text",
+      "timestamp": "2026-01-08T20:44:00.000Z"
+    },
+    {
+      "id": "m_043",
+      "speaker": "self",
+      "text": "No, the statement shows no future balance after this payment.",
+      "type": "text",
+      "timestamp": "2026-01-08T20:48:00.000Z"
+    },
+    {
+      "id": "m_044",
+      "speaker": "other",
+      "text": "Once it is paid, neither of us owes the other money.",
+      "type": "text",
+      "timestamp": "2026-01-08T20:52:00.000Z"
+    },
+    {
+      "id": "m_045",
+      "speaker": "self",
+      "text": "Correct, and I will state that clearly in the final confirmation.",
+      "type": "text",
+      "timestamp": "2026-01-08T20:56:00.000Z"
+    },
+    {
+      "id": "m_046",
+      "speaker": "other",
+      "text": "Before we wrap up, can we return to what we said earlier?",
+      "type": "text",
+      "timestamp": "2026-01-08T21:00:00.000Z"
+    },
+    {
+      "id": "m_047",
+      "speaker": "self",
+      "text": "Yes, I have one more thought about it.",
+      "type": "text",
+      "timestamp": "2026-01-08T21:04:00.000Z"
+    },
+    {
+      "id": "m_048",
+      "speaker": "self",
+      "text": "I accept that our relationship is over, and this respectful goodbye does not reopen it.",
+      "type": "text",
+      "timestamp": "2026-01-08T21:08:00.000Z"
+    },
+    {
+      "id": "m_049",
+      "speaker": "other",
+      "text": "Thank you for returning them after the end of our relationship.",
+      "type": "text",
+      "timestamp": "2026-01-08T21:12:00.000Z"
+    },
+    {
+      "id": "m_050",
+      "speaker": "self",
+      "text": "You are welcome. There is nothing further between us.",
+      "type": "text",
+      "timestamp": "2026-01-08T21:16:00.000Z"
+    }
+  ],
+  "stage_evidence_message_ids": [
+    "m_001",
+    "m_002",
+    "m_003",
+    "m_004",
+    "m_005",
+    "m_048"
+  ],
+  "excluded_stage_cues": [
+    "romantic rebuilding",
+    "unresolved breakup decision"
+  ],
+  "render": {
+    "width": 430,
+    "height": 932,
+    "bubbles_per_image": 14,
+    "overlap_messages": 2,
+    "page_message_ids": [
+      [
+        "m_001",
+        "m_002",
+        "m_003",
+        "m_004",
+        "m_005",
+        "m_006",
+        "m_007",
+        "m_008",
+        "m_009",
+        "m_010",
+        "m_011",
+        "m_012",
+        "m_013",
+        "m_014"
+      ],
+      [
+        "m_013",
+        "m_014",
+        "m_015",
+        "m_016",
+        "m_017",
+        "m_018",
+        "m_019",
+        "m_020",
+        "m_021",
+        "m_022",
+        "m_023",
+        "m_024",
+        "m_025",
+        "m_026"
+      ],
+      [
+        "m_025",
+        "m_026",
+        "m_027",
+        "m_028",
+        "m_029",
+        "m_030",
+        "m_031",
+        "m_032",
+        "m_033",
+        "m_034",
+        "m_035",
+        "m_036",
+        "m_037",
+        "m_038"
+      ],
+      [
+        "m_037",
+        "m_038",
+        "m_039",
+        "m_040",
+        "m_041",
+        "m_042",
+        "m_043",
+        "m_044",
+        "m_045",
+        "m_046",
+        "m_047",
+        "m_048",
+        "m_049",
+        "m_050"
+      ]
+    ]
+  }
+}

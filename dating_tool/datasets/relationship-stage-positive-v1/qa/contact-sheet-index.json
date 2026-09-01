@@ -1,0 +1,582 @@
+{
+  "schema_version": "dating.qa.contact-sheet.v1",
+  "purpose": "Manual first-and-last screenshot review; not part of the E2E media input.",
+  "stages": [
+    {
+      "stage": "UNCLEAR",
+      "sheet": "contact-sheets/UNCLEAR.png",
+      "samples": [
+        {
+          "case_id": "analysis-stage-unclear-positive-01",
+          "example_id": "example_01",
+          "first_image": "Unclear阶段待确定/example_01/chat_01.png",
+          "last_image": "Unclear阶段待确定/example_01/chat_03.png"
+        },
+        {
+          "case_id": "analysis-stage-unclear-positive-02",
+          "example_id": "example_02",
+          "first_image": "Unclear阶段待确定/example_02/chat_01.png",
+          "last_image": "Unclear阶段待确定/example_02/chat_04.png"
+        },
+        {
+          "case_id": "analysis-stage-unclear-positive-03",
+          "example_id": "example_03",
+          "first_image": "Unclear阶段待确定/example_03/chat_01.png",
+          "last_image": "Unclear阶段待确定/example_03/chat_05.png"
+        },
+        {
+          "case_id": "analysis-stage-unclear-positive-04",
+          "example_id": "example_04",
+          "first_image": "Unclear阶段待确定/example_04/chat_01.png",
+          "last_image": "Unclear阶段待确定/example_04/chat_07.png"
+        },
+        {
+          "case_id": "analysis-stage-unclear-positive-05",
+          "example_id": "example_05",
+          "first_image": "Unclear阶段待确定/example_05/chat_01.png",
+          "last_image": "Unclear阶段待确定/example_05/chat_09.png"
+        }
+      ]
+    },
+    {
+      "stage": "NEW_CONNECTION",
+      "sheet": "contact-sheets/NEW_CONNECTION.png",
+      "samples": [
+        {
+          "case_id": "analysis-stage-new-connection-positive-01",
+          "example_id": "example_01",
+          "first_image": "New connection初识接触/example_01/chat_01.png",
+          "last_image": "New connection初识接触/example_01/chat_04.png"
+        },
+        {
+          "case_id": "analysis-stage-new-connection-positive-02",
+          "example_id": "example_02",
+          "first_image": "New connection初识接触/example_02/chat_01.png",
+          "last_image": "New connection初识接触/example_02/chat_05.png"
+        },
+        {
+          "case_id": "analysis-stage-new-connection-positive-03",
+          "example_id": "example_03",
+          "first_image": "New connection初识接触/example_03/chat_01.png",
+          "last_image": "New connection初识接触/example_03/chat_07.png"
+        },
+        {
+          "case_id": "analysis-stage-new-connection-positive-04",
+          "example_id": "example_04",
+          "first_image": "New connection初识接触/example_04/chat_01.png",
+          "last_image": "New connection初识接触/example_04/chat_09.png"
+        },
+        {
+          "case_id": "analysis-stage-new-connection-positive-05",
+          "example_id": "example_05",
+          "first_image": "New connection初识接触/example_05/chat_01.png",
+          "last_image": "New connection初识接触/example_05/chat_03.png"
+        }
+      ]
+    },
+    {
+      "stage": "FRIENDS",
+      "sheet": "contact-sheets/FRIENDS.png",
+      "samples": [
+        {
+          "case_id": "analysis-stage-friends-positive-01",
+          "example_id": "example_01",
+          "first_image": "Friends朋友关系/example_01/chat_01.png",
+          "last_image": "Friends朋友关系/example_01/chat_05.png"
+        },
+        {
+          "case_id": "analysis-stage-friends-positive-02",
+          "example_id": "example_02",
+          "first_image": "Friends朋友关系/example_02/chat_01.png",
+          "last_image": "Friends朋友关系/example_02/chat_07.png"
+        },
+        {
+          "case_id": "analysis-stage-friends-positive-03",
+          "example_id": "example_03",
+          "first_image": "Friends朋友关系/example_03/chat_01.png",
+          "last_image": "Friends朋友关系/example_03/chat_09.png"
+        },
+        {
+          "case_id": "analysis-stage-friends-positive-04",
+          "example_id": "example_04",
+          "first_image": "Friends朋友关系/example_04/chat_01.png",
+          "last_image": "Friends朋友关系/example_04/chat_03.png"
+        },
+        {
+          "case_id": "analysis-stage-friends-positive-05",
+          "example_id": "example_05",
+          "first_image": "Friends朋友关系/example_05/chat_01.png",
+          "last_image": "Friends朋友关系/example_05/chat_04.png"
+        }
+      ]
+    },
+    {
+      "stage": "TALKING",
+      "sheet": "contact-sheets/TALKING.png",
+      "samples": [
+        {
+          "case_id": "analysis-stage-talking-positive-01",
+          "example_id": "example_01",
+          "first_image": "Talking持续互动/example_01/chat_01.png",
+          "last_image": "Talking持续互动/example_01/chat_07.png"
+        },
+        {
+          "case_id": "analysis-stage-talking-positive-02",
+          "example_id": "example_02",
+          "first_image": "Talking持续互动/example_02/chat_01.png",
+          "last_image": "Talking持续互动/example_02/chat_09.png"
+        },
+        {
+          "case_id": "analysis-stage-talking-positive-03",
+          "example_id": "example_03",
+          "first_image": "Talking持续互动/example_03/chat_01.png",
+          "last_image": "Talking持续互动/example_03/chat_03.png"
+        },
+        {
+          "case_id": "analysis-stage-talking-positive-04",
+          "example_id": "example_04",
+          "first_image": "Talking持续互动/example_04/chat_01.png",
+          "last_image": "Talking持续互动/example_04/chat_04.png"
+        },
+        {
+          "case_id": "analysis-stage-talking-positive-05",
+          "example_id": "example_05",
+          "first_image": "Talking持续互动/example_05/chat_01.png",
+          "last_image": "Talking持续互动/example_05/chat_05.png"
+        }
+      ]
+    },
+    {
+      "stage": "FLIRTING",
+      "sheet": "contact-sheets/FLIRTING.png",
+      "samples": [
+        {
+          "case_id": "analysis-stage-flirting-positive-01",
+          "example_id": "example_01",
+          "first_image": "Flirting暧昧探索/example_01/chat_01.png",
+          "last_image": "Flirting暧昧探索/example_01/chat_09.png"
+        },
+        {
+          "case_id": "analysis-stage-flirting-positive-02",
+          "example_id": "example_02",
+          "first_image": "Flirting暧昧探索/example_02/chat_01.png",
+          "last_image": "Flirting暧昧探索/example_02/chat_03.png"
+        },
+        {
+          "case_id": "analysis-stage-flirting-positive-03",
+          "example_id": "example_03",
+          "first_image": "Flirting暧昧探索/example_03/chat_01.png",
+          "last_image": "Flirting暧昧探索/example_03/chat_04.png"
+        },
+        {
+          "case_id": "analysis-stage-flirting-positive-04",
+          "example_id": "example_04",
+          "first_image": "Flirting暧昧探索/example_04/chat_01.png",
+          "last_image": "Flirting暧昧探索/example_04/chat_05.png"
+        },
+        {
+          "case_id": "analysis-stage-flirting-positive-05",
+          "example_id": "example_05",
+          "first_image": "Flirting暧昧探索/example_05/chat_01.png",
+          "last_image": "Flirting暧昧探索/example_05/chat_07.png"
+        }
+      ]
+    },
+    {
+      "stage": "SITUATIONSHIP",
+      "sheet": "contact-sheets/SITUATIONSHIP.png",
+      "samples": [
+        {
+          "case_id": "analysis-stage-situationship-positive-01",
+          "example_id": "example_01",
+          "first_image": "Situationship未定义关系/example_01/chat_01.png",
+          "last_image": "Situationship未定义关系/example_01/chat_03.png"
+        },
+        {
+          "case_id": "analysis-stage-situationship-positive-02",
+          "example_id": "example_02",
+          "first_image": "Situationship未定义关系/example_02/chat_01.png",
+          "last_image": "Situationship未定义关系/example_02/chat_04.png"
+        },
+        {
+          "case_id": "analysis-stage-situationship-positive-03",
+          "example_id": "example_03",
+          "first_image": "Situationship未定义关系/example_03/chat_01.png",
+          "last_image": "Situationship未定义关系/example_03/chat_05.png"
+        },
+        {
+          "case_id": "analysis-stage-situationship-positive-04",
+          "example_id": "example_04",
+          "first_image": "Situationship未定义关系/example_04/chat_01.png",
+          "last_image": "Situationship未定义关系/example_04/chat_07.png"
+        },
+        {
+          "case_id": "analysis-stage-situationship-positive-05",
+          "example_id": "example_05",
+          "first_image": "Situationship未定义关系/example_05/chat_01.png",
+          "last_image": "Situationship未定义关系/example_05/chat_09.png"
+        }
+      ]
+    },
+    {
+      "stage": "DATE_PLANNING",
+      "sheet": "contact-sheets/DATE_PLANNING.png",
+      "samples": [
+        {
+          "case_id": "analysis-stage-date-planning-positive-01",
+          "example_id": "example_01",
+          "first_image": "Planning a date邀约阶段/example_01/chat_01.png",
+          "last_image": "Planning a date邀约阶段/example_01/chat_04.png"
+        },
+        {
+          "case_id": "analysis-stage-date-planning-positive-02",
+          "example_id": "example_02",
+          "first_image": "Planning a date邀约阶段/example_02/chat_01.png",
+          "last_image": "Planning a date邀约阶段/example_02/chat_05.png"
+        },
+        {
+          "case_id": "analysis-stage-date-planning-positive-03",
+          "example_id": "example_03",
+          "first_image": "Planning a date邀约阶段/example_03/chat_01.png",
+          "last_image": "Planning a date邀约阶段/example_03/chat_07.png"
+        },
+        {
+          "case_id": "analysis-stage-date-planning-positive-04",
+          "example_id": "example_04",
+          "first_image": "Planning a date邀约阶段/example_04/chat_01.png",
+          "last_image": "Planning a date邀约阶段/example_04/chat_09.png"
+        },
+        {
+          "case_id": "analysis-stage-date-planning-positive-05",
+          "example_id": "example_05",
+          "first_image": "Planning a date邀约阶段/example_05/chat_01.png",
+          "last_image": "Planning a date邀约阶段/example_05/chat_03.png"
+        }
+      ]
+    },
+    {
+      "stage": "DATING",
+      "sheet": "contact-sheets/DATING.png",
+      "samples": [
+        {
+          "case_id": "analysis-stage-dating-positive-01",
+          "example_id": "example_01",
+          "first_image": "Dating约会验证/example_01/chat_01.png",
+          "last_image": "Dating约会验证/example_01/chat_05.png"
+        },
+        {
+          "case_id": "analysis-stage-dating-positive-02",
+          "example_id": "example_02",
+          "first_image": "Dating约会验证/example_02/chat_01.png",
+          "last_image": "Dating约会验证/example_02/chat_07.png"
+        },
+        {
+          "case_id": "analysis-stage-dating-positive-03",
+          "example_id": "example_03",
+          "first_image": "Dating约会验证/example_03/chat_01.png",
+          "last_image": "Dating约会验证/example_03/chat_09.png"
+        },
+        {
+          "case_id": "analysis-stage-dating-positive-04",
+          "example_id": "example_04",
+          "first_image": "Dating约会验证/example_04/chat_01.png",
+          "last_image": "Dating约会验证/example_04/chat_03.png"
+        },
+        {
+          "case_id": "analysis-stage-dating-positive-05",
+          "example_id": "example_05",
+          "first_image": "Dating约会验证/example_05/chat_01.png",
+          "last_image": "Dating约会验证/example_05/chat_04.png"
+        }
+      ]
+    },
+    {
+      "stage": "DEFINING_RELATIONSHIP",
+      "sheet": "contact-sheets/DEFINING_RELATIONSHIP.png",
+      "samples": [
+        {
+          "case_id": "analysis-stage-defining-relationship-positive-01",
+          "example_id": "example_01",
+          "first_image": "Defining relationship关系确认/example_01/chat_01.png",
+          "last_image": "Defining relationship关系确认/example_01/chat_07.png"
+        },
+        {
+          "case_id": "analysis-stage-defining-relationship-positive-02",
+          "example_id": "example_02",
+          "first_image": "Defining relationship关系确认/example_02/chat_01.png",
+          "last_image": "Defining relationship关系确认/example_02/chat_09.png"
+        },
+        {
+          "case_id": "analysis-stage-defining-relationship-positive-03",
+          "example_id": "example_03",
+          "first_image": "Defining relationship关系确认/example_03/chat_01.png",
+          "last_image": "Defining relationship关系确认/example_03/chat_03.png"
+        },
+        {
+          "case_id": "analysis-stage-defining-relationship-positive-04",
+          "example_id": "example_04",
+          "first_image": "Defining relationship关系确认/example_04/chat_01.png",
+          "last_image": "Defining relationship关系确认/example_04/chat_04.png"
+        },
+        {
+          "case_id": "analysis-stage-defining-relationship-positive-05",
+          "example_id": "example_05",
+          "first_image": "Defining relationship关系确认/example_05/chat_01.png",
+          "last_image": "Defining relationship关系确认/example_05/chat_05.png"
+        }
+      ]
+    },
+    {
+      "stage": "EXCLUSIVE",
+      "sheet": "contact-sheets/EXCLUSIVE.png",
+      "samples": [
+        {
+          "case_id": "analysis-stage-exclusive-positive-01",
+          "example_id": "example_01",
+          "first_image": "Exclusive排他关系/example_01/chat_01.png",
+          "last_image": "Exclusive排他关系/example_01/chat_09.png"
+        },
+        {
+          "case_id": "analysis-stage-exclusive-positive-02",
+          "example_id": "example_02",
+          "first_image": "Exclusive排他关系/example_02/chat_01.png",
+          "last_image": "Exclusive排他关系/example_02/chat_03.png"
+        },
+        {
+          "case_id": "analysis-stage-exclusive-positive-03",
+          "example_id": "example_03",
+          "first_image": "Exclusive排他关系/example_03/chat_01.png",
+          "last_image": "Exclusive排他关系/example_03/chat_04.png"
+        },
+        {
+          "case_id": "analysis-stage-exclusive-positive-04",
+          "example_id": "example_04",
+          "first_image": "Exclusive排他关系/example_04/chat_01.png",
+          "last_image": "Exclusive排他关系/example_04/chat_05.png"
+        },
+        {
+          "case_id": "analysis-stage-exclusive-positive-05",
+          "example_id": "example_05",
+          "first_image": "Exclusive排他关系/example_05/chat_01.png",
+          "last_image": "Exclusive排他关系/example_05/chat_07.png"
+        }
+      ]
+    },
+    {
+      "stage": "RELATIONSHIP",
+      "sheet": "contact-sheets/RELATIONSHIP.png",
+      "samples": [
+        {
+          "case_id": "analysis-stage-relationship-positive-01",
+          "example_id": "example_01",
+          "first_image": "Relationship稳定关系/example_01/chat_01.png",
+          "last_image": "Relationship稳定关系/example_01/chat_03.png"
+        },
+        {
+          "case_id": "analysis-stage-relationship-positive-02",
+          "example_id": "example_02",
+          "first_image": "Relationship稳定关系/example_02/chat_01.png",
+          "last_image": "Relationship稳定关系/example_02/chat_04.png"
+        },
+        {
+          "case_id": "analysis-stage-relationship-positive-03",
+          "example_id": "example_03",
+          "first_image": "Relationship稳定关系/example_03/chat_01.png",
+          "last_image": "Relationship稳定关系/example_03/chat_05.png"
+        },
+        {
+          "case_id": "analysis-stage-relationship-positive-04",
+          "example_id": "example_04",
+          "first_image": "Relationship稳定关系/example_04/chat_01.png",
+          "last_image": "Relationship稳定关系/example_04/chat_07.png"
+        },
+        {
+          "case_id": "analysis-stage-relationship-positive-05",
+          "example_id": "example_05",
+          "first_image": "Relationship稳定关系/example_05/chat_01.png",
+          "last_image": "Relationship稳定关系/example_05/chat_09.png"
+        }
+      ]
+    },
+    {
+      "stage": "LONG_DISTANCE",
+      "sheet": "contact-sheets/LONG_DISTANCE.png",
+      "samples": [
+        {
+          "case_id": "analysis-stage-long-distance-positive-01",
+          "example_id": "example_01",
+          "first_image": "Long-distance异地关系/example_01/chat_01.png",
+          "last_image": "Long-distance异地关系/example_01/chat_04.png"
+        },
+        {
+          "case_id": "analysis-stage-long-distance-positive-02",
+          "example_id": "example_02",
+          "first_image": "Long-distance异地关系/example_02/chat_01.png",
+          "last_image": "Long-distance异地关系/example_02/chat_05.png"
+        },
+        {
+          "case_id": "analysis-stage-long-distance-positive-03",
+          "example_id": "example_03",
+          "first_image": "Long-distance异地关系/example_03/chat_01.png",
+          "last_image": "Long-distance异地关系/example_03/chat_07.png"
+        },
+        {
+          "case_id": "analysis-stage-long-distance-positive-04",
+          "example_id": "example_04",
+          "first_image": "Long-distance异地关系/example_04/chat_01.png",
+          "last_image": "Long-distance异地关系/example_04/chat_09.png"
+        },
+        {
+          "case_id": "analysis-stage-long-distance-positive-05",
+          "example_id": "example_05",
+          "first_image": "Long-distance异地关系/example_05/chat_01.png",
+          "last_image": "Long-distance异地关系/example_05/chat_03.png"
+        }
+      ]
+    },
+    {
+      "stage": "ON_A_BREAK",
+      "sheet": "contact-sheets/ON_A_BREAK.png",
+      "samples": [
+        {
+          "case_id": "analysis-stage-on-a-break-positive-01",
+          "example_id": "example_01",
+          "first_image": "On a break关系暂停/example_01/chat_01.png",
+          "last_image": "On a break关系暂停/example_01/chat_05.png"
+        },
+        {
+          "case_id": "analysis-stage-on-a-break-positive-02",
+          "example_id": "example_02",
+          "first_image": "On a break关系暂停/example_02/chat_01.png",
+          "last_image": "On a break关系暂停/example_02/chat_07.png"
+        },
+        {
+          "case_id": "analysis-stage-on-a-break-positive-03",
+          "example_id": "example_03",
+          "first_image": "On a break关系暂停/example_03/chat_01.png",
+          "last_image": "On a break关系暂停/example_03/chat_09.png"
+        },
+        {
+          "case_id": "analysis-stage-on-a-break-positive-04",
+          "example_id": "example_04",
+          "first_image": "On a break关系暂停/example_04/chat_01.png",
+          "last_image": "On a break关系暂停/example_04/chat_03.png"
+        },
+        {
+          "case_id": "analysis-stage-on-a-break-positive-05",
+          "example_id": "example_05",
+          "first_image": "On a break关系暂停/example_05/chat_01.png",
+          "last_image": "On a break关系暂停/example_05/chat_04.png"
+        }
+      ]
+    },
+    {
+      "stage": "BREAKUP_DISCUSSION",
+      "sheet": "contact-sheets/BREAKUP_DISCUSSION.png",
+      "samples": [
+        {
+          "case_id": "analysis-stage-breakup-discussion-positive-01",
+          "example_id": "example_01",
+          "first_image": "Breakup discussion分手讨论/example_01/chat_01.png",
+          "last_image": "Breakup discussion分手讨论/example_01/chat_07.png"
+        },
+        {
+          "case_id": "analysis-stage-breakup-discussion-positive-02",
+          "example_id": "example_02",
+          "first_image": "Breakup discussion分手讨论/example_02/chat_01.png",
+          "last_image": "Breakup discussion分手讨论/example_02/chat_09.png"
+        },
+        {
+          "case_id": "analysis-stage-breakup-discussion-positive-03",
+          "example_id": "example_03",
+          "first_image": "Breakup discussion分手讨论/example_03/chat_01.png",
+          "last_image": "Breakup discussion分手讨论/example_03/chat_03.png"
+        },
+        {
+          "case_id": "analysis-stage-breakup-discussion-positive-04",
+          "example_id": "example_04",
+          "first_image": "Breakup discussion分手讨论/example_04/chat_01.png",
+          "last_image": "Breakup discussion分手讨论/example_04/chat_04.png"
+        },
+        {
+          "case_id": "analysis-stage-breakup-discussion-positive-05",
+          "example_id": "example_05",
+          "first_image": "Breakup discussion分手讨论/example_05/chat_01.png",
+          "last_image": "Breakup discussion分手讨论/example_05/chat_05.png"
+        }
+      ]
+    },
+    {
+      "stage": "RECONNECTING",
+      "sheet": "contact-sheets/RECONNECTING.png",
+      "samples": [
+        {
+          "case_id": "analysis-stage-reconnecting-positive-01",
+          "example_id": "example_01",
+          "first_image": "Reconnecting重新联系/example_01/chat_01.png",
+          "last_image": "Reconnecting重新联系/example_01/chat_09.png"
+        },
+        {
+          "case_id": "analysis-stage-reconnecting-positive-02",
+          "example_id": "example_02",
+          "first_image": "Reconnecting重新联系/example_02/chat_01.png",
+          "last_image": "Reconnecting重新联系/example_02/chat_03.png"
+        },
+        {
+          "case_id": "analysis-stage-reconnecting-positive-03",
+          "example_id": "example_03",
+          "first_image": "Reconnecting重新联系/example_03/chat_01.png",
+          "last_image": "Reconnecting重新联系/example_03/chat_04.png"
+        },
+        {
+          "case_id": "analysis-stage-reconnecting-positive-04",
+          "example_id": "example_04",
+          "first_image": "Reconnecting重新联系/example_04/chat_01.png",
+          "last_image": "Reconnecting重新联系/example_04/chat_05.png"
+        },
+        {
+          "case_id": "analysis-stage-reconnecting-positive-05",
+          "example_id": "example_05",
+          "first_image": "Reconnecting重新联系/example_05/chat_01.png",
+          "last_image": "Reconnecting重新联系/example_05/chat_07.png"
+        }
+      ]
+    },
+    {
+      "stage": "ENDED",
+      "sheet": "contact-sheets/ENDED.png",
+      "samples": [
+        {
+          "case_id": "analysis-stage-ended-positive-01",
+          "example_id": "example_01",
+          "first_image": "Ended关系结束/example_01/chat_01.png",
+          "last_image": "Ended关系结束/example_01/chat_03.png"
+        },
+        {
+          "case_id": "analysis-stage-ended-positive-02",
+          "example_id": "example_02",
+          "first_image": "Ended关系结束/example_02/chat_01.png",
+          "last_image": "Ended关系结束/example_02/chat_04.png"
+        },
+        {
+          "case_id": "analysis-stage-ended-positive-03",
+          "example_id": "example_03",
+          "first_image": "Ended关系结束/example_03/chat_01.png",
+          "last_image": "Ended关系结束/example_03/chat_05.png"
+        },
+        {
+          "case_id": "analysis-stage-ended-positive-04",
+          "example_id": "example_04",
+          "first_image": "Ended关系结束/example_04/chat_01.png",
+          "last_image": "Ended关系结束/example_04/chat_07.png"
+        },
+        {
+          "case_id": "analysis-stage-ended-positive-05",
+          "example_id": "example_05",
+          "first_image": "Ended关系结束/example_05/chat_01.png",
+          "last_image": "Ended关系结束/example_05/chat_09.png"
+        }
+      ]
+    }
+  ]
+}

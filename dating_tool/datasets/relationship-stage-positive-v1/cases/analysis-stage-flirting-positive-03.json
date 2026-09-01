@@ -1,0 +1,27 @@
+{
+  "schema_version": "aidating.e2e.case.v1",
+  "case_id": "analysis-stage-flirting-positive-03",
+  "task_kind": "analysis",
+  "locale": "en-US",
+  "media": [
+    {
+      "path": "Flirting暧昧探索/example_03/chat_01.png"
+    },
+    {
+      "path": "Flirting暧昧探索/example_03/chat_02.png"
+    },
+    {
+      "path": "Flirting暧昧探索/example_03/chat_03.png"
+    },
+    {
+      "path": "Flirting暧昧探索/example_03/chat_04.png"
+    }
+  ],
+  "analysis": {
+    "other_person_name": "Miles"
+  },
+  "expect": {
+    "task_status": "succeeded",
+    "result_schema": "dating.relationship_analysis.v1"
+  }
+}

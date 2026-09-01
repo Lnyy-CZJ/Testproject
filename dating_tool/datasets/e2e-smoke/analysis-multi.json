@@ -1,0 +1,18 @@
+{
+  "schema_version": "aidating.e2e.case.v1",
+  "case_id": "e2e-analysis-multi-001",
+  "task_kind": "analysis",
+  "locale": "en-US",
+  "media": [
+    {"path": "media/analysis-multi-01.png"},
+    {"path": "media/analysis-multi-02.png"}
+  ],
+  "analysis": {
+    "other_person_name": "Jordan",
+    "background": "Synthetic multi-image test conversation."
+  },
+  "expect": {
+    "task_status": "succeeded",
+    "result_schema": "dating.relationship_analysis.v1"
+  }
+}

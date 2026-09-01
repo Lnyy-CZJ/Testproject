@@ -1,0 +1,46 @@
+name: 新匿名账号首次设置偏好并拒绝旧版本覆盖
+variables: {}
+runtime_inputs:
+  dating_goal:
+    label: Dating Goal
+    description: 本次隔离账号使用的 Dating Goal 稳定 code
+    type: string
+    required: true
+    target:
+      scope: flow_step_request
+      step_id: update_preferences
+      path: $.dating_goal
+  your_voice:
+    label: Your Voice
+    description: 本次隔离账号使用的 Your Voice 稳定 code
+    type: string
+    required: true
+    target:
+      scope: flow_step_request
+      step_id: update_preferences
+      path: $.your_voice
+step_data:
+  create_session:
+    params: {consent_policy_version: "{{consent_policy_version}}"}
+    assert: {http_status: 200, gateway: {message: ok}}
+  get_preferences_before:
+    params: {}
+    assert: {http_status: 200, gateway: {message: ok}}
+  update_preferences:
+    params:
+      dating_goal: relationship
+      your_voice: warm
+      expected_version: "{{original_preferences_version}}"
+    assert: {http_status: 200, gateway: {message: ok}}
+  get_preferences_after:
+    params: {}
+    assert: {http_status: 200, gateway: {message: ok}}
+  update_preferences_with_stale_version:
+    params:
+      dating_goal: relationship
+      your_voice: warm
+      expected_version: "{{original_preferences_version}}"
+    assert:
+      http_status: 200
+      gateway: {message: ok}
+      response: {id: req_0, success: false}

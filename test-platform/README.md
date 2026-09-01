@@ -5,7 +5,7 @@
 - `TrackEvents_tess`：埋点日志分析；
 - `log_filter_tool`：日志筛选、统计与导出；
 - `Truthy_Search`：检索执行、字段对比与评测报告；
-- `Truthy_ApiAutoTest2`：Gateway 接口自动化与 Allure 报告。
+- `api-autotest`：Gateway 接口自动化与 Allure 报告。
 - `functional-test-agent`：独立的需求拆解、测试点 Review 和功能用例生成项目；
 - `api-test-agent`：独立的 API 文档解析、文件化用例生成和受控执行组件项目，真实执行默认关闭。
 
@@ -25,7 +25,7 @@ Testproject/
 ├── TrackEvents_tess/
 ├── log_filter_tool/
 ├── Truthy_Search/
-└── Truthy_ApiAutoTest2/
+└── api-autotest/
 ```
 
 平台模式和工具独立模式不得同时写同一 SQLite、任务或报告目录。`web/` 只保留为旧首页回滚资源；生产页面来自 `frontend/dist`。
@@ -279,7 +279,7 @@ docker compose exec -T platform-gateway nginx -t
 cd /Users/admin/Testproject/TrackEvents_tess && python3 -m unittest discover -s tests -v
 cd /Users/admin/Testproject/log_filter_tool && python3 -m unittest discover -s tests -v
 cd /Users/admin/Testproject/Truthy_Search && python3 -m pytest -q
-cd /Users/admin/Testproject/Truthy_ApiAutoTest2 && python3 -m pytest -q tests
+cd /Users/admin/Testproject/api-autotest && python3 -m pytest -q tests
 ```
 
 ## 回滚

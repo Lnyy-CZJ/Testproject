@@ -1,0 +1,69 @@
+name: 同参数复用 Reply、变更背景替换旧任务并恢复新结果
+variables: {}
+step_data:
+  create_session:
+    params: {consent_policy_version: "{{consent_policy_version}}"}
+    assert: {http_status: 200, gateway: {message: ok}}
+  get_preferences:
+    params: {}
+    assert: {http_status: 200, gateway: {message: ok}}
+  update_preferences:
+    params:
+      dating_goal: relationship
+      your_voice: warm
+      expected_version: "{{preferences_version}}"
+    assert: {http_status: 200, gateway: {message: ok}}
+  get_upload_config:
+    params: {}
+    assert: {http_status: 200, gateway: {message: ok}}
+  prepare_upload:
+    params:
+      content_type: "{{media_file.content_type}}"
+      size_bytes: "{{media_file.size_bytes}}"
+      purpose: chat_screenshot
+    assert: {http_status: 200, gateway: {message: ok}}
+  complete_upload:
+    params: {asset_id: "{{asset_id}}"}
+    assert: {http_status: 200, gateway: {message: ok}}
+  create_reply_first:
+    comm:
+      client_request_id: "{{flow_run_id}}-reply-a"
+    params:
+      asset_ids: "{{asset_ids}}"
+      requested_intent: charming
+      background: Reply idempotency contract A.
+      locale: en-US
+    assert: {http_status: 200, gateway: {message: ok}}
+  create_reply_retry:
+    comm:
+      client_request_id: "{{flow_run_id}}-reply-a"
+    params:
+      asset_ids: "{{asset_ids}}"
+      requested_intent: charming
+      background: Reply idempotency contract A.
+      locale: en-US
+    assert:
+      http_status: 200
+      gateway: {message: ok}
+      data_equals: {task_id: "{{reply_task_a}}"}
+  create_reply_replacement:
+    comm:
+      client_request_id: "{{flow_run_id}}-reply-b"
+    params:
+      asset_ids: "{{asset_ids}}"
+      requested_intent: charming
+      background: Reply replacement contract B.
+      locale: en-US
+    assert:
+      http_status: 200
+      gateway: {message: ok}
+      data_not_equals: {task_id: "{{reply_task_a}}"}
+  poll_superseded_reply:
+    params: {task_id: "{{reply_task_a}}"}
+    assert: {http_status: 200, gateway: {message: ok}}
+  poll_replacement_reply:
+    params: {task_id: "{{reply_task_b}}"}
+    assert: {http_status: 200, gateway: {message: ok}}
+  get_replacement_result:
+    params: {task_id: "{{reply_task_b}}"}
+    assert: {http_status: 200, gateway: {message: ok}}

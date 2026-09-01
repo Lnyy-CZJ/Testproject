@@ -866,6 +866,17 @@ function providerDisplayName(providerType: string): string {
   return providerType;
 }
 
+/**
+ * 返回符合平台数据库 64 字符主键约束的 Secret ID。
+ *
+ * 已有 Secret 必须复用服务端返回的稳定 ID，确保“替换”只新增版本；首次配置则
+ * 使用与后端 ``new_id("sec")`` 相同的短 UUID 形态。不能再拼接 Scope 与 Definition，
+ * 因为两者都是业务标识，组合长度可能超过数据库列上限。
+ */
+function secretWriteId(existing?: SecretMetadata): string {
+  return existing?.id ?? `sec_${crypto.randomUUID().replaceAll("-", "")}`;
+}
+
 /** 构造只携带 Scope 与逻辑 Provider 的个人凭证深链。 */
 function credentialManagementPath(scopeId: string, providerType: string): string {
   const query = new URLSearchParams({ scope_id: scopeId, provider_type: providerType });
@@ -1214,7 +1225,7 @@ function LlmSettingsPage() {
   async function saveSecret(event: FormEvent) {
     event.preventDefault(); if (!selection || !secretDefinition) return; setBusy(true); setError("");
     try {
-      const secretId = `sec_${environment}_${secretDefinition.id.replaceAll(".", "_")}`;
+      const secretId = secretWriteId(secretMetadata[secretDefinition.id]);
       await apiJson(`/secrets/${encodeURIComponent(secretId)}`, { method: "PUT", body: JSON.stringify({
         environment_id: environment, owner_type: selection.type, owner_id: selection.id,
         definition_id: secretDefinition.id, value: secretValue,
@@ -1846,15 +1857,23 @@ function SecretsPage() {
   const [selected, setSelected] = useState<ConfigDefinition | null>(null);
   const [secretValue, setSecretValue] = useState("");
   const [message, setMessage] = useState("");
+  const [pendingReleasePath, setPendingReleasePath] = useState("");
   const [error, setError] = useState("");
   const secretDefinitions = definitions.filter((row) => (
     row.owner_type === "tool"
     && row.owner_id === selectedToolId
     && row.sensitivity === "secret"
     && row.value_scope === "system"
+    // 项目专属 Secret 只能出现在匹配的 Runtime Scope，避免 Dating Key 混入 Truthy 配置视图。
+    && definitionAppliesToProject(row, scope?.project_id ?? null)
   ));
   useModal(Boolean(selected), () => { setSelected(null); setSecretValue(""); });
   useEffect(() => { void apiJson<ConfigDefinition[]>("/config/definitions").then(setDefinitions).catch((e) => setError(e.message)); }, []);
+  useEffect(() => {
+    // Scope/工具切换后不能保留上一个归属的“待发布”提示和深链。
+    setMessage("");
+    setPendingReleasePath("");
+  }, [environment, ownerId]);
   useEffect(() => {
     if (!ownerId || ownerDisabled || secretDefinitions.length === 0) { setMetadata({}); return; }
     const query = new URLSearchParams({ environment_id: environment, owner_type: ownerType, owner_id: ownerId });
@@ -1865,26 +1884,30 @@ function SecretsPage() {
   async function save(event: FormEvent) {
     event.preventDefault(); if (!selected || !ownerId || ownerDisabled) return;
     setError(""); setMessage("");
-    // 工具级 Secret 沿用历史稳定 ID；Scope Secret 使用 scope_id，避免项目间冲突。
-    const secretOwnerKey = ownerType === "tool_project_scope" ? ownerId : environment;
-    const secretId = `sec_${secretOwnerKey}_${selected.id.replaceAll(".", "_")}`;
+    const secretId = secretWriteId(metadata[selected.id]);
     try {
       await apiJson(`/secrets/${encodeURIComponent(secretId)}`, { method: "PUT", body: JSON.stringify({ environment_id: environment, owner_type: ownerType, owner_id: ownerId, definition_id: selected.id, value: secretValue }) });
-      setSecretValue(""); setSelected(null); setMessage("Secret 新版本已加密保存并激活。");
+      const query = new URLSearchParams(
+        ownerType === "tool_project_scope" ? { scope_id: ownerId } : { tool_id: ownerId },
+      );
+      setSecretValue("");
+      setSelected(null);
+      setMessage("Secret 新版本已加密保存；当前 Release 尚未变更。");
+      setPendingReleasePath(`/settings/config?${query.toString()}`);
     } catch (e) { setError(e instanceof Error ? e.message : "保存失败"); }
   }
   const editable = !ownerDisabled && secretDefinitions.length > 0;
   return <WorkspaceShell><section className="workspace-page">
     <PageHeader eyebrow={`${environment.toUpperCase()} / SECRETS`} title="Secret 管理" copy="按工具或项目 Scope 管理 Secret；明文只停留在当前输入组件内存，保存后不会再次回显。" />
     <ManagementNav />
-    {message && <InlineMessage kind="success">{message}</InlineMessage>}
+    {message && <InlineMessage kind="success">{message}{pendingReleasePath && <> <NavLink className="link-button" to={pendingReleasePath}>前往发布 Release</NavLink></>}</InlineMessage>}
     {error && <InlineMessage kind="error">{error}</InlineMessage>}
     <ConfigurationOwnerSelector selection={ownerSelection} />
     {scope?.status === "disabled" && <InlineMessage kind="error">该 Runtime Scope 已停用，Secret 仅保留历史审计，不可读取或替换。</InlineMessage>}
     {ownerSelection.selectedTool && <div className="data-panel">{secretDefinitions.length === 0
       ? <EmptyState title="该工具尚未登记平台 Secret" copy="个人凭证字段请在“我的凭证”维护；工具级或 Scope 级 Secret 需先登记系统配置定义。" />
       : <><div className="table-header secret-columns"><span>Secret</span><span>配置归属</span><span>状态</span><span>操作</span></div>{secretDefinitions.map((item) => <div className="table-row secret-columns" key={item.id}><strong>{item.display_name}<small>{item.key}</small></strong><span>{ownerLabel}</span><StatusBadge value={metadata[item.id]?.configured ? `v${metadata[item.id].version}` : "missing"} /><button className="secondary-button" disabled={!editable} onClick={() => { setSelected(item); setSecretValue(""); setMessage(""); }}>替换</button></div>)}</>}</div>}
-    {selected && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelected(null); }}><section className="dialog" role="dialog" aria-modal="true" aria-labelledby="secret-dialog-title"><p className="section-label">{environment.toUpperCase()} / {ownerId}</p><h2 id="secret-dialog-title">替换 {selected.display_name}</h2><p>新版本保存成功后立即激活，旧版本只用于历史追溯；平台不会回显现有值。</p><form className="auth-form" onSubmit={save}><label>Secret 新值<textarea autoFocus value={secretValue} onChange={(event) => setSecretValue(event.target.value)} required /></label><div className="dialog-actions"><button type="button" className="secondary-button" onClick={() => setSelected(null)}>取消</button><button className="primary-button">加密保存</button></div></form></section></div>}
+    {selected && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelected(null); }}><section className="dialog" role="dialog" aria-modal="true" aria-labelledby="secret-dialog-title"><p className="section-label">{environment.toUpperCase()} / {ownerId}</p><h2 id="secret-dialog-title">替换 {selected.display_name}</h2><p>保存后只更新当前 Secret 版本；发布新的 Release 后，新任务才会使用它。平台不会回显现有值。</p><form className="auth-form" onSubmit={save}><label>Secret 新值<textarea autoFocus value={secretValue} onChange={(event) => setSecretValue(event.target.value)} required /></label><div className="dialog-actions"><button type="button" className="secondary-button" onClick={() => setSelected(null)}>取消</button><button className="primary-button">加密保存</button></div></form></section></div>}
   </section></WorkspaceShell>;
 }
 

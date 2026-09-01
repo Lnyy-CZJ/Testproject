@@ -25,7 +25,7 @@
 本设计不实现：
 
 - 外部缺陷系统 Provider 或自动提交 Bug；
-- 稳定资产发布到 `Truthy_ApiAutoTest2`；
+- 稳定资产发布到 `api-autotest`；
 - Postman Collection 导入；
 - gRPC、WebSocket、GraphQL；
 - 压测、并发、吞吐量、P95/P99 性能测试；
@@ -1231,7 +1231,7 @@ test-platform/.env.example
 - 不把 Docker Socket 挂到 `api-test-agent` Web 容器。
 - 不允许执行容器挂载整个任务根目录。
 - 不把外部缺陷 Provider 加入当前设计。
-- 不修改 `Truthy_ApiAutoTest2/data/`。
+- 不修改 `api-autotest/data/`。
 - 不新增 Postman、gRPC、WebSocket、GraphQL 解析或执行分支。
 - 不为此任务重构功能测试智能体整体架构。
 

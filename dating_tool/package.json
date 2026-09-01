@@ -1,0 +1,15 @@
+{
+  "name": "dating-ai-e2e-chat-fixtures",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Deterministic relationship-stage chat screenshot fixtures for Dating AI Assistant E2E tests.",
+  "scripts": {
+    "test": "node --test tests/*.test.cjs",
+    "generate:positive-stages": "node tools/chat_fixture_generator/generate.cjs",
+    "validate:positive-stages": "node tools/chat_fixture_generator/generate.cjs --validate-only"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1",
+    "sharp": "0.35.4"
+  }
+}

@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.12、FastAPI、SQLAlchemy、Alembic、Flask/pytest、React/Vitest、Docker Compose。
 
-**Spec:** `/Users/admin/Testproject/Truthy_ApiAutoTest2/docs/接口自动化多项目支持与Dating接入-PRD.md`
+**Spec:** `/Users/admin/Testproject/api-autotest/docs/接口自动化多项目支持与Dating接入-PRD.md`
 
 ## Global Constraints
 
@@ -23,10 +23,10 @@
 ### Task 1: 工具快照中 Release Device ID 优先
 
 **Files:**
-- Modify: `/Users/admin/Testproject/Truthy_ApiAutoTest2/tests/test_task_manager.py`
-- Modify: `/Users/admin/Testproject/Truthy_ApiAutoTest2/tests/test_runtime_snapshot.py`
-- Modify: `/Users/admin/Testproject/Truthy_ApiAutoTest2/web/task_manager.py`
-- Modify: `/Users/admin/Testproject/Truthy_ApiAutoTest2/utils/custom/config_loader.py`
+- Modify: `/Users/admin/Testproject/api-autotest/tests/test_task_manager.py`
+- Modify: `/Users/admin/Testproject/api-autotest/tests/test_runtime_snapshot.py`
+- Modify: `/Users/admin/Testproject/api-autotest/web/task_manager.py`
+- Modify: `/Users/admin/Testproject/api-autotest/utils/custom/config_loader.py`
 
 **Interfaces:**
 - Consumes: 平台 materialize 的 `normal.gateway.comm` 与兼容期 `secrets.DEVICE_ID`。
@@ -132,8 +132,8 @@ Run: `.venv/bin/python -m pytest tests/test_phase2.py -k 'agent_uses_runtime_sco
 ### Task 4: 回归、部署与真实任务验证
 
 **Files:**
-- Verify: `/Users/admin/Testproject/Truthy_ApiAutoTest2/logs/dating/test/<date>/`
-- Verify: `/Users/admin/Testproject/Truthy_ApiAutoTest2/tasks/<new_task_id>.json`
+- Verify: `/Users/admin/Testproject/api-autotest/logs/dating/test/<date>/`
+- Verify: `/Users/admin/Testproject/api-autotest/tasks/<new_task_id>.json`
 
 **Interfaces:**
 - Consumes: Dating/test 当前生效 v5。

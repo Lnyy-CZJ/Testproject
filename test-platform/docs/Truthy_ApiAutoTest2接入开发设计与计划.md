@@ -1,10 +1,10 @@
-# Truthy_ApiAutoTest2 接入测试开发平台开发设计与计划
+# api-autotest 接入测试开发平台开发设计与计划
 
 > 文档版本：V1.2  
 > 创建日期：2026-08-07  
 > 文档状态：已确认（确认项结论见第 22 章）  
-> 需求依据：[Truthy_ApiAutoTest2接入PRD.md](./Truthy_ApiAutoTest2接入PRD.md)  
-> 接入工具：`Truthy_ApiAutoTest2` / Gateway 接口自动化 V1.3  
+> 需求依据：[Truthy_ApiAutoTest2接入PRD.md](./Truthy_ApiAutoTest2接入PRD.md)<br>
+> 接入工具：`api-autotest` / Gateway 接口自动化 V1.3<br>
 > 目标入口：`/api-autotest/`  
 > 体例参考：[Truthy_Search接入开发设计与计划.md](./Truthy_Search接入开发设计与计划.md)
 > 修订记录：V1.2（2026-08-10）补充并发状态保护、原子任务存储、二次脱敏、配置级凭证预检和取消产物边界；修正 Jenkins 构建选择/归档路径；报告采用版本目录 + current 指针发布；对齐 8.1 scripts/ 目录（补 fetch_jenkins_report.sh）
@@ -15,7 +15,7 @@
 
 ## 1. 文档目的
 
-本文档将《Truthy_ApiAutoTest2 接入 PRD》转换为可实施的技术方案，明确：
+本文档将《api-autotest 接入 PRD》转换为可实施的技术方案，明确：
 
 - 工具壳服务（薄 Web 层）的技术选型、模块结构与任务执行引擎设计；
 - 任务模型、接口契约、状态机、取消与超时机制；
@@ -33,7 +33,7 @@
 
 ### 2.1 任务目标
 
-将 `Truthy_ApiAutoTest2` 作为平台第一个**任务型工具**接入：
+将 `api-autotest` 作为平台第一个**任务型工具**接入：
 
 ```text
 测试开发平台
@@ -63,7 +63,7 @@
 
 ### 2.3 交付物
 
-- `Truthy_ApiAutoTest2` 工具壳服务（页面 + 任务接口 + 用例库 + 报告托管 + 健康检查）；
+- `api-autotest` 工具壳服务（页面 + 任务接口 + 用例库 + 报告托管 + 健康检查）；
 - `Dockerfile`、`.dockerignore`、`requirements-web.txt`（见【确认项 3】）；
 - 平台专用凭证模板 `.env.platform.example` 与填写说明；
 - 报告发布与拉取脚本 `scripts/publish_allure_report.sh`、`scripts/fetch_jenkins_report.sh`；
@@ -101,7 +101,7 @@
 
 ## 4. 当前系统评估
 
-### 4.1 Truthy_ApiAutoTest2 当前架构
+### 4.1 api-autotest 当前架构
 
 ```text
 终端 / Jenkins
@@ -311,7 +311,7 @@ create_app()
 推荐在项目内新增 `web/` 包与 `tests/` 目录（备选位置见【确认项 2】）：
 
 ```text
-Truthy_ApiAutoTest2/
+api-autotest/
 ├── web/
 │   ├── __init__.py
 │   ├── app.py              # Flask app 工厂、路由、页面与 API
@@ -548,7 +548,7 @@ CMD ["python", "-m", "web.app"]
 
 ### 10.1 平台专用凭证文件
 
-- 文件：`Truthy_ApiAutoTest2/.env.platform`（可写，不提交 Git）；
+- 文件：`api-autotest/.env.platform`（可写，不提交 Git）；
 - 模板：新增 `.env.platform.example`，字段与 README 第 2 节一致（`AUTH_TOKEN`、`REFRESH_TOKEN`、`USER_ID`、`DEVICE_ID`、`EXPIRES_TIME`、`REFRESH_EXPIRES_TIME`、`ADMIN_*`）；
 - 平台模式挂载为容器内 `/app/.env`（框架读取与写回路径，零框架改动）；
 - 本地开发继续使用个人 `.env`；平台 `.env.platform` 使用不同测试账号/会话，与本地状态隔离（【确认项 5】）。
@@ -570,12 +570,12 @@ CMD ["python", "-m", "web.app"]
 
 | 内容 | 宿主路径 | 容器路径 | 模式 |
 |---|---|---|---|
-| 平台凭证 | `../Truthy_ApiAutoTest2/.env.platform` | `/app/.env` | 可写 |
-| 用例资产 | `../Truthy_ApiAutoTest2/data` | `/app/data` | 只读（【确认项 4】） |
-| 执行日志 | `../Truthy_ApiAutoTest2/logs` | `/app/logs` | 可写 |
-| JUnit/报告目录 | `../Truthy_ApiAutoTest2/reports` | `/app/reports` | 可写 |
+| 平台凭证 | `../api-autotest/.env.platform` | `/app/.env` | 可写 |
+| 用例资产 | `../api-autotest/data` | `/app/data` | 只读（【确认项 4】） |
+| 执行日志 | `../api-autotest/logs` | `/app/logs` | 可写 |
+| JUnit/报告目录 | `../api-autotest/reports` | `/app/reports` | 可写 |
 | Allure 原始结果 | 平台任务不生成，不挂载（【确认项 8】确认） | — | — |
-| 任务记录 | `../Truthy_ApiAutoTest2/tasks` | `/app/tasks` | 可写 |
+| 任务记录 | `../api-autotest/tasks` | `/app/tasks` | 可写 |
 
 `config/` 随镜像打包，不挂载（环境配置变更需重建镜像，可接受；如需热更可后续调整）。
 
@@ -589,7 +589,7 @@ CMD ["python", "-m", "web.app"]
 
 ### 11.3 报告版本目录与原子发布
 
-- 版本目录：`Truthy_ApiAutoTest2/reports/allure-reports/<version>/`；当前指针：`Truthy_ApiAutoTest2/reports/allure-current`（对外只展示 current 指向的一份，【确认项 6】）；
+- 版本目录：`api-autotest/reports/allure-reports/<version>/`；当前指针：`api-autotest/reports/allure-current`（对外只展示 current 指向的一份，【确认项 6】）；
 - `version` 使用不可冲突的构建标识：Jenkins 为 `jenkins-<job-safe-name>-<build-number>`，手工为 `manual-<UTC timestamp>-<random>`；
 - 元信息：版本目录内 `report-meta.json` 至少包含 `{ "generated_at": "...", "source": "jenkins|manual", "allure_version": "3.14.3" }`；Jenkins 来源额外包含 `job_name`、`build_number`、`build_result`、`build_url`；
 - 发布脚本 `scripts/publish_allure_report.sh` 行为：
@@ -624,7 +624,7 @@ CMD ["python", "-m", "web.app"]
 allure awesome allure-results --output allure-report-publish
 ```
 
-3. 在相同 `dir("${PROJECT_DIR}")` 作用域调用 `archiveArtifacts('allure-report-publish/**')`，使 Jenkins 归档根固定为 `archive/allure-report-publish/`；若归档仍在工作区根调用，则 pattern 和拉取路径必须统一改为带 `Truthy_ApiAutoTest2/` 前缀，禁止两种写法混用；
+3. 在相同 `dir("${PROJECT_DIR}")` 作用域调用 `archiveArtifacts('allure-report-publish/**')`，使 Jenkins 归档根固定为 `archive/allure-report-publish/`；若归档仍在工作区根调用，则 pattern 和拉取路径必须统一改为带 `api-autotest/` 前缀，禁止两种写法混用；
 4. 生成/归档失败可将原本成功的构建标记为 `UNSTABLE`，但不得把 pytest `FAILURE` 改为成功或掩盖测试结论；文档和页面需区分“测试结果”与“报告发布状态”。
 
 ### 12.2 宿主机拉取脚本
@@ -661,7 +661,7 @@ allure awesome allure-results --output allure-report-publish
 ```yaml
   api-autotest:
     build:
-      context: ../Truthy_ApiAutoTest2
+      context: ../api-autotest
     environment:
       API_AUTOTEST_HOST: 0.0.0.0
       API_AUTOTEST_PORT: "5003"
@@ -670,11 +670,11 @@ allure awesome allure-results --output allure-report-publish
       API_AUTOTEST_TASK_TIMEOUT_SECONDS: "${API_AUTOTEST_TASK_TIMEOUT_SECONDS:-1800}"
       API_AUTOTEST_TASKS_RETAIN: "${API_AUTOTEST_TASKS_RETAIN:-50}"
     volumes:
-      - ../Truthy_ApiAutoTest2/.env.platform:/app/.env
-      - ../Truthy_ApiAutoTest2/data:/app/data:ro
-      - ../Truthy_ApiAutoTest2/logs:/app/logs
-      - ../Truthy_ApiAutoTest2/reports:/app/reports
-      - ../Truthy_ApiAutoTest2/tasks:/app/tasks
+      - ../api-autotest/.env.platform:/app/.env
+      - ../api-autotest/data:/app/data:ro
+      - ../api-autotest/logs:/app/logs
+      - ../api-autotest/reports:/app/reports
+      - ../api-autotest/tasks:/app/tasks
     expose:
       - "5003"
     healthcheck:
@@ -785,7 +785,7 @@ GET  /unknown                  → 404（保持）
 
 ## 15. 文件影响范围
 
-### 15.1 Truthy_ApiAutoTest2（新增为主）
+### 15.1 api-autotest（新增为主）
 
 | 文件/目录 | 动作 |
 |---|---|
@@ -816,7 +816,7 @@ GET  /unknown                  → 404（保持）
 
 | 文件 | 动作 |
 |---|---|
-| `Truthy_ApiAutoTest2/Jenkinsfile` | post 阶段追加 HTML 生成与 `archiveArtifacts` 调整；执行阶段不改 |
+| `api-autotest/Jenkinsfile` | post 阶段追加 HTML 生成与 `archiveArtifacts` 调整；执行阶段不改 |
 
 ---
 
@@ -927,7 +927,7 @@ GET  /unknown                  → 404（保持）
 ## 19. 上线切换步骤
 
 1. 合并工具侧代码，本地独立模式自测通过；
-2. 在 `Truthy_ApiAutoTest2/` 创建 `.env.platform`（从 `.env.platform.example` 复制并填入平台专用会话，见【确认项 5】）；
+2. 在 `api-autotest/` 创建 `.env.platform`（从 `.env.platform.example` 复制并填入平台专用会话，见【确认项 5】）；
 3. 平台侧代码合并，`docker compose build api-autotest platform-gateway`；
 4. `docker compose up -d`，核对 4 张卡片与冒烟清单；
 5. 手动执行一次报告发布脚本，验证报告页；

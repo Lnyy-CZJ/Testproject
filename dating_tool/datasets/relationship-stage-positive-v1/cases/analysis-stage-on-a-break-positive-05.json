@@ -1,0 +1,27 @@
+{
+  "schema_version": "aidating.e2e.case.v1",
+  "case_id": "analysis-stage-on-a-break-positive-05",
+  "task_kind": "analysis",
+  "locale": "en-IE",
+  "media": [
+    {
+      "path": "On a break关系暂停/example_05/chat_01.png"
+    },
+    {
+      "path": "On a break关系暂停/example_05/chat_02.png"
+    },
+    {
+      "path": "On a break关系暂停/example_05/chat_03.png"
+    },
+    {
+      "path": "On a break关系暂停/example_05/chat_04.png"
+    }
+  ],
+  "analysis": {
+    "other_person_name": "Gabriel"
+  },
+  "expect": {
+    "task_status": "succeeded",
+    "result_schema": "dating.relationship_analysis.v1"
+  }
+}

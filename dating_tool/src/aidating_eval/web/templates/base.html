@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Dating AI 评测工作台{% endblock %}</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+</head>
+<body data-page="{% block page_id %}{% endblock %}">
+  <a class="skip-link" href="#main-content">跳到主要内容</a>
+  <header class="topbar">
+    <a class="brand" href="{{ url_for('new_run') }}"><span class="brand-mark">D</span><span><strong>Dating AI</strong><small>Evaluation Workbench</small></span></a>
+    <span class="environment-badge">LOCAL · 127.0.0.1:5005</span>
+    <nav class="top-actions" aria-label="主导航"><a href="{{ url_for('new_run') }}">新建 Run</a><a href="{{ url_for('runs_page') }}">Run 记录</a></nav>
+  </header>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="评测导航">
+      <p class="nav-label">WORKBENCH</p>
+      <nav>
+        <a href="{{ url_for('new_run') }}" data-nav="new">创建评测</a>
+        <a href="{{ url_for('runs_page') }}" data-nav="runs">运行记录</a>
+      </nav>
+      <div class="sidebar-note"><strong>两条真实链路</strong><span>E2E 走公开协议；快速批量走内部 Evaluation。页面不拼装后端请求。</span></div>
+    </aside>
+    <main class="main-content" id="main-content" tabindex="-1">
+      <div class="global-alert" id="global-alert" role="alert" hidden></div>
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+  <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+</body>
+</html>

@@ -59,11 +59,11 @@
 
 首期以以下两份真实日志作为黄金样本：
 
-1. `Truthy_ApiAutoTest2/logs/dating/test/2026-08-29/20260829_185108_082227_test_332.log`
+1. `api-autotest/logs/dating/test/2026-08-29/20260829_185108_082227_test_332.log`
    - 业务类型：多图 Reply。
    - 最终 Schema：`dating.reply_generation.v1`。
 
-2. `Truthy_ApiAutoTest2/logs/dating/test/2026-08-29/20260829_185318_825054_test_445.log`
+2. `api-autotest/logs/dating/test/2026-08-29/20260829_185318_825054_test_445.log`
    - 业务类型：多图 Analysis。
    - 最终 Schema：`dating.relationship_analysis.v1`。
 

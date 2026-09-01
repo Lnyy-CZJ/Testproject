@@ -1,0 +1,27 @@
+{
+  "schema_version": "aidating.e2e.case.v1",
+  "case_id": "analysis-stage-new-connection-positive-01",
+  "task_kind": "analysis",
+  "locale": "en-CA",
+  "media": [
+    {
+      "path": "New connection初识接触/example_01/chat_01.png"
+    },
+    {
+      "path": "New connection初识接触/example_01/chat_02.png"
+    },
+    {
+      "path": "New connection初识接触/example_01/chat_03.png"
+    },
+    {
+      "path": "New connection初识接触/example_01/chat_04.png"
+    }
+  ],
+  "analysis": {
+    "other_person_name": "Sofia"
+  },
+  "expect": {
+    "task_status": "succeeded",
+    "result_schema": "dating.relationship_analysis.v1"
+  }
+}

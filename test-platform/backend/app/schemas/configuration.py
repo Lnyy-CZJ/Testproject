@@ -193,6 +193,14 @@ class RuntimeScopePatchRequest(BaseModel):
     revision: int = Field(ge=1)
 
 
+class RuntimeScopeReleaseSummary(BaseModel):
+    """Scope 选择器可安全展示的当前 Release 摘要。"""
+
+    id: str
+    version: int
+    status: str
+
+
 class RuntimeScopeResponse(BaseModel):
     """管理端可见的 Scope 元数据；不包含配置或 Secret 值。"""
 
@@ -201,6 +209,7 @@ class RuntimeScopeResponse(BaseModel):
     platform_environment: str
     tool_id: str
     platform_project_id: str
+    platform_project_name: str
     project_id: str
     target_env: str
     display_name: str
@@ -211,3 +220,4 @@ class RuntimeScopeResponse(BaseModel):
     updated_by: str
     created_at: datetime
     updated_at: datetime
+    active_release: RuntimeScopeReleaseSummary | None

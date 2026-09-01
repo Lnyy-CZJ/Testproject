@@ -714,8 +714,8 @@ Task 10 打包、全量回归、本地部署验收
 复制来源：
 
 ```text
-/Users/admin/Testproject/Truthy_ApiAutoTest2/logs/dating/test/2026-08-29/20260829_185108_082227_test_332.log
-/Users/admin/Testproject/Truthy_ApiAutoTest2/logs/dating/test/2026-08-29/20260829_185318_825054_test_445.log
+/Users/admin/Testproject/api-autotest/logs/dating/test/2026-08-29/20260829_185108_082227_test_332.log
+/Users/admin/Testproject/api-autotest/logs/dating/test/2026-08-29/20260829_185318_825054_test_445.log
 ```
 
 替换规则：

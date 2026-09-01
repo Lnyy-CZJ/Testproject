@@ -6,7 +6,8 @@ import argparse
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
+from sqlalchemy.sql.elements import ColumnElement
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -35,6 +36,26 @@ class PromotionSummary:
     clients: int
 
 
+def _promotable_owner(
+    owner_type: ColumnElement[str],
+    owner_id: ColumnElement[str],
+) -> ColumnElement[bool]:
+    """返回允许跨环境提升的配置所有权条件。
+
+    两类 API AutoTest 数据必须留在来源环境：
+
+    - 任意 ``tool_project_scope`` 数据已经绑定项目和固定目标环境；
+    - 迁移前遗留的 ``tool/api-autotest`` 数据可能仍保存 test Gateway/Admin 值。
+
+    其他工具原有的 Tool/LLM 配置继续沿用首次生产提升语义。
+    """
+
+    return ~or_(
+        owner_type == "tool_project_scope",
+        and_(owner_type == "tool", owner_id == "api-autotest"),
+    )
+
+
 def _target_count(database: Session, target: str) -> int:
     """统计会使“一次性复制”不再安全的目标环境数据。"""
 
@@ -46,17 +67,27 @@ def _target_count(database: Session, target: str) -> int:
 
 
 def promotion_summary(database: Session, source: str) -> PromotionSummary:
-    """返回来源环境当前需要复制或重新生成的对象数量。"""
+    """返回来源环境中允许复制或重新生成的对象数量。
+
+    ``tool_project_scope`` 的 Release/Secret、带 ``runtime_scope_id`` 的 Credential
+    以及遗留 API AutoTest Tool 配置都可能保存 test 运行材料。它们不能沿用通用
+    环境提升逻辑，否则 dev/test 值会进入 prod，或继续引用错误的 Scope ID。
+    """
 
     return PromotionSummary(
         activations=int(database.scalar(select(func.count()).select_from(ConfigActivation).where(
             ConfigActivation.environment_id == source,
+            _promotable_owner(ConfigActivation.owner_type, ConfigActivation.owner_id),
         )) or 0),
         secrets=int(database.scalar(select(func.count()).select_from(Secret).where(
-            Secret.environment_id == source, Secret.current_version_id.is_not(None),
+            Secret.environment_id == source,
+            _promotable_owner(Secret.owner_type, Secret.owner_id),
+            Secret.current_version_id.is_not(None),
         )) or 0),
         credentials=int(database.scalar(select(func.count()).select_from(Credential).where(
             Credential.environment_id == source,
+            Credential.runtime_scope_id.is_(None),
+            Credential.tool_id != "api-autotest",
         )) or 0),
         clients=int(database.scalar(select(func.count()).select_from(ToolClient).where(
             ToolClient.environment_id == source, ToolClient.status == "active",
@@ -74,7 +105,12 @@ def promote_environment(
     seed_credentials: bool,
     require_empty_target: bool,
 ) -> PromotionSummary:
-    """原子创建目标 Secret、激活 Release 和待验证 Credential。"""
+    """原子创建目标非项目级 Secret、激活 Release 和待验证 Credential。
+
+    项目级运行材料必须由目标环境管理员在对应 Runtime Scope 内独立创建；本函数
+    只处理没有项目/目标环境归属的 legacy 或 Tool 级配置。这样既保留其他工具的
+    首次生产初始化能力，也不会把 API AutoTest 的 test Gateway 或凭证带入 prod。
+    """
 
     if source == target:
         raise ValueError("来源环境和目标环境不能相同")
@@ -86,12 +122,15 @@ def promote_environment(
     summary = promotion_summary(database, source)
     activations = list(database.scalars(select(ConfigActivation).where(
         ConfigActivation.environment_id == source,
+        _promotable_owner(ConfigActivation.owner_type, ConfigActivation.owner_id),
     ).order_by(ConfigActivation.owner_type, ConfigActivation.owner_id)).all())
 
     version_map: dict[str, str] = {}
     if copy_secrets:
         source_secrets = list(database.scalars(select(Secret).where(
-            Secret.environment_id == source, Secret.current_version_id.is_not(None),
+            Secret.environment_id == source,
+            _promotable_owner(Secret.owner_type, Secret.owner_id),
+            Secret.current_version_id.is_not(None),
         ).order_by(Secret.id)).all())
         referenced_versions = {
             item.secret_version_id
@@ -157,6 +196,8 @@ def promote_environment(
     if seed_credentials:
         for source_credential in database.scalars(select(Credential).where(
             Credential.environment_id == source,
+            Credential.runtime_scope_id.is_(None),
+            Credential.tool_id != "api-autotest",
         ).order_by(Credential.tool_id, Credential.provider_type)).all():
             database.add(Credential(
                 id=new_id("cred"), tool_id=source_credential.tool_id,

@@ -1,0 +1,19 @@
+{
+  "schema_version": "aidating.e2e.case.v1",
+  "case_id": "e2e-reply-single-001",
+  "task_kind": "reply",
+  "locale": "en-US",
+  "media": [{"path": "media/reply-single-01.png"}],
+  "preferences": {
+    "dating_goal": "serious_relationship",
+    "your_voice": "warm_direct"
+  },
+  "reply": {
+    "requested_intent": "flirt",
+    "background": "Synthetic test conversation."
+  },
+  "expect": {
+    "task_status": "succeeded",
+    "result_schema": "dating.reply_generation.v1"
+  }
+}

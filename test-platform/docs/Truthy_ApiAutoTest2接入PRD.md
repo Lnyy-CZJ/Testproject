@@ -1,11 +1,11 @@
-# Truthy_ApiAutoTest2 接入测试开发平台 PRD
+# api-autotest 接入测试开发平台 PRD
 
 > 文档版本：V1.2  
 > 创建日期：2026-08-07  
 > 文档状态：已评审（确认项结论见配套开发设计文档第 22 章）  
 > 修订记录：V1.2（2026-08-10）补充任务并发与原子落盘、二次脱敏、配置级凭证预检、取消结果边界；报告改为拉取最近已完成且有产物的 Jenkins 构建，并通过版本目录 + current 指针原子发布；8.3 环境变量清单补 `API_AUTOTEST_REPORT_DIR`  
 > 修订记录：V1.1（2026-08-07）根据确认项结论修订执行链路：平台执行命令对齐 Jenkins、平台任务不生成 allure-results、报告改为 Jenkins 归档 + 宿主机拉取发布  
-> 接入工具：`Truthy_ApiAutoTest2` / Gateway 接口自动化 V1.3  
+> 接入工具：`api-autotest` / Gateway 接口自动化 V1.3<br>
 > 目标平台：`test-platform`  
 > 目标入口：`/api-autotest/`  
 > 方案定位：薄 Web 服务包装（任务型工具，即评审结论中的“方案 C”）
@@ -15,7 +15,7 @@
 - [TestPlatform_MVP_PRD.md](../../TestPlatform_MVP_PRD.md)：平台接入总原则与新工具接入规范；
 - [平台框架升级开发设计与计划.md](./平台框架升级开发设计与计划.md)：工具分类（页面型 / API 型 / 任务型）与标准任务协议；
 - [Truthy_Search接入开发设计与计划.md](./Truthy_Search接入开发设计与计划.md)：前一个工具的接入先例；
-- `Truthy_ApiAutoTest2/README.md`、`Truthy_ApiAutoTest2/Jenkinsfile`：被接入工具的现状依据。
+- `api-autotest/README.md`、`api-autotest/Jenkinsfile`：被接入工具的现状依据。
 
 ---
 
@@ -23,7 +23,7 @@
 
 测试开发平台目前已聚合三个**页面型**工具：埋点测试（`trackevents`）、日志分析（`log-filter`）、检索评测（`truthy-search`）。三者均为常驻 Web 服务，接入模式统一为：可配置基础路径 + 健康检查 + Dockerfile + 平台 Compose/Nginx/工具目录注册。
 
-`Truthy_ApiAutoTest2` 是基于 Python、pytest、requests、PyYAML 的数据驱动接口自动化框架，特点与已接入工具不同：
+`api-autotest` 是基于 Python、pytest、requests、PyYAML 的数据驱动接口自动化框架，特点与已接入工具不同：
 
 - 它是**批跑型 CLI 框架**：通过 `runtest.py --env/--tag/--flow/--module` 触发 pytest 执行，无常驻 Web 页面；
 - 用例资产全部为 YAML：`data/apis/`（接口定义）、`data/cases/`（单接口用例）、`data/flows/` + `data/scenarios/`（多接口流程）；
@@ -31,7 +31,7 @@
 - 已有 Jenkins 流水线承担参数化执行、JUnit/Allure 发布与产物归档；
 - 凭证（`AUTH_TOKEN`、`REFRESH_TOKEN` 等）保存于项目根目录 `.env`，框架自动复用/刷新会话，**刷新成功后会将新会话写回 `.env`**。
 
-平台框架升级方案已将“接口自动化”归类为**任务型工具**，并定义标准任务协议：提交、查询状态、取消、获取结果、健康检查。本 PRD 按该定位定义接入需求，使 `Truthy_ApiAutoTest2` 成为平台第一个任务型工具，为后续平台任务中心（`ApiAutomationAdapter`）预留对端。
+平台框架升级方案已将“接口自动化”归类为**任务型工具**，并定义标准任务协议：提交、查询状态、取消、获取结果、健康检查。本 PRD 按该定位定义接入需求，使 `api-autotest` 成为平台第一个任务型工具，为后续平台任务中心（`ApiAutomationAdapter`）预留对端。
 
 ---
 
@@ -39,7 +39,7 @@
 
 ### 2.1 目标
 
-为 `Truthy_ApiAutoTest2` 建设一个**薄 Web 服务**（下称“工具壳服务”），以独立容器接入平台，在不修改框架核心逻辑的前提下提供：
+为 `api-autotest` 建设一个**薄 Web 服务**（下称“工具壳服务”），以独立容器接入平台，在不修改框架核心逻辑的前提下提供：
 
 1. 平台首页出现“接口自动化”工具卡片，入口固定为 `/api-autotest/`；
 2. 在平台页面上选择参数并**触发接口自动化执行**；
@@ -61,7 +61,7 @@
 - 同一时间最多只有一个执行任务处于 `pending`/`running`；并发提交通过原子互斥保证只有一个成功，其余明确拒绝（MVP 不排队）；
 - 停止 `api-autotest` 容器不影响平台首页和其他三个工具；
 - 平台 API 或 PostgreSQL 异常时，首页仍保留该工具的基础入口（前端回退目录）；
-- `Truthy_ApiAutoTest2` 仍可脱离平台独立运行：终端行为不变，Jenkins 执行阶段与测试语义不变；Jenkins post 仅增加 HTML 生成和归档；
+- `api-autotest` 仍可脱离平台独立运行：终端行为不变，Jenkins 执行阶段与测试语义不变；Jenkins post 仅增加 HTML 生成和归档；
 - 框架现有自动化回归（不发送真实请求的部分）全部通过；
 - 平台只暴露网关端口，`5003` 不映射到宿主机。
 
@@ -153,7 +153,7 @@ platform-gateway (Nginx, 唯一对外端口 8080)
   └── /api-autotest/       api-autotest:5003  ← 本次新增
           │
           ▼
-  工具壳服务（Truthy_ApiAutoTest2 薄 Web 层）
+  工具壳服务（api-autotest 薄 Web 层）
   ├── 执行触发：子进程调用 pytest（命令对齐 Jenkins，链路 B）
   ├── 任务记录：文件级存储（tasks 目录）
   ├── 结果读取：reports/junit-*.xml、logs/YYYY-MM-DD/
@@ -162,8 +162,8 @@ platform-gateway (Nginx, 唯一对外端口 8080)
 
   Jenkins / 宿主机脚本（链路 A）
   ├── 执行 pytest + 生成 Allure HTML
-  └── 同步报告 → Truthy_ApiAutoTest2/reports/allure-reports/<version>/
-                → Truthy_ApiAutoTest2/reports/allure-current
+  └── 同步报告 → api-autotest/reports/allure-reports/<version>/
+                → api-autotest/reports/allure-current
                     （平台容器以卷挂载方式读取 current 指向版本）
 ```
 
@@ -175,7 +175,7 @@ platform-gateway (Nginx, 唯一对外端口 8080)
 | 执行方式 | 子进程调用 pytest（入口文件与 Jenkinsfile 一致） | 不修改框架执行语义，与 Jenkins 链路完全对齐 |
 | 任务记录 | 文件级存储（JSON），不引入任务数据库 | 单实例单任务；通过互斥与临时文件原子替换保证并发读写安全 |
 | Allure HTML | 容器外生成、目录同步、静态托管 | 避免在镜像内引入 Node/Allure，控制镜像体积与维护面 |
-| 容器 | 独立 Dockerfile，build context 为 `../Truthy_ApiAutoTest2` | 与既有三个工具一致 |
+| 容器 | 独立 Dockerfile，build context 为 `../api-autotest` | 与既有三个工具一致 |
 | 平台注册 | tools 表迁移 + 前端回退目录 + Nginx 路由 | 与既有接入模式一致 |
 
 ---
@@ -371,7 +371,7 @@ description: 触发 Gateway 接口自动化执行，查看回归结果与 Allure
 base_path: /api-autotest
 internal_port: 5003
 health_path: /api-autotest/health
-docker_build_context: ../Truthy_ApiAutoTest2
+docker_build_context: ../api-autotest
 ```
 
 平台侧注册方式与既有工具一致：新增一条 Alembic 迁移写入 `tools` 表；前端 `fallbackTools.ts` 增加回退条目与 `api` 图标。
@@ -395,7 +395,7 @@ docker_build_context: ../Truthy_ApiAutoTest2
 
 ### 8.2 平台模式凭证方案
 
-- 平台容器使用**独立的平台专用凭证文件**（例如 `Truthy_ApiAutoTest2/.env.platform`，命名以开发设计文档为准），以可写卷方式挂载为容器内项目根 `.env`；
+- 平台容器使用**独立的平台专用凭证文件**（例如 `api-autotest/.env.platform`，命名以开发设计文档为准），以可写卷方式挂载为容器内项目根 `.env`；
 - 该文件不提交 Git，模板与字段说明进入文档；
 - 本地开发继续使用开发者自己的 `.env`，两条链路会话状态互相隔离；
 - 镜像内**不得**打包任何 `.env`、token 或测试账号；Dockerfile 构建上下文需排除凭证文件。
@@ -438,7 +438,7 @@ docker_build_context: ../Truthy_ApiAutoTest2
 
 ### 9.2 报告同步约定（链路 A → 平台）
 
-- 报告版本目录固定为 `Truthy_ApiAutoTest2/reports/allure-reports/<version>/`，当前报告由 `reports/allure-current` 原子指针指向；
+- 报告版本目录固定为 `api-autotest/reports/allure-reports/<version>/`，当前报告由 `reports/allure-current` 原子指针指向；
 - 发布时先完整写入新的版本目录并校验 `index.html`，再以同文件系统临时指针 + `os.replace`/`mv` 原子切换 `allure-current`；失败或中断时旧指针保持可用，启动/发布前清理无引用的临时目录；
 - 同步方式（确认结论）：Jenkins 仅生成 HTML 并归档构建产物，不直接写宿主目录；宿主机拉取脚本选择**最近一次已完成且存在 HTML 归档产物的构建**（无论 SUCCESS/FAILURE/UNSTABLE）后调用发布脚本；宿主机手动执行链路直接调用发布脚本；
 - MVP 触发方式为手动执行或用户自备的定时任务，不内置于平台；
@@ -548,13 +548,13 @@ docker_build_context: ../Truthy_ApiAutoTest2
 
 ### 13.1 平台侧（test-platform）
 
-- `docker-compose.yml`：新增 `api-autotest` 服务（build context `../Truthy_ApiAutoTest2`、环境变量、卷挂载、healthcheck、`expose 5003`）；`platform-gateway` 依赖列表追加；
+- `docker-compose.yml`：新增 `api-autotest` 服务（build context `../api-autotest`、环境变量、卷挂载、healthcheck、`expose 5003`）；`platform-gateway` 依赖列表追加；
 - `nginx/nginx.conf`：新增 `/api-autotest` 重定向与 `/api-autotest/` 代理块；
 - `backend/alembic/versions/`：新增迁移，向 `tools` 表插入 `api-autotest` 记录；
 - `frontend/src/data/fallbackTools.ts`：新增回退条目；新增 `api` 图标与图标映射；
 - `tests/test_smoke.py`：新增平台冒烟用例。
 
-### 13.2 工具侧（Truthy_ApiAutoTest2）
+### 13.2 工具侧（api-autotest）
 
 - 新增薄 Web 服务入口与页面（文件组织由开发设计文档确定）；
 - 新增 Dockerfile（不含 Node/Allure；排除 `.env`）；
@@ -669,7 +669,7 @@ docker_build_context: ../Truthy_ApiAutoTest2
 ## 18. 交付物
 
 - 工具壳服务（页面 + 任务接口 + 用例库 + 报告托管 + 健康检查）；
-- `Truthy_ApiAutoTest2` Dockerfile 与平台专用凭证模板说明；
+- `api-autotest` Dockerfile 与平台专用凭证模板说明；
 - 平台 Compose、Nginx、tools 表迁移、前端卡片与图标；
 - Jenkins/宿主机报告同步能力（按 9.2 约定）；
 - 平台冒烟测试与工具壳测试；

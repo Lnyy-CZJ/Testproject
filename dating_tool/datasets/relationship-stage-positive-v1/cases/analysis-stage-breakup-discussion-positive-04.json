@@ -1,0 +1,27 @@
+{
+  "schema_version": "aidating.e2e.case.v1",
+  "case_id": "analysis-stage-breakup-discussion-positive-04",
+  "task_kind": "analysis",
+  "locale": "en-NL",
+  "media": [
+    {
+      "path": "Breakup discussion分手讨论/example_04/chat_01.png"
+    },
+    {
+      "path": "Breakup discussion分手讨论/example_04/chat_02.png"
+    },
+    {
+      "path": "Breakup discussion分手讨论/example_04/chat_03.png"
+    },
+    {
+      "path": "Breakup discussion分手讨论/example_04/chat_04.png"
+    }
+  ],
+  "analysis": {
+    "other_person_name": "Vivian"
+  },
+  "expect": {
+    "task_status": "succeeded",
+    "result_schema": "dating.relationship_analysis.v1"
+  }
+}

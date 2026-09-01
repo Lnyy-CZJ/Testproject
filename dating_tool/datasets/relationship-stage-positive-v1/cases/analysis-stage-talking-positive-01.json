@@ -1,0 +1,36 @@
+{
+  "schema_version": "aidating.e2e.case.v1",
+  "case_id": "analysis-stage-talking-positive-01",
+  "task_kind": "analysis",
+  "locale": "en-GB",
+  "media": [
+    {
+      "path": "Talking持续互动/example_01/chat_01.png"
+    },
+    {
+      "path": "Talking持续互动/example_01/chat_02.png"
+    },
+    {
+      "path": "Talking持续互动/example_01/chat_03.png"
+    },
+    {
+      "path": "Talking持续互动/example_01/chat_04.png"
+    },
+    {
+      "path": "Talking持续互动/example_01/chat_05.png"
+    },
+    {
+      "path": "Talking持续互动/example_01/chat_06.png"
+    },
+    {
+      "path": "Talking持续互动/example_01/chat_07.png"
+    }
+  ],
+  "analysis": {
+    "other_person_name": "Leo"
+  },
+  "expect": {
+    "task_status": "succeeded",
+    "result_schema": "dating.relationship_analysis.v1"
+  }
+}

@@ -1,0 +1,465 @@
+{
+  "schema_version": "aidating.chat-screenshot-source.v1",
+  "case_id": "analysis-stage-breakup-discussion-positive-04",
+  "task_kind": "analysis",
+  "target_stage": "BREAKUP_DISCUSSION",
+  "positive_track": "constructive",
+  "locale": "en-NL",
+  "participants": {
+    "self": {
+      "id": "self",
+      "display_name": "You",
+      "pronouns": "he/him"
+    },
+    "other": {
+      "id": "other",
+      "display_name": "Vivian",
+      "pronouns": "she/her"
+    }
+  },
+  "style_id": "midnight-dark",
+  "image_count": 4,
+  "pair_type": "woman-man",
+  "scenario": {
+    "slug": "explore-repair",
+    "title": "Explore Repair",
+    "premise": "They explore whether repair is possible while explicitly keeping the outcome undecided.",
+    "topic": "exploring repair"
+  },
+  "messages": [
+    {
+      "id": "m_001",
+      "speaker": "self",
+      "text": "Before we decide whether to end this, I want to ask if repair feels possible to you.",
+      "type": "text",
+      "timestamp": "2026-01-08T18:00:00.000Z"
+    },
+    {
+      "id": "m_002",
+      "speaker": "other",
+      "text": "I do not know yet, but I am willing to look at what would need to change.",
+      "type": "text",
+      "timestamp": "2026-01-08T18:04:00.000Z"
+    },
+    {
+      "id": "m_003",
+      "speaker": "self",
+      "text": "For me, repair would need consistent follow through, not only good intentions.",
+      "type": "text",
+      "timestamp": "2026-01-08T18:08:00.000Z"
+    },
+    {
+      "id": "m_004",
+      "speaker": "other",
+      "text": "That is fair. I need to consider whether I can offer that consistently.",
+      "type": "text",
+      "timestamp": "2026-01-08T18:12:00.000Z"
+    },
+    {
+      "id": "m_005",
+      "speaker": "self",
+      "text": "We are exploring repair without promising that the relationship will continue.",
+      "type": "text",
+      "timestamp": "2026-01-08T18:16:00.000Z"
+    },
+    {
+      "id": "m_006",
+      "speaker": "other",
+      "text": "I understand. Can we talk honestly about whether this relationship can continue?",
+      "type": "text",
+      "timestamp": "2026-01-08T18:20:00.000Z"
+    },
+    {
+      "id": "m_007",
+      "speaker": "self",
+      "text": "Yes, I know the question is serious, and I do not want to avoid it.",
+      "type": "text",
+      "timestamp": "2026-01-08T18:24:00.000Z"
+    },
+    {
+      "id": "m_008",
+      "speaker": "other",
+      "text": "I am not asking for an immediate decision in the first minute.",
+      "type": "text",
+      "timestamp": "2026-01-08T18:28:00.000Z"
+    },
+    {
+      "id": "m_009",
+      "speaker": "self",
+      "text": "Thank you. I need enough space to explain what has brought me here.",
+      "type": "text",
+      "timestamp": "2026-01-08T18:32:00.000Z"
+    },
+    {
+      "id": "m_010",
+      "speaker": "other",
+      "text": "Would you like to speak first while I listen?",
+      "type": "text",
+      "timestamp": "2026-01-08T18:36:00.000Z"
+    },
+    {
+      "id": "m_011",
+      "speaker": "self",
+      "text": "Yes. I have felt increasingly alone when our conflicts stay unresolved.",
+      "type": "text",
+      "timestamp": "2026-01-08T18:40:00.000Z"
+    },
+    {
+      "id": "m_012",
+      "speaker": "other",
+      "text": "Which unresolved conflict has affected you most?",
+      "type": "text",
+      "timestamp": "2026-01-08T18:44:00.000Z"
+    },
+    {
+      "id": "m_013",
+      "speaker": "self",
+      "text": "The repeated cancellations without notice have made reliability hard to trust.",
+      "type": "text",
+      "timestamp": "2026-01-08T18:48:00.000Z"
+    },
+    {
+      "id": "m_014",
+      "speaker": "other",
+      "text": "I hear that the pattern matters more than one cancelled plan.",
+      "type": "text",
+      "timestamp": "2026-01-08T18:52:00.000Z"
+    },
+    {
+      "id": "m_015",
+      "speaker": "self",
+      "text": "Exactly. One change is manageable, but repetition has changed how I feel.",
+      "type": "text",
+      "timestamp": "2026-01-08T18:56:00.000Z"
+    },
+    {
+      "id": "m_016",
+      "speaker": "other",
+      "text": "Do you believe the trust can be repaired?",
+      "type": "text",
+      "timestamp": "2026-01-08T19:00:00.000Z"
+    },
+    {
+      "id": "m_017",
+      "speaker": "self",
+      "text": "I do not know yet, and that uncertainty is why we need this conversation.",
+      "type": "text",
+      "timestamp": "2026-01-08T19:04:00.000Z"
+    },
+    {
+      "id": "m_018",
+      "speaker": "other",
+      "text": "I can accept that you do not have an answer yet.",
+      "type": "text",
+      "timestamp": "2026-01-08T19:08:00.000Z"
+    },
+    {
+      "id": "m_019",
+      "speaker": "self",
+      "text": "I appreciate that. I want us to examine the reality before choosing an ending.",
+      "type": "text",
+      "timestamp": "2026-01-08T19:12:00.000Z"
+    },
+    {
+      "id": "m_020",
+      "speaker": "other",
+      "text": "What would reliability need to look like for you now?",
+      "type": "text",
+      "timestamp": "2026-01-08T19:16:00.000Z"
+    },
+    {
+      "id": "m_021",
+      "speaker": "self",
+      "text": "Clear notice, fewer promises, and follow-through on the plans we do make.",
+      "type": "text",
+      "timestamp": "2026-01-08T19:20:00.000Z"
+    },
+    {
+      "id": "m_022",
+      "speaker": "other",
+      "text": "I have promised more than my capacity allowed.",
+      "type": "text",
+      "timestamp": "2026-01-08T19:24:00.000Z"
+    },
+    {
+      "id": "m_023",
+      "speaker": "self",
+      "text": "That honesty helps, though the impact still needs to be addressed.",
+      "type": "text",
+      "timestamp": "2026-01-08T19:28:00.000Z"
+    },
+    {
+      "id": "m_024",
+      "speaker": "other",
+      "text": "What impact have I missed beyond disappointment?",
+      "type": "text",
+      "timestamp": "2026-01-08T19:32:00.000Z"
+    },
+    {
+      "id": "m_025",
+      "speaker": "self",
+      "text": "I stopped making room for plans because I expected them to disappear.",
+      "type": "text",
+      "timestamp": "2026-01-08T19:36:00.000Z"
+    },
+    {
+      "id": "m_026",
+      "speaker": "other",
+      "text": "That sounds exhausting and unfair to you.",
+      "type": "text",
+      "timestamp": "2026-01-08T19:40:00.000Z"
+    },
+    {
+      "id": "m_027",
+      "speaker": "self",
+      "text": "It has been exhausting, and I also want to understand your experience.",
+      "type": "text",
+      "timestamp": "2026-01-08T19:44:00.000Z"
+    },
+    {
+      "id": "m_028",
+      "speaker": "other",
+      "text": "I have felt pressure to agree before checking what I can manage.",
+      "type": "text",
+      "timestamp": "2026-01-08T19:48:00.000Z"
+    },
+    {
+      "id": "m_029",
+      "speaker": "self",
+      "text": "I did not realize agreement felt pressured, and I want to hear more.",
+      "type": "text",
+      "timestamp": "2026-01-08T19:52:00.000Z"
+    },
+    {
+      "id": "m_030",
+      "speaker": "other",
+      "text": "I feared that saying no would be treated as lack of care.",
+      "type": "text",
+      "timestamp": "2026-01-08T19:56:00.000Z"
+    },
+    {
+      "id": "m_031",
+      "speaker": "self",
+      "text": "I can see how my reaction may have reinforced that fear.",
+      "type": "text",
+      "timestamp": "2026-01-08T20:00:00.000Z"
+    },
+    {
+      "id": "m_032",
+      "speaker": "other",
+      "text": "Can we hold both harms without deciding whose pain is larger?",
+      "type": "text",
+      "timestamp": "2026-01-08T20:04:00.000Z"
+    },
+    {
+      "id": "m_033",
+      "speaker": "self",
+      "text": "Yes, comparing pain would distract from whether the pattern can change.",
+      "type": "text",
+      "timestamp": "2026-01-08T20:08:00.000Z"
+    },
+    {
+      "id": "m_034",
+      "speaker": "other",
+      "text": "What have we already tried to change this pattern?",
+      "type": "text",
+      "timestamp": "2026-01-08T20:12:00.000Z"
+    },
+    {
+      "id": "m_035",
+      "speaker": "self",
+      "text": "We used a shared calendar and agreed to confirm plans the day before.",
+      "type": "text",
+      "timestamp": "2026-01-08T20:16:00.000Z"
+    },
+    {
+      "id": "m_036",
+      "speaker": "other",
+      "text": "The calendar helped briefly, but I stopped updating it consistently.",
+      "type": "text",
+      "timestamp": "2026-01-08T20:20:00.000Z"
+    },
+    {
+      "id": "m_037",
+      "speaker": "self",
+      "text": "And the missing updates brought the same uncertainty back.",
+      "type": "text",
+      "timestamp": "2026-01-08T20:24:00.000Z"
+    },
+    {
+      "id": "m_038",
+      "speaker": "other",
+      "text": "Would another tool matter if the habit itself does not change?",
+      "type": "text",
+      "timestamp": "2026-01-08T20:28:00.000Z"
+    },
+    {
+      "id": "m_039",
+      "speaker": "self",
+      "text": "Probably not. The change has to be behavioural, not only organizational.",
+      "type": "text",
+      "timestamp": "2026-01-08T20:32:00.000Z"
+    },
+    {
+      "id": "m_040",
+      "speaker": "other",
+      "text": "Have there been times when I did follow through well?",
+      "type": "text",
+      "timestamp": "2026-01-08T20:36:00.000Z"
+    },
+    {
+      "id": "m_041",
+      "speaker": "self",
+      "text": "Yes, and those weeks felt calmer, but the improvement did not last.",
+      "type": "text",
+      "timestamp": "2026-01-08T20:40:00.000Z"
+    },
+    {
+      "id": "m_042",
+      "speaker": "other",
+      "text": "What made those calmer weeks different?",
+      "type": "text",
+      "timestamp": "2026-01-08T20:44:00.000Z"
+    },
+    {
+      "id": "m_043",
+      "speaker": "self",
+      "text": "You made fewer commitments and told me early when your energy changed.",
+      "type": "text",
+      "timestamp": "2026-01-08T20:48:00.000Z"
+    },
+    {
+      "id": "m_044",
+      "speaker": "other",
+      "text": "That suggests a smaller promise might be more honest.",
+      "type": "text",
+      "timestamp": "2026-01-08T20:52:00.000Z"
+    },
+    {
+      "id": "m_045",
+      "speaker": "self",
+      "text": "It might, if the smaller promise still meets enough of both our needs.",
+      "type": "text",
+      "timestamp": "2026-01-08T20:56:00.000Z"
+    },
+    {
+      "id": "m_046",
+      "speaker": "other",
+      "text": "Before we wrap up, can we return to what we said earlier?",
+      "type": "text",
+      "timestamp": "2026-01-08T21:00:00.000Z"
+    },
+    {
+      "id": "m_047",
+      "speaker": "self",
+      "text": "Yes, I have one more thought about it.",
+      "type": "text",
+      "timestamp": "2026-01-08T21:04:00.000Z"
+    },
+    {
+      "id": "m_048",
+      "speaker": "self",
+      "text": "I am still considering whether we should end the relationship, and I have not chosen an answer tonight.",
+      "type": "text",
+      "timestamp": "2026-01-08T21:08:00.000Z"
+    },
+    {
+      "id": "m_049",
+      "speaker": "other",
+      "text": "That feels honest.",
+      "type": "text",
+      "timestamp": "2026-01-08T21:12:00.000Z"
+    },
+    {
+      "id": "m_050",
+      "speaker": "self",
+      "text": "We can continue the discussion soon.",
+      "type": "text",
+      "timestamp": "2026-01-08T21:16:00.000Z"
+    }
+  ],
+  "stage_evidence_message_ids": [
+    "m_001",
+    "m_002",
+    "m_003",
+    "m_004",
+    "m_005",
+    "m_048"
+  ],
+  "excluded_stage_cues": [
+    "completed breakup",
+    "normal unresolved conflict only"
+  ],
+  "render": {
+    "width": 430,
+    "height": 932,
+    "bubbles_per_image": 14,
+    "overlap_messages": 2,
+    "page_message_ids": [
+      [
+        "m_001",
+        "m_002",
+        "m_003",
+        "m_004",
+        "m_005",
+        "m_006",
+        "m_007",
+        "m_008",
+        "m_009",
+        "m_010",
+        "m_011",
+        "m_012",
+        "m_013",
+        "m_014"
+      ],
+      [
+        "m_013",
+        "m_014",
+        "m_015",
+        "m_016",
+        "m_017",
+        "m_018",
+        "m_019",
+        "m_020",
+        "m_021",
+        "m_022",
+        "m_023",
+        "m_024",
+        "m_025",
+        "m_026"
+      ],
+      [
+        "m_025",
+        "m_026",
+        "m_027",
+        "m_028",
+        "m_029",
+        "m_030",
+        "m_031",
+        "m_032",
+        "m_033",
+        "m_034",
+        "m_035",
+        "m_036",
+        "m_037",
+        "m_038"
+      ],
+      [
+        "m_037",
+        "m_038",
+        "m_039",
+        "m_040",
+        "m_041",
+        "m_042",
+        "m_043",
+        "m_044",
+        "m_045",
+        "m_046",
+        "m_047",
+        "m_048",
+        "m_049",
+        "m_050"
+      ]
+    ]
+  }
+}

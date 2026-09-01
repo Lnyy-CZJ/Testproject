@@ -1,0 +1,24 @@
+{
+  "schema_version": "aidating.e2e.case.v1",
+  "case_id": "analysis-stage-defining-relationship-positive-03",
+  "task_kind": "analysis",
+  "locale": "en-IE",
+  "media": [
+    {
+      "path": "Defining relationship关系确认/example_03/chat_01.png"
+    },
+    {
+      "path": "Defining relationship关系确认/example_03/chat_02.png"
+    },
+    {
+      "path": "Defining relationship关系确认/example_03/chat_03.png"
+    }
+  ],
+  "analysis": {
+    "other_person_name": "Colin"
+  },
+  "expect": {
+    "task_status": "succeeded",
+    "result_schema": "dating.relationship_analysis.v1"
+  }
+}

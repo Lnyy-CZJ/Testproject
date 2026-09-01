@@ -1,0 +1,76 @@
+name: 结构化聊天消息生成 Reply 并保留 Debug 与 Cost
+variables:
+  debug_attempt: 0
+  debug_detail_level: FULL
+  debug_include_provider_calls: true
+  debug_include_events: true
+  debug_include_field_diagnostics: true
+  cost_include_calls: true
+  cost_limit: 100
+  cost_cursor: ""
+runtime_inputs:
+  evaluation_request:
+    label: Reply Flow 基础字段与消息内容
+    description: 输入本次 Reply 评测 JSON；必须是对象，可在每次运行前完整替换
+    type: json
+    required: true
+    target:
+      scope: flow_step_request
+      step_id: create_reply_evaluation
+      path: $.input
+# 评测接口的业务结果仍在演进期。每一步只断言 HTTP 200 和顶层 message=ok；
+# task_id/status 仅作为完成整条链路所必需的动态依赖，不固定 Result 业务字段。
+step_data:
+  create_reply_evaluation:
+    params:
+      input:
+        locale: en-US
+        dating_goal: serious_relationship
+        your_voice: warm_direct
+        requested_intent: flirt
+        background: Met twice.
+        transcript:
+          schema_version: dating.transcript.v1
+          messages:
+            - message_id: m1
+              message_type: text
+              speaker: other
+              text: I had a good time yesterday.
+            - message_id: m2
+              message_type: text
+              speaker: user
+              text: Me too, we should do it again.
+            - message_id: m3
+              message_type: text
+              speaker: other
+              text: Are you free Saturday?
+            - message_id: m4
+              message_type: text
+              speaker: user
+              text: Saturday works for me.
+      case_id: "{{flow_run_id}}-structured-reply"
+      run_id: "{{flow_run_id}}"
+      client_request_id: "{{flow_run_id}}-reply"
+    assert: {http_status: 200, gateway: {message: ok}}
+  poll_reply_evaluation:
+    params: {task_id: "{{task_id}}"}
+    assert: {http_status: 200, gateway: {message: ok}}
+  get_reply_evaluation_result:
+    params: {task_id: "{{task_id}}"}
+    assert: {http_status: 200, gateway: {message: ok}}
+  get_task_debug:
+    params:
+      task_id: "{{task_id}}"
+      attempt: "{{debug_attempt}}"
+      detail_level: "{{debug_detail_level}}"
+      include_provider_calls: "{{debug_include_provider_calls}}"
+      include_events: "{{debug_include_events}}"
+      include_field_diagnostics: "{{debug_include_field_diagnostics}}"
+    assert: {http_status: 200, gateway: {message: ok}}
+  get_provider_cost:
+    params:
+      task_id: "{{task_id}}"
+      include_calls: "{{cost_include_calls}}"
+      limit: "{{cost_limit}}"
+      cursor: "{{cost_cursor}}"
+    assert: {http_status: 200, gateway: {message: ok}}

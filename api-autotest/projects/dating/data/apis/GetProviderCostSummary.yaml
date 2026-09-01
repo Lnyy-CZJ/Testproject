@@ -1,0 +1,11 @@
+id: GetProviderCostSummary
+name: 查询 Evaluation Provider Cost
+credential_profile: public
+request:
+  service_name: tool.dating.internal.DatingEvaluationService
+  method_name: GetProviderCostSummary
+transport:
+  target: dating_evaluation
+  envelope: root_single
+  requires_session: false
+  bearer_token_variable: DATING_EVALUATION_API_KEY

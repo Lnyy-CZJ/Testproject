@@ -1,0 +1,465 @@
+{
+  "schema_version": "aidating.chat-screenshot-source.v1",
+  "case_id": "analysis-stage-relationship-positive-02",
+  "task_kind": "analysis",
+  "target_stage": "RELATIONSHIP",
+  "positive_track": "stage_accurate",
+  "locale": "en-GB",
+  "participants": {
+    "self": {
+      "id": "self",
+      "display_name": "You",
+      "pronouns": "she/her"
+    },
+    "other": {
+      "id": "other",
+      "display_name": "Avery",
+      "pronouns": "they/them"
+    }
+  },
+  "style_id": "sage-light",
+  "image_count": 4,
+  "pair_type": "nonbinary-inclusive",
+  "scenario": {
+    "slug": "anniversary-note",
+    "title": "Anniversary Note",
+    "premise": "Partners mark an important anniversary with appreciation for their relationship.",
+    "topic": "relationship milestone"
+  },
+  "messages": [
+    {
+      "id": "m_001",
+      "speaker": "self",
+      "text": "I cannot believe it has been a year since we decided to be together.",
+      "type": "text",
+      "timestamp": "2026-01-08T18:00:00.000Z"
+    },
+    {
+      "id": "m_002",
+      "speaker": "other",
+      "text": "I know. I feel grateful for how much we have learned as partners.",
+      "type": "text",
+      "timestamp": "2026-01-08T18:04:00.000Z"
+    },
+    {
+      "id": "m_003",
+      "speaker": "self",
+      "text": "My favourite part is that we still make room for honest conversations.",
+      "type": "text",
+      "timestamp": "2026-01-08T18:08:00.000Z"
+    },
+    {
+      "id": "m_004",
+      "speaker": "other",
+      "text": "And we still make each other laugh when life gets heavy.",
+      "type": "text",
+      "timestamp": "2026-01-08T18:12:00.000Z"
+    },
+    {
+      "id": "m_005",
+      "speaker": "self",
+      "text": "Celebrating a year together reminds me that we are committed partners.",
+      "type": "text",
+      "timestamp": "2026-01-08T18:16:00.000Z"
+    },
+    {
+      "id": "m_006",
+      "speaker": "other",
+      "text": "I understand. Did you sleep well after we turned the lights out early?",
+      "type": "text",
+      "timestamp": "2026-01-08T18:20:00.000Z"
+    },
+    {
+      "id": "m_007",
+      "speaker": "self",
+      "text": "I did, and waking up without rushing made the morning gentler.",
+      "type": "text",
+      "timestamp": "2026-01-08T18:24:00.000Z"
+    },
+    {
+      "id": "m_008",
+      "speaker": "other",
+      "text": "Would you like to keep the same bedtime tonight?",
+      "type": "text",
+      "timestamp": "2026-01-08T18:28:00.000Z"
+    },
+    {
+      "id": "m_009",
+      "speaker": "self",
+      "text": "Yes, if we finish the kitchen cleanup before we get tired.",
+      "type": "text",
+      "timestamp": "2026-01-08T18:32:00.000Z"
+    },
+    {
+      "id": "m_010",
+      "speaker": "other",
+      "text": "I can wash the dishes if you clear the counter.",
+      "type": "text",
+      "timestamp": "2026-01-08T18:36:00.000Z"
+    },
+    {
+      "id": "m_011",
+      "speaker": "self",
+      "text": "That split works, and I will put the leftovers away too.",
+      "type": "text",
+      "timestamp": "2026-01-08T18:40:00.000Z"
+    },
+    {
+      "id": "m_012",
+      "speaker": "other",
+      "text": "Could you label the container for tomorrow?",
+      "type": "text",
+      "timestamp": "2026-01-08T18:44:00.000Z"
+    },
+    {
+      "id": "m_013",
+      "speaker": "self",
+      "text": "Of course, and I will leave it on the front shelf where we can see it.",
+      "type": "text",
+      "timestamp": "2026-01-08T18:48:00.000Z"
+    },
+    {
+      "id": "m_014",
+      "speaker": "other",
+      "text": "Thank you. Do we need anything else for breakfast?",
+      "type": "text",
+      "timestamp": "2026-01-08T18:52:00.000Z"
+    },
+    {
+      "id": "m_015",
+      "speaker": "self",
+      "text": "We have enough fruit, but we are nearly out of oats.",
+      "type": "text",
+      "timestamp": "2026-01-08T18:56:00.000Z"
+    },
+    {
+      "id": "m_016",
+      "speaker": "other",
+      "text": "I can add oats to our shared list.",
+      "type": "text",
+      "timestamp": "2026-01-08T19:00:00.000Z"
+    },
+    {
+      "id": "m_017",
+      "speaker": "self",
+      "text": "Please do, and I will check whether we need more tea.",
+      "type": "text",
+      "timestamp": "2026-01-08T19:04:00.000Z"
+    },
+    {
+      "id": "m_018",
+      "speaker": "other",
+      "text": "The tea is still fine. How is your energy for work today?",
+      "type": "text",
+      "timestamp": "2026-01-08T19:08:00.000Z"
+    },
+    {
+      "id": "m_019",
+      "speaker": "self",
+      "text": "Better than yesterday, though I need a quiet hour before my first call.",
+      "type": "text",
+      "timestamp": "2026-01-08T19:12:00.000Z"
+    },
+    {
+      "id": "m_020",
+      "speaker": "other",
+      "text": "Would it help if I used the other room during that hour?",
+      "type": "text",
+      "timestamp": "2026-01-08T19:16:00.000Z"
+    },
+    {
+      "id": "m_021",
+      "speaker": "self",
+      "text": "Yes, thank you. I will let you know as soon as the call ends.",
+      "type": "text",
+      "timestamp": "2026-01-08T19:20:00.000Z"
+    },
+    {
+      "id": "m_022",
+      "speaker": "other",
+      "text": "Do you want encouragement before it starts or space to focus?",
+      "type": "text",
+      "timestamp": "2026-01-08T19:24:00.000Z"
+    },
+    {
+      "id": "m_023",
+      "speaker": "self",
+      "text": "A quick good-luck message would feel nice, then space until I finish.",
+      "type": "text",
+      "timestamp": "2026-01-08T19:28:00.000Z"
+    },
+    {
+      "id": "m_024",
+      "speaker": "other",
+      "text": "I can do that. What is the hardest part of the call?",
+      "type": "text",
+      "timestamp": "2026-01-08T19:32:00.000Z"
+    },
+    {
+      "id": "m_025",
+      "speaker": "self",
+      "text": "Explaining the delay clearly without sounding defensive.",
+      "type": "text",
+      "timestamp": "2026-01-08T19:36:00.000Z"
+    },
+    {
+      "id": "m_026",
+      "speaker": "other",
+      "text": "Could you lead with what changed and what you can do next?",
+      "type": "text",
+      "timestamp": "2026-01-08T19:40:00.000Z"
+    },
+    {
+      "id": "m_027",
+      "speaker": "self",
+      "text": "That would keep it practical. I will write those two points down.",
+      "type": "text",
+      "timestamp": "2026-01-08T19:44:00.000Z"
+    },
+    {
+      "id": "m_028",
+      "speaker": "other",
+      "text": "Would you like me to listen to the opening once?",
+      "type": "text",
+      "timestamp": "2026-01-08T19:48:00.000Z"
+    },
+    {
+      "id": "m_029",
+      "speaker": "self",
+      "text": "Yes, after lunch, when I have shaped it into a complete thought.",
+      "type": "text",
+      "timestamp": "2026-01-08T19:52:00.000Z"
+    },
+    {
+      "id": "m_030",
+      "speaker": "other",
+      "text": "That timing works for me. I have a deadline before lunch too.",
+      "type": "text",
+      "timestamp": "2026-01-08T19:56:00.000Z"
+    },
+    {
+      "id": "m_031",
+      "speaker": "self",
+      "text": "I will keep the common room quiet so we can both concentrate.",
+      "type": "text",
+      "timestamp": "2026-01-08T20:00:00.000Z"
+    },
+    {
+      "id": "m_032",
+      "speaker": "other",
+      "text": "I appreciate that. Shall we take a short break together at noon?",
+      "type": "text",
+      "timestamp": "2026-01-08T20:04:00.000Z"
+    },
+    {
+      "id": "m_033",
+      "speaker": "self",
+      "text": "Yes, ten minutes by the window would help both of us reset.",
+      "type": "text",
+      "timestamp": "2026-01-08T20:08:00.000Z"
+    },
+    {
+      "id": "m_034",
+      "speaker": "other",
+      "text": "Would you rather have soup or sandwiches for lunch?",
+      "type": "text",
+      "timestamp": "2026-01-08T20:12:00.000Z"
+    },
+    {
+      "id": "m_035",
+      "speaker": "self",
+      "text": "Soup sounds better, and I can warm it while you finish your note.",
+      "type": "text",
+      "timestamp": "2026-01-08T20:16:00.000Z"
+    },
+    {
+      "id": "m_036",
+      "speaker": "other",
+      "text": "Could we add the bread left from yesterday?",
+      "type": "text",
+      "timestamp": "2026-01-08T20:20:00.000Z"
+    },
+    {
+      "id": "m_037",
+      "speaker": "self",
+      "text": "Yes, I will toast it so it does not go to waste.",
+      "type": "text",
+      "timestamp": "2026-01-08T20:24:00.000Z"
+    },
+    {
+      "id": "m_038",
+      "speaker": "other",
+      "text": "I like how we have been using what we already have.",
+      "type": "text",
+      "timestamp": "2026-01-08T20:28:00.000Z"
+    },
+    {
+      "id": "m_039",
+      "speaker": "self",
+      "text": "Me too. It saves money and makes the kitchen easier to manage.",
+      "type": "text",
+      "timestamp": "2026-01-08T20:32:00.000Z"
+    },
+    {
+      "id": "m_040",
+      "speaker": "other",
+      "text": "Should we review the food budget this evening?",
+      "type": "text",
+      "timestamp": "2026-01-08T20:36:00.000Z"
+    },
+    {
+      "id": "m_041",
+      "speaker": "self",
+      "text": "That would be useful, as long as we keep it to twenty minutes.",
+      "type": "text",
+      "timestamp": "2026-01-08T20:40:00.000Z"
+    },
+    {
+      "id": "m_042",
+      "speaker": "other",
+      "text": "Twenty minutes is enough. What should we look at first?",
+      "type": "text",
+      "timestamp": "2026-01-08T20:44:00.000Z"
+    },
+    {
+      "id": "m_043",
+      "speaker": "self",
+      "text": "The recent grocery totals, then one change we both can maintain.",
+      "type": "text",
+      "timestamp": "2026-01-08T20:48:00.000Z"
+    },
+    {
+      "id": "m_044",
+      "speaker": "other",
+      "text": "I would rather adjust snacks than cut the meals we enjoy.",
+      "type": "text",
+      "timestamp": "2026-01-08T20:52:00.000Z"
+    },
+    {
+      "id": "m_045",
+      "speaker": "self",
+      "text": "I agree. A plan has to support us, not make every meal stressful.",
+      "type": "text",
+      "timestamp": "2026-01-08T20:56:00.000Z"
+    },
+    {
+      "id": "m_046",
+      "speaker": "other",
+      "text": "Before we wrap up, can we return to what we said earlier?",
+      "type": "text",
+      "timestamp": "2026-01-08T21:00:00.000Z"
+    },
+    {
+      "id": "m_047",
+      "speaker": "self",
+      "text": "Yes, I have one more thought about it.",
+      "type": "text",
+      "timestamp": "2026-01-08T21:04:00.000Z"
+    },
+    {
+      "id": "m_048",
+      "speaker": "self",
+      "text": "I feel secure in the relationship we have built as partners, including in ordinary moments.",
+      "type": "text",
+      "timestamp": "2026-01-08T21:08:00.000Z"
+    },
+    {
+      "id": "m_049",
+      "speaker": "other",
+      "text": "Me too. I am proud of our relationship.",
+      "type": "text",
+      "timestamp": "2026-01-08T21:12:00.000Z"
+    },
+    {
+      "id": "m_050",
+      "speaker": "self",
+      "text": "I am proud of us.",
+      "type": "text",
+      "timestamp": "2026-01-08T21:16:00.000Z"
+    }
+  ],
+  "stage_evidence_message_ids": [
+    "m_001",
+    "m_002",
+    "m_003",
+    "m_004",
+    "m_005",
+    "m_048"
+  ],
+  "excluded_stage_cues": [
+    "long-term remote-only interaction",
+    "active breakup decision"
+  ],
+  "render": {
+    "width": 430,
+    "height": 932,
+    "bubbles_per_image": 14,
+    "overlap_messages": 2,
+    "page_message_ids": [
+      [
+        "m_001",
+        "m_002",
+        "m_003",
+        "m_004",
+        "m_005",
+        "m_006",
+        "m_007",
+        "m_008",
+        "m_009",
+        "m_010",
+        "m_011",
+        "m_012",
+        "m_013",
+        "m_014"
+      ],
+      [
+        "m_013",
+        "m_014",
+        "m_015",
+        "m_016",
+        "m_017",
+        "m_018",
+        "m_019",
+        "m_020",
+        "m_021",
+        "m_022",
+        "m_023",
+        "m_024",
+        "m_025",
+        "m_026"
+      ],
+      [
+        "m_025",
+        "m_026",
+        "m_027",
+        "m_028",
+        "m_029",
+        "m_030",
+        "m_031",
+        "m_032",
+        "m_033",
+        "m_034",
+        "m_035",
+        "m_036",
+        "m_037",
+        "m_038"
+      ],
+      [
+        "m_037",
+        "m_038",
+        "m_039",
+        "m_040",
+        "m_041",
+        "m_042",
+        "m_043",
+        "m_044",
+        "m_045",
+        "m_046",
+        "m_047",
+        "m_048",
+        "m_049",
+        "m_050"
+      ]
+    ]
+  }
+}

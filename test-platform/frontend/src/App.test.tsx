@@ -619,6 +619,158 @@ describe("第三阶段 AI 测试工作台", () => {
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes("owner_type=tool") && String(url).includes("owner_id=truthy-search"))).toBe(true);
   });
 
+  it("Secret 页按 Runtime Scope 过滤项目专属定义", async () => {
+    window.history.replaceState({}, "", "/settings/secrets?scope_id=tps_truthy_dev_test");
+    const scopes = [{
+      id: "tps_truthy_dev_test", environment_id: "dev", tool_id: "api-autotest",
+      platform_project_id: "project_truthy", platform_project_name: "Truthy 平台项目",
+      project_id: "truthy", display_name: "Truthy API", target_env: "test", status: "active",
+      is_default: true, revision: 1, active_release: null,
+    }, {
+      id: "tps_dating_dev_test", environment_id: "dev", tool_id: "api-autotest",
+      platform_project_id: "project_dating", platform_project_name: "Dating 平台项目",
+      project_id: "dating", display_name: "Dating AI Assistant", target_env: "test", status: "active",
+      is_default: true, revision: 1, active_release: null,
+    }];
+    const commonSecret = {
+      id: "api-autotest.COMMON_SECRET", key: "COMMON_SECRET", display_name: "公共 Secret",
+      description: "", owner_type: "tool", owner_id: "api-autotest", group_key: "credentials",
+      value_type: "secret", sensitivity: "secret", required: false, default_value: null,
+      validation_schema: {}, apply_mode: "next_task", editable: true, sort_order: 10,
+      value_scope: "system", credential_provider_type: null,
+    };
+    const datingSecret = {
+      ...commonSecret,
+      id: "api-autotest.DATING_EVALUATION_API_KEY", key: "DATING_EVALUATION_API_KEY",
+      display_name: "Dating Evaluation API Key", sort_order: 20,
+      validation_schema: { project_ids: ["dating"] },
+    };
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const url = String(input);
+      if (url.endsWith("/auth/me")) return jsonResponse(auth);
+      if (url.endsWith("/tools")) return jsonResponse({ items: allTools });
+      if (url.includes("/runtime-scopes?")) return jsonResponse({ items: scopes });
+      if (url.includes("/config/definitions")) return jsonResponse([commonSecret, datingSecret]);
+      if (url.includes("/secrets?")) return jsonResponse([]);
+      return jsonResponse({});
+    });
+
+    render(<App />);
+
+    expect(await screen.findByText("公共 Secret")).toBeInTheDocument();
+    expect(screen.queryByText("Dating Evaluation API Key")).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("平台项目"), { target: { value: "project_dating" } });
+    expect(await screen.findByText("Dating Evaluation API Key")).toBeInTheDocument();
+    expect(window.location.search).toBe("?scope_id=tps_dating_dev_test");
+  });
+
+  it("首次配置长名称 Secret 时使用数据库可接受的短 ID", async () => {
+    window.history.replaceState(
+      {},
+      "",
+      "/settings/secrets?scope_id=tps_e6c4218848a74086892a8abd87c7e8b8",
+    );
+    const scope = {
+      id: "tps_e6c4218848a74086892a8abd87c7e8b8", environment_id: "dev",
+      tool_id: "api-autotest", platform_project_id: "project_dating",
+      platform_project_name: "Dating 平台项目", project_id: "dating",
+      display_name: "Dating AI Assistant", target_env: "test", status: "active",
+      is_default: true, revision: 1, active_release: null,
+    };
+    const definition = {
+      id: "api-autotest.runtime.dating-evaluation.api-key",
+      key: "DATING_EVALUATION_API_KEY", display_name: "Dating Evaluation API Key",
+      description: "", owner_type: "tool", owner_id: "api-autotest",
+      group_key: "credentials", value_type: "secret", sensitivity: "secret",
+      required: false, default_value: null, validation_schema: { project_ids: ["dating"] },
+      apply_mode: "next_task", editable: true, sort_order: 80,
+      value_scope: "system", credential_provider_type: null,
+    };
+    let savedSecretId = "";
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url = String(input);
+      if (url.endsWith("/auth/me")) return jsonResponse(auth);
+      if (url.endsWith("/tools")) return jsonResponse({ items: allTools });
+      if (url.includes("/runtime-scopes?")) return jsonResponse({ items: [scope] });
+      if (url.includes("/config/definitions")) return jsonResponse([definition]);
+      if (url.includes("/secrets/") && init?.method === "PUT") {
+        savedSecretId = decodeURIComponent(url.split("/").at(-1) ?? "");
+        return jsonResponse({
+          id: savedSecretId, environment_id: "dev", owner_type: "tool_project_scope",
+          owner_id: scope.id, definition_id: definition.id, configured: true,
+          status: "healthy", version: 1, expires_at: null,
+          updated_at: "2026-08-31T00:00:00Z",
+        });
+      }
+      if (url.includes("/secrets?")) return jsonResponse([]);
+      return jsonResponse({});
+    });
+
+    render(<App />);
+
+    expect(await screen.findByText("Dating Evaluation API Key")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "替换" }));
+    fireEvent.change(screen.getByLabelText("Secret 新值"), {
+      target: { value: "test-only-secret" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "加密保存" }));
+
+    await waitFor(() => expect(savedSecretId).not.toBe(""));
+    expect(savedSecretId).toMatch(/^sec_[0-9a-f]{32}$/);
+    expect(savedSecretId.length).toBeLessThanOrEqual(64);
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Secret 新版本已加密保存；当前 Release 尚未变更",
+    );
+    expect(screen.getByRole("link", { name: "前往发布 Release" })).toHaveAttribute(
+      "href",
+      `/settings/config?scope_id=${scope.id}`,
+    );
+    expect(screen.queryByText(/Secret 新版本已加密保存并激活/)).not.toBeInTheDocument();
+  });
+
+  it("替换已有 Secret 时复用服务端元数据中的 ID", async () => {
+    window.history.replaceState({}, "", "/settings/secrets?tool_id=truthy-search");
+    const definition = {
+      id: "truthy-search.AUTH_TOKEN", key: "AUTH_TOKEN", display_name: "Access Token",
+      description: "", owner_type: "tool", owner_id: "truthy-search",
+      group_key: "credentials", value_type: "secret", sensitivity: "secret",
+      required: true, default_value: null, validation_schema: {}, apply_mode: "next_task",
+      editable: true, sort_order: 10, value_scope: "system", credential_provider_type: null,
+    };
+    const existing = {
+      id: "sec_0123456789abcdef0123456789abcdef", environment_id: "dev",
+      owner_type: "tool", owner_id: "truthy-search", definition_id: definition.id,
+      configured: true, status: "healthy", version: 3, expires_at: null,
+      updated_at: "2026-08-31T00:00:00Z",
+    };
+    let savedSecretId = "";
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url = String(input);
+      if (url.endsWith("/auth/me")) return jsonResponse(auth);
+      if (url.endsWith("/tools")) return jsonResponse({ items: allTools });
+      if (url.includes("/runtime-scopes?")) return jsonResponse({ items: [] });
+      if (url.includes("/config/definitions")) return jsonResponse([definition]);
+      if (url.includes("/secrets/") && init?.method === "PUT") {
+        savedSecretId = decodeURIComponent(url.split("/").at(-1) ?? "");
+        return jsonResponse({ ...existing, version: 4 });
+      }
+      if (url.includes("/secrets?")) return jsonResponse([existing]);
+      return jsonResponse({});
+    });
+
+    render(<App />);
+
+    expect(await screen.findByText("Access Token")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "替换" }));
+    fireEvent.change(screen.getByLabelText("Secret 新值"), {
+      target: { value: "replacement-secret" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "加密保存" }));
+
+    await waitFor(() => expect(savedSecretId).toBe(existing.id));
+  });
+
   it("配置控制面按 Runtime Scope 读取配置，并把固定 TEST 环境作为只读上下文", async () => {
     window.history.replaceState({}, "", "/settings/config?scope_id=tps_dating_dev_test");
     const scopes = {

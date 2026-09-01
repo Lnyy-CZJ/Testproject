@@ -1,0 +1,27 @@
+{
+  "schema_version": "aidating.e2e.case.v1",
+  "case_id": "analysis-stage-reconnecting-positive-03",
+  "task_kind": "analysis",
+  "locale": "en-US",
+  "media": [
+    {
+      "path": "Reconnecting重新联系/example_03/chat_01.png"
+    },
+    {
+      "path": "Reconnecting重新联系/example_03/chat_02.png"
+    },
+    {
+      "path": "Reconnecting重新联系/example_03/chat_03.png"
+    },
+    {
+      "path": "Reconnecting重新联系/example_03/chat_04.png"
+    }
+  ],
+  "analysis": {
+    "other_person_name": "Jonah"
+  },
+  "expect": {
+    "task_status": "succeeded",
+    "result_schema": "dating.relationship_analysis.v1"
+  }
+}

@@ -1,0 +1,6 @@
+id: GetReplyResult
+name: 获取 Help Me Reply 结果
+credential_profile: anonymous_session
+request:
+  service_name: tool.dating.DatingAssistantService
+  method_name: GetReplyResult

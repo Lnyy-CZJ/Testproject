@@ -102,8 +102,8 @@ jobs:
             context: Truthy_Search
             dockerfile: Truthy_Search/Dockerfile
           - component_id: api-autotest
-            context: Truthy_ApiAutoTest2
-            dockerfile: Truthy_ApiAutoTest2/Dockerfile
+            context: api-autotest
+            dockerfile: api-autotest/Dockerfile
           - component_id: functional-test-agent
             context: functional-test-agent
             dockerfile: functional-test-agent/Dockerfile

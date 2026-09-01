@@ -1,0 +1,30 @@
+{
+  "schema_version": "aidating.e2e.case.v1",
+  "case_id": "analysis-stage-relationship-positive-03",
+  "task_kind": "analysis",
+  "locale": "en-CA",
+  "media": [
+    {
+      "path": "Relationship稳定关系/example_03/chat_01.png"
+    },
+    {
+      "path": "Relationship稳定关系/example_03/chat_02.png"
+    },
+    {
+      "path": "Relationship稳定关系/example_03/chat_03.png"
+    },
+    {
+      "path": "Relationship稳定关系/example_03/chat_04.png"
+    },
+    {
+      "path": "Relationship稳定关系/example_03/chat_05.png"
+    }
+  ],
+  "analysis": {
+    "other_person_name": "Clara"
+  },
+  "expect": {
+    "task_status": "succeeded",
+    "result_schema": "dating.relationship_analysis.v1"
+  }
+}

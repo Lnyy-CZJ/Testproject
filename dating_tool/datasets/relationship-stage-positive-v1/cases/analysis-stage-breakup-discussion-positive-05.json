@@ -1,0 +1,30 @@
+{
+  "schema_version": "aidating.e2e.case.v1",
+  "case_id": "analysis-stage-breakup-discussion-positive-05",
+  "task_kind": "analysis",
+  "locale": "en-US",
+  "media": [
+    {
+      "path": "Breakup discussion分手讨论/example_05/chat_01.png"
+    },
+    {
+      "path": "Breakup discussion分手讨论/example_05/chat_02.png"
+    },
+    {
+      "path": "Breakup discussion分手讨论/example_05/chat_03.png"
+    },
+    {
+      "path": "Breakup discussion分手讨论/example_05/chat_04.png"
+    },
+    {
+      "path": "Breakup discussion分手讨论/example_05/chat_05.png"
+    }
+  ],
+  "analysis": {
+    "other_person_name": "Lila"
+  },
+  "expect": {
+    "task_status": "succeeded",
+    "result_schema": "dating.relationship_analysis.v1"
+  }
+}

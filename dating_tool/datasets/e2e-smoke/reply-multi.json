@@ -1,0 +1,23 @@
+{
+  "schema_version": "aidating.e2e.case.v1",
+  "case_id": "e2e-reply-multi-001",
+  "task_kind": "reply",
+  "locale": "en-US",
+  "media": [
+    {"path": "media/reply-multi-01.png"},
+    {"path": "media/reply-multi-02.png"},
+    {"path": "media/reply-multi-03.png"}
+  ],
+  "preferences": {
+    "dating_goal": "serious_relationship",
+    "your_voice": "warm_direct"
+  },
+  "reply": {
+    "requested_intent": "advance",
+    "background": "Synthetic multi-image test conversation."
+  },
+  "expect": {
+    "task_status": "succeeded",
+    "result_schema": "dating.reply_generation.v1"
+  }
+}

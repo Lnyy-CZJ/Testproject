@@ -1,0 +1,27 @@
+{
+  "schema_version": "aidating.e2e.case.v1",
+  "case_id": "analysis-stage-situationship-positive-02",
+  "task_kind": "analysis",
+  "locale": "en-GB",
+  "media": [
+    {
+      "path": "Situationship未定义关系/example_02/chat_01.png"
+    },
+    {
+      "path": "Situationship未定义关系/example_02/chat_02.png"
+    },
+    {
+      "path": "Situationship未定义关系/example_02/chat_03.png"
+    },
+    {
+      "path": "Situationship未定义关系/example_02/chat_04.png"
+    }
+  ],
+  "analysis": {
+    "other_person_name": "Daniel"
+  },
+  "expect": {
+    "task_status": "succeeded",
+    "result_schema": "dating.relationship_analysis.v1"
+  }
+}

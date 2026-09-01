@@ -1,0 +1,250 @@
+"""requests HTTP 调用与原始请求响应日志封装。"""
+
+from __future__ import annotations
+
+import json
+import time
+from copy import deepcopy
+from typing import Any
+
+import requests
+
+from utils.custom.logger import get_logger
+from utils.third_party.allure_reporter import attach_json
+
+LOGGER = get_logger(__name__)
+
+
+def mask_sensitive(data: Any) -> Any:
+    """兼容旧调用名并返回原始数据的深拷贝。
+
+    参数说明:
+        data: 准备写入日志或报告的数据，可为任意 JSON 兼容结构。
+
+    返回值:
+        内容不变的深拷贝；原对象不会被修改。
+
+    设计说明:
+        历史调用方和第三方扩展仍可能导入 ``mask_sensitive``。保留函数名可避免
+        破坏接口，但按当前产品要求不再替换 Token、Header 或签名 URL。
+    """
+    return deepcopy(data)
+
+
+def _format_log_data(data: Any) -> str:
+    """将请求或响应数据格式化为便于终端阅读的文本。
+
+    参数说明:
+        data: JSON 兼容对象或普通文本。
+
+    返回值:
+        JSON 对象使用中文友好的缩进格式；其他类型转换为字符串。
+
+    异常说明:
+        不向调用方抛出序列化异常，遇到非 JSON 类型时回退为字符串。
+    """
+    if isinstance(data, str):
+        # 非 JSON 响应已经是服务端原文；再次 json.dumps 会增加引号并把真实
+        # 换行转义为 ``\\n``，违反文件与终端日志的逐字保留契约。
+        return data
+    try:
+        return json.dumps(data, ensure_ascii=False, indent=2, default=str)
+    except (TypeError, ValueError):
+        return str(data)
+
+
+def _hide_selected_headers(
+    headers: dict[str, str],
+    sensitive_headers: set[str] | None,
+) -> dict[str, str]:
+    """仅隐藏调用方明确声明的 Header，其他执行日志继续保持原文。
+
+    Evaluation API Key 的后端协议明确禁止进入日志与报告，因此由调用方传入
+    ``sensitive_headers={"Authorization"}``。匹配忽略大小写，但真实网络请求
+    始终使用原 ``headers``，本函数只构造诊断副本。
+    """
+
+    hidden_names = {name.lower() for name in (sensitive_headers or set())}
+    return {
+        key: (
+            "[REDACTED: evaluation API key]"
+            if key.lower() in hidden_names
+            else value
+        )
+        for key, value in headers.items()
+    }
+
+
+class HttpClient:
+    """提供框架统一使用的最小 HTTP POST JSON 能力。"""
+
+    def __init__(self, session: Any | None = None) -> None:
+        """创建客户端；允许测试注入兼容 requests.Session 的替身。"""
+        self.session = session or requests.Session()
+
+    def post_json(
+        self,
+        url: str,
+        headers: dict[str, str],
+        payload: dict[str, Any],
+        timeout: float,
+        sensitive_headers: set[str] | None = None,
+    ) -> requests.Response:
+        """发送 JSON POST 请求。
+
+        参数说明:
+            url: 完整请求地址。
+            headers: HTTP 请求头。
+            payload: Gateway JSON 请求体。
+            timeout: 请求超时秒数。
+            sensitive_headers: 仅用于日志与报告副本的 Header 名白名单；不会
+                修改真实网络请求。未提供时继续完整记录全部 Header。
+
+        返回值:
+            requests 返回的 Response 对象。
+
+        异常说明:
+            requests.RequestException: 网络错误或超时时记录原始请求后原样抛出。
+        """
+        request_details = {
+            "url": url,
+            "headers": _hide_selected_headers(headers, sensitive_headers),
+            "payload": deepcopy(payload),
+        }
+        LOGGER.info("Gateway 请求数据:\n%s", _format_log_data(request_details))
+        attach_json("Gateway 请求", request_details)
+        started_at = time.perf_counter()
+        try:
+            response = self.session.post(
+                url,
+                headers=headers,
+                json=payload,
+                timeout=timeout,
+            )
+        except requests.RequestException as exc:
+            elapsed_ms = (time.perf_counter() - started_at) * 1000
+            attach_json(
+                "Gateway 请求异常",
+                {
+                    "request": request_details,
+                    "elapsed_ms": elapsed_ms,
+                    "exception_type": type(exc).__name__,
+                    "exception_message": str(exc),
+                },
+            )
+            LOGGER.error(
+                "Gateway 请求异常: %s: %s elapsed_ms=%.2f\n%s",
+                type(exc).__name__,
+                exc,
+                elapsed_ms,
+                _format_log_data(request_details),
+            )
+            raise
+
+        response_headers = deepcopy(dict(getattr(response, "headers", {}) or {}))
+        try:
+            response_body = response.json()
+            response_attachment = {
+                "status_code": response.status_code,
+                "elapsed_ms": (time.perf_counter() - started_at) * 1000,
+                "headers": response_headers,
+                "body_type": "json",
+                "body": deepcopy(response_body),
+            }
+        except (TypeError, ValueError):
+            # 非 JSON 响应仍需输出原始文本，方便定位网关或代理异常。
+            response_body = getattr(response, "text", "")
+            response_attachment = {
+                "status_code": response.status_code,
+                "elapsed_ms": (time.perf_counter() - started_at) * 1000,
+                "headers": response_headers,
+                "body_type": "text",
+                "body": response_body,
+                "body_length": len(response_body),
+            }
+        attach_json("Gateway 响应", response_attachment)
+        LOGGER.info(
+            "Gateway 响应数据: HTTP %s elapsed_ms=%.2f\nheaders=%s\nbody=%s",
+            response.status_code,
+            (time.perf_counter() - started_at) * 1000,
+            _format_log_data(response_headers),
+            _format_log_data(response_body),
+        )
+        return response
+
+    def put_bytes(
+        self,
+        url: str,
+        headers: dict[str, str],
+        content: bytes,
+        timeout: float,
+    ) -> requests.Response:
+        """向预签名地址上传二进制内容。
+
+        参数说明:
+            url: PrepareMediaUpload 返回的预签名上传地址。
+            headers: PrepareMediaUpload 返回的 upload_headers，原样用于 PUT。
+            content: 待上传文件的原始字节。
+            timeout: 请求超时秒数。
+
+        返回值:
+            requests 返回的 Response；由流程层判断是否为 HTTP 2xx。
+
+        异常说明:
+            requests.RequestException: 网络错误或超时时记录原始信息后原样抛出。
+        """
+        request_details = {
+            "url": url,
+            "headers": deepcopy(headers),
+            "content_length": len(content),
+        }
+        LOGGER.info("PUT 上传请求数据:\n%s", _format_log_data(request_details))
+        attach_json("COS PUT 请求", request_details)
+        started_at = time.perf_counter()
+        try:
+            response = self.session.put(
+                url=url,
+                headers=headers,
+                data=content,
+                timeout=timeout,
+            )
+        except requests.RequestException as exc:
+            elapsed_ms = (time.perf_counter() - started_at) * 1000
+            attach_json(
+                "COS PUT 请求异常",
+                {
+                    "request": request_details,
+                    "elapsed_ms": elapsed_ms,
+                    "exception_type": type(exc).__name__,
+                    "exception_message": str(exc),
+                },
+            )
+            LOGGER.error(
+                "PUT 上传请求异常: %s: %s elapsed_ms=%.2f\n%s",
+                type(exc).__name__,
+                exc,
+                elapsed_ms,
+                _format_log_data(request_details),
+            )
+            raise
+        elapsed_ms = (time.perf_counter() - started_at) * 1000
+        response_headers = deepcopy(dict(getattr(response, "headers", {}) or {}))
+        response_body = getattr(response, "text", "")
+        attach_json(
+            "COS PUT 响应",
+            {
+                "status_code": response.status_code,
+                "elapsed_ms": elapsed_ms,
+                "headers": response_headers,
+                "body": response_body,
+                "body_length": len(response_body),
+            },
+        )
+        LOGGER.info(
+            "PUT 上传响应: HTTP %s elapsed_ms=%.2f\nheaders=%s\nbody=%s",
+            response.status_code,
+            elapsed_ms,
+            _format_log_data(response_headers),
+            response_body,
+        )
+        return response

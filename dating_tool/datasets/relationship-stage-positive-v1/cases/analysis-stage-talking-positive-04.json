@@ -1,0 +1,27 @@
+{
+  "schema_version": "aidating.e2e.case.v1",
+  "case_id": "analysis-stage-talking-positive-04",
+  "task_kind": "analysis",
+  "locale": "en-NL",
+  "media": [
+    {
+      "path": "Talking持续互动/example_04/chat_01.png"
+    },
+    {
+      "path": "Talking持续互动/example_04/chat_02.png"
+    },
+    {
+      "path": "Talking持续互动/example_04/chat_03.png"
+    },
+    {
+      "path": "Talking持续互动/example_04/chat_04.png"
+    }
+  ],
+  "analysis": {
+    "other_person_name": "Theo"
+  },
+  "expect": {
+    "task_status": "succeeded",
+    "result_schema": "dating.relationship_analysis.v1"
+  }
+}

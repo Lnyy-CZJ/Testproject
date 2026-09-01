@@ -41,7 +41,7 @@
 
 ### 2.2 本期不实现
 
-- 不给 `TrackEvents_tess`、`Truthy_Search`、`Truthy_ApiAutoTest2` 创建 LLM 绑定；
+- 不给 `TrackEvents_tess`、`Truthy_Search`、`api-autotest` 创建 LLM 绑定；
 - 不把 Truthy_Search 上游内部使用的模型视为本平台可切换模型；
 - 不增加模型网关、转发代理、统一计费或 Token 用量结算；
 - 不增加自动模型发现、模型列表同步或 Provider SDK；

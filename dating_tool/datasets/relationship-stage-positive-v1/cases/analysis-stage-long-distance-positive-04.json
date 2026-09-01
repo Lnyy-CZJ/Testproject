@@ -1,0 +1,42 @@
+{
+  "schema_version": "aidating.e2e.case.v1",
+  "case_id": "analysis-stage-long-distance-positive-04",
+  "task_kind": "analysis",
+  "locale": "en-US",
+  "media": [
+    {
+      "path": "Long-distance异地关系/example_04/chat_01.png"
+    },
+    {
+      "path": "Long-distance异地关系/example_04/chat_02.png"
+    },
+    {
+      "path": "Long-distance异地关系/example_04/chat_03.png"
+    },
+    {
+      "path": "Long-distance异地关系/example_04/chat_04.png"
+    },
+    {
+      "path": "Long-distance异地关系/example_04/chat_05.png"
+    },
+    {
+      "path": "Long-distance异地关系/example_04/chat_06.png"
+    },
+    {
+      "path": "Long-distance异地关系/example_04/chat_07.png"
+    },
+    {
+      "path": "Long-distance异地关系/example_04/chat_08.png"
+    },
+    {
+      "path": "Long-distance异地关系/example_04/chat_09.png"
+    }
+  ],
+  "analysis": {
+    "other_person_name": "Rowan"
+  },
+  "expect": {
+    "task_status": "succeeded",
+    "result_schema": "dating.relationship_analysis.v1"
+  }
+}

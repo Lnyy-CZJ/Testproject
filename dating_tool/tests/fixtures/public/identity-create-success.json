@@ -1,0 +1,1 @@
+{"source":"documented","response":{"code":0,"responses":[{"id":"__REQUEST_ID__","success":true,"code":0,"data":{"user_id":"fixture-user","access_token":"x","expires_time":4102444800000,"refresh_token":"y","refresh_expires_time":4102444800000}}]}}

@@ -1259,9 +1259,9 @@ log_filter_tool/people_search_ai.py
 
 Truthy_Search/web_app.py
 
-Truthy_ApiAutoTest2/web/app.py
-Truthy_ApiAutoTest2/web/task_manager.py
-Truthy_ApiAutoTest2/test_cases/conftest.py
+api-autotest/web/app.py
+api-autotest/web/task_manager.py
+api-autotest/test_cases/conftest.py
 ```
 
 只在职责无法放入现有文件时创建 Alembic 和一次性迁移命令两个必需文件，不新增抽象层或第三方依赖。

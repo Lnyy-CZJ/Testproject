@@ -1,0 +1,565 @@
+{
+  "schema_version": "aidating.chat-screenshot-source.v1",
+  "case_id": "analysis-stage-on-a-break-positive-01",
+  "task_kind": "analysis",
+  "target_stage": "ON_A_BREAK",
+  "positive_track": "stage_accurate",
+  "locale": "en-NL",
+  "participants": {
+    "self": {
+      "id": "self",
+      "display_name": "You",
+      "pronouns": "he/him"
+    },
+    "other": {
+      "id": "other",
+      "display_name": "Olivia",
+      "pronouns": "she/her"
+    }
+  },
+  "style_id": "sage-light",
+  "image_count": 5,
+  "pair_type": "woman-man",
+  "scenario": {
+    "slug": "two-week-pause",
+    "title": "Two Week Pause",
+    "premise": "Partners agree to a defined relationship pause and name its duration.",
+    "topic": "defined break duration"
+  },
+  "messages": [
+    {
+      "id": "m_001",
+      "speaker": "self",
+      "text": "I think we need a pause to reflect without trying to solve everything at once.",
+      "type": "text",
+      "timestamp": "2026-01-08T18:00:00.000Z"
+    },
+    {
+      "id": "m_002",
+      "speaker": "other",
+      "text": "I agree. Would two weeks give us enough room to think?",
+      "type": "text",
+      "timestamp": "2026-01-08T18:04:00.000Z"
+    },
+    {
+      "id": "m_003",
+      "speaker": "self",
+      "text": "Two weeks feels clear and manageable to me.",
+      "type": "text",
+      "timestamp": "2026-01-08T18:08:00.000Z"
+    },
+    {
+      "id": "m_004",
+      "speaker": "other",
+      "text": "Then we are pausing until the fifteenth.",
+      "type": "text",
+      "timestamp": "2026-01-08T18:12:00.000Z"
+    },
+    {
+      "id": "m_005",
+      "speaker": "self",
+      "text": "We are still on a two-week relationship pause until the fifteenth.",
+      "type": "text",
+      "timestamp": "2026-01-08T18:16:00.000Z"
+    },
+    {
+      "id": "m_006",
+      "speaker": "other",
+      "text": "I understand. Can we confirm what this pause is meant to give us?",
+      "type": "text",
+      "timestamp": "2026-01-08T18:20:00.000Z"
+    },
+    {
+      "id": "m_007",
+      "speaker": "self",
+      "text": "It is time to think clearly without continuing the same conflict.",
+      "type": "text",
+      "timestamp": "2026-01-08T18:24:00.000Z"
+    },
+    {
+      "id": "m_008",
+      "speaker": "other",
+      "text": "And it is not a final decision about the relationship today.",
+      "type": "text",
+      "timestamp": "2026-01-08T18:28:00.000Z"
+    },
+    {
+      "id": "m_009",
+      "speaker": "self",
+      "text": "Correct. We are pausing contact, not deciding the outcome yet.",
+      "type": "text",
+      "timestamp": "2026-01-08T18:32:00.000Z"
+    },
+    {
+      "id": "m_010",
+      "speaker": "other",
+      "text": "When should the pause begin so the boundary is unambiguous?",
+      "type": "text",
+      "timestamp": "2026-01-08T18:36:00.000Z"
+    },
+    {
+      "id": "m_011",
+      "speaker": "self",
+      "text": "It should begin after this conversation and the essential details are settled.",
+      "type": "text",
+      "timestamp": "2026-01-08T18:40:00.000Z"
+    },
+    {
+      "id": "m_012",
+      "speaker": "other",
+      "text": "How long should we leave before the first review?",
+      "type": "text",
+      "timestamp": "2026-01-08T18:44:00.000Z"
+    },
+    {
+      "id": "m_013",
+      "speaker": "self",
+      "text": "Two weeks feels long enough to reflect without making the pause indefinite.",
+      "type": "text",
+      "timestamp": "2026-01-08T18:48:00.000Z"
+    },
+    {
+      "id": "m_014",
+      "speaker": "other",
+      "text": "Would a review after two weeks mean we must decide then?",
+      "type": "text",
+      "timestamp": "2026-01-08T18:52:00.000Z"
+    },
+    {
+      "id": "m_015",
+      "speaker": "self",
+      "text": "No, it means we check whether we need more time or can talk calmly.",
+      "type": "text",
+      "timestamp": "2026-01-08T18:56:00.000Z"
+    },
+    {
+      "id": "m_016",
+      "speaker": "other",
+      "text": "I appreciate that distinction. How should we record the review time?",
+      "type": "text",
+      "timestamp": "2026-01-08T19:00:00.000Z"
+    },
+    {
+      "id": "m_017",
+      "speaker": "self",
+      "text": "We can put one neutral reminder on our calendars and leave it there.",
+      "type": "text",
+      "timestamp": "2026-01-08T19:04:00.000Z"
+    },
+    {
+      "id": "m_018",
+      "speaker": "other",
+      "text": "Once it is recorded, I will not send reminders during the pause.",
+      "type": "text",
+      "timestamp": "2026-01-08T19:08:00.000Z"
+    },
+    {
+      "id": "m_019",
+      "speaker": "self",
+      "text": "Thank you. One agreed reminder is enough and protects the quiet.",
+      "type": "text",
+      "timestamp": "2026-01-08T19:12:00.000Z"
+    },
+    {
+      "id": "m_020",
+      "speaker": "other",
+      "text": "Should ordinary updates wait until the review conversation?",
+      "type": "text",
+      "timestamp": "2026-01-08T19:16:00.000Z"
+    },
+    {
+      "id": "m_021",
+      "speaker": "self",
+      "text": "Yes, casual updates would blur the no-contact space we are creating.",
+      "type": "text",
+      "timestamp": "2026-01-08T19:20:00.000Z"
+    },
+    {
+      "id": "m_022",
+      "speaker": "other",
+      "text": "What about messages that only say I am thinking of you?",
+      "type": "text",
+      "timestamp": "2026-01-08T19:24:00.000Z"
+    },
+    {
+      "id": "m_023",
+      "speaker": "self",
+      "text": "Those should wait too, because they still ask the other person to respond emotionally.",
+      "type": "text",
+      "timestamp": "2026-01-08T19:28:00.000Z"
+    },
+    {
+      "id": "m_024",
+      "speaker": "other",
+      "text": "I understand. Should we mute the existing chat rather than delete it?",
+      "type": "text",
+      "timestamp": "2026-01-08T19:32:00.000Z"
+    },
+    {
+      "id": "m_025",
+      "speaker": "self",
+      "text": "Muting is enough for me, and it avoids making a dramatic gesture.",
+      "type": "text",
+      "timestamp": "2026-01-08T19:36:00.000Z"
+    },
+    {
+      "id": "m_026",
+      "speaker": "other",
+      "text": "Would seeing read status create pressure during the pause?",
+      "type": "text",
+      "timestamp": "2026-01-08T19:40:00.000Z"
+    },
+    {
+      "id": "m_027",
+      "speaker": "self",
+      "text": "It might, so I will not open nonessential messages if one arrives by mistake.",
+      "type": "text",
+      "timestamp": "2026-01-08T19:44:00.000Z"
+    },
+    {
+      "id": "m_028",
+      "speaker": "other",
+      "text": "If I send something accidentally, I will not follow it with explanations.",
+      "type": "text",
+      "timestamp": "2026-01-08T19:48:00.000Z"
+    },
+    {
+      "id": "m_029",
+      "speaker": "self",
+      "text": "That helps. We can let an accidental message sit without restarting contact.",
+      "type": "text",
+      "timestamp": "2026-01-08T19:52:00.000Z"
+    },
+    {
+      "id": "m_030",
+      "speaker": "other",
+      "text": "Should reactions and shared links count as contact too?",
+      "type": "text",
+      "timestamp": "2026-01-08T19:56:00.000Z"
+    },
+    {
+      "id": "m_031",
+      "speaker": "self",
+      "text": "Yes, any direct contact should wait unless it fits an agreed exception.",
+      "type": "text",
+      "timestamp": "2026-01-08T20:00:00.000Z"
+    },
+    {
+      "id": "m_032",
+      "speaker": "other",
+      "text": "Then I will avoid every casual channel until the review.",
+      "type": "text",
+      "timestamp": "2026-01-08T20:04:00.000Z"
+    },
+    {
+      "id": "m_033",
+      "speaker": "self",
+      "text": "I will do the same so the boundary applies equally to both of us.",
+      "type": "text",
+      "timestamp": "2026-01-08T20:08:00.000Z"
+    },
+    {
+      "id": "m_034",
+      "speaker": "other",
+      "text": "What situations should count as a genuine exception?",
+      "type": "text",
+      "timestamp": "2026-01-08T20:12:00.000Z"
+    },
+    {
+      "id": "m_035",
+      "speaker": "self",
+      "text": "A safety emergency or a time-sensitive shared obligation, nothing broader.",
+      "type": "text",
+      "timestamp": "2026-01-08T20:16:00.000Z"
+    },
+    {
+      "id": "m_036",
+      "speaker": "other",
+      "text": "How should an urgent message begin so it is easy to recognize?",
+      "type": "text",
+      "timestamp": "2026-01-08T20:20:00.000Z"
+    },
+    {
+      "id": "m_037",
+      "speaker": "self",
+      "text": "Start with the practical reason and the deadline, without emotional discussion.",
+      "type": "text",
+      "timestamp": "2026-01-08T20:24:00.000Z"
+    },
+    {
+      "id": "m_038",
+      "speaker": "other",
+      "text": "Could an urgent message stay to one question when possible?",
+      "type": "text",
+      "timestamp": "2026-01-08T20:28:00.000Z"
+    },
+    {
+      "id": "m_039",
+      "speaker": "self",
+      "text": "Yes, one clear question will reduce the chance of reopening the conflict.",
+      "type": "text",
+      "timestamp": "2026-01-08T20:32:00.000Z"
+    },
+    {
+      "id": "m_040",
+      "speaker": "other",
+      "text": "If no answer is needed, I will say that directly.",
+      "type": "text",
+      "timestamp": "2026-01-08T20:36:00.000Z"
+    },
+    {
+      "id": "m_041",
+      "speaker": "self",
+      "text": "Please do. Knowing the expected action will keep the contact contained.",
+      "type": "text",
+      "timestamp": "2026-01-08T20:40:00.000Z"
+    },
+    {
+      "id": "m_042",
+      "speaker": "other",
+      "text": "What response time is reasonable for a shared obligation?",
+      "type": "text",
+      "timestamp": "2026-01-08T20:44:00.000Z"
+    },
+    {
+      "id": "m_043",
+      "speaker": "self",
+      "text": "Within one day unless the message states an earlier unavoidable deadline.",
+      "type": "text",
+      "timestamp": "2026-01-08T20:48:00.000Z"
+    },
+    {
+      "id": "m_044",
+      "speaker": "other",
+      "text": "And a safety emergency can use the fastest available route.",
+      "type": "text",
+      "timestamp": "2026-01-08T20:52:00.000Z"
+    },
+    {
+      "id": "m_045",
+      "speaker": "self",
+      "text": "Yes, safety comes before the pause, but ordinary worry does not become an emergency.",
+      "type": "text",
+      "timestamp": "2026-01-08T20:56:00.000Z"
+    },
+    {
+      "id": "m_046",
+      "speaker": "other",
+      "text": "That limit feels clear enough for me to follow.",
+      "type": "text",
+      "timestamp": "2026-01-08T21:00:00.000Z"
+    },
+    {
+      "id": "m_047",
+      "speaker": "self",
+      "text": "It feels clear to me too, which makes the pause more respectful.",
+      "type": "text",
+      "timestamp": "2026-01-08T21:04:00.000Z"
+    },
+    {
+      "id": "m_048",
+      "speaker": "other",
+      "text": "We still have one shared bill due during the pause. How should we handle it?",
+      "type": "text",
+      "timestamp": "2026-01-08T21:08:00.000Z"
+    },
+    {
+      "id": "m_049",
+      "speaker": "self",
+      "text": "I will pay my usual share and send only the payment confirmation.",
+      "type": "text",
+      "timestamp": "2026-01-08T21:12:00.000Z"
+    },
+    {
+      "id": "m_050",
+      "speaker": "other",
+      "text": "Should I acknowledge the confirmation or leave it unanswered?",
+      "type": "text",
+      "timestamp": "2026-01-08T21:16:00.000Z"
+    },
+    {
+      "id": "m_051",
+      "speaker": "self",
+      "text": "A brief received message is fine because it closes the practical task.",
+      "type": "text",
+      "timestamp": "2026-01-08T21:20:00.000Z"
+    },
+    {
+      "id": "m_052",
+      "speaker": "other",
+      "text": "There is also a delivery addressed to you at my place.",
+      "type": "text",
+      "timestamp": "2026-01-08T21:24:00.000Z"
+    },
+    {
+      "id": "m_053",
+      "speaker": "self",
+      "text": "Please leave it with the building desk, and I will collect it without meeting.",
+      "type": "text",
+      "timestamp": "2026-01-08T21:28:00.000Z"
+    },
+    {
+      "id": "m_054",
+      "speaker": "other",
+      "text": "I can do that and send the collection window only once.",
+      "type": "text",
+      "timestamp": "2026-01-08T21:32:00.000Z"
+    },
+    {
+      "id": "m_055",
+      "speaker": "self",
+      "text": "Thank you. I will not use the pickup as a reason to start a conversation.",
+      "type": "text",
+      "timestamp": "2026-01-08T21:36:00.000Z"
+    },
+    {
+      "id": "m_056",
+      "speaker": "other",
+      "text": "Do we need to exchange any keys during the pause?",
+      "type": "text",
+      "timestamp": "2026-01-08T21:40:00.000Z"
+    },
+    {
+      "id": "m_057",
+      "speaker": "self",
+      "text": "No, we can leave the keys untouched until the review unless access becomes necessary.",
+      "type": "text",
+      "timestamp": "2026-01-08T21:44:00.000Z"
+    },
+    {
+      "id": "m_058",
+      "speaker": "other",
+      "text": "Before we wrap up, can we return to what we said earlier?",
+      "type": "text",
+      "timestamp": "2026-01-08T21:48:00.000Z"
+    },
+    {
+      "id": "m_059",
+      "speaker": "self",
+      "text": "Yes, I have one more thought about it.",
+      "type": "text",
+      "timestamp": "2026-01-08T21:52:00.000Z"
+    },
+    {
+      "id": "m_060",
+      "speaker": "self",
+      "text": "I will respect the break we agreed on until our review, without treating the silence as a final answer.",
+      "type": "text",
+      "timestamp": "2026-01-08T21:56:00.000Z"
+    },
+    {
+      "id": "m_061",
+      "speaker": "other",
+      "text": "I will hold that boundary.",
+      "type": "text",
+      "timestamp": "2026-01-08T22:00:00.000Z"
+    },
+    {
+      "id": "m_062",
+      "speaker": "self",
+      "text": "Thank you.",
+      "type": "text",
+      "timestamp": "2026-01-08T22:04:00.000Z"
+    }
+  ],
+  "stage_evidence_message_ids": [
+    "m_001",
+    "m_002",
+    "m_003",
+    "m_004",
+    "m_005",
+    "m_060"
+  ],
+  "excluded_stage_cues": [
+    "final breakup decision",
+    "normal relationship routine"
+  ],
+  "render": {
+    "width": 430,
+    "height": 932,
+    "bubbles_per_image": 14,
+    "overlap_messages": 2,
+    "page_message_ids": [
+      [
+        "m_001",
+        "m_002",
+        "m_003",
+        "m_004",
+        "m_005",
+        "m_006",
+        "m_007",
+        "m_008",
+        "m_009",
+        "m_010",
+        "m_011",
+        "m_012",
+        "m_013",
+        "m_014"
+      ],
+      [
+        "m_013",
+        "m_014",
+        "m_015",
+        "m_016",
+        "m_017",
+        "m_018",
+        "m_019",
+        "m_020",
+        "m_021",
+        "m_022",
+        "m_023",
+        "m_024",
+        "m_025",
+        "m_026"
+      ],
+      [
+        "m_025",
+        "m_026",
+        "m_027",
+        "m_028",
+        "m_029",
+        "m_030",
+        "m_031",
+        "m_032",
+        "m_033",
+        "m_034",
+        "m_035",
+        "m_036",
+        "m_037",
+        "m_038"
+      ],
+      [
+        "m_037",
+        "m_038",
+        "m_039",
+        "m_040",
+        "m_041",
+        "m_042",
+        "m_043",
+        "m_044",
+        "m_045",
+        "m_046",
+        "m_047",
+        "m_048",
+        "m_049",
+        "m_050"
+      ],
+      [
+        "m_049",
+        "m_050",
+        "m_051",
+        "m_052",
+        "m_053",
+        "m_054",
+        "m_055",
+        "m_056",
+        "m_057",
+        "m_058",
+        "m_059",
+        "m_060",
+        "m_061",
+        "m_062"
+      ]
+    ]
+  }
+}

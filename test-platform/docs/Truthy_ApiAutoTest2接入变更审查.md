@@ -1,4 +1,4 @@
-# Truthy_ApiAutoTest2 接入变更审查台账（Review）
+# api-autotest 接入变更审查台账（Review）
 
 > 文档版本：V2.0
 > 创建日期：2026-08-10
@@ -15,8 +15,8 @@
 | 阶段 1：壳服务独立模式 | `268bfeb` | 2026-08-10 | 新增 web/ 壳服务与 tests/ 单元测试，.gitignore 追加 tasks/（19 个文件） |
 | 阶段 2：容器化与子路径 | `ee442ef` | 2026-08-10 | Dockerfile/.dockerignore/requirements-web.txt/平台凭证模板（5 个文件） |
 | 阶段 3：平台接入 | `901b003` | 2026-08-10 | 迁移/前端第四卡片/Nginx 路由/Compose 服务/冒烟扩展（10 个文件，均在 test-platform/） |
-| 阶段 4：报告同步链路 | `ce92754` | 2026-08-10 | 原子发布脚本/Jenkins HTTP 拉取脚本/Jenkinsfile 归档调整/README（5 个文件，均在 Truthy_ApiAutoTest2/） |
-| 阶段 5：端到端验收收尾 | `46ed333` | 2026-08-10 | session_token 脱敏修复/守卫测试同步阶段 4 契约/双 README 接入与排障文档（5 个文件，4 个在 Truthy_ApiAutoTest2/、1 个在 test-platform/） |
+| 阶段 4：报告同步链路 | `ce92754` | 2026-08-10 | 原子发布脚本/Jenkins HTTP 拉取脚本/Jenkinsfile 归档调整/README（5 个文件，均在 api-autotest/） |
+| 阶段 5：端到端验收收尾 | `46ed333` | 2026-08-10 | session_token 脱敏修复/守卫测试同步阶段 4 契约/双 README 接入与排障文档（5 个文件，4 个在 api-autotest/、1 个在 test-platform/） |
 | 推送 dev 与 Jenkins 端到端验证 | `d659f96`→`d071965` | 2026-08-10 | 探针/revert/报告端点 stat 异常修复/README 排障补充（4 个提交，均已在 dev） |
 
 > 阶段 0 的 PRD/设计文档小修（下文清单第 3、4 项）位于 test-platform/docs/ 目录，为用户新建的未跟踪文件，尚未入库；入库时将在本台账补记。
@@ -27,7 +27,7 @@
 
 ## 1. 记录范围与授权依据
 
-本部分记录 **Truthy_ApiAutoTest2 接入 test-platform 阶段 0（基线冻结）** 期间的全部文件改动。
+本部分记录 **api-autotest 接入 test-platform 阶段 0（基线冻结）** 期间的全部文件改动。
 
 授权依据（均为用户在本阶段会话中逐项确认）：
 
@@ -40,8 +40,8 @@
 
 | # | 文件 | 改动类型 | 性质 | 原因 |
 |---|------|---------|------|------|
-| 1 | `Truthy_ApiAutoTest2/test_cases/test_gateway_flow.py` | 代码修改（2 行） | 方案①修复 | RUN_FLOW_IDS 调试残留导致 CI/平台全量收集语义被破坏 |
-| 2 | `Truthy_ApiAutoTest2/test_cases/test_v13.py` | 代码修改（+17 行） | 方案②修复 | phase-six 迁移断言未跟随 extract→optional_extract 迁移 |
+| 1 | `api-autotest/test_cases/test_gateway_flow.py` | 代码修改（2 行） | 方案①修复 | RUN_FLOW_IDS 调试残留导致 CI/平台全量收集语义被破坏 |
+| 2 | `api-autotest/test_cases/test_v13.py` | 代码修改（+17 行） | 方案②修复 | phase-six 迁移断言未跟随 extract→optional_extract 迁移 |
 | 3 | `test-platform/docs/Truthy_ApiAutoTest2接入PRD.md` | 文档补充（2 处） | V1.2 一致性小修 | 8.3 环境变量清单缺 `API_AUTOTEST_REPORT_DIR` |
 | 4 | `test-platform/docs/Truthy_ApiAutoTest2接入开发设计与计划.md` | 文档补充（2 处） | V1.2 一致性小修 | 8.1 模块树 scripts/ 缺 `fetch_jenkins_report.sh` |
 
@@ -152,7 +152,7 @@
 - 任务名为 `truthy-api-autotest`（**不是**设计文档 12.1 中的示例默认值 `InterfaceAutomation`）；
 - 匿名访问返回 403，需 Basic 认证（用户名+密码方式可用）；JSON API 可取 `number/result/url/artifacts`；
 - 实测构建：#14（SUCCESS）与 #9（FAILURE）均有 `allure-report.zip` → 支持设计文档"拉取最近已完成且有产物构建"的选择策略（失败构建也有报告）；
-- 归档形态：`allure-report.zip` 位于归档根；`allure-results/**`、`logs/**` 带 `Truthy_ApiAutoTest2/` 前缀，说明 `archiveArtifacts` 当前在工作区根调用（印证设计 12.1 统一 `dir(PROJECT_DIR)` 作用域的必要性）；
+- 归档形态：`allure-report.zip` 位于归档根；`allure-results/**`、`logs/**` 带 `api-autotest/` 前缀，说明 `archiveArtifacts` 当前在工作区根调用（印证设计 12.1 统一 `dir(PROJECT_DIR)` 作用域的必要性）；
 - 调用注意：URL 中 `tree=jobs[name]` 的方括号会被 curl 当作 globbing，必须加 `-g`（globoff）。
 
 ## 5. 遗留事项与对后续开发的影响
@@ -160,7 +160,7 @@
 1. **NameWithConditionsSearch 失败用例由用户处理**。该 Flow 的设计意图为"可以只有 name，也可以 name 加其他 ConditionsSearch"，测试断言与场景数据的对齐方式由用户决定；在用户对齐全量回归仍为 1 failed，阶段 1 冒烟门槛判断时需知悉。
 2. **设计文档 JOB_NAME 默认值需同步**：12.1 中示例默认值 `InterfaceAutomation` 应在阶段 4 实施时改为实测任务名 `truthy-api-autotest`。
 3. **fetch 脚本实现方式确定**：因 Jenkins 为远程服务器（本机无 JENKINS_HOME），`scripts/fetch_jenkins_report.sh` 必须走 HTTP API + Basic 认证方式；凭证通过环境变量注入，**不得写入仓库任何文件**。
-4. **归档路径前缀**：阶段 4 统一 `dir(PROJECT_DIR)` 后产物前缀会从 `Truthy_ApiAutoTest2/...` 变化，fetch 脚本的产物定位逻辑需按届时实际归档形态编写。
+4. **归档路径前缀**：阶段 4 统一 `dir(PROJECT_DIR)` 后产物前缀会从 `api-autotest/...` 变化，fetch 脚本的产物定位逻辑需按届时实际归档形态编写。
 
 ## 6. 结论
 
@@ -176,7 +176,7 @@
 ## 7. 提交信息
 
 - Commit：`268bfeb`（分支 `dev`，父提交 `c0ba41f`）
-- 提交消息：`feat: Truthy_ApiAutoTest2 新增阶段 1 独立模式壳服务 web/ 与配套单元测试`
+- 提交消息：`feat: api-autotest 新增阶段 1 独立模式壳服务 web/ 与配套单元测试`
 - 改动规模：19 个文件，+3569 行（除 .gitignore 为修改外全部为新增）
 
 ## 8. 文件清单
@@ -242,7 +242,7 @@
 ## 13. 提交信息
 
 - Commit：`ee442ef`（分支 `dev`，父提交 `268bfeb`）
-- 提交消息：`feat: Truthy_ApiAutoTest2 新增阶段 2 容器化（Dockerfile/dockerignore/requirements-web/凭证模板）`
+- 提交消息：`feat: api-autotest 新增阶段 2 容器化（Dockerfile/dockerignore/requirements-web/凭证模板）`
 - 改动规模：5 个文件，+71/-1 行（4 个新增 + .gitignore 修改）
 
 ## 14. 文件清单
@@ -297,8 +297,8 @@ docker run -d -p 127.0.0.1:5003:5003 \
 ## 18. 提交信息
 
 - Commit：`901b003`（分支 `dev`，父提交 `ee442ef`）
-- 提交消息：`feat: Truthy_ApiAutoTest2 新增阶段 3 平台接入（迁移/前端卡片/网关路由/Compose/冒烟）`
-- 改动规模：10 个文件，+239/-11 行（1 个新增迁移 + 9 个修改），全部位于 `test-platform/`；Truthy_ApiAutoTest2 仓库本阶段**零改动**
+- 提交消息：`feat: api-autotest 新增阶段 3 平台接入（迁移/前端卡片/网关路由/Compose/冒烟）`
+- 改动规模：10 个文件，+239/-11 行（1 个新增迁移 + 9 个修改），全部位于 `test-platform/`；api-autotest 仓库本阶段**零改动**
 
 ## 19. 文件清单
 
@@ -311,7 +311,7 @@ docker run -d -p 127.0.0.1:5003:5003 \
 | 5 | `web/styles.css` | 修改 | 追加 `.tool-icon-api` 配色（紫调 #5b34a8/#f1ecff，沿用既有结构；设计偏离①，见第 22 节） |
 | 6 | `frontend/src/App.test.tsx` | 修改 | 既有断言 3→4（检测中/回退入口）；新增 2 用例：动态目录 AP 图标渲染、未知 icon_key 回退不报错；共 8 用例 |
 | 7 | `nginx/nginx.conf` | 修改 | 追加 `location = /api-autotest`（308 补斜杠）与 `location /api-autotest/`（`set $api_autotest_upstream api-autotest:5003` + `X-Forwarded-Prefix` + 502/503/504 → tool-unavailable.html），与既有三工具块完全同构 |
-| 8 | `docker-compose.yml` | 修改 | 新增 `api-autotest` 服务（build `../Truthy_ApiAutoTest2`、环境变量、五组挂载、healthcheck 走 5003 子路径）；`platform-gateway.depends_on` 追加 api-autotest |
+| 8 | `docker-compose.yml` | 修改 | 新增 `api-autotest` 服务（build `../api-autotest`、环境变量、五组挂载、healthcheck 走 5003 子路径）；`platform-gateway.depends_on` 追加 api-autotest |
 | 9 | `tests/test_smoke.py` | 修改 | `tool_ids` 断言扩为 4 条；新增用例：页面含"接口自动化"、health status=ok、catalog 含 apis/cases/flows、tasks 含 items；文档串"三个"→"四个" |
 | 10 | `.env.example` | 修改 | 追加 `API_AUTOTEST_TASK_TIMEOUT_SECONDS`/`API_AUTOTEST_TASKS_RETAIN` 可选项说明 |
 
@@ -337,9 +337,9 @@ docker run -d -p 127.0.0.1:5003:5003 \
 ## 22. 与设计文档 V1.2 的偏离点（审查重点）
 
 1. **图标配色落在 `web/styles.css` 而非设计 13.4 所述"app.css"**：`frontend/src/app.css` 首行即 `@import "../../web/styles.css"`，三个既有 `.tool-icon-*` 配色全部定义在 `web/styles.css`；为与既有样式同源，`.tool-icon-api` 追加在 `web/styles.css`（渲染效果与设计意图一致）。
-2. **Compose 挂载 `.env.platform` 的前置文件由验证时创建**：设计要求平台侧使用独立凭证文件 `../Truthy_ApiAutoTest2/.env.platform`，验证前该文件不存在（缺失时 Docker 会将其创建为目录导致挂载损坏）。已从用户现有 `.env` 复制生成该文件用于验证；**该文件被 gitignore，未入库**。如设计要求落地"不同测试账号"，后续替换该文件内容即可，无需改代码。
+2. **Compose 挂载 `.env.platform` 的前置文件由验证时创建**：设计要求平台侧使用独立凭证文件 `../api-autotest/.env.platform`，验证前该文件不存在（缺失时 Docker 会将其创建为目录导致挂载损坏）。已从用户现有 `.env` 复制生成该文件用于验证；**该文件被 gitignore，未入库**。如设计要求落地"不同测试账号"，后续替换该文件内容即可，无需改代码。
 
-除以上两点外无范围偏离：Truthy_ApiAutoTest2 框架与 web/ 壳服务零改动；NameWithConditionsSearch 相关文件未触碰；Jenkins 凭证未入库。
+除以上两点外无范围偏离：api-autotest 框架与 web/ 壳服务零改动；NameWithConditionsSearch 相关文件未触碰；Jenkins 凭证未入库。
 
 ## 23. 备注
 
@@ -354,8 +354,8 @@ docker run -d -p 127.0.0.1:5003:5003 \
 ## 24. 提交信息
 
 - Commit：`ce92754`（分支 `dev`，父提交 `901b003`）
-- 提交消息：`feat: Truthy_ApiAutoTest2 新增阶段 4 报告同步链路（原子发布/Jenkins 拉取/Jenkinsfile 归档）`
-- 改动规模：5 个文件，+984/-5 行（3 个新增 + 2 个修改），全部位于 `Truthy_ApiAutoTest2/`；test-platform 本阶段**零改动**
+- 提交消息：`feat: api-autotest 新增阶段 4 报告同步链路（原子发布/Jenkins 拉取/Jenkinsfile 归档）`
+- 改动规模：5 个文件，+984/-5 行（3 个新增 + 2 个修改），全部位于 `api-autotest/`；test-platform 本阶段**零改动**
 
 ## 25. 文件清单
 
@@ -364,7 +364,7 @@ docker run -d -p 127.0.0.1:5003:5003 \
 | 1 | `scripts/publish_allure_report.sh` | 新增 | Allure HTML 报告原子发布：版本目录 `reports/allure-reports/<version>/` + `report-meta.json` 元信息 + `allure-current` 相对软链接经 rename(2) 原子切换；mkdir 原子锁（超龄 600s 回收）、无引用暂存目录清理（超龄 3600s）、退出码 0/2/3/4（设计 11.3） |
 | 2 | `scripts/fetch_jenkins_report.sh` | 新增 | Jenkins HTTP API + Basic 认证拉取：扫描已完成构建（result 非 null，不按结果过滤）→ 校验归档含 `allure-report-publish/index.html` → 下载 zip 解压 → 带构建元信息调用发布脚本；凭证仅经环境变量；退出码 0/2/5/6（设计 12.2 + 第 5 节遗留事项 3，偏离①） |
 | 3 | `tests/test_report_scripts.py` | 新增 | 17 个自测用例：发布脚本 12 个（正常发布、jenkins 元信息、缺 index/非法来源拒绝、版本切换与旧版本清理、同名重发布、遗留实体 current 迁移、锁占用/超龄回收、并发、残留暂存清理、SIGTERM 中断不破坏旧报告）+ 拉取脚本 5 个（内置假 Jenkins：无 Basic 认证返 403；覆盖跳过进行中构建、跳过无归档构建、显式构建号、无可用构建、缺凭证） |
-| 4 | `Jenkinsfile` | 修改 | post 调整（设计 12.1）：保留 allure 插件发布；新增 `dir(PROJECT_DIR)` 作用域内 `allure awesome allure-results --output allure-report-publish`（catchError UNSTABLE，不掩盖 pytest FAILURE）；归档统一移入 dir 作用域并去掉 `Truthy_ApiAutoTest2/` 前缀（logs、allure-results、allure-report-publish 一次归档），归档根固定为 `archive/<pattern>` |
+| 4 | `Jenkinsfile` | 修改 | post 调整（设计 12.1）：保留 allure 插件发布；新增 `dir(PROJECT_DIR)` 作用域内 `allure awesome allure-results --output allure-report-publish`（catchError UNSTABLE，不掩盖 pytest FAILURE）；归档统一移入 dir 作用域并去掉 `api-autotest/` 前缀（logs、allure-results、allure-report-publish 一次归档），归档根固定为 `archive/<pattern>` |
 | 5 | `README.md` | 修改 | 新增"12. 报告发布与同步"章节：`allure-current` 指针语义、手动发布命令、Jenkins 拉取命令与可选环境变量（设计 12.3） |
 
 ## 26. 关键实现要点
@@ -407,7 +407,7 @@ docker run -d -p 127.0.0.1:5003:5003 \
 
 ## 30. 遗留事项与备注
 
-1. **Jenkins 端到端验证待推送后执行**：Jenkins 任务从 GitHub `origin/dev` 拉取 `Truthy_ApiAutoTest2/Jenkinsfile`，本地 dev 领先 5 个提交（阶段 0–4 全部改动）。新 Jenkinsfile 生效与"成功/失败两种构建各拉取发布一次"的完成标准（设计 16 章）依赖：推送 dev → 触发（或等待）新构建 → fetch 拉取验证页面 `source=jenkins` 与构建元信息。本次会话已向用户发起确认未获答复，**未推送**；批准推送后按此顺序补齐验证并回记本台账。
+1. **Jenkins 端到端验证待推送后执行**：Jenkins 任务从 GitHub `origin/dev` 拉取 `api-autotest/Jenkinsfile`，本地 dev 领先 5 个提交（阶段 0–4 全部改动）。新 Jenkinsfile 生效与"成功/失败两种构建各拉取发布一次"的完成标准（设计 16 章）依赖：推送 dev → 触发（或等待）新构建 → fetch 拉取验证页面 `source=jenkins` 与构建元信息。本次会话已向用户发起确认未获答复，**未推送**；批准推送后按此顺序补齐验证并回记本台账。
 2. **旧构建归档形态差异已由扫描逻辑兜底**：#14（SUCCESS）/#9（FAILURE）归档的是工作区根 `allure-report.zip`，fetch 扫描不匹配即跳过（验证项 6），无需人工清理；新 Jenkinsfile 生效后首个含 `allure-report-publish/**` 归档的构建即可被选中，同时验证阶段 0 遗留事项 4（统一 dir 作用域后的产物定位）。
 3. **阶段 0 遗留事项闭环情况**：事项 2（JOB_NAME 默认值）已修正；事项 3（fetch 实现方式）已按 HTTP API + 环境变量凭证落地；事项 4（归档前缀）代码侧已按新归档形态编写，待事项 1 的真实构建最终确认；事项 1（NameWithConditionsSearch）仍由用户自留，本阶段回归基线保持 1 failed。
 4. **平台侧无代码改动**：报告展示（`/api/report/meta`、`/reports/<path>`）为阶段 1 已实现契约，本阶段发布落盘后经网关直接可见（验证项 5），无需重启或重建容器。
@@ -428,11 +428,11 @@ docker run -d -p 127.0.0.1:5003:5003 \
 
 | # | 文件 | 改动类型 | 性质 | 原因 |
 |---|------|---------|------|------|
-| 1 | `Truthy_ApiAutoTest2/utils/custom/http_client.py` | 代码修改（+2 行） | 安全修复 | `SENSITIVE_KEYS` 增加 `session_token`：Admin Gateway 审计步骤以请求体参数传递会话凭证，原集合未覆盖构成日志脱敏盲区 |
-| 2 | `Truthy_ApiAutoTest2/test_cases/test_framework.py` | 代码修改（+3 行） | 单测固化 | 脱敏用例 payload 增加 `params.session_token` 并断言其值不进入 caplog |
-| 3 | `Truthy_ApiAutoTest2/test_cases/test_allure_report.py` | 代码修改（+12/-2 行） | 守卫同步 | 两处 Jenkinsfile 守卫断言同步阶段 4 新契约：`allure awesome allure-results --output allure-report-publish` 生成命令与 `logs/**/*,allure-results/**/*,allure-report-publish/**/*` 归档 pattern |
-| 4 | `Truthy_ApiAutoTest2/README.md` | 文档新增（+51 行） | 阶段 5 文档项 | 新增第 13 节"Web 壳服务与平台接入"：独立/平台两种模式、任务契约、排障表、回滚步骤 |
-| 5 | `test-platform/README.md` | 文档修改（+11/-3 行） | 阶段 5 文档项 | 接入工具清单更新为四个；目录树加 `Truthy_ApiAutoTest2/`；路由表加 `/api-autotest/`；回退目录说明由"三个"改"四个"；新增凭证隔离说明与 api-autotest 健康探测命令 |
+| 1 | `api-autotest/utils/custom/http_client.py` | 代码修改（+2 行） | 安全修复 | `SENSITIVE_KEYS` 增加 `session_token`：Admin Gateway 审计步骤以请求体参数传递会话凭证，原集合未覆盖构成日志脱敏盲区 |
+| 2 | `api-autotest/test_cases/test_framework.py` | 代码修改（+3 行） | 单测固化 | 脱敏用例 payload 增加 `params.session_token` 并断言其值不进入 caplog |
+| 3 | `api-autotest/test_cases/test_allure_report.py` | 代码修改（+12/-2 行） | 守卫同步 | 两处 Jenkinsfile 守卫断言同步阶段 4 新契约：`allure awesome allure-results --output allure-report-publish` 生成命令与 `logs/**/*,allure-results/**/*,allure-report-publish/**/*` 归档 pattern |
+| 4 | `api-autotest/README.md` | 文档新增（+51 行） | 阶段 5 文档项 | 新增第 13 节"Web 壳服务与平台接入"：独立/平台两种模式、任务契约、排障表、回滚步骤 |
+| 5 | `test-platform/README.md` | 文档修改（+11/-3 行） | 阶段 5 文档项 | 接入工具清单更新为四个；目录树加 `api-autotest/`；路由表加 `/api-autotest/`；回退目录说明由"三个"改"四个"；新增凭证隔离说明与 api-autotest 健康探测命令 |
 
 **明确未改动**：`data/flows/NameWithConditionsSearch.yaml`、`data/scenarios/NameWithConditionsSearch.yaml` 及对应测试（用户自留区，延续阶段 0 约定）；`runtest.py`、`web/`、`scripts/`、`Jenkinsfile` 本阶段零改动。
 
@@ -544,7 +544,7 @@ docker run -d -p 127.0.0.1:5003:5003 \
 | 4 | `537f15b` | fix：报告端点容忍挂载文件系统 stat 异常（见第 40 节问题 1） |
 | 5 | `d071965` | docs：README 排障表补充 Docker Desktop 挂载缓存指引 |
 
-Jenkins 任务核对：`truthy-api-autotest`，构建分支 `*/dev`，Jenkinsfile 路径 `Truthy_ApiAutoTest2/Jenkinsfile`，参数 ENVIRONMENT/RUN_TYPE/FLOW——推送即生效。
+Jenkins 任务核对：`truthy-api-autotest`，构建分支 `*/dev`，Jenkinsfile 路径 `api-autotest/Jenkinsfile`，参数 ENVIRONMENT/RUN_TYPE/FLOW——推送即生效。
 
 ## 39. Jenkins 端到端验证结果
 

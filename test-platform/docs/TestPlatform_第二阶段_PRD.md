@@ -78,7 +78,7 @@
 
 第二阶段应将 Admin 用户名和密码迁入平台 Secret 管理；工具继续负责自己的 Admin 登录和内存 Token 刷新。平台负责凭证的安全保存、授权下发、健康状态和变更审计，不需要持久化该 Admin Session Token。
 
-#### Truthy_ApiAutoTest2 接口自动化
+#### api-autotest 接口自动化
 
 当前普通业务会话已经支持：
 
@@ -88,7 +88,7 @@
 
 但是 `ADMIN_SESSION_TOKEN`、`ADMIN_OPERATOR_ID`、`ADMIN_OPERATOR_NAME` 仍是静态配置。当前没有通过 Admin 用户名和密码自动登录并取得 Admin Session 的完整链路，因此该 Token 到期后仍需人工替换。
 
-经外部契约确认，`Truthy_ApiAutoTest2` 可复用 Truthy_Search 当前使用的 Admin 用户名/密码登录接口，且登录响应稳定返回 Session Token、Operator ID、Operator Name 和过期时间。第二阶段应直接实现 Admin 自动登录、临期更新和失败状态上报，不再把“Web 手工替换 `ADMIN_SESSION_TOKEN`”作为目标方案。
+经外部契约确认，`api-autotest` 可复用 Truthy_Search 当前使用的 Admin 用户名/密码登录接口，且登录响应稳定返回 Session Token、Operator ID、Operator Name 和过期时间。第二阶段应直接实现 Admin 自动登录、临期更新和失败状态上报，不再把“Web 手工替换 `ADMIN_SESSION_TOKEN`”作为目标方案。
 
 ---
 
@@ -138,8 +138,8 @@
 - 用户、角色、工具权限、配置和 Secret 均可通过 Web 管理；
 - 除启动配置白名单外，日常运维不需要登录服务器修改 `.env`；
 - Truthy_Search Admin 公共信息采集不需要人工维护 Session Token；
-- Truthy_ApiAutoTest2 普通业务 Token 能自动刷新或重建，刷新结果进入平台 Secret 存储而不是写回 `.env.platform`；
-- Truthy_ApiAutoTest2 Admin Token 通过与 Truthy_Search 相同的 Admin Login 自动获取和更新，不再要求人工替换；
+- api-autotest 普通业务 Token 能自动刷新或重建，刷新结果进入平台 Secret 存储而不是写回 `.env.platform`；
+- api-autotest Admin Token 通过与 Truthy_Search 相同的 Admin Login 自动获取和更新，不再要求人工替换；
 - 所有权限和配置变更均生成可检索审计记录；
 - 审计日志、应用日志、任务日志、接口响应和前端状态中均不出现 Secret 明文；
 - 单个工具凭证失败不会导致平台和其他工具不可用。
@@ -158,7 +158,7 @@
 6. 配置定义、配置值、校验、发布、版本和回滚；
 7. Secret 加密存储、替换、版本、状态和最小权限访问；
 8. 配置/Secret 按环境和工具隔离；
-9. Truthy_Search 与 Truthy_ApiAutoTest2 的凭证接入适配；
+9. Truthy_Search 与 api-autotest 的凭证接入适配；
 10. 凭证自动刷新、重新登录、状态检查和站内告警；
 11. 现有四个工具的权限接入；
 12. 管理后台所需的桌面 Web 页面。
@@ -499,7 +499,7 @@ Web 页面不得允许用户任意创建未登记的环境变量名，避免通�
 - Secret 仅在任务开始或需要刷新时按需获取，避免长期落盘；
 - 不向平台 API 容器挂载 Docker Socket；
 - 迁移期间若必须生成兼容文件，应写入内存文件系统或受限运行目录，设置最小文件权限，并明确标记为过渡机制；
-- 完成迁移后，`Truthy_Search/.env` 和 `Truthy_ApiAutoTest2/.env.platform` 不再作为平台模式的日常凭证来源或写回目标。
+- 完成迁移后，`Truthy_Search/.env` 和 `api-autotest/.env.platform` 不再作为平台模式的日常凭证来源或写回目标。
 
 ### 7.6 凭证生命周期管理
 
@@ -543,7 +543,7 @@ Web 页面不得允许用户任意创建未登记的环境变量名，避免通�
 5. 平台接收工具上报的“最近登录成功、预计过期、最近失败”状态；
 6. 修改账号密码后，在下一次登录或显式凭证重载时生效。
 
-#### 7.6.4 Truthy_ApiAutoTest2 普通业务会话
+#### 7.6.4 api-autotest 普通业务会话
 
 目标流程：
 
@@ -554,7 +554,7 @@ Web 页面不得允许用户任意创建未登记的环境变量名，避免通�
 5. 不再把 `.env.platform` 作为动态会话数据库；
 6. 任务详情只显示凭证状态，不显示任何 Token。
 
-#### 7.6.5 Truthy_ApiAutoTest2 Admin 会话
+#### 7.6.5 api-autotest Admin 会话
 
 目标流程：
 
@@ -892,8 +892,8 @@ POST /api/v1/audit/exports
 
 - Truthy_Search Admin 使用平台管理的用户名密码完成登录，Session 临期后自动重登；
 - Truthy_Search 普通检索 Token 根据明确过期时间自动调用 `RefreshSession`，Refresh Token 失效时通过正式 Login/建会话接口重建；
-- Truthy_ApiAutoTest2 普通会话成功刷新或重建后，新值进入平台 Secret，不改写 `.env.platform`；
-- Truthy_ApiAutoTest2 Admin 会话通过与 Truthy_Search 相同的 Admin Login 自动获取和更新；
+- api-autotest 普通会话成功刷新或重建后，新值进入平台 Secret，不改写 `.env.platform`；
+- api-autotest Admin 会话通过与 Truthy_Search 相同的 Admin Login 自动获取和更新；
 - 只读请求刷新后最多自动重放一次，非幂等写请求不会因认证刷新被盲目重放；
 - 刷新失败时状态、告警和审计完整，且日志中无 Token；
 - 停止一个工具不影响平台和其他工具的凭证状态查询。
@@ -937,8 +937,8 @@ POST /api/v1/audit/exports
 ### 里程碑 D：凭证自动化与关闭旧写回
 
 - Truthy_Search 凭证适配；
-- Truthy_ApiAutoTest2 普通会话写回平台；
-- Truthy_ApiAutoTest2 复用 Truthy_Search Admin Login 完成自动登录；
+- api-autotest 普通会话写回平台；
+- api-autotest 复用 Truthy_Search Admin Login 完成自动登录；
 - 凭证临期检查、刷新、站内告警和审计；
 - 平台模式关闭旧 `.env` 日常读写并完成回滚演练。
 
@@ -1043,7 +1043,7 @@ Accept: */*
 
 ### 17.2 Admin Login
 
-- Truthy_ApiAutoTest2 使用与 Truthy_Search 相同的 Admin 用户名/密码登录接口；
+- api-autotest 使用与 Truthy_Search 相同的 Admin 用户名/密码登录接口；
 - Admin Login 的 URL 继续按环境配置，不硬编码到业务代码；
 - 请求使用 `method_name=Login`，账号来自平台 Secret；
 - 成功响应稳定返回：
@@ -1053,7 +1053,7 @@ Accept: */*
   - `responses[].data.expire_time`；
 - `expire_time` 按当前 Truthy_Search 契约解析为带时区的 ISO-8601 时间；
 - Truthy_Search 可以继续只在进程内保存 Admin Session；
-- Truthy_ApiAutoTest2 可在平台加密存储中保存 Admin Session 版本，供后续任务复用；
+- api-autotest 可在平台加密存储中保存 Admin Session 版本，供后续任务复用；
 - 两个工具都必须在临期前主动重新登录，认证失败后的只读请求最多重放一次。
 
 ### 17.3 专用测试服务账号
@@ -1096,8 +1096,8 @@ Accept: */*
 | 平台日志级别、工具健康超时等现有 Pydantic Settings | 进程启动并由 `lru_cache` 缓存 | 服务重启；后续可逐项迁移为动态配置 | 是 |
 | Truthy_Search 检索 API、业务凭证、轮询/超时、Admin 账号及运行开关 | 每个新 Run 创建 `SearchClient` 时调用 `Config.from_env()` | 下一任务生效 | 否，不影响运行中 Run |
 | Truthy_Search 数据库路径、数据/导入/Raw/报告目录、Web 路由、Web Secret Key、显示时区、上传限制 | `create_app()` 启动时 | 服务重启 | 是 |
-| Truthy_ApiAutoTest2 业务会话、Admin 会话及 `config/env/*.yaml` 执行配置 | 每个 pytest 子进程启动时加载 | 下一任务生效 | 否，不影响运行中任务 |
-| Truthy_ApiAutoTest2 壳服务端口、基础路由、任务超时、任务保留数量、报告目录 | `create_app()` 启动时 | 服务重启 | 是 |
+| api-autotest 业务会话、Admin 会话及 `config/env/*.yaml` 执行配置 | 每个 pytest 子进程启动时加载 | 下一任务生效 | 否，不影响运行中任务 |
+| api-autotest 壳服务端口、基础路由、任务超时、任务保留数量、报告目录 | `create_app()` 启动时 | 服务重启 | 是 |
 | TrackEvents_tess 主机、端口、基础路由和平台返回地址 | 模块导入时读取 | 服务重启 | 是 |
 | log_filter_tool 基础路由、导出目录和平台返回地址 | Flask `create_app()` 时读取 | 服务重启 | 是 |
 | Nginx 路由、安全头、上传限制，以及 Compose 端口、卷、网络 | 网关/容器启动或 reload 时 | 部署变更 | reload 或重建容器 |
@@ -1133,8 +1133,8 @@ Accept: */*
 3. 所有日常业务配置和工具 Secret 进入统一控制面，只有文档化的最小启动配置继续由部署环境提供；
 4. Secret 加密、遮罩、权限、版本和审计要求全部通过安全测试；
 5. Truthy_Search Admin 账号由平台 Secret 管理，工具自动维护内存 Session；
-6. Truthy_ApiAutoTest2 普通会话不再写回 `.env.platform`；
-7. Truthy_ApiAutoTest2 Admin 会话通过与 Truthy_Search 相同的 Admin Login 自动登录和更新，不再依赖手工维护 `ADMIN_SESSION_TOKEN`；
+6. api-autotest 普通会话不再写回 `.env.platform`；
+7. api-autotest Admin 会话通过与 Truthy_Search 相同的 Admin Login 自动登录和更新，不再依赖手工维护 `ADMIN_SESSION_TOKEN`；
 8. 凭证临期、刷新失败和需要人工处理的状态可以在平台中被及时发现；
 9. 四个工具核心功能、独立部署能力和故障隔离保持不变；
 10. 文档、接口、迁移、回滚、自动化测试和桌面浏览器验收全部完成。
