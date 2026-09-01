@@ -128,6 +128,7 @@ class AgentSplitComposeTest(unittest.TestCase):
             "COOKIE_SECURE": "false",
             "APP_PUBLIC_URL": "http://127.0.0.1:41873",
             "SESSION_COOKIE_RISK_ACCEPTANCE_ID": "RISK-20260830-001",
+            "PROD_IMAGE_REPOSITORY_PREFIX": "registry.cn-shanghai.aliyuncs.com/testproject/",
         }
         values.update(overrides)
         return "".join(f"{key}={value}\n" for key, value in values.items())
@@ -327,6 +328,22 @@ class AgentSplitComposeTest(unittest.TestCase):
         self.assertIn('[[ ! -f "$user_context_signing_key" ]]', script)
         self.assertIn('stat -c %s "$user_context_signing_key"', script)
         self.assertIn('/api/v1/health/ready', script)
+
+    def test_prod_deploy_uses_configured_immutable_registry_prefix(self) -> None:
+        """生产镜像仓库必须由环境配置注入，不能绑定个人 GHCR 命名空间。"""
+
+        script = (ROOT / "scripts/deploy-prod.sh").read_text(encoding="utf-8")
+        env_example = (ROOT / ".env.prod.example").read_text(encoding="utf-8")
+        self.assertIn("PROD_IMAGE_REPOSITORY_PREFIX", script)
+        self.assertIn("PROD_IMAGE_REPOSITORY_PREFIX=", env_example)
+        self.assertNotIn("ghcr.io/lnyy-czj", script)
+
+    def test_prod_deploy_rejects_images_outside_configured_registry(self) -> None:
+        """生产部署必须拒绝错误仓库、可变 Tag 和非 SHA-256 镜像。"""
+
+        script = (ROOT / "scripts/deploy-prod.sh").read_text(encoding="utf-8")
+        self.assertIn("must use the approved image repository", script)
+        self.assertIn("@sha256:[0-9a-f]{64}", script)
 
 
 if __name__ == "__main__":

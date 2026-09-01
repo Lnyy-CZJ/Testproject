@@ -84,6 +84,12 @@ if global_lock < global_window:
 cookie_secure = required("COOKIE_SECURE")
 if cookie_secure not in {"true", "false"}:
     fail("COOKIE_SECURE 必须为 true 或 false")
+approved_prefix = required("PROD_IMAGE_REPOSITORY_PREFIX")
+if not re.fullmatch(
+    r"[a-z0-9][a-z0-9.-]*(?::[0-9]{1,5})?/(?:[a-z0-9][a-z0-9._-]*/)+",
+    approved_prefix,
+):
+    fail("PROD_IMAGE_REPOSITORY_PREFIX 必须是不带协议且以 / 结尾的仓库前缀")
 public_url = required("APP_PUBLIC_URL")
 risk_reference = required("SESSION_COOKIE_RISK_ACCEPTANCE_ID")
 if cookie_secure == "false":
@@ -99,6 +105,21 @@ PY
 }
 
 validate_auth_environment
+# 只读取生产 env 中的镜像仓库前缀，不执行其中任何内容。后续所有镜像
+# 引用都必须以该前缀开头，并且使用完整 sha256 digest，避免误拉取个人仓库
+# 或可变 Tag。这里单独读取是为了把解析后的值显式传给校验器，而不是 source env。
+prod_image_repository_prefix=$(python3 - "$base_env" <<'PY'
+import sys
+from pathlib import Path
+
+for line in Path(sys.argv[1]).read_text(encoding="utf-8").splitlines():
+    if line.startswith("PROD_IMAGE_REPOSITORY_PREFIX="):
+        print(line.split("=", 1)[1])
+        break
+else:
+    raise SystemExit("生产 env 缺少 PROD_IMAGE_REPOSITORY_PREFIX")
+PY
+)
 # 可信用户上下文是所有工具入口的共同鉴权依赖。Docker 遇到不存在的 bind
 # 源路径会静默创建目录，因此必须在任何 Compose 操作前验证真实文件形态，
 # 否则容器健康但所有 auth_request 都会返回 503。
@@ -152,27 +173,60 @@ PY
 }
 
 verify_component_images() {
-  local env_file=$1 target=$2
-  python3 - "$env_file" "$target" <<'PY'
+  local env_file=$1 target=${2:-full}
+  python3 - "$env_file" "$target" "$prod_image_repository_prefix" <<'PY'
 import re, sys
 from pathlib import Path
 
 values = dict(line.split("=", 1) for line in Path(sys.argv[1]).read_text().splitlines() if line)
-expected = {
-    "functional-test-agent": {
-        "FUNCTIONAL_AGENT_IMAGE": "ghcr.io/lnyy-czj/testproject-functional-test-agent",
-    },
+approved_prefix = sys.argv[3]
+repositories = {
+    "PLATFORM_GATEWAY_IMAGE": "testproject-platform-gateway",
+    "PLATFORM_BACKEND_IMAGE": "testproject-platform-backend",
+    "TRACKEVENTS_IMAGE": "testproject-trackevents-web",
+    "LOG_FILTER_IMAGE": "testproject-log-filter-tool",
+    "TRUTHY_SEARCH_IMAGE": "testproject-truthy-search",
+    "API_AUTOTEST_IMAGE": "testproject-api-autotest",
+    "FUNCTIONAL_AGENT_IMAGE": "testproject-functional-test-agent",
+    "API_AGENT_IMAGE": "testproject-api-test-agent",
+    "API_EXECUTION_CONTROLLER_IMAGE": "testproject-api-execution-controller",
+    "API_EGRESS_PROXY_IMAGE": "testproject-api-egress-proxy",
+    "API_EXECUTOR_IMAGE": "testproject-api-test-executor",
+}
+targets = {
+    "full": set(repositories),
+    "functional-test-agent": {"FUNCTIONAL_AGENT_IMAGE"},
     "api-test-agent": {
-        "API_AGENT_IMAGE": "ghcr.io/lnyy-czj/testproject-api-test-agent",
-        "API_EXECUTION_CONTROLLER_IMAGE": "ghcr.io/lnyy-czj/testproject-api-execution-controller",
-        "API_EGRESS_PROXY_IMAGE": "ghcr.io/lnyy-czj/testproject-api-egress-proxy",
-        "API_EXECUTOR_IMAGE": "ghcr.io/lnyy-czj/testproject-api-test-executor",
+        "API_AGENT_IMAGE",
+        "API_EXECUTION_CONTROLLER_IMAGE",
+        "API_EGRESS_PROXY_IMAGE",
+        "API_EXECUTOR_IMAGE",
     },
-}[sys.argv[2]]
-for key, prefix in expected.items():
+}
+try:
+    selected = targets[sys.argv[2]]
+except KeyError:
+    raise SystemExit(f"不支持校验组件: {sys.argv[2]}")
+if not re.fullmatch(r"[a-z0-9][a-z0-9.-]*(?::[0-9]{1,5})?/(?:[a-z0-9][a-z0-9._-]*/)+", approved_prefix):
+    raise SystemExit("PROD_IMAGE_REPOSITORY_PREFIX 格式无效")
+for key in sorted(selected):
+    repository = approved_prefix + repositories[key]
     value = values.get(key, "")
-    if not re.fullmatch(re.escape(prefix) + r"@sha256:[0-9a-f]{64}", value):
-        raise SystemExit(f"{key} must use the expected immutable digest")
+    if not re.fullmatch(re.escape(repository) + r"@sha256:[0-9a-f]{64}", value):
+        raise SystemExit(f"{key} must use the approved image repository and immutable sha256 digest")
+PY
+}
+
+verify_database_image() {
+  local env_file=$1
+  python3 - "$env_file" <<'PY'
+import re, sys
+from pathlib import Path
+
+values = dict(line.split("=", 1) for line in Path(sys.argv[1]).read_text().splitlines() if line)
+value = values.get("POSTGRES_IMAGE", "")
+if not re.fullmatch(r"postgres:17-alpine@sha256:[0-9a-f]{64}", value):
+    raise SystemExit("POSTGRES_IMAGE must use postgres:17-alpine with an immutable sha256 digest")
 PY
 }
 
@@ -332,6 +386,7 @@ if [[ -n "$component" ]]; then
   esac
   merge_images "$previous_images" "$changes" "$candidate_images"
   verify_component_images "$candidate_images" "$component"
+  verify_database_image "$candidate_images"
   compose=(docker compose --env-file "$base_env" --env-file "$candidate_images" -p test-platform-prod -f "$release_dir/docker-compose.yml" -f "$release_dir/docker-compose.prod.yml")
   "${compose[@]}" config --quiet
   if ! "${compose[@]}" pull "${services[@]}"; then
@@ -377,6 +432,8 @@ if [[ -n "$component" ]]; then
 fi
 
 compose=(docker compose --env-file "$base_env" --env-file "$release_images" -p test-platform-prod -f "$release_dir/docker-compose.yml" -f "$release_dir/docker-compose.prod.yml")
+verify_component_images "$release_images" full
+verify_database_image "$release_images"
 "${compose[@]}" config --quiet
 if docker ps --format '{{.Names}}' | grep -qx 'test-platform-prod-platform-db-1'; then
   backup="$backup_root/platform-$(date -u +%Y%m%dT%H%M%SZ).dump"
