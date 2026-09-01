@@ -1,0 +1,36 @@
+{
+  "schema_version": "aidating.e2e.case.v1",
+  "case_id": "analysis-stage-friends-positive-02",
+  "task_kind": "analysis",
+  "locale": "en-US",
+  "media": [
+    {
+      "path": "Friends朋友关系/example_02/chat_01.png"
+    },
+    {
+      "path": "Friends朋友关系/example_02/chat_02.png"
+    },
+    {
+      "path": "Friends朋友关系/example_02/chat_03.png"
+    },
+    {
+      "path": "Friends朋友关系/example_02/chat_04.png"
+    },
+    {
+      "path": "Friends朋友关系/example_02/chat_05.png"
+    },
+    {
+      "path": "Friends朋友关系/example_02/chat_06.png"
+    },
+    {
+      "path": "Friends朋友关系/example_02/chat_07.png"
+    }
+  ],
+  "analysis": {
+    "other_person_name": "Taylor"
+  },
+  "expect": {
+    "task_status": "succeeded",
+    "result_schema": "dating.relationship_analysis.v1"
+  }
+}

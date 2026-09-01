@@ -1,0 +1,565 @@
+{
+  "schema_version": "aidating.chat-screenshot-source.v1",
+  "case_id": "analysis-stage-exclusive-positive-04",
+  "task_kind": "analysis",
+  "target_stage": "EXCLUSIVE",
+  "positive_track": "constructive",
+  "locale": "en-GB",
+  "participants": {
+    "self": {
+      "id": "self",
+      "display_name": "You",
+      "pronouns": "she/her"
+    },
+    "other": {
+      "id": "other",
+      "display_name": "Marcus",
+      "pronouns": "he/him"
+    }
+  },
+  "style_id": "azure-light",
+  "image_count": 5,
+  "pair_type": "woman-man",
+  "scenario": {
+    "slug": "exclusive-contact-rhythm",
+    "title": "Exclusive Contact Rhythm",
+    "premise": "They negotiate contact frequency while keeping their new exclusive agreement realistic.",
+    "topic": "exclusive communication rhythm"
+  },
+  "messages": [
+    {
+      "id": "m_001",
+      "speaker": "self",
+      "text": "Now that we have agreed to be exclusive and see only each other, I do not expect constant contact.",
+      "type": "text",
+      "timestamp": "2026-01-08T18:00:00.000Z"
+    },
+    {
+      "id": "m_002",
+      "speaker": "other",
+      "text": "I agree. I am not dating or pursuing anyone else, and a few real conversations each week feel right.",
+      "type": "text",
+      "timestamp": "2026-01-08T18:04:00.000Z"
+    },
+    {
+      "id": "m_003",
+      "speaker": "self",
+      "text": "Our exclusive agreement feels caring when we set a rhythm that does not crowd either of us.",
+      "type": "text",
+      "timestamp": "2026-01-08T18:08:00.000Z"
+    },
+    {
+      "id": "m_004",
+      "speaker": "other",
+      "text": "Yes, and if work changes the rhythm, I will tell the person I am exclusive with rather than disappear.",
+      "type": "text",
+      "timestamp": "2026-01-08T18:12:00.000Z"
+    },
+    {
+      "id": "m_005",
+      "speaker": "self",
+      "text": "We are exclusive, and this contact rhythm keeps the agreement caring and realistic.",
+      "type": "text",
+      "timestamp": "2026-01-08T18:16:00.000Z"
+    },
+    {
+      "id": "m_006",
+      "speaker": "other",
+      "text": "I understand. Can we shift topics for a moment? How has your morning been so far?",
+      "type": "text",
+      "timestamp": "2026-01-08T18:20:00.000Z"
+    },
+    {
+      "id": "m_007",
+      "speaker": "self",
+      "text": "Calm enough. I made tea and started with the easiest task.",
+      "type": "text",
+      "timestamp": "2026-01-08T18:24:00.000Z"
+    },
+    {
+      "id": "m_008",
+      "speaker": "other",
+      "text": "Did starting small make the rest feel more manageable?",
+      "type": "text",
+      "timestamp": "2026-01-08T18:28:00.000Z"
+    },
+    {
+      "id": "m_009",
+      "speaker": "self",
+      "text": "Yes, it gave me enough momentum to open the harder file.",
+      "type": "text",
+      "timestamp": "2026-01-08T18:32:00.000Z"
+    },
+    {
+      "id": "m_010",
+      "speaker": "other",
+      "text": "What made that file difficult to begin?",
+      "type": "text",
+      "timestamp": "2026-01-08T18:36:00.000Z"
+    },
+    {
+      "id": "m_011",
+      "speaker": "self",
+      "text": "It needed careful reading, and I did not want to rush the details.",
+      "type": "text",
+      "timestamp": "2026-01-08T18:40:00.000Z"
+    },
+    {
+      "id": "m_012",
+      "speaker": "other",
+      "text": "Were you able to give it the attention it needed?",
+      "type": "text",
+      "timestamp": "2026-01-08T18:44:00.000Z"
+    },
+    {
+      "id": "m_013",
+      "speaker": "self",
+      "text": "I was. I turned off alerts and worked through one section at a time.",
+      "type": "text",
+      "timestamp": "2026-01-08T18:48:00.000Z"
+    },
+    {
+      "id": "m_014",
+      "speaker": "other",
+      "text": "That sounds focused. Did you find the part that was holding you up?",
+      "type": "text",
+      "timestamp": "2026-01-08T18:52:00.000Z"
+    },
+    {
+      "id": "m_015",
+      "speaker": "self",
+      "text": "I did, and the problem was smaller once I wrote it down clearly.",
+      "type": "text",
+      "timestamp": "2026-01-08T18:56:00.000Z"
+    },
+    {
+      "id": "m_016",
+      "speaker": "other",
+      "text": "Do you usually think better after writing things out?",
+      "type": "text",
+      "timestamp": "2026-01-08T19:00:00.000Z"
+    },
+    {
+      "id": "m_017",
+      "speaker": "self",
+      "text": "Usually. A short list keeps several thoughts from competing at once.",
+      "type": "text",
+      "timestamp": "2026-01-08T19:04:00.000Z"
+    },
+    {
+      "id": "m_018",
+      "speaker": "other",
+      "text": "What is left on the list now?",
+      "type": "text",
+      "timestamp": "2026-01-08T19:08:00.000Z"
+    },
+    {
+      "id": "m_019",
+      "speaker": "self",
+      "text": "One reply, a quick review, and then I can take a proper break.",
+      "type": "text",
+      "timestamp": "2026-01-08T19:12:00.000Z"
+    },
+    {
+      "id": "m_020",
+      "speaker": "other",
+      "text": "What would make the break feel useful instead of rushed?",
+      "type": "text",
+      "timestamp": "2026-01-08T19:16:00.000Z"
+    },
+    {
+      "id": "m_021",
+      "speaker": "self",
+      "text": "A walk around the block and a few minutes away from a screen.",
+      "type": "text",
+      "timestamp": "2026-01-08T19:20:00.000Z"
+    },
+    {
+      "id": "m_022",
+      "speaker": "other",
+      "text": "Is the weather good enough for that today?",
+      "type": "text",
+      "timestamp": "2026-01-08T19:24:00.000Z"
+    },
+    {
+      "id": "m_023",
+      "speaker": "self",
+      "text": "It is cool but dry, so a light jacket should be enough.",
+      "type": "text",
+      "timestamp": "2026-01-08T19:28:00.000Z"
+    },
+    {
+      "id": "m_024",
+      "speaker": "other",
+      "text": "Do you have a usual route when you need some air?",
+      "type": "text",
+      "timestamp": "2026-01-08T19:32:00.000Z"
+    },
+    {
+      "id": "m_025",
+      "speaker": "self",
+      "text": "I take the quieter street and loop past the small community garden.",
+      "type": "text",
+      "timestamp": "2026-01-08T19:36:00.000Z"
+    },
+    {
+      "id": "m_026",
+      "speaker": "other",
+      "text": "Has anything new appeared in the garden lately?",
+      "type": "text",
+      "timestamp": "2026-01-08T19:40:00.000Z"
+    },
+    {
+      "id": "m_027",
+      "speaker": "self",
+      "text": "There are fresh herbs near the gate and a row of bright yellow flowers.",
+      "type": "text",
+      "timestamp": "2026-01-08T19:44:00.000Z"
+    },
+    {
+      "id": "m_028",
+      "speaker": "other",
+      "text": "That sounds worth slowing down for. Do you ever take photos there?",
+      "type": "text",
+      "timestamp": "2026-01-08T19:48:00.000Z"
+    },
+    {
+      "id": "m_029",
+      "speaker": "self",
+      "text": "Sometimes, but today I would rather notice it without using my phone.",
+      "type": "text",
+      "timestamp": "2026-01-08T19:52:00.000Z"
+    },
+    {
+      "id": "m_030",
+      "speaker": "other",
+      "text": "I understand that. What else helps you feel present?",
+      "type": "text",
+      "timestamp": "2026-01-08T19:56:00.000Z"
+    },
+    {
+      "id": "m_031",
+      "speaker": "self",
+      "text": "Listening for ordinary sounds instead of filling every quiet moment.",
+      "type": "text",
+      "timestamp": "2026-01-08T20:00:00.000Z"
+    },
+    {
+      "id": "m_032",
+      "speaker": "other",
+      "text": "What sound do you notice most on that route?",
+      "type": "text",
+      "timestamp": "2026-01-08T20:04:00.000Z"
+    },
+    {
+      "id": "m_033",
+      "speaker": "self",
+      "text": "Usually birds near the trees and bicycles passing on the next street.",
+      "type": "text",
+      "timestamp": "2026-01-08T20:08:00.000Z"
+    },
+    {
+      "id": "m_034",
+      "speaker": "other",
+      "text": "Does the walk ever give you ideas for what to read next?",
+      "type": "text",
+      "timestamp": "2026-01-08T20:12:00.000Z"
+    },
+    {
+      "id": "m_035",
+      "speaker": "self",
+      "text": "It does. The garden made me curious about a short book on urban plants.",
+      "type": "text",
+      "timestamp": "2026-01-08T20:16:00.000Z"
+    },
+    {
+      "id": "m_036",
+      "speaker": "other",
+      "text": "Have you found a book that looks approachable?",
+      "type": "text",
+      "timestamp": "2026-01-08T20:20:00.000Z"
+    },
+    {
+      "id": "m_037",
+      "speaker": "self",
+      "text": "I found one with clear drawings and chapters that can stand alone.",
+      "type": "text",
+      "timestamp": "2026-01-08T20:24:00.000Z"
+    },
+    {
+      "id": "m_038",
+      "speaker": "other",
+      "text": "That format sounds easy to return to. Which chapter will you try first?",
+      "type": "text",
+      "timestamp": "2026-01-08T20:28:00.000Z"
+    },
+    {
+      "id": "m_039",
+      "speaker": "self",
+      "text": "The one about plants that grow well in shaded corners.",
+      "type": "text",
+      "timestamp": "2026-01-08T20:32:00.000Z"
+    },
+    {
+      "id": "m_040",
+      "speaker": "other",
+      "text": "Is shade a problem where you live?",
+      "type": "text",
+      "timestamp": "2026-01-08T20:36:00.000Z"
+    },
+    {
+      "id": "m_041",
+      "speaker": "self",
+      "text": "Most of the windows get indirect light, so practical advice would help.",
+      "type": "text",
+      "timestamp": "2026-01-08T20:40:00.000Z"
+    },
+    {
+      "id": "m_042",
+      "speaker": "other",
+      "text": "Would you want to grow something simple there?",
+      "type": "text",
+      "timestamp": "2026-01-08T20:44:00.000Z"
+    },
+    {
+      "id": "m_043",
+      "speaker": "self",
+      "text": "Maybe mint or parsley, as long as I can care for it consistently.",
+      "type": "text",
+      "timestamp": "2026-01-08T20:48:00.000Z"
+    },
+    {
+      "id": "m_044",
+      "speaker": "other",
+      "text": "What would make the care routine realistic?",
+      "type": "text",
+      "timestamp": "2026-01-08T20:52:00.000Z"
+    },
+    {
+      "id": "m_045",
+      "speaker": "self",
+      "text": "One watering day, a visible spot, and a note until the habit sticks.",
+      "type": "text",
+      "timestamp": "2026-01-08T20:56:00.000Z"
+    },
+    {
+      "id": "m_046",
+      "speaker": "other",
+      "text": "You make small systems sound comforting. Do they help in other areas too?",
+      "type": "text",
+      "timestamp": "2026-01-08T21:00:00.000Z"
+    },
+    {
+      "id": "m_047",
+      "speaker": "self",
+      "text": "Yes, especially with meals when the week gets busy.",
+      "type": "text",
+      "timestamp": "2026-01-08T21:04:00.000Z"
+    },
+    {
+      "id": "m_048",
+      "speaker": "other",
+      "text": "What meal works best when you do not want many decisions?",
+      "type": "text",
+      "timestamp": "2026-01-08T21:08:00.000Z"
+    },
+    {
+      "id": "m_049",
+      "speaker": "self",
+      "text": "A simple soup with bread because I can adjust it to what I have.",
+      "type": "text",
+      "timestamp": "2026-01-08T21:12:00.000Z"
+    },
+    {
+      "id": "m_050",
+      "speaker": "other",
+      "text": "What would you put in the soup today?",
+      "type": "text",
+      "timestamp": "2026-01-08T21:16:00.000Z"
+    },
+    {
+      "id": "m_051",
+      "speaker": "self",
+      "text": "Carrots, beans, and the last of the greens in the refrigerator.",
+      "type": "text",
+      "timestamp": "2026-01-08T21:20:00.000Z"
+    },
+    {
+      "id": "m_052",
+      "speaker": "other",
+      "text": "Would you add anything for more flavour?",
+      "type": "text",
+      "timestamp": "2026-01-08T21:24:00.000Z"
+    },
+    {
+      "id": "m_053",
+      "speaker": "self",
+      "text": "A little garlic, black pepper, and lemon at the end.",
+      "type": "text",
+      "timestamp": "2026-01-08T21:28:00.000Z"
+    },
+    {
+      "id": "m_054",
+      "speaker": "other",
+      "text": "Lemon at the end sounds fresh. Did someone teach you that?",
+      "type": "text",
+      "timestamp": "2026-01-08T21:32:00.000Z"
+    },
+    {
+      "id": "m_055",
+      "speaker": "self",
+      "text": "I learned it from trial and error after making several flat soups.",
+      "type": "text",
+      "timestamp": "2026-01-08T21:36:00.000Z"
+    },
+    {
+      "id": "m_056",
+      "speaker": "other",
+      "text": "What was the funniest failed version?",
+      "type": "text",
+      "timestamp": "2026-01-08T21:40:00.000Z"
+    },
+    {
+      "id": "m_057",
+      "speaker": "self",
+      "text": "One had far too much pepper, and every spoonful surprised me again.",
+      "type": "text",
+      "timestamp": "2026-01-08T21:44:00.000Z"
+    },
+    {
+      "id": "m_058",
+      "speaker": "other",
+      "text": "Before we wrap up, can we return to what we said earlier?",
+      "type": "text",
+      "timestamp": "2026-01-08T21:48:00.000Z"
+    },
+    {
+      "id": "m_059",
+      "speaker": "self",
+      "text": "Yes, I have one more thought about it.",
+      "type": "text",
+      "timestamp": "2026-01-08T21:52:00.000Z"
+    },
+    {
+      "id": "m_060",
+      "speaker": "self",
+      "text": "I value our agreement to date only each other, even though we have not chosen a partner label.",
+      "type": "text",
+      "timestamp": "2026-01-08T21:56:00.000Z"
+    },
+    {
+      "id": "m_061",
+      "speaker": "other",
+      "text": "It makes exclusivity feel sustainable.",
+      "type": "text",
+      "timestamp": "2026-01-08T22:00:00.000Z"
+    },
+    {
+      "id": "m_062",
+      "speaker": "self",
+      "text": "That is important to me.",
+      "type": "text",
+      "timestamp": "2026-01-08T22:04:00.000Z"
+    }
+  ],
+  "stage_evidence_message_ids": [
+    "m_001",
+    "m_002",
+    "m_003",
+    "m_004",
+    "m_005",
+    "m_060"
+  ],
+  "excluded_stage_cues": [
+    "confirmed partner label",
+    "long-distance dependency"
+  ],
+  "render": {
+    "width": 430,
+    "height": 932,
+    "bubbles_per_image": 14,
+    "overlap_messages": 2,
+    "page_message_ids": [
+      [
+        "m_001",
+        "m_002",
+        "m_003",
+        "m_004",
+        "m_005",
+        "m_006",
+        "m_007",
+        "m_008",
+        "m_009",
+        "m_010",
+        "m_011",
+        "m_012",
+        "m_013",
+        "m_014"
+      ],
+      [
+        "m_013",
+        "m_014",
+        "m_015",
+        "m_016",
+        "m_017",
+        "m_018",
+        "m_019",
+        "m_020",
+        "m_021",
+        "m_022",
+        "m_023",
+        "m_024",
+        "m_025",
+        "m_026"
+      ],
+      [
+        "m_025",
+        "m_026",
+        "m_027",
+        "m_028",
+        "m_029",
+        "m_030",
+        "m_031",
+        "m_032",
+        "m_033",
+        "m_034",
+        "m_035",
+        "m_036",
+        "m_037",
+        "m_038"
+      ],
+      [
+        "m_037",
+        "m_038",
+        "m_039",
+        "m_040",
+        "m_041",
+        "m_042",
+        "m_043",
+        "m_044",
+        "m_045",
+        "m_046",
+        "m_047",
+        "m_048",
+        "m_049",
+        "m_050"
+      ],
+      [
+        "m_049",
+        "m_050",
+        "m_051",
+        "m_052",
+        "m_053",
+        "m_054",
+        "m_055",
+        "m_056",
+        "m_057",
+        "m_058",
+        "m_059",
+        "m_060",
+        "m_061",
+        "m_062"
+      ]
+    ]
+  }
+}

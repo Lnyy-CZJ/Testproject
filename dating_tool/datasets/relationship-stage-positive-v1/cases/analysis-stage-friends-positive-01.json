@@ -1,0 +1,30 @@
+{
+  "schema_version": "aidating.e2e.case.v1",
+  "case_id": "analysis-stage-friends-positive-01",
+  "task_kind": "analysis",
+  "locale": "en-NL",
+  "media": [
+    {
+      "path": "Friends朋友关系/example_01/chat_01.png"
+    },
+    {
+      "path": "Friends朋友关系/example_01/chat_02.png"
+    },
+    {
+      "path": "Friends朋友关系/example_01/chat_03.png"
+    },
+    {
+      "path": "Friends朋友关系/example_01/chat_04.png"
+    },
+    {
+      "path": "Friends朋友关系/example_01/chat_05.png"
+    }
+  ],
+  "analysis": {
+    "other_person_name": "Owen"
+  },
+  "expect": {
+    "task_status": "succeeded",
+    "result_schema": "dating.relationship_analysis.v1"
+  }
+}

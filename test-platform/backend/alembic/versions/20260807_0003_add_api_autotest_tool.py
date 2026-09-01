@@ -1,4 +1,4 @@
-"""把 Truthy_ApiAutoTest2 作为第四个独立工具写入平台目录。
+"""把 api-autotest 作为第四个独立工具写入平台目录。
 
 Revision ID: 20260807_0003
 Revises: 20260731_0002

@@ -1,0 +1,12 @@
+{
+  "schema_version": "aidating.e2e.case.v1",
+  "case_id": "e2e-path-traversal",
+  "task_kind": "analysis",
+  "locale": "en-US",
+  "media": [{"path": "../../outside-private-image.png"}],
+  "analysis": {},
+  "expect": {
+    "task_status": "succeeded",
+    "result_schema": "dating.relationship_analysis.v1"
+  }
+}

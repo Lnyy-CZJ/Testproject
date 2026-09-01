@@ -1,0 +1,34 @@
+name: Dating 结构化消息 Analysis 快速评测
+tags: [interactive, evaluation]
+steps:
+  - id: create_analysis_evaluation
+    api: CreateAnalysisEvaluationTask
+    extract:
+      task_id: $.task_id
+  - id: poll_analysis_evaluation
+    api: GetAnalysisEvaluationTask
+    until:
+      path: $.status
+      equals: succeeded
+      terminate_on: [rejected, failed]
+      fail_on_termination: true
+      interval_seconds: "{{analysis_poll_interval_seconds}}"
+      timeout_seconds: "{{analysis_timeout_seconds}}"
+  - id: get_analysis_evaluation_result
+    api: GetAnalysisEvaluationResult
+  - id: get_task_debug
+    api: GetTaskDebug
+    until:
+      path: $.task.task_id
+      equals: "{{task_id}}"
+      retry_on_business_error_codes: [DEBUG_DATA_NOT_READY]
+      interval_seconds: "{{analysis_poll_interval_seconds}}"
+      timeout_seconds: "{{analysis_timeout_seconds}}"
+  - id: get_provider_cost
+    api: GetProviderCostSummary
+    until:
+      path: $.task_id
+      equals: "{{task_id}}"
+      retry_on_business_error_codes: [COST_DATA_PENDING]
+      interval_seconds: "{{analysis_poll_interval_seconds}}"
+      timeout_seconds: "{{analysis_timeout_seconds}}"

@@ -1,0 +1,1 @@
+{"source":"documented","response":{"code":0,"responses":[{"id":"__REQUEST_ID__","success":true,"code":0,"data":{"asset_id":"fixture-asset","status":"pending","content_type":"image/png","size_bytes":1,"upload_url":"https://cos.test/upload?fixture_signature=placeholder","upload_method":"PUT","required_headers":{"Content-Type":"image/png"},"max_size_bytes":7000000}}]}}

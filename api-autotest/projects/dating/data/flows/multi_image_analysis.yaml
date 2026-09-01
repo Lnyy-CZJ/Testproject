@@ -1,0 +1,95 @@
+name: Dating 多图 Analysis 保留结果链路
+tags: [interactive]
+inputs:
+  media_files:
+    type: files
+    required: true
+    min_items: 1
+    max_items: 9
+    allowed_content_types: [image/jpeg, image/png, image/webp]
+    # 后端协议使用十进制字节上限，不是 7 MiB。真实执行还会再以
+    # GetMediaUploadConfig 的返回值校验，静态值负责浏览器提交前预检。
+    max_size_bytes: 7000000
+    label: 分析图片
+    description: 按聊天顺序选择 1～9 张图片
+steps:
+  - id: get_upload_config
+    api: GetMediaUploadConfig
+    extract:
+      upload_allowed_content_types: $.allowed_content_types
+      upload_min_asset_count: $.min_asset_count
+      upload_max_asset_count: $.max_asset_count
+      upload_max_size_bytes: $.max_size_bytes
+  - id: validate_media_files
+    action:
+      type: validate_binary_inputs
+      files: "{{media_files}}"
+      allowed_content_types: "{{upload_allowed_content_types}}"
+      min_items: "{{upload_min_asset_count}}"
+      max_items: "{{upload_max_asset_count}}"
+      max_size_bytes: "{{upload_max_size_bytes}}"
+  - id: upload_media_files
+    foreach:
+      items: "{{media_files}}"
+      item: media_file
+      collect:
+        asset_ids: "{{asset_id}}"
+      steps:
+        - id: prepare_upload
+          api: PrepareMediaUpload
+          extract:
+            asset_id: $.asset_id
+            upload_url: $.upload_url
+            upload_method: $.upload_method
+            required_headers: $.required_headers
+        - id: upload_binary
+          action:
+            type: signed_binary_upload
+            url: "{{upload_url}}"
+            headers: "{{required_headers}}"
+            input_file: "{{media_file.relative_path}}"
+            method: PUT
+            success_statuses: [200, 204]
+        - id: complete_upload
+          api: CompleteMediaUpload
+  - id: create_analysis
+    api: CreateAnalysisTask
+    extract:
+      task_id: $.task_id
+  - id: poll_analysis
+    api: GetAnalysisTask
+    until:
+      path: $.status
+      equals: succeeded
+      terminate_on: [rejected, failed]
+      # failed 仍有诊断价值：不查询正式 Result，但继续获取 Debug/Cost。
+      # rejected 保持 Flow 失败，防止把策略拒绝误报为正常执行。
+      continue_flow_on: [failed]
+      fail_on_termination: true
+      interval_seconds: "{{analysis_poll_interval_seconds}}"
+      timeout_seconds: "{{analysis_timeout_seconds}}"
+    extract:
+      analysis_status: $.status
+  - id: get_analysis_result
+    api: GetAnalysisResult
+    skip_unless:
+      variable: analysis_status
+      equals: succeeded
+  # succeeded 时完成正式 Result 查询；failed 时由 skip_unless 跳过 Result。
+  # 两种情况都继续保留 Debug 与 Provider 消耗证据，且只复用 task_id。
+  - id: get_task_debug
+    api: GetTaskDebug
+    until:
+      path: $.task.task_id
+      equals: "{{task_id}}"
+      retry_on_business_error_codes: [DEBUG_DATA_NOT_READY]
+      interval_seconds: "{{analysis_poll_interval_seconds}}"
+      timeout_seconds: "{{analysis_timeout_seconds}}"
+  - id: get_provider_cost
+    api: GetProviderCostSummary
+    until:
+      path: $.task_id
+      equals: "{{task_id}}"
+      retry_on_business_error_codes: [COST_DATA_PENDING]
+      interval_seconds: "{{analysis_poll_interval_seconds}}"
+      timeout_seconds: "{{analysis_timeout_seconds}}"

@@ -1,0 +1,24 @@
+{
+  "schema_version": "aidating.e2e.case.v1",
+  "case_id": "analysis-stage-ended-positive-01",
+  "task_kind": "analysis",
+  "locale": "en-US",
+  "media": [
+    {
+      "path": "Ended关系结束/example_01/chat_01.png"
+    },
+    {
+      "path": "Ended关系结束/example_01/chat_02.png"
+    },
+    {
+      "path": "Ended关系结束/example_01/chat_03.png"
+    }
+  ],
+  "analysis": {
+    "other_person_name": "Parker"
+  },
+  "expect": {
+    "task_status": "succeeded",
+    "result_schema": "dating.relationship_analysis.v1"
+  }
+}

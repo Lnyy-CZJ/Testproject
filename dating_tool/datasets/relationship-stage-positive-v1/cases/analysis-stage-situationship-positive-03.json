@@ -1,0 +1,30 @@
+{
+  "schema_version": "aidating.e2e.case.v1",
+  "case_id": "analysis-stage-situationship-positive-03",
+  "task_kind": "analysis",
+  "locale": "en-CA",
+  "media": [
+    {
+      "path": "Situationship未定义关系/example_03/chat_01.png"
+    },
+    {
+      "path": "Situationship未定义关系/example_03/chat_02.png"
+    },
+    {
+      "path": "Situationship未定义关系/example_03/chat_03.png"
+    },
+    {
+      "path": "Situationship未定义关系/example_03/chat_04.png"
+    },
+    {
+      "path": "Situationship未定义关系/example_03/chat_05.png"
+    }
+  ],
+  "analysis": {
+    "other_person_name": "Casey"
+  },
+  "expect": {
+    "task_status": "succeeded",
+    "result_schema": "dating.relationship_analysis.v1"
+  }
+}

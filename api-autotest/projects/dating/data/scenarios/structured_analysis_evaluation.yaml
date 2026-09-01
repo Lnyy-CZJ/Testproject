@@ -1,0 +1,71 @@
+name: 结构化聊天消息生成 Analysis 并保留 Debug 与 Cost
+variables:
+  debug_attempt: 0
+  debug_detail_level: FULL
+  debug_include_provider_calls: true
+  debug_include_events: true
+  debug_include_field_diagnostics: true
+  cost_include_calls: true
+  cost_limit: 100
+  cost_cursor: ""
+runtime_inputs:
+  evaluation_request:
+    label: Analysis Flow 消息内容
+    description: 输入本次 Analysis 评测 JSON；必须是对象，可在每次运行前完整替换
+    type: json
+    required: true
+    target:
+      scope: flow_step_request
+      step_id: create_analysis_evaluation
+      path: $.input
+# 不调用任何 Delete 方法：Task、Result、Debug 与 Cost 数据必须保留供测试定位。
+step_data:
+  create_analysis_evaluation:
+    params:
+      input:
+        locale: en-US
+        transcript:
+          schema_version: dating.transcript.v1
+          messages:
+            - message_id: m1
+              message_type: text
+              speaker: other
+              text: Let's decide about Saturday later.
+            - message_id: m2
+              message_type: text
+              speaker: user
+              text: Okay, let me know when you know.
+            - message_id: m3
+              message_type: text
+              speaker: other
+              text: I will.
+            - message_id: m4
+              message_type: text
+              speaker: user
+              text: Sounds good.
+      case_id: "{{flow_run_id}}-structured-analysis"
+      run_id: "{{flow_run_id}}"
+      client_request_id: "{{flow_run_id}}-analysis"
+    assert: {http_status: 200, gateway: {message: ok}}
+  poll_analysis_evaluation:
+    params: {task_id: "{{task_id}}"}
+    assert: {http_status: 200, gateway: {message: ok}}
+  get_analysis_evaluation_result:
+    params: {task_id: "{{task_id}}"}
+    assert: {http_status: 200, gateway: {message: ok}}
+  get_task_debug:
+    params:
+      task_id: "{{task_id}}"
+      attempt: "{{debug_attempt}}"
+      detail_level: "{{debug_detail_level}}"
+      include_provider_calls: "{{debug_include_provider_calls}}"
+      include_events: "{{debug_include_events}}"
+      include_field_diagnostics: "{{debug_include_field_diagnostics}}"
+    assert: {http_status: 200, gateway: {message: ok}}
+  get_provider_cost:
+    params:
+      task_id: "{{task_id}}"
+      include_calls: "{{cost_include_calls}}"
+      limit: "{{cost_limit}}"
+      cursor: "{{cost_cursor}}"
+    assert: {http_status: 200, gateway: {message: ok}}

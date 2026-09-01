@@ -1,0 +1,30 @@
+{
+  "schema_version": "aidating.e2e.case.v1",
+  "case_id": "analysis-stage-long-distance-positive-02",
+  "task_kind": "analysis",
+  "locale": "en-IE",
+  "media": [
+    {
+      "path": "Long-distance异地关系/example_02/chat_01.png"
+    },
+    {
+      "path": "Long-distance异地关系/example_02/chat_02.png"
+    },
+    {
+      "path": "Long-distance异地关系/example_02/chat_03.png"
+    },
+    {
+      "path": "Long-distance异地关系/example_02/chat_04.png"
+    },
+    {
+      "path": "Long-distance异地关系/example_02/chat_05.png"
+    }
+  ],
+  "analysis": {
+    "other_person_name": "Caleb"
+  },
+  "expect": {
+    "task_status": "succeeded",
+    "result_schema": "dating.relationship_analysis.v1"
+  }
+}

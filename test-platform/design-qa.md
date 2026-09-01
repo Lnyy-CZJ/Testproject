@@ -1,51 +1,48 @@
-# 固定角色与项目工具权限界面设计 QA
+# 接口自动化 Dating Comm 项目化界面设计 QA
 
 ## 证据
 
-- 视觉真相：`/Users/admin/Testproject/design-reference/固定角色与项目工具权限.svg`、`/Users/admin/Testproject/design-reference/固定角色与项目工具权限.png`
-- 同状态设计裁片：`/Users/admin/Testproject/test-platform/output/playwright/design-reference-crops/03.png`
-- 本机 Chrome 实现截图：`/Users/admin/Testproject/test-platform/output/playwright/project-new-final-1280.jpg`
-- 同画布对比：`/Users/admin/Testproject/test-platform/output/playwright/design-qa-project-new-final-comparison.jpg`
-- 其他实现证据：`access-workbench-1440.jpg`、`tool-access-1280.jpg`、`fixed-roles-1280.jpg`、`forbidden-1280.jpg`
-- 页面状态：DEV、已登录平台管理员、`/projects/new`，同时抽查工作台、工具管理、固定角色与 403。
-- Chrome CSS 可视区：1278 × 760；截图有效内容 1263 × 751，devicePixelRatio 2。该窗口宽度覆盖 1280 桌面断点；创建按钮底边为 766.4px，在目标 1280 × 800 可视区内完整可见。
-- 源图：2800 × 1880。对比时按实现纵横比裁取源图顶部 2800 × 1665，再缩放至 1263 × 751；实现截图保持 1263 × 751，避免密度差异造成误判。
+- 视觉真相：`/var/folders/0y/bx0h56fj4z5bypwbfr5l7nzr0000gn/T/codex-clipboard-fbd4e44d-0585-423b-98d7-f091c23b39f9.png`
+- 实现地址：`http://localhost:8080/settings/config?scope_id=tps_e6c4218848a74086892a8abd87c7e8b8`
+- 浏览器实现截图：`/Users/admin/Testproject/test-platform/design-qa-implementation-auth-blocked.png`
+- 同画布对比：`/Users/admin/Testproject/test-platform/design-qa-comparison-auth-blocked.png`
+- 目标状态：DEV 平台、Dating/test Runtime Scope、当前生效 v3、只读展示已发布 Comm 静态值及版本历史。
+- 实际状态：Chrome 中原有平台会话已过期，访问目标地址后跳转至登录页；没有读取或提交浏览器中保存的凭证。
+- CSS 视口：1440 × 1000；Chrome 截图为 1425 × 1007 像素，浏览器默认设备密度。
+- 源图为 1342 × 633 像素。合并对比时两张图等宽归一化到 1425 像素，中间使用 24 像素分隔带；由于认证状态不同，不进行组件级像素结论。
 
 ## Findings
 
-- 没有剩余可执行的 P0、P1 或 P2 问题。
-- P3：本机真实表单为空值/占位符，而设计稿展示样例描述文本；这是状态数据差异，不是组件漂移。
-- P3：实现表单卡片在 1280 宽度下比归一化设计稿略宽，但标题、字段栅格、状态单选、后续步骤与操作区层级一致，未改变任务流或界面密度。
+- [P0] 无法捕获目标配置页面
+  - 位置：`/settings/config`。
+  - 证据：同画布对比上半部分是配置原型，下半部分是本机平台登录页；目标 URL 被重定向为 `/login?next=...`。
+  - 影响：无法从真实浏览器证据核对已发布值、两列 Comm 栅格、版本切换、1280px 响应式与控制台错误，因此不能把视觉验收标记为通过。
+  - 修复：用户在现有本地 Chrome 标签页完成登录后，重新捕获 Dating v3 的 1440px/1280px 页面并执行同画布比较。
 
 ## 必查保真面
 
-- 字体与排版：使用现有系统无衬线栈；标题、正文、标签和表格层级与设计一致，无异常换行或截断。
-- 间距与布局：56px 顶栏、220px 固定侧栏、内容边距、卡片圆角和表单节奏一致；1278px 宽度无横向溢出，侧栏为 `sticky`，top 为 56px。
-- 色彩与视觉令牌：背景、白卡、分隔线、Apple 蓝主操作、绿色成功和红色高风险状态均映射到现有令牌。
-- 图片与资产：该功能主要由原生表格、表单和状态组件构成，无需替代的插画或产品图；平台标识沿用现有清晰矢量/文本实现，无模糊位图。
-- 文案与内容：固定角色、项目继承、额外授权 own-only、历史快照和失败关闭边界均与 PRD V1.1 一致；未接 API 的后续按钮已明确禁用，未伪装成可用操作。
+- 字体与排版：受认证阻塞，目标页面尚未获得浏览器证据。
+- 间距与布局：受认证阻塞，尚不能核对 Comm 两列栅格、历史版本行和桌面断点。
+- 色彩与视觉令牌：代码继续复用平台现有 Apple-inspired 令牌，但尚不能据此替代可见页面检查。
+- 图片与资产：该页面没有产品图或插画；本轮不涉及图像资产替换。
+- 文案与内容：单元测试已锁定当前生效值、历史版本切换、动态字段不展示和自定义静态字段编辑；仍需真实页面复核。
 
 ## 全屏与局部证据
 
-- 全屏对比：`design-qa-project-new-final-comparison.jpg` 同时呈现设计与实现，核对顶栏、固定侧栏、标题、卡片、双列字段、状态单选和底部操作区。
-- 局部对比不另行裁切：同画布宽 2526px，表单标签、单选状态、按钮和侧栏文字均可直接辨认；额外裁片不会增加判断信息。
+- 全屏对比：`design-qa-comparison-auth-blocked.png` 已将源图与本机浏览器截图放入同一比较输入，明确显示状态不一致。
+- 局部对比：未执行。目标配置区域没有成功渲染，裁切登录页不会增加有效判断信息。
 
 ## 比较历史
 
-1. 首轮发现 P2：顶部重复“我的项目”，创建页侧栏“我的项目/项目管理”同时高亮。修复为权限模块仅在左栏承载项目入口，并按 pathname/query 精确计算单一高亮。
-2. 第二轮发现 P2：1280 桌面密度下创建操作区低于设计目标。缩短权限页顶部间距、表单间距和描述框高度；复测按钮底边 766.4px，在 1280 × 800 目标内可见。
-3. 代码审查收口：空角色改为失败关闭；详情路由不再回显旧对象；硬编码影响人数改为真实预览值或“未知”；未接 API 的按钮禁用；侧栏改为 sticky；普通管理员可从项目人员页创建 tester 并加入当前项目。
-4. 最终 Chrome 证据：主导航为“工作台、AI 测试、自动化、质量分析、专项评测”；侧栏仅“项目管理”高亮；无横向溢出；浏览器开发日志 0 条。
+1. 首轮：打开指定 Dating Scope 配置地址，平台返回登录页；记录为 P0 认证阻塞。
+2. 尚无修复后视觉轮次。代码、数据迁移和自动化测试已完成，但这些证据不能替代浏览器实现截图。
 
 ## 实施检查清单
 
-- [x] 15 画面对应路由、复用页面、受控弹窗与异常状态已落地。
-- [x] 角色导航和空角色失败关闭。
-- [x] 公共、项目、额外授权标签与权限解释。
-- [x] 项目详情三子路由、人员和工具视图。
-- [x] 工具影响预览、额外授权、固定角色矩阵与 403。
-- [x] 键盘可聚焦原生控件、非颜色状态文本、减少动态效果。
-- [x] 26 个前端测试、TypeScript 与 Vite 构建通过。
-- [x] 本机 gateway 重建并由 Chrome 验证。
+- [x] Dating Comm Definition 增加静态字段契约、动态字段黑名单和项目白名单。
+- [x] Dating/test 生成独立 v3 Comm，Truthy 当前版本和值保持不变。
+- [x] 当前生效版本值、历史版本查看和草稿结构化编辑已实现并由前端测试覆盖。
+- [x] 后端、前端与接口自动化工具回归通过。
+- [ ] 用户登录本机平台后，完成 1440px 与 1280px Chrome 视觉和交互验收。
 
-final result: passed
+final result: blocked

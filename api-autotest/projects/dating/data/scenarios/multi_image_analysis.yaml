@@ -1,0 +1,90 @@
+name: Dating 多图关系分析并保留任务数据
+variables: {}
+runtime_inputs:
+  analysis_locale:
+    label: Analysis 结果语言
+    description: 仅修改本次关系分析任务的 locale
+    type: enum
+    options: [en-US, zh-CN]
+    required: true
+    target:
+      scope: flow_step_request
+      step_id: create_analysis
+      path: $.locale
+  other_person_name:
+    label: 对方称呼
+    description: 本次 Analysis 使用的对方称呼，最长 100 个字符，不会保存为平台配置
+    type: string
+    required: false
+    max_length: 100
+    target:
+      scope: flow_step_request
+      step_id: create_analysis
+      path: $.other_person_name
+  analysis_background:
+    label: Analysis 背景说明
+    description: 本次分析的可选上下文，最长 1000 个字符，不会被当作聊天证据
+    type: string
+    required: false
+    max_length: 1000
+    target:
+      scope: flow_step_request
+      step_id: create_analysis
+      path: $.background
+# Dating Analysis 仍在联调期。这里暂时只固定传输成功与 Gateway message，
+# 不断言易变化的业务 data 字段、类型或值；Flow extract 使用的字段仍属于
+# 完成上传、创建任务和轮询所必需的运行时依赖，缺失时应按执行错误暴露。
+step_data:
+  get_upload_config:
+    params: {}
+    assert:
+      http_status: 200
+      gateway: {message: "ok"}
+  prepare_upload:
+    params:
+      content_type: "{{media_file.content_type}}"
+      size_bytes: "{{media_file.size_bytes}}"
+    assert:
+      http_status: 200
+      gateway: {message: "ok"}
+  complete_upload:
+    params:
+      asset_id: "{{asset_id}}"
+    assert:
+      http_status: 200
+      gateway: {message: "ok"}
+  create_analysis:
+    params:
+      asset_ids: "{{asset_ids}}"
+      locale: en-US
+      other_person_name: Maya
+      background: Automated Dating Analysis test context.
+    assert:
+      http_status: 200
+      gateway: {message: "ok"}
+  poll_analysis:
+    params:
+      task_id: "{{task_id}}"
+    assert:
+      http_status: 200
+      gateway: {message: "ok"}
+  get_analysis_result:
+    params:
+      task_id: "{{task_id}}"
+    assert:
+      http_status: 200
+      gateway: {message: "ok"}
+  # Debug 与 Cost 复用业务 Analysis task_id；API Key、目标地址和请求信封由
+  # 各自 API Definition 与平台 Scope 提供，Scenario 不保存任何凭证或环境值。
+  get_task_debug:
+    params:
+      task_id: "{{task_id}}"
+    assert:
+      http_status: 200
+      gateway: {message: "ok"}
+  get_provider_cost:
+    params:
+      task_id: "{{task_id}}"
+    assert:
+      http_status: 200
+      gateway: {message: "ok"}

@@ -153,7 +153,7 @@ python3 -m pytest -q
 
 两个工具壳均使用 Flask 3，理由：
 
-- 与现有 `Truthy_ApiAutoTest2/web` 任务型工具一致；
+- 与现有 `api-autotest/web` 任务型工具一致；
 - 与智能体同为 Python，可直接复用任务存储、子进程和平台配置客户端；
 - 页面是工具工作台，不需要再建立独立 React 工程；
 - 可使用 Blueprint 显式支持平台子路径；

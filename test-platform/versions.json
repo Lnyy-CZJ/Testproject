@@ -11,7 +11,7 @@
       "image_envs": ["PLATFORM_GATEWAY_IMAGE"]
     },
     "platform-backend": {
-      "version": "1.3.0",
+      "version": "1.3.1",
       "compatible_product_major": 1,
       "source_paths": ["test-platform/backend/app", "test-platform/backend/alembic", "test-platform/backend/alembic.ini", "test-platform/backend/requirements.txt", "test-platform/backend/Dockerfile"],
       "image_envs": ["PLATFORM_BACKEND_IMAGE"]
@@ -37,9 +37,9 @@
       "config_scopes": ["tool:truthy-search"]
     },
     "api-autotest": {
-      "version": "1.2.0",
+      "version": "1.2.1",
       "compatible_product_major": 1,
-      "source_paths": ["Truthy_ApiAutoTest2/api", "Truthy_ApiAutoTest2/config", "Truthy_ApiAutoTest2/scripts", "Truthy_ApiAutoTest2/test_cases", "Truthy_ApiAutoTest2/utils", "Truthy_ApiAutoTest2/web", "Truthy_ApiAutoTest2/runtest.py", "Truthy_ApiAutoTest2/Jenkinsfile", "Truthy_ApiAutoTest2/requirements.txt", "Truthy_ApiAutoTest2/requirements-web.txt", "Truthy_ApiAutoTest2/Dockerfile"],
+      "source_paths": ["api-autotest/api", "api-autotest/config", "api-autotest/projects", "api-autotest/scripts", "api-autotest/test_cases", "api-autotest/utils", "api-autotest/web", "api-autotest/runtest.py", "api-autotest/Jenkinsfile", "api-autotest/requirements.txt", "api-autotest/requirements-web.txt", "api-autotest/Dockerfile"],
       "image_envs": ["API_AUTOTEST_IMAGE"],
       "config_scopes": ["tool:api-autotest"]
     },
@@ -60,6 +60,6 @@
   },
   "database": {
     "image": "postgres:17-alpine@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193",
-    "alembic_revision": "20260828_0023"
+    "alembic_revision": "20260831_0024"
   }
 }

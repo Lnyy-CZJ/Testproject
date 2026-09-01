@@ -1,0 +1,15 @@
+{
+  "schema_version": "aidating.e2e.case.v1",
+  "case_id": "e2e-analysis-single-001",
+  "task_kind": "analysis",
+  "locale": "en-US",
+  "media": [{"path": "media/staging-analysis-smoke.png"}],
+  "analysis": {
+    "other_person_name": "Maya",
+    "background": "Synthetic test conversation."
+  },
+  "expect": {
+    "task_status": "succeeded",
+    "result_schema": "dating.relationship_analysis.v1"
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "schema_version": "aidating.e2e.case.v1",
+  "case_id": "analysis-stage-reconnecting-positive-02",
+  "task_kind": "analysis",
+  "locale": "en-NL",
+  "media": [
+    {
+      "path": "Reconnecting重新联系/example_02/chat_01.png"
+    },
+    {
+      "path": "Reconnecting重新联系/example_02/chat_02.png"
+    },
+    {
+      "path": "Reconnecting重新联系/example_02/chat_03.png"
+    }
+  ],
+  "analysis": {
+    "other_person_name": "Maeve"
+  },
+  "expect": {
+    "task_status": "succeeded",
+    "result_schema": "dating.relationship_analysis.v1"
+  }
+}

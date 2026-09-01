@@ -1,0 +1,22 @@
+# 测试环境只保存非敏感配置，真实凭证由环境变量提供。
+gateway_base_url: http://gateway.spark-jam.top
+gateway_targets:
+  dating_evaluation:
+    # 本地 CLI 调试使用后端当前 test 地址；Web 平台模式仍只读取 Scope Release。
+    base_url: http://lb-rg3phjei-vzmdn2i7ey8rq40l.clb.usw-tencentclb.com
+    method: POST
+    path: /admin/invoke
+  admin:
+    # Admin 接口使用独立域名与 Web 客户端标识，不复用业务 Gateway 会话。
+    # 该测试环境仅在 HTTP 端口提供 Gateway 服务；HTTPS 443 会在 TLS 握手中断开。
+    base_url: http://admin-staging.spark-jam.top
+    method: POST
+    path: /gateway/invoke
+    headers:
+      Content-Type: application/json
+      Accept: '*/*'
+      Host: admin-staging.spark-jam.top
+      Connection: keep-alive
+comm:
+  # 单用户测试环境固定设备标识；DEVICE_ID 环境变量可在本机覆盖。
+  device_id: 39d42779-2dcf-4759-9275-699eed5db695

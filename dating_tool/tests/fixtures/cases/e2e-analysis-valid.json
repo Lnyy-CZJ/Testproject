@@ -1,0 +1,15 @@
+{
+  "schema_version": "aidating.e2e.case.v1",
+  "case_id": "e2e-analysis-valid",
+  "task_kind": "analysis",
+  "locale": "en-US",
+  "media": [{"path": "media/analysis.png"}],
+  "analysis": {
+    "other_person_name": "Alex",
+    "background": "Synthetic smoke fixture."
+  },
+  "expect": {
+    "task_status": "succeeded",
+    "result_schema": "dating.relationship_analysis.v1"
+  }
+}

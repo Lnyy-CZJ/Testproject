@@ -292,7 +292,7 @@ services:
 
   api-autotest:
     build:
-      context: ../Truthy_ApiAutoTest2
+      context: ../api-autotest
       args:
         APP_VERSION: "${API_AUTOTEST_VERSION:-unknown}"
         APP_REVISION: "${APP_REVISION:-unknown}"
@@ -319,11 +319,11 @@ services:
       API_AUTOTEST_SESSION_PROVIDER: platform
     volumes:
       # 开发部署直接挂载标准项目包，便于验证新增项目且不再扫描旧根 data/。
-      - ../Truthy_ApiAutoTest2/projects:/app/projects:ro
-      - ../Truthy_ApiAutoTest2/runtime:/app/runtime
-      - ../Truthy_ApiAutoTest2/logs:/app/logs
-      - ../Truthy_ApiAutoTest2/reports:/app/reports
-      - ../Truthy_ApiAutoTest2/tasks:/app/tasks
+      - ../api-autotest/projects:/app/projects:ro
+      - ../api-autotest/runtime:/app/runtime
+      - ../api-autotest/logs:/app/logs
+      - ../api-autotest/reports:/app/reports
+      - ../api-autotest/tasks:/app/tasks
       - ./.runtime-secrets/api-autotest-client-token:/run/secrets/platform-client-token:ro
     expose:
       - "5003"

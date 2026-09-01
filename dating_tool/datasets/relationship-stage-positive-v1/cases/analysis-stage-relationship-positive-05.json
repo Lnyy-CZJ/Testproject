@@ -1,0 +1,42 @@
+{
+  "schema_version": "aidating.e2e.case.v1",
+  "case_id": "analysis-stage-relationship-positive-05",
+  "task_kind": "analysis",
+  "locale": "en-NL",
+  "media": [
+    {
+      "path": "Relationship稳定关系/example_05/chat_01.png"
+    },
+    {
+      "path": "Relationship稳定关系/example_05/chat_02.png"
+    },
+    {
+      "path": "Relationship稳定关系/example_05/chat_03.png"
+    },
+    {
+      "path": "Relationship稳定关系/example_05/chat_04.png"
+    },
+    {
+      "path": "Relationship稳定关系/example_05/chat_05.png"
+    },
+    {
+      "path": "Relationship稳定关系/example_05/chat_06.png"
+    },
+    {
+      "path": "Relationship稳定关系/example_05/chat_07.png"
+    },
+    {
+      "path": "Relationship稳定关系/example_05/chat_08.png"
+    },
+    {
+      "path": "Relationship稳定关系/example_05/chat_09.png"
+    }
+  ],
+  "analysis": {
+    "other_person_name": "Louis"
+  },
+  "expect": {
+    "task_status": "succeeded",
+    "result_schema": "dating.relationship_analysis.v1"
+  }
+}

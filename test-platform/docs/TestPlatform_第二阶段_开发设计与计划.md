@@ -5,7 +5,7 @@
 > 文档状态：待评审  
 > 需求依据：[TestPlatform_第二阶段_PRD.md](./TestPlatform_第二阶段_PRD.md) V1.1  
 > 目标平台：`test-platform`  
-> 关联工具：`TrackEvents_tess`、`log_filter_tool`、`Truthy_Search`、`Truthy_ApiAutoTest2`  
+> 关联工具：`TrackEvents_tess`、`log_filter_tool`、`Truthy_Search`、`api-autotest`<br>
 > 设计定位：身份、权限、审计、配置与 Secret 控制面
 
 ---
@@ -18,7 +18,7 @@
 2. 用户、角色和工具权限如何建模并在网关强制执行；
 3. 审计日志如何保证完整、可查且不泄露 Secret；
 4. 分散的 `.env` 如何迁移为平台配置与 Secret；
-5. Truthy_Search 和 Truthy_ApiAutoTest2 的 Token 如何自动刷新；
+5. Truthy_Search 和 api-autotest 的 Token 如何自动刷新；
 6. 哪些配置即时生效、下一任务生效、需要重启或属于部署变更；
 7. 前后端、数据库、Nginx、Compose 和四个工具分别修改什么；
 8. 如何分批上线、验证和回滚。
@@ -39,7 +39,7 @@
 | 网关 | Nginx；统一代理平台 API 和四个工具；当前没有鉴权 |
 | 编排 | Docker Compose；宿主机只暴露平台网关 |
 | Truthy_Search | Flask + SQLite；每个新 Run 重新读取运行凭证；Admin Session 已支持自动登录和内存续期 |
-| Truthy_ApiAutoTest2 | Flask 工具壳 + pytest 子进程；每个任务加载会话；刷新后写回 `.env.platform` |
+| api-autotest | Flask 工具壳 + pytest 子进程；每个任务加载会话；刷新后写回 `.env.platform` |
 | TrackEvents_tess | Python HTTP 服务；配置在模块导入时读取 |
 | log_filter_tool | Flask；配置在 `create_app()` 时读取 |
 
@@ -667,7 +667,7 @@ refreshing → action_required
 
 ### 11.3 普通 Gateway Session Provider
 
-适用于 Truthy_Search 和 Truthy_ApiAutoTest2 普通会话。
+适用于 Truthy_Search 和 api-autotest 普通会话。
 
 刷新流程：
 
@@ -689,7 +689,7 @@ Refresh Token 临期/过期或刷新失败：
 
 ### 11.4 Admin Login Provider
 
-Truthy_Search 与 Truthy_ApiAutoTest2 使用相同 Admin Login 契约，但按工具和环境保存独立服务账号。
+Truthy_Search 与 api-autotest 使用相同 Admin Login 契约，但按工具和环境保存独立服务账号。
 
 Truthy_Search：
 
@@ -699,7 +699,7 @@ Truthy_Search：
 - 工具只向平台上报登录状态、过期时间和安全错误，不上报 Session Token；
 - 新 Run 自动使用最新账号，运行中 Run 不切换。
 
-Truthy_ApiAutoTest2：
+api-autotest：
 
 - 增加同契约 Admin Login Provider；
 - 任务前确保 Admin Session 有效；
@@ -1271,7 +1271,7 @@ PUT  /api/v1/internal/tools/{tool_id}/credentials/{credential_id}/session
 - 审计字段只使用 ID、参数摘要、状态和 Release ID；
 - Raw、请求日志和报告继续执行现有 Token 脱敏。
 
-### 17.4 Truthy_ApiAutoTest2
+### 17.4 api-autotest
 
 任务配置：
 
@@ -1434,7 +1434,7 @@ TRUSTED_PROXY_CIDRS
 | `.env.example` | 平台模式只保留 Bootstrap/运行参数说明 |
 | 测试、README | 配置快照、下一任务生效、Admin 状态、无 Secret 落盘 |
 
-### 19.5 Truthy_ApiAutoTest2
+### 19.5 api-autotest
 
 | 文件 | 变更 |
 |---|---|
@@ -1533,7 +1533,7 @@ TRUSTED_PROXY_CIDRS
 - TrackEvents 原全量测试；
 - log_filter_tool 原全量测试；
 - Truthy_Search Web 与全量测试；
-- Truthy_ApiAutoTest2 框架与工具壳测试；
+- api-autotest 框架与工具壳测试；
 - 独立模式不需要平台 API；
 - 平台模式不读取/写回旧 Secret 文件；
 - 哨兵 Token 不出现在日志、Raw、报告、JUnit、审计和错误响应。
@@ -1661,7 +1661,7 @@ TRUSTED_PROXY_CIDRS
 
 完成门禁：新 Run 下一任务生效；运行中 Run 不变；平台模式无 Secret 文件依赖。
 
-### 阶段 8：Truthy_ApiAutoTest2 迁移
+### 阶段 8：api-autotest 迁移
 
 1. TaskManager 获取任务快照并注入 Popen env；
 2. Session 写回从 dotenv 切到平台 Provider；

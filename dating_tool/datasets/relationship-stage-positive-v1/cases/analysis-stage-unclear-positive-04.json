@@ -1,0 +1,36 @@
+{
+  "schema_version": "aidating.e2e.case.v1",
+  "case_id": "analysis-stage-unclear-positive-04",
+  "task_kind": "analysis",
+  "locale": "en-IE",
+  "media": [
+    {
+      "path": "Unclear阶段待确定/example_04/chat_01.png"
+    },
+    {
+      "path": "Unclear阶段待确定/example_04/chat_02.png"
+    },
+    {
+      "path": "Unclear阶段待确定/example_04/chat_03.png"
+    },
+    {
+      "path": "Unclear阶段待确定/example_04/chat_04.png"
+    },
+    {
+      "path": "Unclear阶段待确定/example_04/chat_05.png"
+    },
+    {
+      "path": "Unclear阶段待确定/example_04/chat_06.png"
+    },
+    {
+      "path": "Unclear阶段待确定/example_04/chat_07.png"
+    }
+  ],
+  "analysis": {
+    "other_person_name": "Alex"
+  },
+  "expect": {
+    "task_status": "succeeded",
+    "result_schema": "dating.relationship_analysis.v1"
+  }
+}

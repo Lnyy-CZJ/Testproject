@@ -817,3 +817,178 @@ def test_projectized_comm_migration_separates_copied_dating_values(
         "WHERE id='api-autotest.runtime.gateway.comm'"
     ).fetchone()[0]) == {}
     connection.close()
+
+
+def test_prod_scope_migration_exposes_projects_without_copying_test_values(
+    tmp_path: Path,
+) -> None:
+    """0024 只补生产项目边界，不把任何 dev/test 运行材料带入 prod。"""
+
+    database_path = tmp_path / "api-autotest-prod-scopes.db"
+    database_url = f"sqlite:///{database_path}"
+    run_alembic(database_url, "upgrade", "20260824_0019")
+
+    connection = sqlite3.connect(database_path)
+    tool_ids = [row[0] for row in connection.execute("SELECT id FROM tools")]
+    manifest_path = tmp_path / "api-autotest-prod-scopes-project-access-manifest.json"
+    manifest_path.write_text(json.dumps({
+        "user_roles": {},
+        "tool_projects": {tool_id: "project_legacy" for tool_id in tool_ids},
+        "memberships": [],
+        "required_environments": ["prod"],
+        "source_counts": {
+            "prod:truthy-search": 0,
+            "prod:api-autotest": 0,
+            "prod:functional-test-agent": 0,
+            "prod:api-test-agent": 0,
+            "prod:log-filter": 0,
+        },
+        "resources": [],
+    }), encoding="utf-8")
+    connection.close()
+    environment = os.environ.copy()
+    environment["DATABASE_URL"] = database_url
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "app.migrate_project_access",
+            "--manifest",
+            str(manifest_path),
+            "--required-environment",
+            "prod",
+            "--apply",
+        ],
+        cwd=BACKEND_ROOT,
+        env=environment,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    run_alembic(database_url, "upgrade", "20260828_0023")
+
+    connection = sqlite3.connect(database_path)
+    assert connection.execute(
+        "SELECT COUNT(*) FROM tool_project_scopes WHERE environment_id='prod'"
+    ).fetchone()[0] == 0
+    connection.close()
+    run_alembic(database_url, "upgrade", "20260831_0024")
+    connection = sqlite3.connect(database_path)
+    connection.row_factory = sqlite3.Row
+    scopes = connection.execute(
+        "SELECT project_id, target_env, status, is_default, platform_project_id "
+        "FROM tool_project_scopes WHERE environment_id='prod' "
+        "ORDER BY project_id"
+    ).fetchall()
+    assert [tuple(row) for row in scopes] == [
+        ("dating", "prod", "active", 0, "project_legacy"),
+        ("truthy", "prod", "active", 1, "project_legacy"),
+    ]
+    prod_scope_ids = [row[0] for row in connection.execute(
+        "SELECT id FROM tool_project_scopes WHERE environment_id='prod'"
+    ).fetchall()]
+    placeholders = ",".join("?" for _ in prod_scope_ids)
+    for table in ("config_activations", "config_releases", "secrets"):
+        assert connection.execute(
+            f"SELECT COUNT(*) FROM {table} "
+            f"WHERE environment_id='prod' AND owner_type='tool_project_scope' "
+            f"AND owner_id IN ({placeholders})",
+            prod_scope_ids,
+        ).fetchone()[0] == 0
+    assert connection.execute(
+        f"SELECT COUNT(*) FROM credentials WHERE environment_id='prod' "
+        f"AND runtime_scope_id IN ({placeholders})",
+        prod_scope_ids,
+    ).fetchone()[0] == 0
+    # 0021 的 dev/test 占位数据保持原状，生产修复不能改写开发环境。
+    assert connection.execute(
+        "SELECT status FROM tool_project_scopes "
+        "WHERE environment_id='dev' AND project_id='truthy'"
+    ).fetchone()[0] == "disabled"
+    connection.close()
+
+    run_alembic(database_url, "downgrade", "20260828_0023")
+    connection = sqlite3.connect(database_path)
+    assert connection.execute(
+        "SELECT COUNT(*) FROM tool_project_scopes WHERE environment_id='prod'"
+    ).fetchone()[0] == 0
+    connection.close()
+
+
+def test_dating_evaluation_config_definitions_are_project_scoped_and_reversible(
+    tmp_path: Path,
+) -> None:
+    """0025 只向 Dating 暴露 Evaluation 连接与密钥，并支持精确降级。"""
+
+    database_path = tmp_path / "dating-evaluation-config.db"
+    database_url = f"sqlite:///{database_path}"
+    run_alembic(database_url, "upgrade", "20260824_0019")
+
+    connection = sqlite3.connect(database_path)
+    tool_ids = [row[0] for row in connection.execute("SELECT id FROM tools")]
+    manifest_path = tmp_path / "dating-evaluation-project-access-manifest.json"
+    manifest_path.write_text(json.dumps({
+        "user_roles": {},
+        "tool_projects": {tool_id: "project_legacy" for tool_id in tool_ids},
+        "memberships": [],
+        "required_environments": ["prod"],
+        "source_counts": {
+            "prod:truthy-search": 0,
+            "prod:api-autotest": 0,
+            "prod:functional-test-agent": 0,
+            "prod:api-test-agent": 0,
+            "prod:log-filter": 0,
+        },
+        "resources": [],
+    }), encoding="utf-8")
+    connection.close()
+    environment = os.environ.copy()
+    environment["DATABASE_URL"] = database_url
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "app.migrate_project_access",
+            "--manifest",
+            str(manifest_path),
+            "--required-environment",
+            "prod",
+            "--apply",
+        ],
+        cwd=BACKEND_ROOT,
+        env=environment,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    run_alembic(database_url, "upgrade", "20260831_0025")
+    connection = sqlite3.connect(database_path)
+    connection.row_factory = sqlite3.Row
+    rows = connection.execute(
+        "SELECT id, key, value_type, sensitivity, required, validation_schema "
+        "FROM config_definitions "
+        "WHERE id LIKE 'api-autotest.runtime.dating-evaluation.%' "
+        "ORDER BY sort_order"
+    ).fetchall()
+    assert [
+        (row["key"], row["value_type"], row["sensitivity"], row["required"])
+        for row in rows
+    ] == [
+        ("gateway.targets.dating_evaluation.base_url", "url", "normal", 0),
+        ("gateway.targets.dating_evaluation.path", "logical_path", "normal", 0),
+        ("DATING_EVALUATION_API_KEY", "secret", "secret", 0),
+    ]
+    assert all(
+        json.loads(row["validation_schema"])["project_ids"] == ["dating"]
+        for row in rows
+    )
+    connection.close()
+
+    run_alembic(database_url, "downgrade", "20260831_0024")
+    connection = sqlite3.connect(database_path)
+    assert connection.execute(
+        "SELECT COUNT(*) FROM config_definitions "
+        "WHERE id LIKE 'api-autotest.runtime.dating-evaluation.%'"
+    ).fetchone()[0] == 0
+    connection.close()

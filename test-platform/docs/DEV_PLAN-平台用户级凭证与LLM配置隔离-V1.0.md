@@ -757,11 +757,11 @@ git commit -m "feat(agents): bind runtime snapshots to platform user"
 - Modify: `Truthy_Search/search_tool.py`
 - Test: `Truthy_Search/tests/test_web_app.py`
 - Test: `Truthy_Search/tests/test_search_tool.py`
-- Modify: `Truthy_ApiAutoTest2/web/app.py`
-- Modify: `Truthy_ApiAutoTest2/web/credentials.py`
-- Modify: `Truthy_ApiAutoTest2/utils/custom/runtime_context.py`
-- Modify: `Truthy_ApiAutoTest2/test_cases/conftest.py`
-- Test: `Truthy_ApiAutoTest2/tests/test_web_routes.py`
+- Modify: `api-autotest/web/app.py`
+- Modify: `api-autotest/web/credentials.py`
+- Modify: `api-autotest/utils/custom/runtime_context.py`
+- Modify: `api-autotest/test_cases/conftest.py`
+- Test: `api-autotest/tests/test_web_routes.py`
 
 ### Step 1：先写三个工具的隔离测试
 
@@ -780,7 +780,7 @@ python3 -m pytest tests/test_people_search_phase4.py tests/test_people_search_ph
 cd ../Truthy_Search
 python3 -m pytest tests/test_web_app.py tests/test_search_tool.py -q
 
-cd ../Truthy_ApiAutoTest2
+cd ../api-autotest
 python3 -m pytest tests/test_web_routes.py -q
 ```
 
@@ -815,7 +815,7 @@ python3 -m pytest tests/test_people_search_phase4.py tests/test_people_search_ph
 cd ../Truthy_Search
 python3 -m pytest tests/test_web_app.py tests/test_search_tool.py -q
 
-cd ../Truthy_ApiAutoTest2
+cd ../api-autotest
 python3 -m pytest tests/test_web_routes.py tests/test_task_manager.py -q
 ```
 
@@ -827,10 +827,10 @@ git add log_filter_tool/app.py log_filter_tool/people_search_ai.py \
   log_filter_tool/tests/test_people_search_phase5.py \
   Truthy_Search/web_app.py Truthy_Search/search_tool.py \
   Truthy_Search/tests/test_web_app.py Truthy_Search/tests/test_search_tool.py \
-  Truthy_ApiAutoTest2/web/app.py Truthy_ApiAutoTest2/web/credentials.py \
-  Truthy_ApiAutoTest2/utils/custom/runtime_context.py \
-  Truthy_ApiAutoTest2/test_cases/conftest.py \
-  Truthy_ApiAutoTest2/tests/test_web_routes.py
+  api-autotest/web/app.py api-autotest/web/credentials.py \
+  api-autotest/utils/custom/runtime_context.py \
+  api-autotest/test_cases/conftest.py \
+  api-autotest/tests/test_web_routes.py
 git commit -m "feat(tools): consume user-scoped platform credentials"
 ```
 
@@ -852,8 +852,8 @@ git commit -m "feat(tools): consume user-scoped platform credentials"
 - Modify: `log_filter_tool/docker-compose.yml`
 - Modify: `Truthy_Search/compose.yml`
 - Modify: `Truthy_Search/README.md`
-- Modify: `Truthy_ApiAutoTest2/.env.platform.example`
-- Modify: `Truthy_ApiAutoTest2/README.md`
+- Modify: `api-autotest/.env.platform.example`
+- Modify: `api-autotest/README.md`
 - Test: `test-platform/backend/tests/test_api.py`
 
 ### Step 1：先写配置失败测试
@@ -921,7 +921,7 @@ git add test-platform/backend/app/core/config.py \
   api-test-agent/compose.local.yml api-test-agent/README.md \
   log_filter_tool/docker-compose.yml \
   Truthy_Search/compose.yml Truthy_Search/README.md \
-  Truthy_ApiAutoTest2/.env.platform.example Truthy_ApiAutoTest2/README.md \
+  api-autotest/.env.platform.example api-autotest/README.md \
   test-platform/backend/tests/test_api.py
 git commit -m "docs(platform): document personal credential rollout"
 ```
@@ -983,7 +983,7 @@ python3 -m pytest -q
 - [ ] API AutoTest：
 
 ```bash
-cd Truthy_ApiAutoTest2
+cd api-autotest
 python3 -m pytest -q
 ```
 

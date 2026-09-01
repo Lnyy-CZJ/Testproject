@@ -86,8 +86,8 @@ jobs:
           - name: testproject-api-autotest
             component_id: api-autotest
             env_var: API_AUTOTEST_IMAGE
-            context: Truthy_ApiAutoTest2
-            dockerfile: Truthy_ApiAutoTest2/Dockerfile
+            context: api-autotest
+            dockerfile: api-autotest/Dockerfile
           - name: testproject-functional-test-agent
             component_id: functional-test-agent
             env_var: FUNCTIONAL_AGENT_IMAGE

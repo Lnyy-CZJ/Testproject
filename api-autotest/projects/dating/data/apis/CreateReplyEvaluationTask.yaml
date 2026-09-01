@@ -1,0 +1,13 @@
+id: CreateReplyEvaluationTask
+name: 创建结构化 Reply 评测任务
+credential_profile: public
+request:
+  service_name: tool.dating.internal.DatingEvaluationService
+  method_name: CreateReplyEvaluationTask
+transport:
+  target: dating_evaluation
+  envelope: root_single
+  params_container: input
+  reason: automated Reply evaluation
+  requires_session: false
+  bearer_token_variable: DATING_EVALUATION_API_KEY

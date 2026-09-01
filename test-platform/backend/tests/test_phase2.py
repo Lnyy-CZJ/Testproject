@@ -209,6 +209,32 @@ def test_setup_session_csrf_and_secret_never_echo_plaintext(phase2_client) -> No
         assert b"sentinel-secret" not in version.ciphertext
 
 
+def test_secret_id_over_database_limit_is_rejected_before_insert(phase2_client) -> None:
+    """超长 Secret ID 必须在 API 边界返回校验错误，不能下沉为数据库 503。"""
+
+    client, factory, _settings = phase2_client
+    _setup(client)
+    csrf = client.cookies.get("tp_csrf")
+    secret_id = f"sec_{'x' * 61}"
+
+    response = client.put(
+        f"/api/v1/secrets/{secret_id}",
+        headers={"X-CSRF-Token": csrf},
+        json={
+            "environment_id": "dev",
+            "owner_type": "tool",
+            "owner_id": "truthy-search",
+            "definition_id": "truthy-search.AUTH_TOKEN",
+            "value": "sentinel-secret",
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["code"] == "VALIDATION_ERROR"
+    with factory() as database:
+        assert database.get(Secret, secret_id) is None
+
+
 def test_permission_dependency_factory_does_not_create_query_parameters(phase2_client) -> None:
     """权限依赖工厂必须解析会话，不能误把 context/database 暴露为查询参数。"""
 
@@ -381,8 +407,26 @@ def test_runtime_scope_management_api_validates_mapping_and_immutable_identity(
     assert created.status_code == 201
     scope = created.json()
     assert scope["platform_environment"] == "dev"
+    assert scope["platform_project_name"] == "Scope API"
     assert scope["target_env"] == "test"
     assert scope["status"] == "active"
+    assert scope["active_release"] is None
+
+    release = client.post(
+        "/api/v1/config/releases",
+        headers={"X-CSRF-Token": csrf},
+        json={
+            "environment_id": "dev",
+            "owner_type": "tool_project_scope",
+            "owner_id": scope["id"],
+        },
+    )
+    assert release.status_code == 201
+    published = client.post(
+        f"/api/v1/config/releases/{release.json()['id']}/publish",
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert published.status_code == 200
 
     duplicate = client.post(
         "/api/v1/runtime-scopes",
@@ -410,6 +454,11 @@ def test_runtime_scope_management_api_validates_mapping_and_immutable_identity(
     )
     assert listed.status_code == 200
     assert [item["id"] for item in listed.json()] == [scope["id"]]
+    assert listed.json()[0]["active_release"] == {
+        "id": release.json()["id"],
+        "version": 1,
+        "status": "active",
+    }
 
 
 def test_scoped_release_and_secret_reuse_tool_definitions_without_cross_scope_leak(

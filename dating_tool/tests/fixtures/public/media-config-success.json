@@ -1,0 +1,1 @@
+{"source":"documented","response":{"code":0,"responses":[{"id":"__REQUEST_ID__","success":true,"code":0,"data":{"config_version":"fixture-v1","config_cache_ttl_seconds":300,"allowed_content_types":["image/png"],"min_asset_count":1,"max_asset_count":9,"max_size_bytes":7000000,"complete_retry":{"max_attempts":1,"initial_delay_ms":0,"max_delay_ms":0}}}]}}

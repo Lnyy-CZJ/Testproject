@@ -1,0 +1,404 @@
+{
+  "openapi": "3.0.1",
+  "info": {
+    "title": "默认模块",
+    "description": "",
+    "version": "1.0.0"
+  },
+  "tags": [],
+  "paths": {
+    "/": {
+      "post": {
+        "summary": "GetAnalysisResults查看分析结果",
+        "deprecated": false,
+        "description": "通知服务端媒体文件已上传完成。",
+        "tags": [],
+        "parameters": [
+          {
+            "name": "Content-Type",
+            "in": "header",
+            "description": "",
+            "required": true,
+            "example": "application/json",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "comm": {
+                    "type": "object",
+                    "properties": {
+                      "auth_token": {
+                        "type": "string"
+                      },
+                      "user_id": {
+                        "type": "string"
+                      },
+                      "device_id": {
+                        "type": "string"
+                      },
+                      "client_request_id": {
+                        "type": "string"
+                      },
+                      "platform": {
+                        "type": "string"
+                      },
+                      "app_version": {
+                        "type": "string"
+                      },
+                      "locale": {
+                        "type": "string"
+                      },
+                      "country": {
+                        "type": "string"
+                      },
+                      "timezone": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "auth_token",
+                      "user_id",
+                      "device_id",
+                      "client_request_id",
+                      "platform",
+                      "app_version",
+                      "locale",
+                      "country",
+                      "timezone"
+                    ]
+                  },
+                  "requests": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "service_name": {
+                          "type": "string"
+                        },
+                        "method_name": {
+                          "type": "string"
+                        },
+                        "params": {
+                          "type": "object",
+                          "properties": {
+                            "media_asset_id": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "media_asset_id"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "service_name",
+                        "method_name",
+                        "params"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "comm",
+                  "requests"
+                ]
+              },
+              "example": {
+                "comm": {
+                  "auth_token": "{{access_token}}",
+                  "user_id": "{{user_id}}",
+                  "device_id": "{{device_id}}",
+                  "client_request_id": "crid_photo_1784087021478825",
+                  "platform": "ios",
+                  "app_version": "1.0.3",
+                  "locale": "zh-Hans-CN",
+                  "country": "CN",
+                  "timezone": "UTC+08:00"
+                },
+                "requests": [
+                  {
+                    "id": "req_0",
+                    "service_name": "tool.people_insight.MediaService",
+                    "method_name": "CompleteMediaUpload",
+                    "params": {
+                      "media_asset_id": "media_cd073db624cf1f204e3c8200"
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "integer"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    },
+                    "trace_id": {
+                      "type": "string"
+                    },
+                    "responses": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "success": {
+                            "type": "boolean"
+                          },
+                          "code": {
+                            "type": "integer"
+                          },
+                          "message": {
+                            "type": "string"
+                          },
+                          "data": {
+                            "type": "object",
+                            "properties": {
+                              "content_type": {
+                                "type": "string"
+                              },
+                              "expires_time": {
+                                "type": "integer"
+                              },
+                              "media_asset_id": {
+                                "type": "string"
+                              },
+                              "size_bytes": {
+                                "type": "integer"
+                              },
+                              "status": {
+                                "type": "string"
+                              },
+                              "upload_expires_time": {
+                                "type": "integer"
+                              },
+                              "uploaded_time": {
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "content_type",
+                              "expires_time",
+                              "media_asset_id",
+                              "size_bytes",
+                              "status",
+                              "upload_expires_time",
+                              "uploaded_time"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "success",
+                          "code",
+                          "message",
+                          "data"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id",
+                    "trace_id",
+                    "responses"
+                  ]
+                },
+                "example": {
+                  "code": 0,
+                  "message": "ok",
+                  "request_id": "gw_req_8b8b711cf3d244206d6e824448b7edb7",
+                  "trace_id": "trace_05d5d6dd55020b284abdd14fb0e387a1",
+                  "responses": [
+                    {
+                      "id": "req_0",
+                      "success": true,
+                      "code": 0,
+                      "message": "ok",
+                      "data": {
+                        "content_type": "image/jpeg",
+                        "expires_time": 1786679019768,
+                        "media_asset_id": "media_cd073db624cf1f204e3c8200",
+                        "size_bytes": 338532,
+                        "status": "uploaded",
+                        "upload_expires_time": 1784173419768,
+                        "uploaded_time": 1784087022700
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {}
+          }
+        },
+        "security": []
+      }
+    },
+    "/upload_url": {
+      "put": {
+        "summary": "PUT 上传图片至 COS（动态签名 URL） Copy",
+        "deprecated": false,
+        "description": "使用 PrepareMediaUpload 动态返回的签名 upload_url，将图片二进制直接上传至 COS。upload_url 会过期，上传成功后须调用 CompleteMediaUpload。",
+        "tags": [],
+        "parameters": [
+          {
+            "name": "Content-Type",
+            "in": "header",
+            "description": "来自 PrepareMediaUpload 响应 data.content_type。",
+            "required": true,
+            "example": "{{content_type}}",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Content-Length",
+            "in": "header",
+            "description": "图片二进制文件的实际字节数；必须与 PrepareMediaUpload 请求中的 size_bytes 一致。",
+            "required": true,
+            "example": "{{content_length}}",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "binary": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              },
+              "examples": {}
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "COS 上传成功通常返回 200，响应体为空。",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "headers": {}
+          }
+        },
+        "security": []
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "请求comm": {
+        "type": "object",
+        "properties": {
+          "comm": {
+            "type": "object",
+            "properties": {
+              "auth_token": {
+                "type": "string",
+                "title": "token值"
+              },
+              "device_id": {
+                "type": "string",
+                "title": "手机设备id"
+              },
+              "install_id": {
+                "type": "string"
+              },
+              "client_request_id": {
+                "type": "string"
+              },
+              "trace_id": {
+                "type": "string"
+              },
+              "platform": {
+                "type": "string"
+              },
+              "app_version": {
+                "type": "string"
+              },
+              "locale": {
+                "type": "string"
+              },
+              "timezone": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "auth_token",
+              "device_id",
+              "install_id",
+              "client_request_id",
+              "trace_id",
+              "platform",
+              "app_version",
+              "locale",
+              "timezone"
+            ]
+          },
+          "requests": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "service_name": {
+                  "type": "string"
+                },
+                "method_name": {
+                  "type": "string"
+                },
+                "params": {
+                  "type": "object",
+                  "properties": {}
+                }
+              }
+            }
+          }
+        },
+        "required": [
+          "comm",
+          "requests"
+        ]
+      }
+    },
+    "responses": {},
+    "securitySchemes": {}
+  },
+  "servers": [],
+  "security": []
+}

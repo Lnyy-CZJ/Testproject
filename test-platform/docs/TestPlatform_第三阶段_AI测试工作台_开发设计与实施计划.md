@@ -898,7 +898,7 @@ GET /api/v1/credentials?environment_id={environment}
 |---|---|
 | `functional-test-agent` | 校准平台上下文、能力域“AI 测试”、返回入口和焦点，不改 Review 流程 |
 | `api-test-agent` | 校准平台上下文、能力域“AI 测试”、返回入口和焦点，不改执行闭环 |
-| `Truthy_ApiAutoTest2` | 校准平台上下文、能力域“自动化”、返回入口，不改 pytest 执行和报告 |
+| `api-autotest` | 校准平台上下文、能力域“自动化”、返回入口，不改 pytest 执行和报告 |
 | `TrackEvents_tess` | 校准平台上下文、能力域“质量分析”、返回入口，不改分析接口 |
 | `log_filter_tool` | 校准平台上下文、能力域“质量分析”、返回入口，不改筛选和导出 |
 | `Truthy_Search` | 校准平台上下文、能力域“专项评测”、返回入口，不改评测、Raw 和报告 |
@@ -961,7 +961,7 @@ GET /api/v1/credentials?environment_id={environment}
 |---|---|
 | `functional-test-agent` | `services/common/templates/base.html`、`services/common/static/agent-workbench.css` |
 | `api-test-agent` | `services/common/templates/base.html`、`services/common/static/agent-workbench.css`、`api-v2-workbench.css` |
-| `Truthy_ApiAutoTest2` | `web/templates/index.html`、相关 Web CSS |
+| `api-autotest` | `web/templates/index.html`、相关 Web CSS |
 | `TrackEvents_tess` | `trackevents_web.py` 中内嵌页面模板和样式 |
 | `log_filter_tool` | `templates/index.html`、现有静态样式 |
 | `Truthy_Search` | `templates/base.html`、`static/app.css` |

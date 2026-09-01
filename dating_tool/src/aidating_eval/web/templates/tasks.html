@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block title %}Run 记录 · Dating AI{% endblock %}
+{% block page_id %}runs{% endblock %}
+{% block content %}
+<header class="page-header page-header-row"><div><p class="eyebrow">RUN HISTORY</p><h1>Run 记录</h1><p>查看本地运行状态、Case、Task、Result、Diagnostics、Cleanup 和 Wire Log。</p></div><a class="button primary" href="{{ url_for('new_run') }}">新建 Run</a></header>
+<section class="panel filter-panel"><div class="filter-grid" id="run-filters"><label class="field compact-field"><span>模式</span><select id="filter-mode"><option value="">全部</option><option value="e2e">完整 E2E</option><option value="eval">快速批量</option></select></label><label class="field compact-field"><span>类型</span><select id="filter-kind"><option value="">全部</option><option value="analysis">Analysis</option><option value="reply">Reply</option><option value="mixed">Mixed</option></select></label><label class="field compact-field"><span>状态</span><select id="filter-status"><option value="">全部</option><option value="waiting">等待中</option><option value="running">运行中</option><option value="completed">完成</option><option value="failed">失败</option><option value="cancelled">已取消</option><option value="cleanup_pending">待清理</option></select></label><button class="button tertiary compact" id="runs-refresh" type="button">刷新</button></div></section>
+<section class="panel table-panel"><div class="panel-heading"><div><h2>最近运行</h2><p id="runs-count">加载中…</p></div></div><div class="table-scroll"><table><thead><tr><th>Run ID</th><th>模式 / 类型</th><th>Case</th><th>状态</th><th>Cleanup</th><th>更新时间</th></tr></thead><tbody id="runs-body"><tr><td colspan="6" class="table-state">正在读取…</td></tr></tbody></table></div></section>
+{% endblock %}

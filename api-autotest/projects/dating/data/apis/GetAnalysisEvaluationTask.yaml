@@ -1,0 +1,11 @@
+id: GetAnalysisEvaluationTask
+name: 查询结构化 Analysis 评测任务
+credential_profile: public
+request:
+  service_name: tool.dating.internal.DatingEvaluationService
+  method_name: GetAnalysisEvaluationTask
+transport:
+  target: dating_evaluation
+  envelope: root_single
+  requires_session: false
+  bearer_token_variable: DATING_EVALUATION_API_KEY

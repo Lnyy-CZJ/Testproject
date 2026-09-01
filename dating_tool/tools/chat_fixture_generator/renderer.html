@@ -1,0 +1,424 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="data:," />
+    <title>Synthetic chat fixture</title>
+    <style>
+      /*
+       * 该页面只用于确定性生成 E2E 截图，不模仿任何真实聊天品牌。
+       * 五套主题共享完全相同的排版尺寸，避免视觉变量改变消息顺序或分页结果。
+       */
+      :root {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        color-scheme: light;
+        --canvas: #f1f3f7;
+        --chrome: rgba(250, 251, 253, 0.98);
+        --chrome-border: rgba(23, 27, 38, 0.12);
+        --text: #15171d;
+        --muted: #747985;
+        --incoming: #e4e7ec;
+        --incoming-text: #171920;
+        --outgoing: #2379f4;
+        --outgoing-text: #ffffff;
+        --accent: #2379f4;
+        --composer: #ffffff;
+      }
+
+      html[data-style="sage-light"] {
+        --canvas: #eef3ef;
+        --chrome: rgba(249, 252, 249, 0.98);
+        --chrome-border: rgba(35, 64, 48, 0.13);
+        --text: #16221b;
+        --muted: #68766d;
+        --incoming: #ffffff;
+        --incoming-text: #172019;
+        --outgoing: #3d7d62;
+        --outgoing-text: #ffffff;
+        --accent: #2f7657;
+        --composer: #fbfdfb;
+      }
+
+      html[data-style="midnight-dark"] {
+        color-scheme: dark;
+        --canvas: #11151d;
+        --chrome: rgba(22, 27, 37, 0.99);
+        --chrome-border: rgba(225, 232, 247, 0.12);
+        --text: #f3f6fb;
+        --muted: #a5adbb;
+        --incoming: #2b3240;
+        --incoming-text: #f5f7fb;
+        --outgoing: #327cf0;
+        --outgoing-text: #ffffff;
+        --accent: #67a0ff;
+        --composer: #202631;
+      }
+
+      html[data-style="plum-light"] {
+        --canvas: #f6f1f7;
+        --chrome: rgba(253, 250, 253, 0.98);
+        --chrome-border: rgba(82, 45, 90, 0.13);
+        --text: #221725;
+        --muted: #806f83;
+        --incoming: #ffffff;
+        --incoming-text: #251b27;
+        --outgoing: #8b4c9c;
+        --outgoing-text: #ffffff;
+        --accent: #844495;
+        --composer: #fffafe;
+      }
+
+      html[data-style="mono-high-contrast"] {
+        --canvas: #ffffff;
+        --chrome: #ffffff;
+        --chrome-border: #101215;
+        --text: #050607;
+        --muted: #42464d;
+        --incoming: #ffffff;
+        --incoming-text: #050607;
+        --outgoing: #006b70;
+        --outgoing-text: #ffffff;
+        --accent: #006b70;
+        --composer: #ffffff;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        width: 430px;
+        height: 932px;
+        margin: 0;
+        overflow: hidden;
+        background: var(--canvas);
+      }
+
+      body {
+        display: grid;
+        grid-template-rows: 34px 58px minmax(0, 1fr) 58px;
+        color: var(--text);
+      }
+
+      .status-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 7px 22px 4px;
+        background: var(--chrome);
+        font-size: 12px;
+        font-weight: 680;
+        letter-spacing: 0.05px;
+      }
+
+      .status-icons {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        font-size: 10px;
+      }
+
+      .signal {
+        letter-spacing: -1.5px;
+      }
+
+      .battery {
+        display: inline-flex;
+        width: 23px;
+        height: 11px;
+        padding: 2px;
+        border: 1.4px solid currentColor;
+        border-radius: 3px;
+      }
+
+      .battery::after {
+        width: 15px;
+        border-radius: 1px;
+        background: currentColor;
+        content: "";
+      }
+
+      .nav {
+        display: grid;
+        grid-template-columns: 52px 1fr 52px;
+        align-items: center;
+        border-bottom: 1px solid var(--chrome-border);
+        background: var(--chrome);
+      }
+
+      .back,
+      .info {
+        color: var(--accent);
+        font-size: 27px;
+      }
+
+      .back {
+        padding-left: 17px;
+        font-weight: 300;
+      }
+
+      .info {
+        padding-right: 17px;
+        font-size: 18px;
+        text-align: right;
+      }
+
+      .contact {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+      }
+
+      .contact-copy {
+        min-width: 0;
+      }
+
+      .contact-name {
+        overflow: hidden;
+        max-width: 205px;
+        font-size: 13px;
+        font-weight: 700;
+        line-height: 1.15;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .contact-state {
+        margin-top: 2px;
+        color: var(--muted);
+        font-size: 9px;
+      }
+
+      .chat {
+        display: grid;
+        min-height: 0;
+        grid-template-rows: 21px minmax(0, 1fr);
+        padding: 6px 10px 7px;
+        background:
+          radial-gradient(circle at 12% 0%, color-mix(in srgb, var(--chrome) 75%, transparent), transparent 32%),
+          var(--canvas);
+      }
+
+      .date-label {
+        align-self: center;
+        color: var(--muted);
+        font-size: 9px;
+        font-weight: 650;
+        text-align: center;
+      }
+
+      .messages {
+        display: flex;
+        min-height: 0;
+        flex-direction: column;
+        justify-content: flex-end;
+        gap: 3px;
+        overflow: hidden;
+      }
+
+      .row {
+        display: flex;
+        flex: 0 0 auto;
+        justify-content: flex-start;
+      }
+
+      .row.self {
+        justify-content: flex-end;
+      }
+
+      .bubble {
+        max-width: 338px;
+        padding: 5px 8px 4px;
+        border-radius: 15px 15px 15px 5px;
+        background: var(--incoming);
+        color: var(--incoming-text);
+        box-shadow: 0 1px 1px rgba(0, 0, 0, 0.045);
+        font-size: 12.5px;
+        line-height: 1.18;
+        overflow-wrap: anywhere;
+      }
+
+      .row.self .bubble {
+        border-radius: 15px 15px 5px 15px;
+        background: var(--outgoing);
+        color: var(--outgoing-text);
+      }
+
+      html[data-style="mono-high-contrast"] .bubble {
+        border: 1.2px solid #111317;
+        box-shadow: none;
+      }
+
+      html[data-style="mono-high-contrast"] .row.self .bubble {
+        border-color: var(--outgoing);
+      }
+
+      .message-time {
+        margin-left: 6px;
+        color: color-mix(in srgb, currentColor 62%, transparent);
+        font-size: 7.5px;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+      }
+
+      .composer {
+        display: grid;
+        grid-template-columns: 31px 1fr 28px;
+        align-items: start;
+        gap: 7px;
+        padding: 8px 13px 0;
+        border-top: 1px solid var(--chrome-border);
+        background: var(--chrome);
+      }
+
+      .camera,
+      .mic {
+        display: grid;
+        width: 29px;
+        height: 29px;
+        place-items: center;
+        color: var(--accent);
+        font-size: 13px;
+      }
+
+      .camera {
+        border-radius: 50%;
+        background: color-mix(in srgb, var(--accent) 14%, var(--composer));
+      }
+
+      .input {
+        height: 31px;
+        padding: 6px 12px;
+        border: 1px solid var(--chrome-border);
+        border-radius: 16px;
+        color: var(--muted);
+        background: var(--composer);
+        font-size: 12px;
+      }
+
+      .home-indicator {
+        position: fixed;
+        bottom: 5px;
+        left: 50%;
+        width: 126px;
+        height: 4px;
+        transform: translateX(-50%);
+        border-radius: 2px;
+        background: var(--text);
+      }
+
+      /* 仅在长锚点造成高度紧张时启用，仍保持可供 OCR 读取的字号。 */
+      body.compact .messages {
+        gap: 2px;
+      }
+
+      body.compact .bubble {
+        max-width: 346px;
+        padding: 4px 7px 3px;
+        font-size: 11.5px;
+        line-height: 1.14;
+      }
+
+      body.compact .message-time {
+        font-size: 7px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="status-bar">
+      <span id="clock">18:00</span>
+      <span class="status-icons"><span class="signal">▂▄▆█</span><span>⌁</span><span class="battery"></span></span>
+    </div>
+    <header class="nav">
+      <div class="back">‹</div>
+      <div class="contact">
+        <div class="contact-copy">
+          <div class="contact-name" id="contact-name">Alex</div>
+          <div class="contact-state">Online</div>
+        </div>
+      </div>
+      <div class="info">ⓘ</div>
+    </header>
+    <main class="chat">
+      <div class="date-label" id="date-label">Thursday, 8 January · 18:00</div>
+      <div class="messages" id="messages"></div>
+    </main>
+    <footer class="composer">
+      <div class="camera">▣</div>
+      <div class="input">Message</div>
+      <div class="mic">◉</div>
+    </footer>
+    <div class="home-indicator"></div>
+
+    <script>
+      /**
+       * 以 textContent 写入所有测试数据，既保留逐字真值，也防止消息正文被解释成 HTML。
+       * @param {object} payload 单张截图的渲染数据。
+       * @returns {{overflow: boolean, messageCount: number}} 布局测量结果。
+       */
+      window.renderChat = function renderChat(payload) {
+        if (!payload || !Array.isArray(payload.messages) || payload.messages.length !== 14) {
+          throw new Error("Every screenshot must contain exactly 14 messages");
+        }
+
+        document.documentElement.dataset.fixtureReady = "false";
+        document.documentElement.dataset.style = payload.style_id;
+        document.body.classList.remove("compact");
+        const contactName = payload.contact_name;
+        document.getElementById("contact-name").textContent = contactName;
+
+        const firstDate = new Date(payload.messages[0].timestamp);
+        const lastDate = new Date(payload.messages[payload.messages.length - 1].timestamp);
+        const locale = payload.locale || "en-US";
+        // ISO 时间在本数据集中表示合成聊天的固定墙上时间。显式使用 UTC 可避免生成机器
+        // 的系统时区把欧美晚间对话转换成次日凌晨，同时仍由 locale 决定 12/24 小时制。
+        const timeOptions = { hour: "2-digit", minute: "2-digit", timeZone: "UTC" };
+        const dateOptions = {
+          weekday: "long",
+          month: "short",
+          day: "numeric",
+          timeZone: "UTC",
+        };
+        document.getElementById("clock").textContent = new Intl.DateTimeFormat(locale, timeOptions).format(lastDate);
+        document.getElementById("date-label").textContent =
+          `${new Intl.DateTimeFormat(locale, dateOptions).format(firstDate)} · ${new Intl.DateTimeFormat(locale, timeOptions).format(firstDate)}`;
+
+        const messagesElement = document.getElementById("messages");
+        messagesElement.replaceChildren();
+        for (const message of payload.messages) {
+          const row = document.createElement("div");
+          row.className = `row ${message.speaker}`;
+          row.dataset.messageId = message.id;
+
+          const bubble = document.createElement("div");
+          bubble.className = "bubble";
+          const text = document.createElement("span");
+          text.textContent = message.text;
+          const time = document.createElement("span");
+          time.className = "message-time";
+          time.textContent = new Intl.DateTimeFormat(locale, timeOptions).format(new Date(message.timestamp));
+          bubble.append(text, time);
+          row.append(bubble);
+          messagesElement.append(row);
+        }
+
+        let overflow = messagesElement.scrollHeight > messagesElement.clientHeight + 1;
+        if (overflow) {
+          document.body.classList.add("compact");
+          overflow = messagesElement.scrollHeight > messagesElement.clientHeight + 1;
+        }
+        window.__renderMetrics = {
+          overflow,
+          messageCount: messagesElement.children.length,
+          scrollHeight: messagesElement.scrollHeight,
+          clientHeight: messagesElement.clientHeight,
+        };
+        document.documentElement.dataset.fixtureReady = "true";
+        return window.__renderMetrics;
+      };
+    </script>
+  </body>
+</html>

@@ -1,0 +1,30 @@
+{
+  "schema_version": "aidating.e2e.case.v1",
+  "case_id": "analysis-stage-date-planning-positive-02",
+  "task_kind": "analysis",
+  "locale": "en-IE",
+  "media": [
+    {
+      "path": "Planning a date邀约阶段/example_02/chat_01.png"
+    },
+    {
+      "path": "Planning a date邀约阶段/example_02/chat_02.png"
+    },
+    {
+      "path": "Planning a date邀约阶段/example_02/chat_03.png"
+    },
+    {
+      "path": "Planning a date邀约阶段/example_02/chat_04.png"
+    },
+    {
+      "path": "Planning a date邀约阶段/example_02/chat_05.png"
+    }
+  ],
+  "analysis": {
+    "other_person_name": "Finn"
+  },
+  "expect": {
+    "task_status": "succeeded",
+    "result_schema": "dating.relationship_analysis.v1"
+  }
+}

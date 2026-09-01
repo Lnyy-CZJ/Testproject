@@ -4,7 +4,7 @@ import re
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, Path, Request, Response
 from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -45,6 +45,7 @@ from app.schemas.configuration import (
     SecretResponse,
     RuntimeScopeCreateRequest,
     RuntimeScopePatchRequest,
+    RuntimeScopeReleaseSummary,
     RuntimeScopeResponse,
 )
 from app.models.access import Project, ProjectMembership
@@ -125,17 +126,54 @@ def _assert_scope_environment(
     return scope
 
 
-def _runtime_scope_response(row: ToolProjectScope) -> RuntimeScopeResponse:
-    """转换 Scope 元数据，同时显式暴露 platform_environment 外部契约。"""
+def _runtime_scope_response(
+    database: Session,
+    row: ToolProjectScope,
+) -> RuntimeScopeResponse:
+    """转换 Scope 元数据，并附带不含配置值的当前 Release 摘要。
+
+    Secret 的当前版本与任务实际使用的 Release 快照是两种不同状态。管理页必须
+    显示后者，避免用户把“Secret 已保存”误认为“新任务已生效”。这里只返回
+    Release ID、版本和状态，不展开普通配置或 Secret 引用。
+    """
+
+    project = database.get(Project, row.platform_project_id)
+    activation = database.scalar(select(ConfigActivation).where(
+        ConfigActivation.environment_id == row.environment_id,
+        ConfigActivation.owner_type == "tool_project_scope",
+        ConfigActivation.owner_id == row.id,
+    ))
+    active_release = (
+        database.get(ConfigRelease, activation.active_release_id)
+        if activation is not None else None
+    )
+    # 即使数据库被人工写入了跨 Scope Activation，也不能把其他项目的版本摘要
+    # 暴露到当前选择器；正常外键与发布流程下该分支始终为真。
+    if active_release is not None and (
+        active_release.environment_id,
+        active_release.owner_type,
+        active_release.owner_id,
+    ) != (row.environment_id, "tool_project_scope", row.id):
+        active_release = None
 
     return RuntimeScopeResponse(
         id=row.id, environment_id=row.environment_id,
         platform_environment=row.environment_id, tool_id=row.tool_id,
-        platform_project_id=row.platform_project_id, project_id=row.project_id,
+        platform_project_id=row.platform_project_id,
+        platform_project_name=(project.name if project is not None else row.platform_project_id),
+        project_id=row.project_id,
         target_env=row.target_env, display_name=row.display_name, status=row.status,
         is_default=row.is_default, revision=row.revision,
         created_by=row.created_by, updated_by=row.updated_by,
         created_at=row.created_at, updated_at=row.updated_at,
+        active_release=(
+            RuntimeScopeReleaseSummary(
+                id=active_release.id,
+                version=active_release.version,
+                status=active_release.status,
+            )
+            if active_release is not None else None
+        ),
     )
 
 
@@ -785,7 +823,7 @@ def list_runtime_scopes(
     if status:
         statement = statement.where(ToolProjectScope.status == status)
     return [
-        _runtime_scope_response(row)
+        _runtime_scope_response(database, row)
         for row in database.scalars(statement).all()
         if _can_manage_config(database, context, "tool_project_scope", row.id)
     ]
@@ -804,7 +842,7 @@ def get_runtime_scope(
         raise PlatformError(404, "NOT_FOUND", "Runtime Scope 不存在")
     if not _can_manage_config(database, context, "tool_project_scope", row.id):
         raise PlatformError(403, "PERMISSION_DENIED", "无权管理该 Runtime Scope")
-    return _runtime_scope_response(row)
+    return _runtime_scope_response(database, row)
 
 
 @router.post("/runtime-scopes", response_model=RuntimeScopeResponse, status_code=201)
@@ -854,7 +892,7 @@ def create_runtime_scope(
     )
     database.commit()
     database.refresh(row)
-    return _runtime_scope_response(row)
+    return _runtime_scope_response(database, row)
 
 
 @router.patch("/runtime-scopes/{scope_id}", response_model=RuntimeScopeResponse)
@@ -904,7 +942,7 @@ def patch_runtime_scope(
     )
     database.commit()
     database.refresh(row)
-    return _runtime_scope_response(row)
+    return _runtime_scope_response(database, row)
 
 
 @router.get("/config/definitions", response_model=list[ConfigDefinitionResponse])
@@ -1383,14 +1421,18 @@ def list_secrets(
 
 @router.put("/secrets/{secret_id}", response_model=SecretResponse)
 def put_secret(
-    secret_id: str,
+    secret_id: Annotated[str, Path(min_length=1, max_length=64)],
     payload: SecretReplaceRequest,
     request: Request,
     context: Annotated[AuthContext, Depends(require_csrf)],
     database: Annotated[Session, Depends(get_db)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> SecretResponse:
-    """加密保存并激活 Secret 新版本，响应永不回显明文。"""
+    """加密保存并激活 Secret 新版本，响应永不回显明文。
+
+    ``secret_id`` 在 API 边界保持与数据库主键相同的 64 字符上限，避免非法输入
+    下沉为 ``StringDataRightTruncation`` 后被误报成数据库不可用。
+    """
 
     scope = _assert_scope_environment(
         database, payload.owner_type, payload.owner_id, payload.environment_id

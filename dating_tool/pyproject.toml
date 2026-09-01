@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aidating-eval"
+version = "0.3.0"
+description = "Lightweight dual-mode Dating AI Assistant protocol runner"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "Flask>=3.0,<4",
+  "requests>=2.34.2,<3",
+  "python-dotenv>=1.2.3,<2",
+  "Pillow>=12.3,<13",
+]
+
+[project.scripts]
+dating-eval = "aidating_eval.cli:main"
+dating-eval-web = "aidating_eval.web.app:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+aidating_eval = ["web/templates/*.html", "web/static/*"]

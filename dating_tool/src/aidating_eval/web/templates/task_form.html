@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}创建评测 · Dating AI{% endblock %}
+{% block page_id %}new{% endblock %}
+{% block content %}
+<header class="page-header"><p class="eyebrow">DATING AI ASSISTANT · MVP</p><h1>创建评测 Run</h1><p>先在本地校验输入，再进入真实后端链路。MVP 只记录协议与生命周期，不做 AI 打分。</p></header>
+
+<div class="mode-switch" role="tablist" aria-label="评测模式">
+  <button class="mode-tab active" type="button" data-mode-tab="e2e" role="tab" aria-selected="true"><span>01</span><strong>完整 E2E</strong><small>Identity · Media · Task · Result · Delete</small></button>
+  <button class="mode-tab" type="button" data-mode-tab="eval" role="tab" aria-selected="false"><span>02</span><strong>快速批量评测</strong><small>dating.transcript.v1 · Evaluation Pipeline</small></button>
+</div>
+
+<form class="form-layout" id="run-form" enctype="multipart/form-data" novalidate>
+  <input type="hidden" name="mode" id="run-mode" value="e2e">
+  <section class="panel form-panel">
+    <div class="panel-heading"><div><h2 id="form-title">完整 E2E 小规模验证</h2><p id="form-description">上传一组脱敏截图，验证公开协议和真实异步 Task 生命周期。</p></div><span class="status-badge neutral" id="form-status">待输入</span></div>
+    <div class="field-row"><div class="field"><label for="task-kind">任务类型</label><select id="task-kind" name="task_kind"><option value="analysis">Analysis</option><option value="reply">Reply</option></select></div><div class="field"><label for="locale">Locale</label><input id="locale" name="locale" value="en-US" maxlength="64"></div></div>
+    <section id="e2e-fields" class="input-section"><div class="section-title"><h3>截图输入</h3><span class="muted">按聊天截图顺序上传</span></div><label class="upload-zone" for="media"><input id="media" name="media" type="file" accept="image/jpeg,image/png,image/webp" multiple><span class="upload-icon">＋</span><strong>选择一张或多张图片</strong><small>仅发送到当前配置的 staging；不会进入 Git</small></label><ol class="media-list" id="media-list"></ol><div class="field-message" id="media-message" aria-live="polite"></div>
+      <div class="field-row reply-options" hidden><div class="field"><label for="dating-goal">Dating goal</label><input id="dating-goal" name="dating_goal" value="serious_relationship"></div><div class="field"><label for="your-voice">Your voice</label><input id="your-voice" name="your_voice" value="warm_direct"></div></div>
+      <div class="field reply-options" hidden><label for="requested-intent">Requested intent（可选）</label><select id="requested-intent" name="requested_intent"><option value="">不指定</option><option value="opener">opener</option><option value="flirt">flirt</option><option value="tease">tease</option><option value="advance">advance</option></select></div>
+      <div class="field analysis-options"><label for="other-person-name">对方称呼（可选）</label><input id="other-person-name" name="other_person_name" maxlength="128"></div>
+      <div class="field"><label for="background">Background（可选）</label><textarea id="background" name="background" maxlength="1000" rows="3" placeholder="只填写必要的脱敏背景"></textarea></div>
+    </section>
+    <section id="eval-fields" class="input-section" hidden><div class="section-title"><h3>Transcript 数据集</h3><span class="muted">JSONL · 每行一个 aidating.eval.case.v1</span></div><label class="upload-zone compact" for="dataset"><input id="dataset" name="dataset" type="file" accept=".jsonl,application/json" disabled><span class="upload-icon">⇧</span><strong>选择 JSONL 数据集</strong><small>上传后跳过截图和 OCR，直接进入 Reply / Analysis Evaluation</small></label><div class="file-name" id="dataset-name">尚未选择文件</div><div class="field-row"><div class="field"><label for="case-id">只执行 Case（可选）</label><input id="case-id" name="case_id" placeholder="case-001"></div><div class="field"><label for="eval-concurrency">并发（1～5）</label><input id="eval-concurrency" name="eval_concurrency" type="number" min="1" max="5" value="3"></div></div></section>
+    <div class="preflight" id="preflight" role="status"><span class="dot"></span><span>填写输入后进行本地校验</span></div>
+    <div class="button-row"><button class="button primary" id="validate-button" type="submit">校验输入</button><a class="button secondary" href="{{ url_for('runs_page') }}">查看记录</a></div>
+  </section>
+  <aside class="panel preview-panel"><div class="panel-heading"><div><h2>执行预览</h2><p>只读元数据，不展示模型生成正文。</p></div></div><dl class="summary-list" id="preview-summary"><div><dt>模式</dt><dd id="summary-mode">完整 E2E</dd></div><div><dt>任务类型</dt><dd id="summary-kind">Analysis</dd></div><div><dt>Case 数</dt><dd id="summary-cases">—</dd></div><div><dt>输入</dt><dd id="summary-input">—</dd></div><div><dt>流程</dt><dd id="summary-flow">Identity → Media → Task → Result → Delete</dd></div></dl><div class="notice"><strong>本地回环服务</strong><span>绑定 127.0.0.1，日志可在 Run 详情查看完整 Wire Log。</span></div></aside>
+</form>
+{% endblock %}

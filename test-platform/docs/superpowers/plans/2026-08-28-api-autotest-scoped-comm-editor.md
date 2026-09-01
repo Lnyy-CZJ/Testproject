@@ -8,7 +8,7 @@
 
 **Tech Stack:** FastAPI、SQLAlchemy、Alembic、PostgreSQL/SQLite、React、TypeScript、Vitest、Testing Library、Pytest、Docker Compose。
 
-**Spec:** `/Users/admin/Testproject/Truthy_ApiAutoTest2/docs/接口自动化多项目支持与Dating接入-PRD.md`，以及 2026-08-28 用户确认的结构化 Comm 编辑与历史版本查看设计。
+**Spec:** `/Users/admin/Testproject/api-autotest/docs/接口自动化多项目支持与Dating接入-PRD.md`，以及 2026-08-28 用户确认的结构化 Comm 编辑与历史版本查看设计。
 
 ## Global Constraints
 
@@ -82,8 +82,8 @@
 ### Task 2: 执行器剔除动态 Comm 配置
 
 **Files:**
-- Modify: `../Truthy_ApiAutoTest2/api/gateway_api.py`
-- Test: `../Truthy_ApiAutoTest2/test_cases/test_v12.py`
+- Modify: `../api-autotest/api/gateway_api.py`
+- Test: `../api-autotest/test_cases/test_v12.py`
 
 **Interfaces:**
 - Consumes: Release 或接口 transport 提供的静态 `comm`。
@@ -155,9 +155,9 @@
 
   Run: `npm test && npm run build`
 
-  Run: `../Truthy_ApiAutoTest2/.venv/bin/python -m pytest ../Truthy_ApiAutoTest2/tests -q`
+  Run: `../api-autotest/.venv/bin/python -m pytest ../api-autotest/tests -q`
 
-  Run: `../Truthy_ApiAutoTest2/.venv/bin/python -m pytest ../Truthy_ApiAutoTest2/test_cases -q -k 'not gateway_flow and not single_gateway_api'`
+  Run: `../api-autotest/.venv/bin/python -m pytest ../api-autotest/test_cases -q -k 'not gateway_flow and not single_gateway_api'`
 
   Run: `git diff --check`
 

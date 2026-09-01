@@ -261,6 +261,44 @@ class AgentSplitComposeTest(unittest.TestCase):
             "test-platform/frontend/src/types",
         }.issubset(paths))
 
+    def test_api_autotest_version_hash_covers_project_packages(self) -> None:
+        """Case/Flow 项目包变化必须进入镜像内容身份和组件版本门禁。"""
+
+        manifest = json.loads((ROOT / "versions.json").read_text(encoding="utf-8"))
+        paths = set(manifest["components"]["api-autotest"]["source_paths"])
+        self.assertIn("api-autotest/projects", paths)
+
+    def test_api_autotest_uses_canonical_repository_directory(self) -> None:
+        """Compose 必须从统一的 api-autotest 目录构建并挂载全部持久资产。"""
+
+        output = subprocess.run(
+            ["docker", "compose", "config", "--format", "json"],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+        service = json.loads(output)["services"]["api-autotest"]
+        canonical_root = (ROOT.parent / "api-autotest").resolve()
+
+        self.assertEqual(Path(service["build"]["context"]).resolve(), canonical_root)
+        mounted_sources = {
+            Path(volume["source"]).resolve()
+            for volume in service.get("volumes", [])
+            if volume.get("type") == "bind"
+        }
+        self.assertTrue(
+            {
+                canonical_root / "projects",
+                canonical_root / "runtime",
+                canonical_root / "logs",
+                canonical_root / "reports",
+                canonical_root / "tasks",
+            }.issubset(mounted_sources)
+        )
+        self.assertTrue(canonical_root.is_dir())
+        self.assertFalse((ROOT.parent / "Truthy_ApiAutoTest2").exists())
+
     def test_dev_component_update_is_selective_and_keeps_api_suite_atomic(self) -> None:
         """选择性 Dev 构建只校验目标组件，但必须同步已运行的 API 执行链。"""
 
