@@ -5,7 +5,7 @@
   },
   "components": {
     "platform-gateway": {
-      "version": "1.3.0",
+      "version": "1.3.1",
       "compatible_product_major": 1,
       "source_paths": ["test-platform/frontend/src/App.tsx", "test-platform/frontend/src/app.css", "test-platform/frontend/src/main.tsx", "test-platform/frontend/src/api", "test-platform/frontend/src/components", "test-platform/frontend/src/context", "test-platform/frontend/src/data", "test-platform/frontend/src/types", "test-platform/frontend/package.json", "test-platform/frontend/package-lock.json", "test-platform/frontend/index.html", "test-platform/web", "test-platform/nginx", "test-platform/Dockerfile"],
       "image_envs": ["PLATFORM_GATEWAY_IMAGE"]
